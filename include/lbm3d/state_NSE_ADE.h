@@ -249,9 +249,7 @@ struct State_NSE_ADE : State<NSE>
 
 			// exchange the latest DFs and dmacro on overlaps between blocks
 			// (it is important to wait for the communication before waiting for the computation, otherwise MPI won't progress)
-			// TODO: merge the pipelining of the communication in the NSE and ADE into one
-			nse.synchronizeDFsAndMacroDevice(output_df);
-			ade.synchronizeDFsAndMacroDevice(output_df);
+			synchronizeDFsAndMacroDevice(output_df);
 
 			// wait for the computation on the interior to finish
 			for (auto& block : nse.blocks)
@@ -477,4 +475,72 @@ struct State_NSE_ADE : State<NSE>
 
 	bool outputData(const BLOCK_NSE& block, int index, int dof, char *desc, idx x, idx y, idx z, real &value, int &dofs) override { return false; }
 	virtual bool outputData(const BLOCK_ADE& block, int index, int dof, char *desc, idx x, idx y, idx z, real &value, int &dofs) { return false; }
+
+// TODO: ensure that NSE and ADE synchronizers use different MPI tags for communication
+private:
+#ifdef HAVE_MPI
+	void synchronizeDFsAndMacroDevice(uint8_t dftype)
+	{
+		// stage 0: set inputs, allocate buffers
+		// stage 1: fill send buffers
+		for( auto& block : nse.blocks ) {
+			block.synchronizeDFsDevice_start(dftype);
+			if (NSE::MACRO::use_syncMacro)
+				block.synchronizeMacroDevice_start();
+		}
+		for( auto& block : ade.blocks ) {
+			block.synchronizeDFsDevice_start(dftype);
+			if (ADE::MACRO::use_syncMacro)
+				block.synchronizeMacroDevice_start();
+		}
+
+		// stage 2: issue all send and receive async operations
+		for( auto& block : nse.blocks ) {
+			for (int i = 0; i < NSE::Q; i++)
+				block.dreal_sync[i].stage_2();
+			if (NSE::MACRO::use_syncMacro)
+				for (int i = 0; i < NSE::MACRO::N; i++)
+					block.dreal_sync[NSE::Q + i].stage_2();
+		}
+		for( auto& block : ade.blocks ) {
+			for (int i = 0; i < ADE::Q; i++)
+				block.dreal_sync[i].stage_2();
+			if (ADE::MACRO::use_syncMacro)
+				for (int i = 0; i < ADE::MACRO::N; i++)
+					block.dreal_sync[ADE::Q + i].stage_2();
+		}
+
+		// stage 3: copy data from receive buffers
+		for( auto& block : nse.blocks ) {
+			for (int i = 0; i < NSE::Q; i++)
+				block.dreal_sync[i].stage_3();
+			if (NSE::MACRO::use_syncMacro)
+				for (int i = 0; i < NSE::MACRO::N; i++)
+					block.dreal_sync[NSE::Q + i].stage_3();
+		}
+		for( auto& block : ade.blocks ) {
+			for (int i = 0; i < ADE::Q; i++)
+				block.dreal_sync[i].stage_3();
+			if (ADE::MACRO::use_syncMacro)
+				for (int i = 0; i < ADE::MACRO::N; i++)
+					block.dreal_sync[ADE::Q + i].stage_3();
+		}
+
+		// stage 4: ensure everything has finished
+		for( auto& block : nse.blocks ) {
+			for (int i = 0; i < NSE::Q; i++)
+				block.dreal_sync[i].stage_4();
+			if (NSE::MACRO::use_syncMacro)
+				for (int i = 0; i < NSE::MACRO::N; i++)
+					block.dreal_sync[NSE::Q + i].stage_4();
+		}
+		for( auto& block : ade.blocks ) {
+			for (int i = 0; i < ADE::Q; i++)
+				block.dreal_sync[i].stage_4();
+			if (ADE::MACRO::use_syncMacro)
+				for (int i = 0; i < ADE::MACRO::N; i++)
+					block.dreal_sync[ADE::Q + i].stage_4();
+		}
+	}
+#endif
 };
