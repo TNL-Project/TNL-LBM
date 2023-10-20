@@ -18,7 +18,9 @@ struct D3Q27_BC_All
 		GEO_OUTFLOW_EQ,
 		GEO_OUTFLOW_RIGHT,
 		GEO_PERIODIC,
-		GEO_NOTHING
+		GEO_NOTHING,
+		GEO_SYM_TOP,
+		GEO_SYM_TOP_right
 	};
 
 	CUDA_HOSTDEV static bool isPeriodic(map_t mapgi)
@@ -29,6 +31,11 @@ struct D3Q27_BC_All
 	CUDA_HOSTDEV static bool isFluid(map_t mapgi)
 	{
 		return (mapgi==GEO_FLUID);
+	}
+		
+	CUDA_HOSTDEV static bool isWall(map_t mapgi)
+	{
+		return (mapgi==GEO_WALL);
 	}
 
 	template< typename LBM_KS >
@@ -47,6 +54,7 @@ struct D3Q27_BC_All
 		if (mapgi == GEO_OUTFLOW_RIGHT)
 			xp = x = xm;
 
+		if(mapgi != GEO_SYM_TOP || mapgi != GEO_SYM_TOP_right)
 		STREAMING::streaming(SD,KS,xm,x,xp,ym,y,yp,zm,z,zp);
 
 		// boundary conditions
@@ -85,6 +93,41 @@ struct D3Q27_BC_All
 			TNL::swap( KS.f[zzm], KS.f[zzp] );
 			TNL::swap( KS.f[zmz], KS.f[zpz] );
 			TNL::swap( KS.f[zmp], KS.f[zpm] );
+			break;
+		case GEO_SYM_TOP:
+			KS.f[mmm] = KS.f[mmp];
+			KS.f[mzm] = KS.f[mzp];
+			KS.f[mpm] = KS.f[mpp];
+			KS.f[zmm] = KS.f[zmp];
+			KS.f[zzm] = KS.f[zzp];
+			KS.f[zpm] = KS.f[zpp];
+			KS.f[pmm] = KS.f[pmp];
+			KS.f[pzm] = KS.f[pzp];
+			KS.f[ppm] = KS.f[ppp];
+			COLL::computeDensityAndVelocity(KS);
+			break;
+		case GEO_SYM_TOP_right:
+
+			xp = x = xm;
+			STREAMING::streaming(SD,KS,xm,x,xp,ym,y,yp,zm,z,zp);
+
+			KS.f[mmm] = KS.f[mmp];
+			KS.f[mzm] = KS.f[mzp];
+			KS.f[mpm] = KS.f[mpp];
+			KS.f[zmm] = KS.f[zmp];
+			KS.f[zzm] = KS.f[zzp];
+			KS.f[zpm] = KS.f[zpp];
+			KS.f[pmm] = KS.f[pmp];
+			KS.f[pzm] = KS.f[pzp];
+			KS.f[ppm] = KS.f[ppp];
+			KS.f[pmz] = KS.f[mmz];
+			KS.f[pmp] = KS.f[mmp];
+			KS.f[pzz] = KS.f[mzz];
+			KS.f[pzp] = KS.f[mzp];
+			KS.f[ppz] = KS.f[mpz];
+			KS.f[ppp] = KS.f[mpp];
+
+			COLL::computeDensityAndVelocity(KS);
 			break;
 		default:
 			COLL::computeDensityAndVelocity(KS);

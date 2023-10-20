@@ -21,11 +21,17 @@ struct LBM_BLOCK
 	using dmap_array_t = typename CONFIG::dmap_array_t;
 	using hlat_array_t = typename CONFIG::hlat_array_t;
 	using dlat_array_t = typename CONFIG::dlat_array_t;
+	using bool_array_t = typename CONFIG::bool_array_t;
+	using dbool_array_t = typename CONFIG::dbool_array_t;
+	using dreal_array_t = typename CONFIG::dreal_array_t;
+	using hreal_array_t = typename CONFIG::hreal_array_t;
 	using dlat_view_t = typename CONFIG::dlat_view_t;
 	using hmacro_array_t = typename CONFIG::hmacro_array_t;
 	using dmacro_array_t = typename CONFIG::dmacro_array_t;
 	using cpumacro_array_t = typename CONFIG::cpumacro_array_t;
 	using sync_array_t = typename CONFIG::sync_array_t;
+	using boollat_array_t = typename CONFIG::boollat_array_t;
+	using hboollat_array_t = typename CONFIG::hboollat_array_t;
 
 	// KernelData contains only the necessary data for the CUDA kernel. these are copied just before the kernel is called
 	typename CONFIG::DATA data;
@@ -36,11 +42,23 @@ struct LBM_BLOCK
 
 	hmap_array_t hmap;
 	dmap_array_t dmap;
+	dreal_array_t difmap;
+	hreal_array_t hdifmap;
+
+	map_t& map(idx x, idx y, idx z) { return hmap(x,y,z); }
+	const map_t& map(idx x, idx y, idx z) const { return hmap(x,y,z); }	
 
 	// macroscopic quantities
 	hmacro_array_t hmacro;
 	dmacro_array_t dmacro;
 	cpumacro_array_t cpumacro;
+
+	//Transfer BC
+	bool_array_t TransferFS;
+	bool_array_t TransferSF;
+	bool_array_t TransferSW;
+	hboollat_array_t transferDIR;
+	boollat_array_t dtransferDIR;
 
 	// distribution functions
 	hlat_array_t hfs[DFMAX];
@@ -129,10 +147,15 @@ struct LBM_BLOCK
 
 	// Global methods - use GLOBAL indices !!!
 	void setMap(idx x, idx y, idx z, map_t value);
+	void setBoundaryTransfer();	
 	void setBoundaryX(idx x, map_t value);
 	void setBoundaryY(idx y, map_t value);
 	void setBoundaryZ(idx z, map_t value);
+
 	bool isFluid(idx x, idx y, idx z) const;
+	bool isWall(idx x, idx y, idx z) const;
+	bool isSolid(idx x, idx y, idx z) const;
+	bool isSolidPhase(idx x, idx y, idx z) const;
 
 	void resetMap(map_t geo_type);
 	void setEqLat(idx x, idx y, idx z, real rho, real vx, real vy, real vz); // prescribe rho,vx,vy,vz at a given point into "hfs" array

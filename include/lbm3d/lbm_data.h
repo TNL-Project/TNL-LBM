@@ -8,6 +8,7 @@ struct LBM_Data
 	using dreal = typename TRAITS::dreal;
 	using map_t = typename TRAITS::map_t;
 	using indexer_t = typename TRAITS::xyz_indexer_t;
+//	using bool_array_t = typename
 
 	// even/odd iteration indicator for the A-A pattern
 	bool even_iter = true;
@@ -18,17 +19,29 @@ struct LBM_Data
 
 	// scalars
 	dreal lbmViscosity;
+//	dreal physDt;
+//	dreal physDl;
+//	dreal physDiffusion;
 
 	// array pointers
 	dreal* dfs[DFMAX];
 	dreal* dmacro;
 	map_t* dmap;
+	dreal* difMap;
+//	dreal* hdifMap;
+
+	bool* dtransferDIR;
 
 	// sizes NOT including overlaps
 	CUDA_HOSTDEV idx X() { return indexer.template getSize<0>(); }
 	CUDA_HOSTDEV idx Y() { return indexer.template getSize<1>(); }
 	CUDA_HOSTDEV idx Z() { return indexer.template getSize<2>(); }
-
+	
+	CUDA_HOSTDEV dreal diffMap(idx x, idx y, idx z)
+	{
+		return difMap[indexer.getStorageIndex(x, y, z)];
+	}
+	
 	CUDA_HOSTDEV map_t map(idx x, idx y, idx z)
 	{
 		return dmap[indexer.getStorageIndex(x, y, z)];
@@ -43,7 +56,12 @@ struct LBM_Data
 	{
 		return dfs[type][Fxyz(q,x,y,z)];
 	}
-
+	
+	CUDA_HOSTDEV bool& transferDir(int q, idx x, idx y, idx z)
+	{
+		return dtransferDIR[Fxyz(q,x,y,z)];
+	}
+	
 	CUDA_HOSTDEV dreal& macro(int id, idx x, idx y, idx z)
 	{
 		return dmacro[Fxyz(id, x, y, z)];

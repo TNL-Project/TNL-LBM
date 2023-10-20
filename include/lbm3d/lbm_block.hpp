@@ -111,6 +111,134 @@ void LBM_BLOCK<CONFIG>::setMap(idx x, idx y, idx z, map_t value)
 }
 
 template< typename CONFIG >
+void LBM_BLOCK<CONFIG>::setBoundaryTransfer()
+{
+			std::cout << "Hey" << std::endl;
+	
+	TransferFS.setSizes(global.x(), global.y(), global.z());
+	TransferSF.setSizes(global.x(), global.y(), global.z());
+	TransferSW.setSizes(global.x(), global.y(), global.z());
+			std::cout << "He" << std::endl;
+
+	#ifdef HAVE_MPI
+	TransferFS.template setDistribution< 0 >(offset.x(), offset.x() + local.x(), communicator);
+	TransferFS.allocate();
+	TransferSF.template setDistribution< 0 >(offset.x(), offset.x() + local.x(), communicator);
+	TransferSF.allocate();
+	TransferSW.template setDistribution< 0 >(offset.x(), offset.x() + local.x(), communicator);
+	TransferSW.allocate();
+	#endif
+		std::cout << "Heyda" << std::endl;
+
+	for(idx x = offset.x(); x < offset.x() + local.x(); x++)
+	for(idx y = offset.y(); y < offset.y() + local.y(); y++)
+	for(idx z = offset.z(); z < offset.z() + local.z(); z++)
+		if (isLocalIndex(x, y, z)) {
+			TransferFS(x, y, z) = false;
+			TransferSF(x, y, z) = false;
+			TransferSW(x, y, z) = false;
+		}
+	for(idx x = offset.x(); x < offset.x() + local.x(); x++){
+		for(idx y = offset.y(); y < offset.y() + local.y(); y++){
+			for(idx z = offset.z(); z < offset.z() + local.z(); z++){
+				if(isLocalIndex(x, y, z)){
+					if(isFluid(x,y,z)){
+						if(isSolid(x+1,y,z)){
+							TransferFS(x, y, z) = true;
+							transferDIR(pzz,x,y,z) = true;
+						}
+						if(isSolid(x,y+1,z)){
+							TransferFS(x, y, z) = true;
+							transferDIR(zpz,x,y,z) = true;
+						}
+						if(isSolid(x,y,z+1)){
+							TransferFS(x, y, z) = true;
+							transferDIR(zzp,x,y,z) = true;
+						}
+						if(isSolid(x-1,y,z)){
+							TransferFS(x, y, z) = true;
+							transferDIR(mzz,x,y,z) = true;
+						}
+						if(isSolid(x,y-1,z)){
+							TransferFS(x, y, z) = true;
+							transferDIR(zmz,x,y,z) = true;
+						}
+						if(isSolid(x,y,z-1)){
+							TransferFS(x, y, z) = true;
+							transferDIR(zzm,x,y,z) = true;
+						}
+					}
+					if(isSolid(x,y,z)){
+						if(isFluid(x+1,y,z)){
+							TransferSF(x, y, z) = true;
+							transferDIR(pzz,x,y,z) = true;
+						}
+						if(isFluid(x,y+1,z)){
+							TransferSF(x, y, z) = true;
+							transferDIR(zpz,x,y,z) = true;
+						}
+						if(isFluid(x,y,z+1)){
+							TransferSF(x, y, z) = true;
+							transferDIR(zzp,x,y,z) = true;
+						}
+						if(isFluid(x-1,y,z)){
+							TransferSF(x, y, z) = true;
+							transferDIR(mzz,x,y,z) = true;
+						}
+						if(isFluid(x,y-1,z)){
+							TransferSF(x, y, z) = true;
+							transferDIR(zmz,x,y,z) = true;
+						}
+						if(isFluid(x,y,z-1)){
+							TransferSF(x, y, z) = true;
+							transferDIR(zzm,x,y,z) = true;
+						}
+
+						if(isWall(x+1,y,z)){
+							TransferSW(x, y, z) = true;
+							transferDIR(pzz,x,y,z) = true;
+						}
+						if(isWall(x,y+1,z)){
+							TransferSW(x, y, z) = true;
+							transferDIR(zpz,x,y,z) = true;
+						}
+						if(isWall(x,y,z+1)){
+							TransferSW(x, y, z) = true;
+							transferDIR(zzp,x,y,z) = true;
+						}
+						if(isWall(x-1,y,z)){
+							TransferSW(x, y, z) = true;
+							transferDIR(mzz,x,y,z) = true;
+						}
+						if(isWall(x,y-1,z)){
+							TransferSW(x, y, z) = true;
+							transferDIR(zmz,x,y,z) = true;
+						}
+						if(isWall(x,y,z-1)){
+							TransferSW(x, y, z) = true;
+							transferDIR(zzm,x,y,z) = true;
+						}
+					}
+				}
+			}
+		}
+	}
+	
+	for(idx x = offset.x(); x < offset.x() + local.x(); x++){
+		for(idx y = offset.y(); y < offset.y() + local.y(); y++){
+			for(idx z = offset.z(); z < offset.z() + local.z(); z++){
+				if(TransferFS(x,y,z))
+					setMap(x,y,z, CONFIG::BC::GEO_TRANSFER_FS);
+				if(TransferSF(x,y,z))	
+					setMap(x,y,z, CONFIG::BC::GEO_TRANSFER_SF);
+				if(TransferSW(x,y,z))
+					setMap(x,y,z, CONFIG::BC::GEO_TRANSFER_SW);
+			}
+		}
+	}		
+}
+
+template< typename CONFIG >
 void LBM_BLOCK<CONFIG>::setBoundaryX(idx x, map_t value)
 {
 	if (isLocalX(x))
@@ -141,7 +269,29 @@ template< typename CONFIG >
 bool LBM_BLOCK<CONFIG>::isFluid(idx x, idx y, idx z) const
 {
 	if (!isLocalIndex(x, y, z)) return false;
-	return CONFIG::BC::isFluid(hmap(x,y,z));
+	return CONFIG::BC::isFluid(map(x,y,z));
+}
+
+template< typename CONFIG >
+bool LBM_BLOCK<CONFIG>::isWall(idx x, idx y, idx z) const
+{
+	if (!isLocalIndex(x, y, z)) return false;
+	return CONFIG::BC::isWall(map(x,y,z));
+}
+
+template< typename CONFIG >
+bool LBM_BLOCK<CONFIG>::isSolid(idx x, idx y, idx z) const
+{
+	if (!isLocalIndex(x, y, z)) return false;
+	return CONFIG::BC::isSolid(map(x,y,z));
+}
+
+
+template< typename CONFIG >
+bool LBM_BLOCK<CONFIG>::isSolidPhase(idx x, idx y, idx z) const
+{
+	if (!isLocalIndex(x, y, z)) return false;
+	return CONFIG::BC::isSolidPhase(map(x,y,z));
 }
 
 template< typename CONFIG >
@@ -155,12 +305,16 @@ template< typename CONFIG >
 void  LBM_BLOCK<CONFIG>::copyMapToHost()
 {
 	hmap = dmap;
+	hdifmap = difmap;
+	transferDIR = dtransferDIR;	
 }
 
 template< typename CONFIG >
 void  LBM_BLOCK<CONFIG>::copyMapToDevice()
 {
 	dmap = hmap;
+	difmap = hdifmap;
+	dtransferDIR = transferDIR;
 }
 
 template< typename CONFIG >
@@ -366,9 +520,15 @@ void LBM_BLOCK<CONFIG>::allocateHostData()
 	}
 
 	hmap.setSizes(global.x(), global.y(), global.z());
+	hdifmap.setSizes(global.x(), global.y(), global.z());
+	transferDIR.setSizes(0, global.x(), global.y(), global.z());
 #ifdef HAVE_MPI
 	hmap.template setDistribution< 0 >(offset.x(), offset.x() + local.x(), communicator);
 	hmap.allocate();
+	hdifmap.template setDistribution< 0 >(offset.x(), offset.x() + local.x(), communicator);
+	hdifmap.allocate();
+	transferDIR.template setDistribution< 1 >(offset.x(), offset.x() + local.x(), communicator);
+	transferDIR.allocate();
 #endif
 
 	hmacro.setSizes(0, global.x(), global.y(), global.z());
@@ -391,9 +551,15 @@ void LBM_BLOCK<CONFIG>::allocateDeviceData()
 //#ifdef USE_CUDA
 #if 1
 	dmap.setSizes(global.x(), global.y(), global.z());
+	difmap.setSizes(global.x(), global.y(), global.z());
+	dtransferDIR.setSizes(0, global.x(), global.y(), global.z());
 	#ifdef HAVE_MPI
 	dmap.template setDistribution< 0 >(offset.x(), offset.x() + local.x(), communicator);
 	dmap.allocate();
+	difmap.template setDistribution< 0 >(offset.x(), offset.x() + local.x(), communicator);
+	difmap.allocate();
+	dtransferDIR.template setDistribution< 1 >(offset.x(), offset.x() + local.x(), communicator);
+	dtransferDIR.allocate();
 	#endif
 
 	for (uint8_t dfty=0;dfty<DFMAX;dfty++)
@@ -430,7 +596,9 @@ void LBM_BLOCK<CONFIG>::allocateDeviceData()
 	#endif
 	data.XYZ = data.indexer.getStorageSize();
 	data.dmap = dmap.getData();
+	data.difMap = difmap.getData();
 	data.dmacro = dmacro.getData();
+	data.dtransferDIR = dtransferDIR.getData();
 }
 
 template< typename CONFIG >

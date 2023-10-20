@@ -103,6 +103,13 @@ void LBM<CONFIG>::setMap(idx x, idx y, idx z, map_t value)
 }
 
 template< typename CONFIG >
+void LBM<CONFIG>::setBoundaryTransfer()
+{
+	for( auto& block : blocks )
+		block.setBoundaryTransfer();
+}
+
+template< typename CONFIG >
 void LBM<CONFIG>::setBoundaryX(idx x, map_t value)
 {
 	for( auto& block : blocks )
@@ -132,6 +139,32 @@ bool LBM<CONFIG>::isFluid(idx x, idx y, idx z)
 	return false;
 }
 
+template< typename CONFIG >
+bool LBM<CONFIG>::isWall(idx x, idx y, idx z)
+{
+	for( auto& block : blocks )
+		if (block.isWall(x, y, z))
+			return true;
+	return false;
+}
+
+template< typename CONFIG >
+bool LBM<CONFIG>::isSolid(idx x, idx y, idx z)
+{
+	for( auto& block : blocks )
+		if (block.isSolid(x, y, z))
+			return true;
+	return false;
+}
+
+template< typename CONFIG >
+bool LBM<CONFIG>::isSolidPhase(idx x, idx y, idx z)
+{
+	for( auto& block : blocks )
+		if (block.isSolidPhase(x, y, z))
+			return true;
+	return false;
+}
 
 template< typename CONFIG >
 void LBM<CONFIG>::resetMap(map_t geo_type)

@@ -22,9 +22,9 @@ struct State_NSE_ADE : State<NSE>
 	LBM<ADE> ade;
 
 	// constructor
-	State_NSE_ADE(const TNL::MPI::Comm& communicator, lat_t ilat, real iphysViscosity, real iphysDt, real iphysDiffusion)
+	State_NSE_ADE(const TNL::MPI::Comm& communicator, lat_t ilat, real iphysViscosity, real iphysDt, real iphysAirDiffusion, real iphysBodyDiffusion)
 		: State<NSE>(communicator, ilat, iphysViscosity, iphysDt),
-		  ade(communicator, ilat, iphysDiffusion, iphysDt)
+		  ade(communicator, ilat, iphysAirDiffusion, iphysDt)
 	{
 		// ADE allocation
 		ade.allocateHostData();
@@ -36,7 +36,6 @@ struct State_NSE_ADE : State<NSE>
 	{
 		nse.resetMap(NSE::BC::GEO_FLUID);
 		ade.resetMap(ADE::BC::GEO_FLUID);
-		this->setupBoundaries();
 
 		// reset lattice for NSE and ADE
 		// NOTE: it is important to reset *all* lattice sites (i.e. including ghost layers) when using the A-A pattern
@@ -44,9 +43,11 @@ struct State_NSE_ADE : State<NSE>
 		nse.forAllLatticeSites( [&] (BLOCK_NSE& block, idx x, idx y, idx z) {
 			block.setEqLat(x,y,z,1,0,0,0);//rho,vx,vy,vz);
 		} );
-		ade.forAllLatticeSites( [&] (BLOCK_ADE& block, idx x, idx y, idx z) {
-			block.setEqLat(x,y,z,0,0,0,0);//phi,vx,vy,vz);
-		} );
+		// ade.forAllLatticeSites( [&] (BLOCK_ADE& block, idx x, idx y, idx z) {
+		// 	block.setEqLat(x,y,z,0,0,0,0);//phi,vx,vy,vz);
+		// } );
+		this->setupBoundaries();
+
 	}
 
 	void SimInit() override

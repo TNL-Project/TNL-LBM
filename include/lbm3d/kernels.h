@@ -156,13 +156,13 @@ void LBMKernel(
 
 	// ADE part
 	typename ADE::template KernelStruct<dreal> ADE_KS;
-//	ADE_KS.vx = NSE_KS.vx;
-//	ADE_KS.vy = NSE_KS.vy;
-//	ADE_KS.vz = NSE_KS.vz;
+	ADE_KS.vx = NSE_KS.vx;
+	ADE_KS.vy = NSE_KS.vy;
+	ADE_KS.vz = NSE_KS.vz;
 	// NOTE: experiment 2022.04.06: interpolate momentum instead of velocity (LBM conserves momentum, not mass - RF mail 2022.04.01)
-	ADE_KS.vx = NSE_KS.rho * NSE_KS.vx;
-	ADE_KS.vy = NSE_KS.rho * NSE_KS.vy;
-	ADE_KS.vz = NSE_KS.rho * NSE_KS.vz;
+	// ADE_KS.vx = NSE_KS.rho * NSE_KS.vx;
+	// ADE_KS.vy = NSE_KS.rho * NSE_KS.vy;
+	// ADE_KS.vz = NSE_KS.rho * NSE_KS.vz;
 	// FIXME this depends on the e_qcrit macro
 //	ADE_KS.qcrit = NSE_SD.macro(NSE::MACRO::e_qcrit, x, y, z);
 //	ADE_KS.phigradmag2 = ADE_SD.macro(ADE::MACRO::e_phigradmag2, x, y, z);

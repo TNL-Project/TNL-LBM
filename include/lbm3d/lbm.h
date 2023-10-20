@@ -68,6 +68,9 @@ struct LBM
 	real lbm2physForce(real lbm_force) { return lbm_force * lat.physDl / physDt / physDt; }
 	real phys2lbmVelocity(real phys_velocity)  { return phys_velocity * physDt / lat.physDl; }
 	real phys2lbmForce(real phys_force) { return phys_force / lat.physDl * physDt * physDt; }
+	real phys2lbmDiffusion(real phys_diffusion) { return phys_diffusion * physDt / lat.physDl / lat.physDl; }
+	real phys2lbmTemperature(real phys_temperature) { return phys_temperature; }
+
 
 //	real physNormVelocity(idx gi) { return NORM( lbm2physVelocity(hvx[gi]), lbm2physVelocity(hvy[gi]), lbm2physVelocity(hvz[gi]) ); }
 //	real physNormVelocity(idx GX, idx GY, idx GZ) { return physNormVelocity(pos(GX,GY,GZ)); }
@@ -95,10 +98,15 @@ struct LBM
 
 	// Global methods - use GLOBAL indices !!!
 	void setMap(idx x, idx y, idx z, map_t value);
+	void setBoundaryTransfer();
 	void setBoundaryX(idx x, map_t value);
 	void setBoundaryY(idx y, map_t value);
 	void setBoundaryZ(idx z, map_t value);
+
 	bool isFluid(idx x, idx y, idx z);
+	bool isWall(idx x, idx y, idx z);
+	bool isSolid(idx x, idx y, idx z);
+	bool isSolidPhase(idx x, idx y, idx z);	
 
 	void resetMap(map_t geo_type);
 
