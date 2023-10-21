@@ -54,8 +54,8 @@ struct D3Q27_BC_All
 		if (mapgi == GEO_OUTFLOW_RIGHT)
 			xp = x = xm;
 
-		if(mapgi != GEO_SYM_TOP || mapgi != GEO_SYM_TOP_right)
-		STREAMING::streaming(SD,KS,xm,x,xp,ym,y,yp,zm,z,zp);
+		if(mapgi == GEO_INFLOW || mapgi == GEO_OUTFLOW_RIGHT || mapgi == GEO_WALL)
+			STREAMING::streaming(SD,KS,xm,x,xp,ym,y,yp,zm,z,zp);
 
 		// boundary conditions
 		switch (mapgi)
