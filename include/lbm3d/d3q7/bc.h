@@ -82,7 +82,7 @@ struct D3Q7_BC_All
 		if (mapgi == GEO_OUTFLOW_RIGHT)
 			xp = x = xm;
 
-		if(mapgi != GEO_TRANSFER_SF || mapgi != GEO_TRANSFER_FS || mapgi != GEO_TRANSFER_SW || mapgi != GEO_OUTFLOW_RIGHT || mapgi != GEO_SYM_TOP || mapgi != GEO_SYM_TOP_right)
+		if(mapgi != GEO_OUTFLOW_RIGHT || mapgi != GEO_SYM_TOP || mapgi != GEO_SYM_TOP_right)
 			STREAMING::streaming(SD,KS,xm,x,xp,ym,y,yp,zm,z,zp);
 
 		// boundary conditions
@@ -184,7 +184,7 @@ struct D3Q7_BC_All
 
 		case GEO_TRANSFER_FS: {
 			//Streaming
-			STREAMING::streaming(SD,KS,xm,x,xp,ym,y,yp,zm,z,zp);
+			// STREAMING::streaming(SD,KS,xm,x,xp,ym,y,yp,zm,z,zp);
 			dreal Temp[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 				Temp[0] = SD.df(df_cur,zzz,xp,y,z) + SD.df(df_cur,pzz,xp,y,z) + SD.df(df_cur,zpz,xp,y,z) + SD.df(df_cur,zzp,xp,y,z) + SD.df(df_cur,mzz,xp,y,z) + SD.df(df_cur,zmz,xp,y,z) +  SD.df(df_cur,zzm,xp,y,z);
 				Temp[1] = SD.df(df_cur,zzz,x,yp,z) + SD.df(df_cur,pzz,x,yp,z) + SD.df(df_cur,zpz,x,yp,z) + SD.df(df_cur,zzp,x,yp,z) + SD.df(df_cur,mzz,x,yp,z) + SD.df(df_cur,zmz,x,yp,z) +  SD.df(df_cur,zzm,x,yp,z);
@@ -193,8 +193,6 @@ struct D3Q7_BC_All
 				Temp[4] = SD.df(df_cur,zzz,x,ym,z) + SD.df(df_cur,pzz,x,ym,z) + SD.df(df_cur,zpz,x,ym,z) + SD.df(df_cur,zzp,x,ym,z) + SD.df(df_cur,mzz,x,ym,z) + SD.df(df_cur,zmz,x,ym,z) +  SD.df(df_cur,zzm,x,ym,z);
 				Temp[5] = SD.df(df_cur,zzz,x,y,zm) + SD.df(df_cur,pzz,x,y,zm) + SD.df(df_cur,zpz,x,y,zm) + SD.df(df_cur,zzp,x,y,zm) + SD.df(df_cur,mzz,x,y,zm) + SD.df(df_cur,zmz,x,y,zm) +  SD.df(df_cur,zzm,x,y,zm);
 				
-		//Otocit smery v SD.df
-			
 			if(SD.transferDir(pzz, x, y, z)){	KS.f[mzz] = SD.df(df_cur,pzz,x, y, z) + SD.C*(Temp[0] - SD.macro(0, x, y, z));}
 			if(SD.transferDir(zpz, x, y, z)){	KS.f[zmz] = SD.df(df_cur,zpz,x, y, z) + SD.C*(Temp[1] - SD.macro(0, x, y, z));}
 			if(SD.transferDir(zzp, x, y, z)){	KS.f[zzm] = SD.df(df_cur,zzp,x, y, z) + SD.C*(Temp[2] - SD.macro(0, x, y, z));}
@@ -207,7 +205,7 @@ struct D3Q7_BC_All
 			
 		case GEO_TRANSFER_SF: {
 			//Streaming
-			STREAMING::streaming(SD,KS,xm,x,xp,ym,y,yp,zm,z,zp);
+			// STREAMING::streaming(SD,KS,xm,x,xp,ym,y,yp,zm,z,zp);
 
 			dreal Temp[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 				Temp[0] = SD.df(df_cur,zzz,xp,y,z) + SD.df(df_cur,pzz,xp,y,z) + SD.df(df_cur,zpz,xp,y,z) + SD.df(df_cur,zzp,xp,y,z) + SD.df(df_cur,mzz,xp,y,z) + SD.df(df_cur,zmz,xp,y,z) +  SD.df(df_cur,zzm,xp,y,z);
@@ -230,7 +228,7 @@ struct D3Q7_BC_All
 
 			case GEO_TRANSFER_SW: {
 
-			STREAMING::streaming(SD,KS,xm,x,xp,ym,y,yp,zm,z,zp);
+			// STREAMING::streaming(SD,KS,xm,x,xp,ym,y,yp,zm,z,zp);
 			if(SD.transferDir(pzz, x, y, z))	KS.f[mzz] = SD.df(df_cur,pzz,x, y, z);//TNL::swap( KS.f[mzz], KS.f[pzz] );//KS.f[mzz] = SD.df(df_cur,pzz,x, y, z) + SD.C*(Temp[0] - SD.macro(0, x, y, z));
 			if(SD.transferDir(zpz, x, y, z))	KS.f[zmz] = SD.df(df_cur,zpz,x, y, z);//TNL::swap( KS.f[zmz], KS.f[zpz] );//KS.f[zmz] = SD.df(df_cur,zpz,x, y, z) + SD.C*(Temp[1] - SD.macro(0, x, y, z));
 			if(SD.transferDir(zzp, x, y, z))	KS.f[zzm] = SD.df(df_cur,zzp,x, y, z);//TNL::swap( KS.f[zzm], KS.f[zzp] );//KS.f[zzm] = SD.df(df_cur,zzp,x, y, z) + SD.C*(Temp[2] - SD.macro(0, x, y, z));
