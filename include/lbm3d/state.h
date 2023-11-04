@@ -155,6 +155,16 @@ struct State
 	void write1Dcut_Y(idx y, idx z, const std::string& fname);
 	void write1Dcut_Z(idx x, idx y, const std::string& fname);
 
+
+	template< typename... ARGS >
+	void WriteTempAVG(const char* filename, dreal AvgTemp, double height, double width, double res);
+	
+	template< typename... ARGS >
+	void WriteTempInFile(const char* filename, dreal AvgTemp, double height, double width, double res, double physDt, double physDl, double physDif, double transfer, double vel, double time);
+
+
+
+
 	int verbosity=1;
 	std::string id = "default";
 
