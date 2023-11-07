@@ -54,7 +54,7 @@ struct D3Q27_BC_All
 		if (mapgi == GEO_OUTFLOW_RIGHT)
 			xp = x = xm;
 
-		if(mapgi == GEO_INFLOW || mapgi == GEO_OUTFLOW_RIGHT || mapgi == GEO_WALL)
+		// if(mapgi == GEO_INFLOW || mapgi == GEO_OUTFLOW_RIGHT || mapgi == GEO_WALL  || mapgi == GEO_FLUID)
 			STREAMING::streaming(SD,KS,xm,x,xp,ym,y,yp,zm,z,zp);
 
 		// boundary conditions

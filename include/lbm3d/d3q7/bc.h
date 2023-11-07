@@ -82,7 +82,7 @@ struct D3Q7_BC_All
 		if (mapgi == GEO_OUTFLOW_RIGHT)
 			xp = x = xm;
 
-		if(mapgi == GEO_INFLOW || mapgi == GEO_WALL || mapgi == GEO_WALL_BODY || mapgi == GEO_TRANSFER_FS || mapgi == GEO_TRANSFER_SF || mapgi == GEO_TRANSFER_SW)
+		// if(mapgi == GEO_INFLOW || mapgi == GEO_WALL || mapgi == GEO_WALL_BODY || mapgi == GEO_TRANSFER_FS || mapgi == GEO_TRANSFER_SF || mapgi == GEO_TRANSFER_SW || mapgi == GEO_FLUID)
 			STREAMING::streaming(SD,KS,xm,x,xp,ym,y,yp,zm,z,zp);
 
 		// boundary conditions
