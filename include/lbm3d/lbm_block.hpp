@@ -250,6 +250,7 @@ void LBM_BLOCK<CONFIG>::setBoundaryX(idx x, map_t value)
 template< typename CONFIG >
 void LBM_BLOCK<CONFIG>::setBoundaryY(idx y, map_t value)
 {
+	std::cout << "Heyda and y value: " << y << " and wall: " <<  value << std::endl;
 	if (isLocalY(y))
 		for (idx x = offset.x(); x < offset.x() + local.x(); x++)
 		for (idx z = offset.z(); z < offset.z() + local.z(); z++)
