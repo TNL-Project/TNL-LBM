@@ -112,13 +112,10 @@ void LBM_BLOCK<CONFIG>::setMap(idx x, idx y, idx z, map_t value)
 
 template< typename CONFIG >
 void LBM_BLOCK<CONFIG>::setBoundaryTransfer()
-{
-			std::cout << "Hey" << std::endl;
-	
+{	
 	TransferFS.setSizes(global.x(), global.y(), global.z());
 	TransferSF.setSizes(global.x(), global.y(), global.z());
 	TransferSW.setSizes(global.x(), global.y(), global.z());
-			std::cout << "He" << std::endl;
 
 	#ifdef HAVE_MPI
 	TransferFS.template setDistribution< 0 >(offset.x(), offset.x() + local.x(), communicator);
@@ -128,7 +125,6 @@ void LBM_BLOCK<CONFIG>::setBoundaryTransfer()
 	TransferSW.template setDistribution< 0 >(offset.x(), offset.x() + local.x(), communicator);
 	TransferSW.allocate();
 	#endif
-		std::cout << "Heyda" << std::endl;
 
 	for(idx x = offset.x(); x < offset.x() + local.x(); x++)
 	for(idx y = offset.y(); y < offset.y() + local.y(); y++)
@@ -250,7 +246,6 @@ void LBM_BLOCK<CONFIG>::setBoundaryX(idx x, map_t value)
 template< typename CONFIG >
 void LBM_BLOCK<CONFIG>::setBoundaryY(idx y, map_t value)
 {
-	std::cout << "Heyda and y value: " << y << " and wall: " <<  value << std::endl;
 	if (isLocalY(y))
 		for (idx x = offset.x(); x < offset.x() + local.x(); x++)
 		for (idx z = offset.z(); z < offset.z() + local.z(); z++)

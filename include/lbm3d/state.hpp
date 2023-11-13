@@ -212,48 +212,42 @@ void State<NSE>::writeVTK_Surface(const char* name, real time, int cycle, Lagran
 
 template< typename NSE >
 template< typename... ARGS >
-void State<NSE>::WriteTempAVG(const char* filename, dreal AvgTemp, double height, double width, double res)
+void State<NSE>::WriteTempAVG(dreal AvgTemp, int res)
 {
-	std::cout << "this is a beginning of th writetempavg func." << std::endl;
-		// char dir[FILENAME_CHARS];
-		// sprintf(dir,"RESULTS_%s/TEMP", problem_Id);
-		// mkdir(dir,0755);
+	const std::string dir = fmt::format("results_{}/LOG", id);
+	mkdir(dir.c_str(), 0777);
+	const std::string fname = fmt::format("results_{}/LOG/Temp_log{}", id, res);
+	create_file(fname.c_str());
 
-		// char fname[FILENAME_CHARS];
-		// sprintf(fname,"RESULTS_%s/TEMP/TempLog_%.0lf", problem_Id, res);
-		// create_file(fname);
 
-		// FILE*f = fopen(fname,"at");
-		// if (f==0) {
-		// 	printf("Unable to create/access file %s", fname);
-		// 	return;
-		// }
+	FILE*f = fopen(fname.c_str(),"at");
+	if (f==0) {
+		log("Unable to create/access file {}", fname.c_str());
+		return;
+	}
 
-		// fprintf(f, "%.0f x %.0f \t %e\n", height, width, AvgTemp);
-		// fclose(f);
+	fprintf(f, "%e \t %d\n", AvgTemp, res);
+	fclose(f);
 }
 
 template< typename NSE >
 template< typename... ARGS >
-void State<NSE>::WriteTempInFile(const char* filename, dreal AvgTemp, double height, double width, double res, double physDt, double physDl, double physDif, double transfer, double vel, double time)
+void State<NSE>::WriteTempInFile(dreal AvgTemp, int res, double physDt, double physDl, double physDif, double transfer, double vel, double time)
 {
-	std::cout << "this is a beginning of th writetempinfile func." << std::endl;
-		// char dir[FILENAME_CHARS];
-		// sprintf(dir,"RESULTS_%s/LOG", problem_Id);
-		// mkdir(dir,0755);
+	const std::string dir = fmt::format("results_{}/LOG", id);
+	mkdir(dir.c_str(), 0777);
+	const std::string fname = fmt::format("results_{}/LOG/Log_res{}", id, res);
+	create_file(fname.c_str());
 
-		// char fname[FILENAME_CHARS];
-		// sprintf(fname,"RESULTS_%s/LOG/Log_res%.0lf", problem_Id, res);
-		// create_file(fname);
 
-		// FILE*f = fopen(fname,"at");
-		// if (f==0) {
-		// 	printf("Unable to create/access file %s", fname);
-		// 	return;
-		// }
+	FILE*f = fopen(fname.c_str(),"at");
+	if (f==0) {
+		log("Unable to create/access file {}", fname.c_str());
+		return;
+	}
 
-		// fprintf(f, "%.0f x %.0f \t %e \t %e \t %e \t %e \t %e \t %e \t %e \t %e\n", height, width, AvgTemp, res, physDt, physDl, physDif, transfer, vel, time);
-		// fclose(f);
+	fprintf(f, "%e \t %d \t %e \t %e \t %e \t %e \t %e \t %e\n", AvgTemp, res, physDt, physDl, physDif, transfer, vel, time);
+	fclose(f);
 }
 
 

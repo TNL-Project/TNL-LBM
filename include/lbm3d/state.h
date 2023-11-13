@@ -157,12 +157,10 @@ struct State
 
 
 	template< typename... ARGS >
-	void WriteTempAVG(const char* filename, dreal AvgTemp, double height, double width, double res);
+	void WriteTempAVG(dreal AvgTemp, int res);
 	
 	template< typename... ARGS >
-	void WriteTempInFile(const char* filename, dreal AvgTemp, double height, double width, double res, double physDt, double physDl, double physDif, double transfer, double vel, double time);
-
-
+	void WriteTempInFile(dreal AvgTemp, int res, double physDt, double physDl, double physDif, double transfer, double vel, double time);
 
 
 	int verbosity=1;
