@@ -250,6 +250,87 @@ void State<NSE>::WriteTempInFile(dreal AvgTemp, int res, double physDt, double p
 	fclose(f);
 }
 
+template< typename NSE >
+template< typename... ARGS >
+void State<NSE>::WriteMean(char direction, dreal *mean, int numY, int numX, int numZ)
+{
+	const std::string dir = fmt::format("results_{}", id);
+	mkdir(dir.c_str(), 0777);
+	const std::string fname = fmt::format("results_{}/MeanVelocity_{}", id, direction);
+	create_file(fname.c_str());
+
+	FILE*f = fopen(fname.c_str(),"at");
+	if (f==0) {
+		log("Unable to create/access file {}", fname.c_str());
+		return;
+	}
+
+
+	for(int y = 0; y<= numY; y++) {
+		for(int z = 0; z<=  numZ; z++) {
+			for(int x = 0; x<= numX; x++) {
+				fprintf(f, "\t %e", mean[this->IndexKolmo(x,y,z)]);
+			}
+			fprintf(f, "\n");
+		}
+		fprintf(f, "\n");
+	}
+	
+	fclose(f);
+}
+
+template< typename NSE >
+template< typename... ARGS >
+int State<NSE>::IndexKolmo(int x, int y, int z)
+{
+	return 0;
+}
+
+template< typename NSE >
+template< typename... ARGS >
+void State<NSE>::ComputeMean(int IterNum, dreal velocity, dreal &suma, dreal &Mean)
+{
+	
+	suma += velocity;
+	
+	Mean = suma / (IterNum);
+
+	std::cout << "IterNum: " << IterNum << std::endl;
+	std::cout << "Velocity: " << velocity << std::endl;
+	std::cout << "Suma: " << suma << std::endl;
+	std::cout << "Mean: " << Mean << std::endl;
+
+}
+
+template< typename NSE >
+template< typename... ARGS >
+void State<NSE>::ComputeFluctuation(dreal velocity, dreal mean, dreal &fluctuation)
+{
+	std::cout << "psik" << std::endl;
+	
+	fluctuation = mean - velocity;
+
+	std::cout << "Mean: " << mean << std::endl;
+	std::cout << "Velocity: " << velocity << std::endl;
+	std::cout << "Fluctuation: " << fluctuation << std::endl;
+
+	std::cout << "konec psik" << std::endl;
+}
+
+template< typename NSE >
+template< typename... ARGS >
+void State<NSE>::ComputeFlucDerivative(dreal *fluctuation, dreal &flucDerivative, int mx)
+{
+	std::cout << "Vlevo je flu: " << fluctuation[mx-1] << std::endl;
+	std::cout << "Stred je flu: " << fluctuation[mx] << std::endl;
+	std::cout << "Vpravo je flu: " << fluctuation[mx+1] << std::endl;
+	std::cout << "PhysDl: " << nse.lat.physDl << std::endl;
+
+	flucDerivative = (fluctuation[mx+1] - fluctuation[mx-1])/ (2*nse.lat.physDl);
+	std::cout << "Derivative in " << mx << " is: " << flucDerivative << std::endl;
+}
+
+
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                                                                                                                                                                                                //
