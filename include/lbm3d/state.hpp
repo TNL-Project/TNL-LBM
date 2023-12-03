@@ -269,7 +269,7 @@ void State<NSE>::WriteMean(char direction, dreal *mean, int numY, int numX, int 
 	for(int y = 0; y<= numY; y++) {
 		for(int z = 0; z<=  numZ; z++) {
 			for(int x = 0; x<= numX; x++) {
-				fprintf(f, "\t %e", mean[this->IndexKolmo(x,y,z)]);
+				fprintf(f, "\t %.10e", mean[this->IndexKolmo(x,y,z)]);
 			}
 			fprintf(f, "\n");
 		}
