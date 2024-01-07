@@ -1,6 +1,7 @@
 #pragma once
 
 #include "state.h"
+#include <curl/curl.h>
 
 #include "lbm_common/png_tool.h"
 #include "lbm_common/fileutils.h"
@@ -252,28 +253,26 @@ void State<NSE>::WriteTempInFile(dreal AvgTemp, int res, double physDt, double p
 
 template< typename NSE >
 template< typename... ARGS >
-void State<NSE>::WriteMean(char direction, dreal *mean, int numY, int numX, int numZ)
+void State<NSE>::WriteMean(std::string direction, dreal *mean, int numY, int numX, int numZ)
 {
 	const std::string dir = fmt::format("results_{}", id);
 	mkdir(dir.c_str(), 0777);
-	const std::string fname = fmt::format("results_{}/MeanVelocity_{}", id, direction);
+	const std::string fname = fmt::format("results_{}/{}", id, direction);
 	create_file(fname.c_str());
 
-	FILE*f = fopen(fname.c_str(),"at");
+	FILE*f = fopen(fname.c_str(),"wt");
 	if (f==0) {
 		log("Unable to create/access file {}", fname.c_str());
 		return;
 	}
 
-
-	for(int y = 0; y<= numY; y++) {
-		for(int z = 0; z<=  numZ; z++) {
-			for(int x = 0; x<= numX; x++) {
-				fprintf(f, "\t %.10e", mean[this->IndexKolmo(x,y,z)]);
+	for(int y = 0; y < numY; y++) {
+		for(int z = 0; z<  numZ; z++) {
+			for(int x = 0; x< numX; x++) {
+				fprintf(f, "\t %.10e", mean[this->IndexKolmo(x,y,z, numX, numY)]);
 			}
 			fprintf(f, "\n");
 		}
-		fprintf(f, "\n");
 	}
 	
 	fclose(f);
@@ -281,53 +280,68 @@ void State<NSE>::WriteMean(char direction, dreal *mean, int numY, int numX, int 
 
 template< typename NSE >
 template< typename... ARGS >
-int State<NSE>::IndexKolmo(int x, int y, int z)
+void State<NSE>::ReadMean(char filename, dreal *mean)
 {
-	return 0;
+    // Open the file
+	const std::string fname = fmt::format("results_{}/MeanVelocity_{}", id, filename);
+    std::ifstream inputFile(fname.c_str());
+
+	std::cout << fname.c_str() << std::endl;
+    // Check if the file is open
+    if (!inputFile.is_open()) {
+        std::cerr << "Error opening file\n";
+        return; // return an error code
+    }
+
+	int i = 0;
+    dreal value;
+ 	while (inputFile >> value) {		
+		mean[i] = (dreal)value;
+		i++;
+    }
+
+    // Close the file
+    inputFile.close();
 }
+
 
 template< typename NSE >
 template< typename... ARGS >
-void State<NSE>::ComputeMean(int IterNum, dreal velocity, dreal &suma, dreal &Mean)
+int State<NSE>::IndexKolmo(int x, int y, int z, int numX, int numY)
 {
-	
+	return x+y*numX+z*numX*numY;
+}
+
+template< typename dreal >
+void ComputeMean(int IterNum, dreal velocity, dreal &suma, dreal &Mean)
+{
 	suma += velocity;
-	
 	Mean = suma / (IterNum);
-
-	std::cout << "IterNum: " << IterNum << std::endl;
-	std::cout << "Velocity: " << velocity << std::endl;
-	std::cout << "Suma: " << suma << std::endl;
-	std::cout << "Mean: " << Mean << std::endl;
-
 }
 
-template< typename NSE >
-template< typename... ARGS >
-void State<NSE>::ComputeFluctuation(dreal velocity, dreal mean, dreal &fluctuation)
-{
-	std::cout << "psik" << std::endl;
-	
+template< typename dreal >
+void ComputeFluctuation(dreal velocity, dreal mean, dreal &fluctuation)
+{	
 	fluctuation = mean - velocity;
-
-	std::cout << "Mean: " << mean << std::endl;
-	std::cout << "Velocity: " << velocity << std::endl;
-	std::cout << "Fluctuation: " << fluctuation << std::endl;
-
-	std::cout << "konec psik" << std::endl;
 }
 
 template< typename NSE >
 template< typename... ARGS >
-void State<NSE>::ComputeFlucDerivative(dreal *fluctuation, dreal &flucDerivative, int mx)
+void State<NSE>::ComputeFlucDerivative(dreal Zfluc, dreal &flucDerivative, dreal Pfluc, dreal Mfluc)
 {
-	std::cout << "Vlevo je flu: " << fluctuation[mx-1] << std::endl;
-	std::cout << "Stred je flu: " << fluctuation[mx] << std::endl;
-	std::cout << "Vpravo je flu: " << fluctuation[mx+1] << std::endl;
-	std::cout << "PhysDl: " << nse.lat.physDl << std::endl;
+	// std::cout << "Vlevo je flu: " << Mfluc << std::endl;
+	// std::cout << "Stred je flu: " << Zfluc << std::endl;
+	// std::cout << "Vpravo je flu: " << Pfluc << std::endl;
+	// std::cout << "PhysDl: " << nse.lat.physDl << std::endl;
+	flucDerivative = (Pfluc - Mfluc) / (2*nse.lat.physDl);
+	// std::cout << "Derivative is: " << flucDerivative << std::endl;
+}
 
-	flucDerivative = (fluctuation[mx+1] - fluctuation[mx-1])/ (2*nse.lat.physDl);
-	std::cout << "Derivative in " << mx << " is: " << flucDerivative << std::endl;
+
+size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* output) {
+    size_t total_size = size * nmemb;
+    output->append(static_cast<char*>(contents), total_size);
+    return total_size;
 }
 
 

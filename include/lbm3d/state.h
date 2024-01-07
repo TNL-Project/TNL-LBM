@@ -163,19 +163,16 @@ struct State
 	void WriteTempInFile(dreal AvgTemp, int res, double physDt, double physDl, double physDif, double transfer, double vel, double time);
 
 	template< typename... ARGS >
-	void ComputeMean(int IterNum, dreal velocity, dreal &suma, dreal &Mean);
+	void ComputeFlucDerivative(dreal Zfluc, dreal &flucDerivative, dreal Pfluc, dreal Mfluc);
 
 	template< typename... ARGS >
-	void ComputeFluctuation(dreal velocity, dreal mean, dreal &fluctuation);
+	void WriteMean(std::string direction, dreal *mean, int numY, int numX, int numZ);
 
 	template< typename... ARGS >
-	void ComputeFlucDerivative(dreal *fluctuation, dreal &flucDerivative, int mx);
+	void ReadMean(char filename, dreal *mean);
 
 	template< typename... ARGS >
-	void WriteMean(char direction, dreal *mean, int numY, int numX, int numZ);
-
-	template< typename... ARGS >
-	int IndexKolmo(int x, int y, int z);
+	int IndexKolmo(int x, int y, int z, int numX, int numY);
 
 	int verbosity=1;
 	std::string id = "default";
