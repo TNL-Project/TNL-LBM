@@ -253,6 +253,21 @@ void State<NSE>::WriteTempInFile(dreal AvgTemp, int res, double physDt, double p
 
 template< typename NSE >
 template< typename... ARGS >
+void State<NSE>::ComputeKolmogorov(dreal &kolmo_sc, dreal meanFluDerxx, dreal meanFluDerxy, dreal meanFluDerxz, dreal meanFluDeryy, dreal meanFluDeryz, dreal meanFluDerzz)
+{
+	dreal mu = 1.552e-5;
+	kolmo_sc = mu*( 
+					2*(meanFluDerxx)    
+					+2*(meanFluDeryy)
+					+2*(meanFluDerzz)
+					+(meanFluDerxy)
+					+(meanFluDerxz)
+					+(meanFluDeryz)
+				);
+}
+
+template< typename NSE >
+template< typename... ARGS >
 void State<NSE>::WriteMean(std::string direction, dreal *mean, int numY, int numX, int numZ)
 {
 	const std::string dir = fmt::format("results_{}", id);

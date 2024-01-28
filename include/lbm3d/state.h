@@ -172,6 +172,9 @@ struct State
 	void ReadMean(char filename, dreal *mean);
 
 	template< typename... ARGS >
+	void ComputeKolmogorov(dreal &kolmo_sc, dreal meanFluDerxx, dreal meanFluDerxy, dreal meanFluDerxz, dreal meanFluDeryy, dreal meanFluDeryz, dreal meanFluDerzz);
+
+	template< typename... ARGS >
 	int IndexKolmo(int x, int y, int z, int numX, int numY);
 
 	int verbosity=1;
