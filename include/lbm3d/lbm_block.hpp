@@ -249,9 +249,9 @@ void LBM_BLOCK<CONFIG>::copyForcesToDevice()
 {
 	// FIXME: overlaps
 	#ifdef USE_CUDA
-	cudaMemcpy(dfx(), hfx(), local.x()*local.y()*local.z()*sizeof(dreal), cudaMemcpyHostToDevice);
-	cudaMemcpy(dfy(), hfy(), local.x()*local.y()*local.z()*sizeof(dreal), cudaMemcpyHostToDevice);
-	cudaMemcpy(dfz(), hfz(), local.x()*local.y()*local.z()*sizeof(dreal), cudaMemcpyHostToDevice);
+	TNL::Backend::memcpy(dfx(), hfx(), local.x()*local.y()*local.z()*sizeof(dreal), TNL::Backend::MemcpyHostToDevice);
+	TNL::Backend::memcpy(dfy(), hfy(), local.x()*local.y()*local.z()*sizeof(dreal), TNL::Backend::MemcpyHostToDevice);
+	TNL::Backend::memcpy(dfz(), hfz(), local.x()*local.y()*local.z()*sizeof(dreal), TNL::Backend::MemcpyHostToDevice);
 	TNL_CHECK_CUDA_DEVICE;
 	#endif
 }

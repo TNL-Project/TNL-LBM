@@ -31,7 +31,7 @@
 using TNLMPI_INIT = TNL::MPI::ScopedInitializer;
 
 
-#ifdef __CUDACC__
+#if defined(__CUDACC__) || defined(__HIP__)
 	#define CUDA_HOSTDEV __host__ __device__
 #else
 	#define CUDA_HOSTDEV
@@ -40,7 +40,6 @@ using TNLMPI_INIT = TNL::MPI::ScopedInitializer;
 #ifdef USE_CUDA
 	#include <cuda_profiler_api.h>
 #endif
-
 
 // number of dist. functions, default=2
 // quick fix, use templates to define DFMAX ... through TRAITS maybe ?
