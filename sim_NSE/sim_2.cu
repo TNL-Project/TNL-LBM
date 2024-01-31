@@ -353,7 +353,11 @@ int sim02(int RES=1, bool use_forcing=true, Scaling scaling=STRONG_SCALING)
 
 		// allocate array for the inflow profile
 		#ifdef USE_CUDA
+			#if defined(__CUDACC__)
 			cudaMalloc((void**)&state.nse.blocks.front().data.vx_profile, state.nse.blocks.front().local.y()*state.nse.blocks.front().local.z()*sizeof(dreal));
+			#elif defined(__HIP__)
+			TNL_BACKEND_SAFE_CALL(hipMalloc((void**)&state.nse.blocks.front().data.vx_profile, state.nse.blocks.front().local.y()*state.nse.blocks.front().local.z()*sizeof(dreal)));
+			#endif
 		#else
 			state.nse.blocks.front().data.vx_profile = new dreal[state.nse.blocks.front().local.y()*state.nse.blocks.front().local.z()];
 		#endif
@@ -404,7 +408,11 @@ int sim02(int RES=1, bool use_forcing=true, Scaling scaling=STRONG_SCALING)
 	if (state.nse.blocks.front().data.vx_profile)
 	{
 		#ifdef USE_CUDA
+			#if defined(__CUDACC__)
 			cudaFree(state.nse.blocks.front().data.vx_profile);
+			#elif defined(__HIP__)
+			TNL_BACKEND_SAFE_CALL(hipFree(state.nse.blocks.front().data.vx_profile));
+			#endif
 		#else
 			delete[] state.nse.blocks.front().data.vx_profile;
 		#endif
