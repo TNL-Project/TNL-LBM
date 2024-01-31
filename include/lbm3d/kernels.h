@@ -93,7 +93,24 @@ void LBMKernel(
 	idx xp,xm,yp,ym,zp,zm;
 	kernelInitIndices<NSE>(SD,gi_map,nproc,x,y,z,xp,xm,yp,ym,zp,zm);
 
+	#if defined(USE_CUDA)
+	// assume that the LBM kernel is always used with 256 threads for SP and 128 threads for DP
+	constexpr int max_threads = 256 / (sizeof(dreal) / sizeof(float));
+
+	union Shared
+	{
+		typename NSE::template KernelStruct<dreal> __KS[max_threads];
+
+		// initialization is not allowed for __shared__ variables, so we need to
+		// disable initialization in the implicit default constructor
+		__device__
+		Shared() {}
+	};
+	__shared__ Shared storage;
+	auto& KS = storage.__KS[threadIdx.x + blockDim.x * threadIdx.y + blockDim.x * blockDim.y * threadIdx.z];
+	#else
 	typename NSE::template KernelStruct<dreal> KS;
+	#endif
 
 	// copy quantities
 	NSE::MACRO::copyQuantities(SD, KS, x, y, z);
