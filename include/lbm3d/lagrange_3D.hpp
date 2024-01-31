@@ -149,7 +149,8 @@ typename LBM::TRAITS::real Lagrange3D<LBM>::diracDelta(int i, typename LBM::TRAI
 template< typename LBM >
 void Lagrange3D<LBM>::constructWuShuMatricesSparse()
 {
-
+// TODO: not ported to HIP
+#if 0
 	if (ws_constructed) return;
 	ws_constructed=true;
 
@@ -494,6 +495,7 @@ void Lagrange3D<LBM>::constructWuShuMatricesSparse()
 	delete [] vx;
 	fmt::print("wushu construct loop 4: end\n");
 	#endif
+#endif
 }
 
 

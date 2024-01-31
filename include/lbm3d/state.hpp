@@ -1350,6 +1350,8 @@ void State<NSE>::SimUpdate()
 		return;
 	}
 
+// TODO: port the immersed boundary method to HIP
+#if 0
 	// flags
 	bool doComputeVelocitiesStar=false;
 	bool doCopyQuantitiesStarToHost=false;
@@ -1436,6 +1438,7 @@ void State<NSE>::SimUpdate()
 	{
 		nse.copyForcesToDevice();
 	}
+#endif
 
 
 	// call hook method (used e.g. for extra kernels in the non-Newtonian model)
