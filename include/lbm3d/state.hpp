@@ -233,7 +233,7 @@ void State<NSE>::WriteTempAVG(dreal AvgTemp, int res)
 
 template< typename NSE >
 template< typename... ARGS >
-void State<NSE>::WriteTempInFile(dreal AvgTemp, int res, double physDt, double physDl, double physDif, double transfer, double vel, double time)
+void State<NSE>::WriteTempInFile(dreal AvgTemp, int res, double physDt, double physDl, double physDif, double transfer, double vel, double time, double bodyDif)
 {
 	const std::string dir = fmt::format("results_{}/LOG", id);
 	mkdir(dir.c_str(), 0777);
@@ -247,7 +247,7 @@ void State<NSE>::WriteTempInFile(dreal AvgTemp, int res, double physDt, double p
 		return;
 	}
 
-	fprintf(f, "%e \t %d \t %e \t %e \t %e \t %e \t %e \t %e\n", AvgTemp, res, physDt, physDl, physDif, transfer, vel, time);
+	fprintf(f, "%e \t %d \t %e \t %e \t %e \t %e \t %e \t %e\n", AvgTemp, res, physDt, physDl, physDif, transfer, vel, time, bodyDif);
 	fclose(f);
 }
 
@@ -255,15 +255,16 @@ template< typename NSE >
 template< typename... ARGS >
 void State<NSE>::ComputeKolmogorov(dreal &kolmo_sc, dreal meanFluDerxx, dreal meanFluDerxy, dreal meanFluDerxz, dreal meanFluDeryy, dreal meanFluDeryz, dreal meanFluDerzz)
 {
-	dreal mu = 1.552e-5;
-	kolmo_sc = mu*( 
-					2*(meanFluDerxx)    
+	dreal nu = 1.552e-5;
+	dreal sqnu = pow(nu,0.5); 
+	kolmo_sc = sqnu/(pow((
+					2*(meanFluDerxx)
 					+2*(meanFluDeryy)
 					+2*(meanFluDerzz)
 					+(meanFluDerxy)
 					+(meanFluDerxz)
 					+(meanFluDeryz)
-				);
+				),0.25));
 }
 
 template< typename NSE >
