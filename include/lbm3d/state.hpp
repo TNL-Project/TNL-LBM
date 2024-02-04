@@ -247,7 +247,7 @@ void State<NSE>::WriteTempInFile(dreal AvgTemp, int res, double physDt, double p
 		return;
 	}
 
-	fprintf(f, "%e \t %d \t %e \t %e \t %e \t %e \t %e \t %e\n", AvgTemp, res, physDt, physDl, physDif, transfer, vel, time, bodyDif);
+	fprintf(f, "%e \t %d \t %e \t %e \t %e \t %e \t %e \t %e \t %e\n", AvgTemp, res, physDt, physDl, physDif, transfer, vel, time, bodyDif);
 	fclose(f);
 }
 
