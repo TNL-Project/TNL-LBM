@@ -231,7 +231,7 @@ void LBM_BLOCK<CONFIG>::setBoundaryTransfer()
 					setMap(x,y,z, CONFIG::BC::GEO_TRANSFER_SW);
 			}
 		}
-	}		
+	}
 }
 
 template< typename CONFIG >

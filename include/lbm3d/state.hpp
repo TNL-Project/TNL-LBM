@@ -210,7 +210,6 @@ void State<NSE>::writeVTK_Surface(const char* name, real time, int cycle, Lagran
 	fclose(fp);
 }
 
-
 template< typename NSE >
 template< typename... ARGS >
 void State<NSE>::WriteTempAVG(dreal AvgTemp, int res)
@@ -228,6 +227,26 @@ void State<NSE>::WriteTempAVG(dreal AvgTemp, int res)
 	}
 
 	fprintf(f, "%e \t %d\n", AvgTemp, res);
+	fclose(f);
+}
+
+template< typename NSE >
+template< typename... ARGS >
+void State<NSE>::WriteTempMinMax(dreal minTem, dreal maxTem, int res, double time)
+{
+	const std::string dir = fmt::format("results_{}/LOG", id);
+	mkdir(dir.c_str(), 0777);
+	const std::string fname = fmt::format("results_{}/LOG/MinMax_temp{}", id, res);
+	create_file(fname.c_str());
+
+
+	FILE*f = fopen(fname.c_str(),"at");
+	if (f==0) {
+		log("Unable to create/access file {}", fname.c_str());
+		return;
+	}
+
+	fprintf(f, "%d \t %e \t %e \t %e\n", res, minTem, maxTem, time);
 	fclose(f);
 }
 
@@ -285,6 +304,33 @@ void State<NSE>::WriteMean(std::string direction, dreal *mean, int numY, int num
 	for(int y = 0; y < numY; y++) {
 		for(int z = 0; z<  numZ; z++) {
 			for(int x = 0; x< numX; x++) {
+				fprintf(f, "\t %.10e", mean[this->IndexKolmo(x,y,z, numX, numY)]);
+			}
+			fprintf(f, "\n");
+		}
+	}
+	
+	fclose(f);
+}
+
+template< typename NSE >
+template< typename... ARGS >
+void State<NSE>::WriteTempArr(std::string direction, dreal *mean, int numY, int numX, int numZ)
+{
+	const std::string dir = fmt::format("results_{}", id);
+	mkdir(dir.c_str(), 0777);
+	const std::string fname = fmt::format("results_{}/{}", id, direction);
+	create_file(fname.c_str());
+
+	FILE*f = fopen(fname.c_str(),"wt");
+	if (f==0) {
+		log("Unable to create/access file {}", fname.c_str());
+		return;
+	}
+
+	for(int y = 1; y < numY-1; y++) {
+		for(int z = 1; z<  numZ-1; z++) {
+			for(int x = 1; x< numX-1; x++) {
 				fprintf(f, "\t %.10e", mean[this->IndexKolmo(x,y,z, numX, numY)]);
 			}
 			fprintf(f, "\n");
@@ -1791,6 +1837,7 @@ void State<NSE>::AfterSimUpdate()
 	    cnt[VTK3DCUT].action(nse.physTime()) ||
 	    cnt[PROBE1].action(nse.physTime()) ||
 	    cnt[PROBE2].action(nse.physTime()) ||
+	    cnt[PROBE5].action(nse.physTime()) ||
 	    cnt[PROBE3].action(nse.physTime())
 	    )
 	{
@@ -1807,6 +1854,12 @@ void State<NSE>::AfterSimUpdate()
 		{
 			probe2();
 			cnt[PROBE2].count++;
+		}
+		// probe5
+		if (cnt[PROBE5].action(nse.physTime()))
+		{
+			probe5();
+			cnt[PROBE5].count++;
 		}
 		// probe3
 		if (cnt[PROBE3].action(nse.physTime()))

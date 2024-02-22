@@ -68,7 +68,7 @@ struct counter
 	bool action(REAL time) { return (period>0 && time >= count * period) ? true : false; }
 };
 
-enum { STAT_RESET, STAT2_RESET, PRINT, VTK1D, VTK2D, VTK3D, PROBE1, PROBE2, PROBE3, SAVESTATE, VTK3DCUT, MAX_COUNTER };
+enum { STAT_RESET, STAT2_RESET, PRINT, VTK1D, VTK2D, VTK3D, PROBE1, PROBE2, PROBE5, PROBE3, SAVESTATE, VTK3DCUT, MAX_COUNTER };
 enum { MemoryToFile, FileToMemory };
 
 
@@ -112,6 +112,7 @@ struct State
 	T_COUNTER cnt[MAX_COUNTER];
 	virtual void probe1() {  }
 	virtual void probe2() {  }
+	virtual void probe5() {  }
 	virtual void probe3() {  }
 	virtual void statReset() { }
 	virtual void stat2Reset() { }
@@ -158,6 +159,9 @@ struct State
 
 	template< typename... ARGS >
 	void WriteTempAVG(dreal AvgTemp, int res);
+
+	template< typename... ARGS >
+	void WriteTempMinMax(dreal minTem, dreal maxTem, int res, double time);
 	
 	template< typename... ARGS >
 	void WriteTempInFile(dreal AvgTemp, int res, double physDt, double physDl, double physDif, double transfer, double vel, double time, double bodyDif);
@@ -167,6 +171,9 @@ struct State
 
 	template< typename... ARGS >
 	void WriteMean(std::string direction, dreal *mean, int numY, int numX, int numZ);
+
+	template< typename... ARGS >
+	void WriteTempArr(std::string direction, dreal *mean, int numY, int numX, int numZ);
 
 	template< typename... ARGS >
 	void ReadMean(char filename, dreal *mean);
