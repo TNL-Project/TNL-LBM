@@ -1,7 +1,10 @@
 #pragma once
 
 #include "state.h"
+
 #include <curl/curl.h>
+#include <chrono>
+#include <ctime>
 
 #include "lbm_common/png_tool.h"
 #include "lbm_common/fileutils.h"
@@ -232,11 +235,11 @@ void State<NSE>::WriteTempAVG(dreal AvgTemp, int res)
 
 template< typename NSE >
 template< typename... ARGS >
-void State<NSE>::WriteTempMinMax(dreal minTem, dreal maxTem, int res, double time)
+void State<NSE>::WriteTempMinMax(dreal minTem, dreal maxTem, dreal maxPec, int res, double time, double vel)
 {
 	const std::string dir = fmt::format("results_{}/LOG", id);
 	mkdir(dir.c_str(), 0777);
-	const std::string fname = fmt::format("results_{}/LOG/MinMax_temp{}", id, res);
+	const std::string fname = fmt::format("results_{}/LOG/MinMax_temp_{}", id, id);
 	create_file(fname.c_str());
 
 
@@ -246,7 +249,18 @@ void State<NSE>::WriteTempMinMax(dreal minTem, dreal maxTem, int res, double tim
 		return;
 	}
 
-	fprintf(f, "%d \t %e \t %e \t %e\n", res, minTem, maxTem, time);
+	std::time_t current_time = std::time(nullptr); // Or simply time(0)
+
+    // Convert time_t to tm struct
+    struct tm * timeinfo = localtime(&current_time);
+
+    char buffer[80];
+    // Format the time into the buffer as "yyyy-MM-dd hh:mm:ss"
+    strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", timeinfo);
+
+
+	
+	fprintf(f, "%d \t %f \t %e \t %e \t %e \t %e \t %s \n", res, vel, minTem, maxTem, maxPec, time, buffer);
 	fclose(f);
 }
 
@@ -1855,17 +1869,17 @@ void State<NSE>::AfterSimUpdate()
 			probe2();
 			cnt[PROBE2].count++;
 		}
-		// probe5
-		if (cnt[PROBE5].action(nse.physTime()))
-		{
-			probe5();
-			cnt[PROBE5].count++;
-		}
 		// probe3
 		if (cnt[PROBE3].action(nse.physTime()))
 		{
 			probe3();
 			cnt[PROBE3].count++;
+		}
+		// probe5
+		if (cnt[PROBE5].action(nse.physTime()))
+		{
+			probe5();
+			cnt[PROBE5].count++;
 		}
 		// 3D VTK
 		if (cnt[VTK3D].action(nse.physTime()))

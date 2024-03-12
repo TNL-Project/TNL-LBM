@@ -22,6 +22,8 @@ struct LBM_Data
 //	dreal physDt;
 //	dreal physDl;
 //	dreal physDiffusion;
+	dreal PhysDl = no1;
+	dreal PhysDt = no1;
 
 	// array pointers
 	dreal* dfs[DFMAX];
