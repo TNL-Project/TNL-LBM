@@ -161,7 +161,7 @@ struct State
 	void WriteTempAVG(dreal AvgTemp, int res);
 
 	template< typename... ARGS >
-	void WriteTempMinMax(dreal minTem, dreal maxTem, dreal maxPec, int res, double time, double vel);
+	void WriteTempMinMax(dreal minTem, dreal maxTem, dreal maxPec, int res, double time, double vel, double dt);
 	
 	template< typename... ARGS >
 	void WriteTempInFile(dreal AvgTemp, int res, double physDt, double physDl, double physDif, double transfer, double vel, double time, double bodyDif);

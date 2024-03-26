@@ -235,7 +235,7 @@ void State<NSE>::WriteTempAVG(dreal AvgTemp, int res)
 
 template< typename NSE >
 template< typename... ARGS >
-void State<NSE>::WriteTempMinMax(dreal minTem, dreal maxTem, dreal maxPec, int res, double time, double vel)
+void State<NSE>::WriteTempMinMax(dreal minTem, dreal maxTem, dreal maxPec, int res, double time, double vel, double dt)
 {
 	const std::string dir = fmt::format("results_{}/LOG", id);
 	mkdir(dir.c_str(), 0777);
@@ -260,7 +260,7 @@ void State<NSE>::WriteTempMinMax(dreal minTem, dreal maxTem, dreal maxPec, int r
 
 
 	
-	fprintf(f, "%d \t %f \t %e \t %e \t %e \t %e \t %s \n", res, vel, minTem, maxTem, maxPec, time, buffer);
+	fprintf(f, "%d \t %f \t %e \t %e \t %e \t %e \t %e \t %s \n", res, dt, vel, minTem, maxTem, maxPec, time, buffer);
 	fclose(f);
 }
 
