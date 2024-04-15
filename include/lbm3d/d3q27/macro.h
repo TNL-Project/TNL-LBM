@@ -36,7 +36,7 @@ struct D3Q27_MACRO_Default : D3Q27_MACRO_Base< TRAITS >
 	using dreal = typename TRAITS::dreal;
 	using idx = typename TRAITS::idx;
 
-	enum { e_rho, e_vx, e_vy, e_vz, N };
+	enum { e_rho, e_vx, e_vy, e_vz, N, e_vmx, e_vmy, e_vmz };
 
 	template < typename LBM_DATA, typename LBM_KS >
 	CUDA_HOSTDEV static void outputMacro(LBM_DATA &SD, LBM_KS &KS, idx x, idx y, idx z)
@@ -45,6 +45,9 @@ struct D3Q27_MACRO_Default : D3Q27_MACRO_Base< TRAITS >
 		SD.macro(e_vx, x, y, z)  = KS.vx;
 		SD.macro(e_vy, x, y, z)  = KS.vy;
 		SD.macro(e_vz, x, y, z)  = KS.vz;
+		SD.macro(e_vmx, x, y, z) += KS.vx;
+		SD.macro(e_vmy, x, y, z) += KS.vy;
+		SD.macro(e_vmz, x, y, z) += KS.vz;
 	}
 
 	template < typename LBM_DATA, typename LBM_KS >
