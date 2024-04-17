@@ -315,10 +315,10 @@ void State<NSE>::WriteMean(std::string direction, dreal *mean, int numY, int num
 		return;
 	}
 
-	for(int y = 0; y < numY; y++) {
-		for(int z = 0; z<  numZ; z++) {
-			for(int x = 0; x< numX; x++) {
-				fprintf(f, "\t %.10e", mean[this->IndexKolmo(x,y,z, numX, numY)]);
+	for(int y = 0; y < nse.lat.global.y(); y++) {
+		for(int z = 0; z<  nse.lat.global.z(); z++) {
+			for(int x = 0; x< nse.lat.global.x(); x++) {
+				fprintf(f, "\t %.10e", mean[this->IndexKolmo(x,y,z, nse.lat.global.x(), nse.lat.global.y())]);
 			}
 			fprintf(f, "\n");
 		}
@@ -369,13 +369,29 @@ void State<NSE>::ReadMean(char filename, dreal *mean)
         return; // return an error code
     }
 
-	int i = 0;
-    dreal value;
- 	while (inputFile >> value) {		
-		mean[i] = (dreal)value;
-		i++;
-    }
+	std::string line;
+    int y = 0, z = 0, x = 0;
 
+    while (std::getline(inputFile, line)) {
+        std::istringstream iss(line);
+        dreal value;
+        x = 0; // reset x to zero for each new line
+
+        while (iss >> value) {
+            int index = this->IndexKolmo(x, y, z, nse.lat.global.x(), nse.lat.global.y());
+            mean[index] = value;
+
+            if (++x >= nse.lat.global.x()) {
+                x = 0;
+                if (++z >= nse.lat.global.z()) {
+                    z = 0;
+                    if (++y >= nse.lat.global.y()) {
+                        break; // all data read, prevent further reading
+                    }
+                }
+            }
+        }
+    }
     // Close the file
     inputFile.close();
 }

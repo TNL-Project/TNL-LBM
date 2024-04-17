@@ -36,7 +36,8 @@ struct D3Q27_MACRO_Default : D3Q27_MACRO_Base< TRAITS >
 	using dreal = typename TRAITS::dreal;
 	using idx = typename TRAITS::idx;
 
-	enum { e_rho, e_vx, e_vy, e_vz, e_vmx, e_vmy, e_vmz, N };
+	enum { e_rho, e_vx, e_vy, e_vz, e_vmx, e_vmy, e_vmz, e_vmxs, e_vmys, e_vmzs, N };
+	// enum { e_rho, e_vx, e_vy, e_vz, e_vmx, e_vmy, e_vmz, e_vfx, e_vfy, e_vfz, N };
 
 	template < typename LBM_DATA, typename LBM_KS >
 	CUDA_HOSTDEV static void outputMacro(LBM_DATA &SD, LBM_KS &KS, idx x, idx y, idx z)
@@ -48,6 +49,13 @@ struct D3Q27_MACRO_Default : D3Q27_MACRO_Base< TRAITS >
 		SD.macro(e_vmx, x, y, z) += KS.vx;
 		SD.macro(e_vmy, x, y, z) += KS.vy;
 		SD.macro(e_vmz, x, y, z) += KS.vz;
+		SD.macro(e_vmxs, x, y, z) += KS.vx*KS.vx;
+		SD.macro(e_vmys, x, y, z) += KS.vy*KS.vy;
+		SD.macro(e_vmzs, x, y, z) += KS.vz*KS.vz;
+
+		// SD.macro(e_vmxs, x, y, z) -= KS.vx;
+		// SD.macro(e_vfy, x, y, z) -= KS.vy;
+		// SD.macro(e_vfz, x, y, z) -= KS.vz;
 	}
 
 	template < typename LBM_DATA, typename LBM_KS >
