@@ -5,6 +5,7 @@ set(TARGETS
         sim_IBM2
         sim_IBM3
         sim_IBM4
+        sim_IBM5
 )
 
 foreach(target IN ITEMS ${TARGETS})
