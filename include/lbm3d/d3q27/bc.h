@@ -32,7 +32,14 @@ struct D3Q27_BC_All
 		GEO_SYM_LEFT,
 		GEO_SYM_RIGHT,
 		GEO_SYM_BACK,
-		GEO_SYM_FRONT
+		GEO_SYM_FRONT,
+
+		// Adjoint boundary conditions
+		GEO_ADJOINT_FLUID,
+		GEO_ADJOINT_FLUID_m,
+		GEO_ADJOINT_WALL,
+		GEO_ADJOINT_INFLOW_BB_LEFT,
+		GEO_ADJOINT_OUTFLOW_RIGHT
 	};
 
 	__cuda_callable__ static bool isPeriodic(map_t mapgi)
@@ -63,10 +70,15 @@ struct D3Q27_BC_All
 		}
 
 		// modify pull location for streaming
-		if (mapgi == GEO_OUTFLOW_RIGHT)
+		if (mapgi == GEO_OUTFLOW_RIGHT || mapgi == GEO_ADJOINT_OUTFLOW_RIGHT)
 			xp = x = xm;
 
-		if (mapgi != GEO_OUTFLOW_RIGHT_INTERP)
+		if (mapgi == GEO_ADJOINT_FLUID || mapgi == GEO_ADJOINT_FLUID_m || mapgi == GEO_ADJOINT_WALL || mapgi == GEO_ADJOINT_INFLOW_BB_LEFT
+			|| mapgi == GEO_ADJOINT_OUTFLOW_RIGHT)
+		{
+			STREAMING::streamingAdjoint(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+		}
+		else if (mapgi != GEO_OUTFLOW_RIGHT_INTERP)
 			STREAMING::streaming(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 
 		// boundary conditions
@@ -150,7 +162,6 @@ struct D3Q27_BC_All
 				KS.f[pmp] = TNL::Backend::ldg(SD.df(df_cur, mpm, x, y, z)) - no2 * n1o216 * KS.rho * no3 * (-KS.vx + KS.vy - KS.vz);
 				KS.f[pmm] = TNL::Backend::ldg(SD.df(df_cur, mpp, x, y, z)) - no2 * n1o216 * KS.rho * no3 * (-KS.vx + KS.vy + KS.vz);
 				COLL::computeDensityAndVelocity(KS);
-				// SD.inflow(KS,x,y,z);
 				break;
 			case GEO_INFLOW_EQ_LEFT:
 				SD.inflow(KS, x, y, z);
@@ -280,6 +291,112 @@ struct D3Q27_BC_All
 				KS.f[pmp] = KS.f[ppp];
 				COLL::computeDensityAndVelocity(KS);
 				break;
+
+			// Adjoint boundary conditions
+			case GEO_ADJOINT_FLUID:
+				COLL::collision(KS);
+				break;
+			case GEO_ADJOINT_FLUID_m:
+				COLL::collision(KS);
+				COLL::setEquilibrium(KS);  // adds measured data
+				break;
+			case GEO_ADJOINT_WALL:	// works same as GEO_WALL --- only streaming step is different in adjoint
+				// collision step: bounce-back
+				TNL::swap(KS.f[mmm], KS.f[ppp]);
+				TNL::swap(KS.f[mmz], KS.f[ppz]);
+				TNL::swap(KS.f[mmp], KS.f[ppm]);
+				TNL::swap(KS.f[mzm], KS.f[pzp]);
+				TNL::swap(KS.f[mzz], KS.f[pzz]);
+				TNL::swap(KS.f[mzp], KS.f[pzm]);
+				TNL::swap(KS.f[mpm], KS.f[pmp]);
+				TNL::swap(KS.f[mpz], KS.f[pmz]);
+				TNL::swap(KS.f[mpp], KS.f[pmm]);
+				TNL::swap(KS.f[zmm], KS.f[zpp]);
+				TNL::swap(KS.f[zzm], KS.f[zzp]);
+				TNL::swap(KS.f[zmz], KS.f[zpz]);
+				TNL::swap(KS.f[zmp], KS.f[zpm]);
+				break;
+			case GEO_ADJOINT_INFLOW_BB_LEFT:
+				{
+					/* KS.f[mzz] = KS.f[pzz];
+					KS.f[mpz] = KS.f[pmz];
+					KS.f[mmz] = KS.f[ppz];
+					KS.f[mzp] = KS.f[pzm];
+					KS.f[mzm] = KS.f[pzp];
+					KS.f[mpp] = KS.f[pmm];
+					KS.f[mpm] = KS.f[pmp];
+					KS.f[mmp] = KS.f[ppm];
+					KS.f[mmm] = KS.f[ppp]; */
+					KS.f[mzz] = TNL::Backend::ldg(SD.df(df_cur, pzz, x, y, z));
+					KS.f[mpz] = TNL::Backend::ldg(SD.df(df_cur, pmz, x, y, z));
+					KS.f[mmz] = TNL::Backend::ldg(SD.df(df_cur, ppz, x, y, z));
+					KS.f[mzp] = TNL::Backend::ldg(SD.df(df_cur, pzm, x, y, z));
+					KS.f[mzm] = TNL::Backend::ldg(SD.df(df_cur, pzp, x, y, z));
+					KS.f[mpp] = TNL::Backend::ldg(SD.df(df_cur, pmm, x, y, z));
+					KS.f[mpm] = TNL::Backend::ldg(SD.df(df_cur, pmp, x, y, z));
+					KS.f[mmp] = TNL::Backend::ldg(SD.df(df_cur, ppm, x, y, z));
+					KS.f[mmm] = TNL::Backend::ldg(SD.df(df_cur, ppp, x, y, z));
+					dreal temp_f_mzz = KS.f[mzz];
+					dreal temp_f_mpz = KS.f[mpz];
+					dreal temp_f_mmz = KS.f[mmz];
+					dreal temp_f_mzp = KS.f[mzp];
+					dreal temp_f_mzm = KS.f[mzm];
+					dreal temp_f_mpp = KS.f[mpp];
+					dreal temp_f_mpm = KS.f[mpm];
+					dreal temp_f_mmp = KS.f[mmp];
+					dreal temp_f_mmm = KS.f[mmm];
+					COLL::collision(KS);
+					// load current inflow velocity profile
+					SD.inflow(KS, x, y, z);
+					// do extra collision because of inflow velocity profile
+					// clang-format off
+					dreal result = n2o27 * temp_f_mzz * no2 * no3 * (-KS.vx)
+								 + n1o54 * temp_f_mpz * no2 * no3 * (-KS.vx + KS.vy)
+								 + n1o54 * temp_f_mmz * no2 * no3 * (-KS.vx - KS.vy)
+								 + n1o54 * temp_f_mzp * no2 * no3 * (-KS.vx + KS.vz)
+								 + n1o54 * temp_f_mzm * no2 * no3 * (-KS.vx - KS.vz)
+								 + n1o216 * temp_f_mpp * no2 * no3 * (-KS.vx + KS.vy + KS.vz)
+								 + n1o216 * temp_f_mpm * no2 * no3 * (-KS.vx + KS.vy - KS.vz)
+								 + n1o216 * temp_f_mmp * no2 * no3 * (-KS.vx - KS.vy + KS.vz)
+								 + n1o216 * temp_f_mmm * no2 * no3 * (-KS.vx - KS.vy - KS.vz);
+					// clang-format on
+					KS.f[mmm] -= result;
+					KS.f[mmz] -= result;
+					KS.f[mmp] -= result;
+					KS.f[mzm] -= result;
+					KS.f[mzz] -= result;
+					KS.f[mzp] -= result;
+					KS.f[mpm] -= result;
+					KS.f[mpz] -= result;
+					KS.f[mpp] -= result;
+					KS.f[zmm] -= result;
+					KS.f[zmz] -= result;
+					KS.f[zmp] -= result;
+					KS.f[zzm] -= result;
+					KS.f[zzz] -= result;
+					KS.f[zzp] -= result;
+					KS.f[zpm] -= result;
+					KS.f[zpz] -= result;
+					KS.f[zpp] -= result;
+					KS.f[pmm] -= result;
+					KS.f[pmz] -= result;
+					KS.f[pmp] -= result;
+					KS.f[pzm] -= result;
+					KS.f[pzz] -= result;
+					KS.f[pzp] -= result;
+					KS.f[ppm] -= result;
+					KS.f[ppz] -= result;
+					KS.f[ppp] -= result;
+					// calculate gradient
+					SD.inflow(KS, x, y, z);
+					// COLL::computeDensityAndVelocity(KS);
+					// streaming
+					break;
+				}
+			case GEO_ADJOINT_OUTFLOW_RIGHT:
+				COLL::computeDensityAndVelocity_Wall(KS);  //! collision without drho (because K.rho = 1 always)
+				break;
+
 			default:
 				COLL::computeDensityAndVelocity(KS);
 				break;

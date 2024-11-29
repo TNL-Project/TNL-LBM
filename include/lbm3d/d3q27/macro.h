@@ -186,3 +186,64 @@ struct D3Q27_MACRO_Void : D3Q27_MACRO_Base<TRAITS>
 	__cuda_callable__ static void copyQuantities(LBM_DATA& SD, LBM_KS& KS, idx x, idx y, idx z)
 	{}
 };
+
+// For adjoint simulations
+// contains all measured macro quantities and all macro quantities from the primary problem
+template <typename TRAITS>
+struct D3Q27_MACRO_Adjoint : D3Q27_MACRO_Base<TRAITS>
+{
+	using dreal = typename TRAITS::dreal;
+	using idx = typename TRAITS::idx;
+
+	enum
+	{
+		// NOTE: primary macros must be first
+		e_rho,
+		e_vx,
+		e_vy,
+		e_vz,
+		// NOTE: measured macros must be the second half
+		e_rho_m,
+		e_vx_m,
+		e_vy_m,
+		e_vz_m,
+		N
+		// NOTE: if anything more is added, the loadPrimaryAndMeasuredMacro function must be generalized!!!
+		//gx, gy, gz,
+	};
+
+	template <typename LBM_DATA, typename LBM_KS>
+	__cuda_callable__ static void outputMacro(LBM_DATA& SD, LBM_KS& KS, idx x, idx y, idx z)
+	{
+		// NOTE: this is a test
+		//SD.loss_function += (dreal)0.5 * (dreal)std::sqrt(((KS.rho-KS.rho_m)*(KS.rho-KS.rho_m) + (KS.vx-KS.vx_m)*(KS.vx-KS.vx_m) +
+		//(KS.vy-KS.vy_m)*(KS.vy-KS.vy_m) + (KS.vz-KS.vz_m)*(KS.vz-KS.vz_m)));
+
+		//! otherwise empty, because macro is loaded from primary problem and measured data, not changed in computeInitMacro (lbm.h) or SimUpdate
+		//! (state.h) - outputting from KS to SD means overwriting the loaded data
+	}
+
+	template <typename LBM_DATA, typename LBM_KS>
+	__cuda_callable__ static void copyLoadedMacro(LBM_DATA& SD, LBM_KS& KS, idx x, idx y, idx z)
+	{
+		KS.rho = SD.macro(e_rho, x, y, z);
+		KS.vx = SD.macro(e_vx, x, y, z);
+		KS.vy = SD.macro(e_vy, x, y, z);
+		KS.vz = SD.macro(e_vz, x, y, z);
+
+		KS.rho_m = SD.macro(e_rho_m, x, y, z);
+		KS.vx_m = SD.macro(e_vx_m, x, y, z);
+		KS.vy_m = SD.macro(e_vy_m, x, y, z);
+		KS.vz_m = SD.macro(e_vz_m, x, y, z);
+	}
+
+	template <typename LBM_DATA, typename LBM_KS>
+	__cuda_callable__ static void copyQuantities(LBM_DATA& SD, LBM_KS& KS, idx x, idx y, idx z)
+	{
+		KS.lbmViscosity = SD.lbmViscosity;
+		KS.fx = SD.fx;
+		KS.fy = SD.fy;
+		KS.fz = SD.fz;
+		copyLoadedMacro(SD, KS, x, y, z);  // copies loaded data to kernel, important for adjoint collisionWithData
+	}
+};

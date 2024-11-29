@@ -10,6 +10,8 @@
 #include "d3q27/eq_well.h"
 #include "d3q27/eq_entropic.h"
 
+#include "d3q27/eq_adjoint.h"
+
 // exactly one streaming header must be included
 #ifdef AA_PATTERN
 	#include "d3q27/streaming_AA.h"
@@ -31,6 +33,8 @@
 #include "d3q27/col_clbm_well.h"
 #include "d3q27/col_cum_well.h"
 #include "d3q27/col_bgk_well.h"
+
+#include "d3q27/col_srt_adjoint.h"
 
 
 #include "state.h"

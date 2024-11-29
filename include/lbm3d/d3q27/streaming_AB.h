@@ -240,4 +240,43 @@ struct D3Q27_STREAMING
 		KS.f[ppz] = SD.df(df_cur, ppz, xm, ym, z);
 		KS.f[ppp] = SD.df(df_cur, ppp, xm, ym, zm);
 	}
+
+	// ADJOINT -- "reversed" streaming
+	template < typename LBM_DATA, typename LBM_KS >
+	CUDA_HOSTDEV static void streamingAdjoint(uint8_t type, LBM_DATA &SD, LBM_KS &KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
+	{
+		KS.f[mmm] = TNL::Backend::ldg(SD.df(type,mmm,xm,ym,zm));
+		KS.f[mmz] = TNL::Backend::ldg(SD.df(type,mmz,xm,ym, z));
+		KS.f[mmp] = TNL::Backend::ldg(SD.df(type,mmp,xm,ym,zp));
+		KS.f[mzm] = TNL::Backend::ldg(SD.df(type,mzm,xm, y,zm));
+		KS.f[mzz] = TNL::Backend::ldg(SD.df(type,mzz,xm, y, z));
+		KS.f[mzp] = TNL::Backend::ldg(SD.df(type,mzp,xm, y,zp));
+		KS.f[mpm] = TNL::Backend::ldg(SD.df(type,mpm,xm,yp,zm));
+		KS.f[mpz] = TNL::Backend::ldg(SD.df(type,mpz,xm,yp, z));
+		KS.f[mpp] = TNL::Backend::ldg(SD.df(type,mpp,xm,yp,zp));
+		KS.f[zmm] = TNL::Backend::ldg(SD.df(type,zmm, x,ym,zm));
+		KS.f[zmz] = TNL::Backend::ldg(SD.df(type,zmz, x,ym, z));
+		KS.f[zmp] = TNL::Backend::ldg(SD.df(type,zmp, x,ym,zp));
+		KS.f[zzm] = TNL::Backend::ldg(SD.df(type,zzm, x, y,zm));
+		KS.f[zzz] = TNL::Backend::ldg(SD.df(type,zzz, x, y, z));
+		KS.f[zzp] = TNL::Backend::ldg(SD.df(type,zzp, x, y,zp));
+		KS.f[zpm] = TNL::Backend::ldg(SD.df(type,zpm, x,yp,zm));
+		KS.f[zpz] = TNL::Backend::ldg(SD.df(type,zpz, x,yp, z));
+		KS.f[zpp] = TNL::Backend::ldg(SD.df(type,zpp, x,yp,zp));
+		KS.f[pmm] = TNL::Backend::ldg(SD.df(type,pmm,xp,ym,zm));
+		KS.f[pmz] = TNL::Backend::ldg(SD.df(type,pmz,xp,ym, z));
+		KS.f[pmp] = TNL::Backend::ldg(SD.df(type,pmp,xp,ym,zp));
+		KS.f[pzm] = TNL::Backend::ldg(SD.df(type,pzm,xp, y,zm));
+		KS.f[pzz] = TNL::Backend::ldg(SD.df(type,pzz,xp, y, z));
+		KS.f[pzp] = TNL::Backend::ldg(SD.df(type,pzp,xp, y,zp));
+		KS.f[ppm] = TNL::Backend::ldg(SD.df(type,ppm,xp,yp,zm));
+		KS.f[ppz] = TNL::Backend::ldg(SD.df(type,ppz,xp,yp, z));
+		KS.f[ppp] = TNL::Backend::ldg(SD.df(type,ppp,xp,yp,zp));
+	}
+
+	template < typename LBM_DATA, typename LBM_KS >
+	CUDA_HOSTDEV static void streamingAdjoint(LBM_DATA &SD, LBM_KS &KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
+	{
+		streamingAdjoint(df_cur, SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+	}
 };

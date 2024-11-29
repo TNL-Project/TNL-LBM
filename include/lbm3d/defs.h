@@ -155,6 +155,16 @@ struct D3Q27_KernelStruct
 #endif
 };
 
+// KernelStruct - D3Q27
+template <typename REAL>
+struct D3Q27_KernelStruct_Adjoint : public D3Q27_KernelStruct<REAL>
+{
+	// ..._m = measured velocities
+	REAL vz_m = 0, vx_m = 0, vy_m = 0;
+	REAL rho_m = 1.0;
+	// REAL gx=0, gy=0, gz=0; //! adjoint gradient - if gradient update should not be done on kernel -> remove
+};
+
 template <
 	typename _TRAITS,
 	template <typename> class _KERNEL_STRUCT,
