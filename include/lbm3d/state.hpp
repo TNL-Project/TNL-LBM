@@ -383,6 +383,7 @@ void State<NSE>::write1Dcut_Z(idx x, idx y, const std::string& fname)
 template <typename NSE>
 void State<NSE>::writeVTKs_3D()
 {
+	dataManager.initEngine(DataManager::SimulationType::SIM_3D, fmt::format("results_{}/output_3D", id));
 	TNL::Timer timer;
 	for (const auto& block : nse.blocks) {
 		const std::string fname = fmt::format("results_{}/output_3D", id);
@@ -392,7 +393,7 @@ void State<NSE>::writeVTKs_3D()
 			return this->outputData(block, index, dof, desc, x, y, z, value, dofs);
 		};
 		timer.start();
-		block.writeVTK_3D(nse.lat, outputData, fname, nse.physTime(), cnt[VTK3D].count);
+		block.writeVTK_3D(nse.lat, outputData, fname, nse.physTime(), cnt[VTK3D].count, dataManager);
 		timer.stop();
 		std::cout << "write3D saved in: " << timer.getRealTime() << std::endl;
 		timer.reset();
@@ -453,7 +454,8 @@ void State<NSE>::writeVTKs_3Dcut()
 				probevec.lx,
 				probevec.ly,
 				probevec.lz,
-				probevec.step
+				probevec.step,
+				dataManager
 			);
 			spdlog::info("[vtk {} written, time {:f}, cycle {:d}] ", fname, nse.physTime(), probevec.cycle);
 		}
@@ -527,13 +529,13 @@ void State<NSE>::writeVTKs_2D()
 			};
 			switch (probevec.type) {
 				case 0:
-					block.writeVTK_2DcutX(nse.lat, outputData, fname, nse.physTime(), probevec.cycle, probevec.position);
+					block.writeVTK_2DcutX(nse.lat, outputData, fname, nse.physTime(), probevec.cycle, probevec.position, dataManager);
 					break;
 				case 1:
-					block.writeVTK_2DcutY(nse.lat, outputData, fname, nse.physTime(), probevec.cycle, probevec.position);
+					block.writeVTK_2DcutY(nse.lat, outputData, fname, nse.physTime(), probevec.cycle, probevec.position, dataManager);
 					break;
 				case 2:
-					block.writeVTK_2DcutZ(nse.lat, outputData, fname, nse.physTime(), probevec.cycle, probevec.position);
+					block.writeVTK_2DcutZ(nse.lat, outputData, fname, nse.physTime(), probevec.cycle, probevec.position, dataManager);
 					break;
 			}
 			spdlog::info("[vtk {} written, time {:f}, cycle {:d}] ", fname, nse.physTime(), probevec.cycle);

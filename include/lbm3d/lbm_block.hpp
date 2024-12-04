@@ -757,12 +757,12 @@ void LBM_BLOCK<CONFIG>::forAllLatticeSites(F f)
 
 template <typename CONFIG>
 template <typename Output>
-void LBM_BLOCK<CONFIG>::writeVTK_3D(lat_t lat, Output&& outputData, const std::string& filename, real time, int cycle) const
+void LBM_BLOCK<CONFIG>::writeVTK_3D(lat_t lat, Output&& outputData, const std::string& filename, real time, int cycle, DataManager& dataManager) const
 {
 	std::vector<int> tempIData;
 	std::vector<float> tempFData;
 	const point_t origin = lat.lbm2physPoint(0, 0, 0);
-	ADIOSWriter<TRAITS> adios(MPI_COMM_WORLD, filename, global, local, offset, origin, lat.physDl, cycle);
+	ADIOSWriter<TRAITS> adios(MPI_COMM_WORLD, filename, global, local, offset, origin, lat.physDl, cycle, dataManager);
 
 	for (idx z = offset.z(); z < offset.z() + local.z(); z++)
 		for (idx y = offset.y(); y < offset.y() + local.y(); y++)
@@ -812,7 +812,19 @@ void LBM_BLOCK<CONFIG>::writeVTK_3D(lat_t lat, Output&& outputData, const std::s
 template <typename CONFIG>
 template <typename Output>
 void LBM_BLOCK<CONFIG>::writeVTK_3Dcut(
-	lat_t lat, Output&& outputData, const std::string& filename, real time, int cycle, idx ox, idx oy, idx oz, idx gx, idx gy, idx gz, idx step
+	lat_t lat,
+	Output&& outputData,
+	const std::string& filename,
+	real time,
+	int cycle,
+	idx ox,
+	idx oy,
+	idx oz,
+	idx gx,
+	idx gy,
+	idx gz,
+	idx step,
+	DataManager& dataManager
 ) const
 {
 	bool overlapT =
@@ -848,7 +860,7 @@ void LBM_BLOCK<CONFIG>::writeVTK_3Dcut(
 	std::vector<int> tempIData;
 	std::vector<float> tempFData;
 	const point_t origin = lat.lbm2physPoint(ox, oy, oz);
-	ADIOSWriter<TRAITS> adios(communicator, filename, {gX, gY, gZ}, {lX, lY, lZ}, {oX, oY, oZ}, origin, lat.physDl * step, cycle);
+	ADIOSWriter<TRAITS> adios(communicator, filename, {gX, gY, gZ}, {lX, lY, lZ}, {oX, oY, oZ}, origin, lat.physDl * step, cycle, dataManager);
 
 	ox = TNL::max(ox, offset.x());
 	oy = TNL::max(oy, offset.y());
@@ -901,7 +913,9 @@ void LBM_BLOCK<CONFIG>::writeVTK_3Dcut(
 
 template <typename CONFIG>
 template <typename Output>
-void LBM_BLOCK<CONFIG>::writeVTK_2DcutX(lat_t lat, Output&& outputData, const std::string& filename, real time, int cycle, idx XPOS) const
+void LBM_BLOCK<CONFIG>::writeVTK_2DcutX(
+	lat_t lat, Output&& outputData, const std::string& filename, real time, int cycle, idx XPOS, DataManager& dataManager
+) const
 {
 	int color = isLocalX(XPOS) ? 1 : MPI_UNDEFINED;
 	TNL::MPI::Comm communicator = TNL::MPI::Comm::split(MPI_COMM_WORLD, color, 1);
@@ -912,7 +926,15 @@ void LBM_BLOCK<CONFIG>::writeVTK_2DcutX(lat_t lat, Output&& outputData, const st
 	std::vector<float> tempFData;
 	const point_t origin = lat.lbm2physPoint(XPOS, 0, 0);
 	ADIOSWriter<TRAITS> adios(
-		communicator, filename, {1, global.y(), global.z()}, {1, local.y(), local.z()}, {0, offset.y(), offset.z()}, origin, lat.physDl, cycle
+		communicator,
+		filename,
+		{1, global.y(), global.z()},
+		{1, local.y(), local.z()},
+		{0, offset.y(), offset.z()},
+		origin,
+		lat.physDl,
+		cycle,
+		dataManager
 	);
 
 	idx x = XPOS;
@@ -961,7 +983,9 @@ void LBM_BLOCK<CONFIG>::writeVTK_2DcutX(lat_t lat, Output&& outputData, const st
 
 template <typename CONFIG>
 template <typename Output>
-void LBM_BLOCK<CONFIG>::writeVTK_2DcutY(lat_t lat, Output&& outputData, const std::string& filename, real time, int cycle, idx YPOS) const
+void LBM_BLOCK<CONFIG>::writeVTK_2DcutY(
+	lat_t lat, Output&& outputData, const std::string& filename, real time, int cycle, idx YPOS, DataManager& dataManager
+) const
 {
 	int color = isLocalY(YPOS) ? 1 : MPI_UNDEFINED;
 	TNL::MPI::Comm communicator = TNL::MPI::Comm::split(MPI_COMM_WORLD, color, 2);
@@ -972,7 +996,15 @@ void LBM_BLOCK<CONFIG>::writeVTK_2DcutY(lat_t lat, Output&& outputData, const st
 	std::vector<float> tempFData;
 	const point_t origin = lat.lbm2physPoint(0, YPOS, 0);
 	ADIOSWriter<TRAITS> adios(
-		communicator, filename, {global.x(), 1, global.z()}, {local.x(), 1, local.z()}, {offset.x(), 0, offset.z()}, origin, lat.physDl, cycle
+		communicator,
+		filename,
+		{global.x(), 1, global.z()},
+		{local.x(), 1, local.z()},
+		{offset.x(), 0, offset.z()},
+		origin,
+		lat.physDl,
+		cycle,
+		dataManager
 	);
 
 	idx y = YPOS;
@@ -1021,7 +1053,9 @@ void LBM_BLOCK<CONFIG>::writeVTK_2DcutY(lat_t lat, Output&& outputData, const st
 
 template <typename CONFIG>
 template <typename Output>
-void LBM_BLOCK<CONFIG>::writeVTK_2DcutZ(lat_t lat, Output&& outputData, const std::string& filename, real time, int cycle, idx ZPOS) const
+void LBM_BLOCK<CONFIG>::writeVTK_2DcutZ(
+	lat_t lat, Output&& outputData, const std::string& filename, real time, int cycle, idx ZPOS, DataManager& dataManager
+) const
 {
 	int color = isLocalZ(ZPOS) ? 1 : MPI_UNDEFINED;
 	TNL::MPI::Comm communicator = TNL::MPI::Comm::split(MPI_COMM_WORLD, color, 3);
@@ -1032,7 +1066,15 @@ void LBM_BLOCK<CONFIG>::writeVTK_2DcutZ(lat_t lat, Output&& outputData, const st
 	std::vector<float> tempFData;
 	const point_t origin = lat.lbm2physPoint(0, 0, ZPOS);
 	ADIOSWriter<TRAITS> adios(
-		communicator, filename, {global.x(), global.y(), 1}, {local.x(), local.y(), 1}, {offset.x(), offset.y(), 0}, origin, lat.physDl, cycle
+		communicator,
+		filename,
+		{global.x(), global.y(), 1},
+		{local.x(), local.y(), 1},
+		{offset.x(), offset.y(), 0},
+		origin,
+		lat.physDl,
+		cycle,
+		dataManager
 	);
 
 	idx z = ZPOS;

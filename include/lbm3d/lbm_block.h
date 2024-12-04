@@ -2,6 +2,7 @@
 
 #include "defs.h"
 #include "lattice.h"
+#include "DataManager.h"
 
 template <typename CONFIG>
 struct LBM_BLOCK
@@ -190,17 +191,29 @@ struct LBM_BLOCK
 
 	// VTK output
 	template <typename Output>
-	void writeVTK_3D(lat_t lat, Output&& outputData, const std::string& filename, real time, int cycle) const;
+	void writeVTK_3D(lat_t lat, Output&& outputData, const std::string& filename, real time, int cycle, DataManager& dataManager) const;
 	template <typename Output>
 	void writeVTK_3Dcut(
-		lat_t lat, Output&& outputData, const std::string& filename, real time, int cycle, idx ox, idx oy, idx oz, idx lx, idx ly, idx lz, idx step
+		lat_t lat,
+		Output&& outputData,
+		const std::string& filename,
+		real time,
+		int cycle,
+		idx ox,
+		idx oy,
+		idx oz,
+		idx lx,
+		idx ly,
+		idx lz,
+		idx step,
+		DataManager& dataManager
 	) const;
 	template <typename Output>
-	void writeVTK_2DcutX(lat_t lat, Output&& outputData, const std::string& filename, real time, int cycle, idx XPOS) const;
+	void writeVTK_2DcutX(lat_t lat, Output&& outputData, const std::string& filename, real time, int cycle, idx XPOS, DataManager& dataManager) const;
 	template <typename Output>
-	void writeVTK_2DcutY(lat_t lat, Output&& outputData, const std::string& filename, real time, int cycle, idx YPOS) const;
+	void writeVTK_2DcutY(lat_t lat, Output&& outputData, const std::string& filename, real time, int cycle, idx YPOS, DataManager& dataManager) const;
 	template <typename Output>
-	void writeVTK_2DcutZ(lat_t lat, Output&& outputData, const std::string& filename, real time, int cycle, idx ZPOS) const;
+	void writeVTK_2DcutZ(lat_t lat, Output&& outputData, const std::string& filename, real time, int cycle, idx ZPOS, DataManager& dataManager) const;
 
 	~LBM_BLOCK() = default;
 };

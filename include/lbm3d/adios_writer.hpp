@@ -6,7 +6,15 @@
 
 template <typename TRAITS>
 ADIOSWriter<TRAITS>::ADIOSWriter(
-	TNL::MPI::Comm communicator, const std::string& basename, idx3d global, idx3d local, idx3d offset, point_t physOrigin, real physDl, int cycle
+	TNL::MPI::Comm communicator,
+	const std::string& basename,
+	idx3d global,
+	idx3d local,
+	idx3d offset,
+	point_t physOrigin,
+	real physDl,
+	int cycle,
+	DataManager& dataManager
 )
 #ifdef HAVE_MPI
 : adios(communicator)
@@ -28,7 +36,7 @@ ADIOSWriter<TRAITS>::ADIOSWriter(
 	this->offset = offset;
 	this->physOrigin = physOrigin;
 	this->physDl = physDl;
-
+	this->dataManager = &dataManager;
 	engine.BeginStep();
 }
 

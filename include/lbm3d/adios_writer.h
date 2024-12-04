@@ -4,7 +4,7 @@
 #include <map>
 
 #include <adios2.h>
-
+#include "DataManager.h"
 #include <TNL/MPI/Comm.h>
 
 template <typename TRAITS>
@@ -29,6 +29,7 @@ private:
 	adios2::Engine engine;
 	std::string filename;
 
+	DataManager* dataManager;
 	// data variables recorded for output (mapping of name to dimension)
 	std::map<std::string, int> variables;
 
@@ -42,7 +43,15 @@ public:
 	ADIOSWriter() = delete;
 
 	ADIOSWriter(
-		TNL::MPI::Comm communicator, const std::string& basename, idx3d global, idx3d local, idx3d offset, point_t physOrigin, real physDl, int cycle
+		TNL::MPI::Comm communicator,
+		const std::string& basename,
+		idx3d global,
+		idx3d local,
+		idx3d offset,
+		point_t physOrigin,
+		real physDl,
+		int cycle,
+		DataManager& dataManager
 	);
 
 	template <typename T>

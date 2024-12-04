@@ -20,6 +20,8 @@
 #include "lbm_block.h"
 #include "checkpoint.h"
 
+#include "DataManager.h"
+
 // ibm: lagrangian filament/surface
 #include "lagrange_3D.h"
 
@@ -281,7 +283,7 @@ struct State
 	// timers for profiling
 	TNL::Timer timer_SimInit, timer_SimUpdate, timer_AfterSimUpdate, timer_compute, timer_compute_overlaps, timer_wait_communication,
 		timer_wait_computation;
-
+	DataManager dataManager;
 	// constructors
 	template <typename... ARGS>
 	State(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, ARGS&&... args)
@@ -293,7 +295,8 @@ struct State
 #endif
 	  checkpoint(adios),
 	  nse(communicator, lat, std::forward<ARGS>(args)...),
-	  ibm(nse, id)
+	  ibm(nse, id),
+	  dataManager(fmt::format("results_{}", id))
 	{
 		// try to lock the results directory
 		if (nse.rank == 0) {
