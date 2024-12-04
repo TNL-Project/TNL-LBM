@@ -433,6 +433,9 @@ void State<NSE>::writeVTKs_3Dcut()
 {
 	if (probe3Dvec.size() <= 0)
 		return;
+
+	dataManager.initEngine(DataManager::SimulationType::SIM_3D_CUT, fmt::format("results_{}/output_3Dcut_box", id));
+
 	// browse all 3D vtk cuts
 	for (auto& probevec : probe3Dvec) {
 		for (const auto& block : nse.blocks) {
@@ -518,6 +521,10 @@ void State<NSE>::writeVTKs_2D()
 {
 	if (probe2Dvec.size() <= 0)
 		return;
+
+	dataManager.initEngine(DataManager::SimulationType::SIM_2D_X, fmt::format("results_{}/output_2D_{}", id, "X"));
+	dataManager.initEngine(DataManager::SimulationType::SIM_2D_Y, fmt::format("results_{}/output_2D_{}", id, "Y"));
+	dataManager.initEngine(DataManager::SimulationType::SIM_2D_Z, fmt::format("results_{}/output_2D_{}", id, "Z"));
 	// browse all 2D vtk cuts
 	for (auto& probevec : probe2Dvec) {
 		for (const auto& block : nse.blocks) {

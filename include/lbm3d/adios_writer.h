@@ -30,6 +30,7 @@ private:
 	std::string filename;
 
 	DataManager* dataManager;
+	DataManager::SimulationType simType;
 	// data variables recorded for output (mapping of name to dimension)
 	std::map<std::string, int> variables;
 
@@ -51,7 +52,8 @@ public:
 		point_t physOrigin,
 		real physDl,
 		int cycle,
-		DataManager& dataManager
+		DataManager& dataManager,
+		DataManager::SimulationType simType
 	);
 
 	template <typename T>

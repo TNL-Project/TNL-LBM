@@ -762,7 +762,9 @@ void LBM_BLOCK<CONFIG>::writeVTK_3D(lat_t lat, Output&& outputData, const std::s
 	std::vector<int> tempIData;
 	std::vector<float> tempFData;
 	const point_t origin = lat.lbm2physPoint(0, 0, 0);
-	ADIOSWriter<TRAITS> adios(MPI_COMM_WORLD, filename, global, local, offset, origin, lat.physDl, cycle, dataManager);
+	ADIOSWriter<TRAITS> adios(
+		MPI_COMM_WORLD, filename, global, local, offset, origin, lat.physDl, cycle, dataManager, DataManager::SimulationType::SIM_3D
+	);
 
 	for (idx z = offset.z(); z < offset.z() + local.z(); z++)
 		for (idx y = offset.y(); y < offset.y() + local.y(); y++)
@@ -860,7 +862,18 @@ void LBM_BLOCK<CONFIG>::writeVTK_3Dcut(
 	std::vector<int> tempIData;
 	std::vector<float> tempFData;
 	const point_t origin = lat.lbm2physPoint(ox, oy, oz);
-	ADIOSWriter<TRAITS> adios(communicator, filename, {gX, gY, gZ}, {lX, lY, lZ}, {oX, oY, oZ}, origin, lat.physDl * step, cycle, dataManager);
+	ADIOSWriter<TRAITS> adios(
+		communicator,
+		filename,
+		{gX, gY, gZ},
+		{lX, lY, lZ},
+		{oX, oY, oZ},
+		origin,
+		lat.physDl * step,
+		cycle,
+		dataManager,
+		DataManager::SimulationType::SIM_3D_CUT
+	);
 
 	ox = TNL::max(ox, offset.x());
 	oy = TNL::max(oy, offset.y());
@@ -934,7 +947,8 @@ void LBM_BLOCK<CONFIG>::writeVTK_2DcutX(
 		origin,
 		lat.physDl,
 		cycle,
-		dataManager
+		dataManager,
+		DataManager::SimulationType::SIM_2D_X
 	);
 
 	idx x = XPOS;
@@ -1004,7 +1018,8 @@ void LBM_BLOCK<CONFIG>::writeVTK_2DcutY(
 		origin,
 		lat.physDl,
 		cycle,
-		dataManager
+		dataManager,
+		DataManager::SimulationType::SIM_2D_Y
 	);
 
 	idx y = YPOS;
@@ -1074,7 +1089,8 @@ void LBM_BLOCK<CONFIG>::writeVTK_2DcutZ(
 		origin,
 		lat.physDl,
 		cycle,
-		dataManager
+		dataManager,
+		DataManager::SimulationType::SIM_2D_Z
 	);
 
 	idx z = ZPOS;
