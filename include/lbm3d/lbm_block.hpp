@@ -762,9 +762,7 @@ void LBM_BLOCK<CONFIG>::writeVTK_3D(lat_t lat, Output&& outputData, const std::s
 	std::vector<int> tempIData;
 	std::vector<float> tempFData;
 	const point_t origin = lat.lbm2physPoint(0, 0, 0);
-	ADIOSWriter<TRAITS> adios(
-		MPI_COMM_WORLD, filename, global, local, offset, origin, lat.physDl, cycle, dataManager, DataManager::SimulationType::SIM_3D
-	);
+	ADIOSWriter<TRAITS> adios(global, local, offset, origin, lat.physDl, dataManager, DataManager::SimulationType::SIM_3D);
 
 	for (idx z = offset.z(); z < offset.z() + local.z(); z++)
 		for (idx y = offset.y(); y < offset.y() + local.y(); y++)
@@ -863,16 +861,7 @@ void LBM_BLOCK<CONFIG>::writeVTK_3Dcut(
 	std::vector<float> tempFData;
 	const point_t origin = lat.lbm2physPoint(ox, oy, oz);
 	ADIOSWriter<TRAITS> adios(
-		communicator,
-		filename,
-		{gX, gY, gZ},
-		{lX, lY, lZ},
-		{oX, oY, oZ},
-		origin,
-		lat.physDl * step,
-		cycle,
-		dataManager,
-		DataManager::SimulationType::SIM_3D_CUT
+		{gX, gY, gZ}, {lX, lY, lZ}, {oX, oY, oZ}, origin, lat.physDl * step, dataManager, DataManager::SimulationType::SIM_3D_CUT
 	);
 
 	ox = TNL::max(ox, offset.x());
@@ -939,14 +928,11 @@ void LBM_BLOCK<CONFIG>::writeVTK_2DcutX(
 	std::vector<float> tempFData;
 	const point_t origin = lat.lbm2physPoint(XPOS, 0, 0);
 	ADIOSWriter<TRAITS> adios(
-		communicator,
-		filename,
 		{1, global.y(), global.z()},
 		{1, local.y(), local.z()},
 		{0, offset.y(), offset.z()},
 		origin,
 		lat.physDl,
-		cycle,
 		dataManager,
 		DataManager::SimulationType::SIM_2D_X
 	);
@@ -1010,14 +996,11 @@ void LBM_BLOCK<CONFIG>::writeVTK_2DcutY(
 	std::vector<float> tempFData;
 	const point_t origin = lat.lbm2physPoint(0, YPOS, 0);
 	ADIOSWriter<TRAITS> adios(
-		communicator,
-		filename,
 		{global.x(), 1, global.z()},
 		{local.x(), 1, local.z()},
 		{offset.x(), 0, offset.z()},
 		origin,
 		lat.physDl,
-		cycle,
 		dataManager,
 		DataManager::SimulationType::SIM_2D_Y
 	);
@@ -1081,14 +1064,11 @@ void LBM_BLOCK<CONFIG>::writeVTK_2DcutZ(
 	std::vector<float> tempFData;
 	const point_t origin = lat.lbm2physPoint(0, 0, ZPOS);
 	ADIOSWriter<TRAITS> adios(
-		communicator,
-		filename,
 		{global.x(), global.y(), 1},
 		{local.x(), local.y(), 1},
 		{offset.x(), offset.y(), 0},
 		origin,
 		lat.physDl,
-		cycle,
 		dataManager,
 		DataManager::SimulationType::SIM_2D_Z
 	);

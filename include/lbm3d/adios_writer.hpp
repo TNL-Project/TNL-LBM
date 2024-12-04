@@ -6,32 +6,9 @@
 
 template <typename TRAITS>
 ADIOSWriter<TRAITS>::ADIOSWriter(
-	TNL::MPI::Comm communicator,
-	const std::string& basename,
-	idx3d global,
-	idx3d local,
-	idx3d offset,
-	point_t physOrigin,
-	real physDl,
-	int cycle,
-	DataManager& dataManager,
-	DataManager::SimulationType simType
+	idx3d global, idx3d local, idx3d offset, point_t physOrigin, real physDl, DataManager& dataManager, DataManager::SimulationType simType
 )
-#ifdef HAVE_MPI
-: adios(communicator)
-#else
-: adios()
-#endif
 {
-	// io = adios.DeclareIO("io");
-	// io.SetEngine("BP4");
-	// filename = basename + ".bp";
-
-	// if (cycle==0)
-	// 	engine = io.Open(filename, adios2::Mode::Write);
-	// else
-	// 	engine = io.Open(filename, adios2::Mode::Append);
-
 	this->global = global;
 	this->local = local;
 	this->offset = offset;
@@ -39,20 +16,13 @@ ADIOSWriter<TRAITS>::ADIOSWriter(
 	this->physDl = physDl;
 	this->dataManager = &dataManager;
 	this->simType = simType;
-	//engine.BeginStep();
+	dataManager.beginStep(simType);
 }
 
 template <typename TRAITS>
 template <typename T>
 void ADIOSWriter<TRAITS>::write(std::string varName, T val)
 {
-	// recordVariable(varName, 0);
-
-	// adios2::Variable<T> value = io.DefineVariable<T>(varName);
-
-	// engine.Put(value,val);
-	// engine.PerformPuts();
-
 	if (dataManager->getVariables(simType).count(varName) == 0) {
 		dataManager->defineData<T>(varName, simType);
 	}
@@ -64,16 +34,6 @@ template <typename TRAITS>
 template <typename T>
 void ADIOSWriter<TRAITS>::write(std::string varName, std::vector<T>& val, int dim)
 {
-	// recordVariable(varName, dim);
-
-	// adios2::Dims shape({size_t(global.z()), size_t(global.y()), size_t(global.x())});
-	// adios2::Dims start({size_t(offset.z()), size_t(offset.y()), size_t(offset.x())});
-	// adios2::Dims count({size_t(local.z()), size_t(local.y()), size_t(local.x())});
-	// adios2::Variable<T> values = io.DefineVariable<T>(varName, shape, start, count);
-
-	// engine.Put(values,val.data());
-	// engine.PerformPuts();
-
 	recordVariable(varName, dim);
 
 	if (dataManager->getVariables(simType).count(varName) == 0) {
@@ -143,12 +103,9 @@ template <typename TRAITS>
 void ADIOSWriter<TRAITS>::addFidesAttributes()
 {
 	// add attributes for Fides
-	//io.DefineAttribute<std::string>("Fides_Data_Model", "uniform");
-	//io.DefineAttribute<typename point_t::ValueType>("Fides_Origin", &physOrigin[0], point_t::getSize());
 	dataManager->defineAttribute<std::string>("Fides_Data_Model", "uniform", simType);
 	dataManager->defineAttribute<typename point_t::ValueType>("Fides_Origin", &physOrigin[0], point_t::getSize(), simType);
 	real spacing[3] = {physDl, physDl, physDl};
-	//io.DefineAttribute<real>("Fides_Spacing", &spacing[0], 3);
 	dataManager->defineAttribute<real>("Fides_Spacing", spacing, 3, simType);
 
 	bool dimension_variable_set = false;
@@ -162,7 +119,6 @@ void ADIOSWriter<TRAITS>::addFidesAttributes()
 				// FIXME: Fides requires this variable to be PointData for sizing,
 				// but PointData leads to visual "gaps" between subdomains in Paraview
 				// https://github.com/ornladios/ADIOS2-Examples/issues/90
-				//io.DefineAttribute<std::string>("Fides_Dimension_Variable", name);
 				dataManager->defineAttribute<std::string>("Fides_Dimension_Variable", name, simType);
 				dimension_variable_set = true;
 			}
@@ -170,9 +126,6 @@ void ADIOSWriter<TRAITS>::addFidesAttributes()
 			variable_associations.push_back("points");
 		}
 	}
-	// io.DefineAttribute<std::string>("Fides_Variable_List", variable_list.data(), variable_list.size());
-	// io.DefineAttribute<std::string>("Fides_Variable_Associations", variable_associations.data(), variable_associations.size());
-	// io.DefineAttribute<std::string>("Fides_Time_Variable", "TIME");
 	dataManager->defineAttribute<std::string>("Fides_Variable_List", variable_list.data(), variable_list.size(), simType);
 	dataManager->defineAttribute<std::string>("Fides_Variable_Associations", variable_associations.data(), variable_associations.size(), simType);
 	dataManager->defineAttribute<std::string>("Fides_Time_Variable", "TIME", simType);
@@ -185,8 +138,5 @@ ADIOSWriter<TRAITS>::~ADIOSWriter()
 		addVTKAttributes();
 		addFidesAttributes();
 	}
-
-	// engine.EndStep();
-	// engine.Close();
 	dataManager->performPutsAndStep(simType);
 }

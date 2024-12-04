@@ -143,8 +143,8 @@ int sim(int RESOLUTION = 2)
 	state.add2Dcut_Y(Y / 2, "cutsY/cut_Y");
 	state.add2Dcut_Z(Z / 2, "cutsZ/cut_Z");
 
-	state.cnt[VTK3D].period = 0.1;
-	state.cnt[VTK3DCUT].period = 0.1;
+	state.cnt[VTK3D].period = 0.001;
+	state.cnt[VTK3DCUT].period = 0.001;
 	state.add3Dcut(X / 4, Y / 4, Z / 4, X / 2, Y / 2, Z / 2, 2, "box");
 
 	execute(state);

@@ -296,7 +296,7 @@ struct State
 	  checkpoint(adios),
 	  nse(communicator, lat, std::forward<ARGS>(args)...),
 	  ibm(nse, id),
-	  dataManager(fmt::format("results_{}", id))
+	  dataManager(&adios)
 	{
 		// try to lock the results directory
 		if (nse.rank == 0) {

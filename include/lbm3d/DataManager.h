@@ -19,8 +19,8 @@ public:
         SIM_2D_Z
     };
 
-    DataManager(const std::string& baseDir) 
-        : baseDir_(baseDir)
+    DataManager(adios2::ADIOS* adios) 
+        : adios(adios)
     {
         engines_[SimulationType::SIM_3D] = nullptr;
         engines_[SimulationType::SIM_3D_CUT] = nullptr;
@@ -29,10 +29,10 @@ public:
         engines_[SimulationType::SIM_2D_Z] = nullptr;
 
         variables_[SimulationType::SIM_3D] = {};
-       variables_[SimulationType::SIM_3D_CUT] = {};
-          variables_[SimulationType::SIM_2D_X] = {};
-       variables_[SimulationType::SIM_2D_Y] = {};
-     variables_[SimulationType::SIM_2D_Z] = {};
+        variables_[SimulationType::SIM_3D_CUT] = {};
+        variables_[SimulationType::SIM_2D_X] = {};
+        variables_[SimulationType::SIM_2D_Y] = {};
+        variables_[SimulationType::SIM_2D_Z] = {};
     }
 
     void initEngine(SimulationType type, const std::string& name)
@@ -43,15 +43,13 @@ public:
 
         std::string filename = fmt::format("{}.bp", name);
 
-        adios2::IO io_ = adios.DeclareIO(fmt::format("IO_{}", name));
+        adios2::IO io_ = adios->DeclareIO(fmt::format("IO_{}", name));
         io_.SetEngine("BP4");
         engines_[type] = std::make_unique<adios2::Engine>(
             io_.Open(filename, adios2::Mode::Write)
         );
         ios_[type] = io_;
         engine_ = engines_[type].get();
-        engine_->BeginStep(); 
-        std::cout<<filename<<std::endl;
     }
 
     adios2::Engine& getEngine(SimulationType type) {
@@ -193,9 +191,8 @@ private:
         }
     }
 
-    std::string baseDir_;
-    adios2::ADIOS adios;
-    std::map<SimulationType, adios2::IO> ios_;
+    adios2::ADIOS* adios;
+    std::map<SimulationType, adios2::IO> ios_; //pair pro 2d cuts 
     std::map<SimulationType, std::unique_ptr<adios2::Engine>> engines_;
     std::map<SimulationType, std::map<std::string, std::any>> variables_;
     std::map<SimulationType, std::map<std::string, int>> variable_dimensions_; 

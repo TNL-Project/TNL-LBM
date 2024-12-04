@@ -24,9 +24,6 @@ private:
 	real physDl;
 
 	// ADIOS2 interface
-	adios2::ADIOS adios;
-	adios2::IO io;
-	adios2::Engine engine;
 	std::string filename;
 
 	DataManager* dataManager;
@@ -44,14 +41,11 @@ public:
 	ADIOSWriter() = delete;
 
 	ADIOSWriter(
-		TNL::MPI::Comm communicator,
-		const std::string& basename,
 		idx3d global,
 		idx3d local,
 		idx3d offset,
 		point_t physOrigin,
 		real physDl,
-		int cycle,
 		DataManager& dataManager,
 		DataManager::SimulationType simType
 	);

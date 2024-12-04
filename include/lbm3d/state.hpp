@@ -479,6 +479,7 @@ template <typename... ARGS>
 void State<NSE>::add2Dcut_X(idx x, const char* fmts, ARGS... args)
 {
 	probe2Dvec.push_back(T_PROBE2DCUT());
+
 	int last = probe2Dvec.size() - 1;
 
 	probe2Dvec[last].name = fmt::format(fmts, args...);
@@ -486,6 +487,9 @@ void State<NSE>::add2Dcut_X(idx x, const char* fmts, ARGS... args)
 	probe2Dvec[last].type = 0;
 	probe2Dvec[last].cycle = 0;
 	probe2Dvec[last].position = x;
+	const std::string fname = fmt::format("results_{}/output_2D_{}", id, probe2Dvec[last].name);
+	create_parent_directories(fname.c_str());
+	dataManager.initEngine(DataManager::SimulationType::SIM_2D_X, fname);
 }
 
 template <typename NSE>
@@ -522,14 +526,13 @@ void State<NSE>::writeVTKs_2D()
 	if (probe2Dvec.size() <= 0)
 		return;
 
-	dataManager.initEngine(DataManager::SimulationType::SIM_2D_X, fmt::format("results_{}/output_2D_{}", id, "X"));
 	dataManager.initEngine(DataManager::SimulationType::SIM_2D_Y, fmt::format("results_{}/output_2D_{}", id, "Y"));
 	dataManager.initEngine(DataManager::SimulationType::SIM_2D_Z, fmt::format("results_{}/output_2D_{}", id, "Z"));
 	// browse all 2D vtk cuts
 	for (auto& probevec : probe2Dvec) {
 		for (const auto& block : nse.blocks) {
 			const std::string fname = fmt::format("results_{}/output_2D_{}", id, probevec.name);
-			create_parent_directories(fname.c_str());
+
 			auto outputData = [this](const BLOCK_NSE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) mutable
 			{
 				return this->outputData(block, index, dof, desc, x, y, z, value, dofs);
