@@ -27,7 +27,7 @@ private:
 	std::string filename;
 
 	DataManager* dataManager;
-	DataManager::SimulationType simType;
+	const std::string& simType;
 	// data variables recorded for output (mapping of name to dimension)
 	std::map<std::string, int> variables;
 
@@ -40,15 +40,7 @@ private:
 public:
 	ADIOSWriter() = delete;
 
-	ADIOSWriter(
-		idx3d global,
-		idx3d local,
-		idx3d offset,
-		point_t physOrigin,
-		real physDl,
-		DataManager& dataManager,
-		DataManager::SimulationType simType
-	);
+	ADIOSWriter(idx3d global, idx3d local, idx3d offset, point_t physOrigin, real physDl, DataManager& dataManager, const std::string& simType);
 
 	template <typename T>
 	void write(std::string varName, T val);

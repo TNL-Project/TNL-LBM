@@ -762,7 +762,7 @@ void LBM_BLOCK<CONFIG>::writeVTK_3D(lat_t lat, Output&& outputData, const std::s
 	std::vector<int> tempIData;
 	std::vector<float> tempFData;
 	const point_t origin = lat.lbm2physPoint(0, 0, 0);
-	ADIOSWriter<TRAITS> adios(global, local, offset, origin, lat.physDl, dataManager, DataManager::SimulationType::SIM_3D);
+	ADIOSWriter<TRAITS> adios(global, local, offset, origin, lat.physDl, dataManager, filename);
 
 	for (idx z = offset.z(); z < offset.z() + local.z(); z++)
 		for (idx y = offset.y(); y < offset.y() + local.y(); y++)
@@ -860,9 +860,7 @@ void LBM_BLOCK<CONFIG>::writeVTK_3Dcut(
 	std::vector<int> tempIData;
 	std::vector<float> tempFData;
 	const point_t origin = lat.lbm2physPoint(ox, oy, oz);
-	ADIOSWriter<TRAITS> adios(
-		{gX, gY, gZ}, {lX, lY, lZ}, {oX, oY, oZ}, origin, lat.physDl * step, dataManager, DataManager::SimulationType::SIM_3D_CUT
-	);
+	ADIOSWriter<TRAITS> adios({gX, gY, gZ}, {lX, lY, lZ}, {oX, oY, oZ}, origin, lat.physDl * step, dataManager, filename);
 
 	ox = TNL::max(ox, offset.x());
 	oy = TNL::max(oy, offset.y());
@@ -928,13 +926,7 @@ void LBM_BLOCK<CONFIG>::writeVTK_2DcutX(
 	std::vector<float> tempFData;
 	const point_t origin = lat.lbm2physPoint(XPOS, 0, 0);
 	ADIOSWriter<TRAITS> adios(
-		{1, global.y(), global.z()},
-		{1, local.y(), local.z()},
-		{0, offset.y(), offset.z()},
-		origin,
-		lat.physDl,
-		dataManager,
-		DataManager::SimulationType::SIM_2D_X
+		{1, global.y(), global.z()}, {1, local.y(), local.z()}, {0, offset.y(), offset.z()}, origin, lat.physDl, dataManager, filename
 	);
 
 	idx x = XPOS;
@@ -996,13 +988,7 @@ void LBM_BLOCK<CONFIG>::writeVTK_2DcutY(
 	std::vector<float> tempFData;
 	const point_t origin = lat.lbm2physPoint(0, YPOS, 0);
 	ADIOSWriter<TRAITS> adios(
-		{global.x(), 1, global.z()},
-		{local.x(), 1, local.z()},
-		{offset.x(), 0, offset.z()},
-		origin,
-		lat.physDl,
-		dataManager,
-		DataManager::SimulationType::SIM_2D_Y
+		{global.x(), 1, global.z()}, {local.x(), 1, local.z()}, {offset.x(), 0, offset.z()}, origin, lat.physDl, dataManager, filename
 	);
 
 	idx y = YPOS;
@@ -1064,13 +1050,7 @@ void LBM_BLOCK<CONFIG>::writeVTK_2DcutZ(
 	std::vector<float> tempFData;
 	const point_t origin = lat.lbm2physPoint(0, 0, ZPOS);
 	ADIOSWriter<TRAITS> adios(
-		{global.x(), global.y(), 1},
-		{local.x(), local.y(), 1},
-		{offset.x(), offset.y(), 0},
-		origin,
-		lat.physDl,
-		dataManager,
-		DataManager::SimulationType::SIM_2D_Z
+		{global.x(), global.y(), 1}, {local.x(), local.y(), 1}, {offset.x(), offset.y(), 0}, origin, lat.physDl, dataManager, filename
 	);
 
 	idx z = ZPOS;

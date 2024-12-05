@@ -383,7 +383,7 @@ void State<NSE>::write1Dcut_Z(idx x, idx y, const std::string& fname)
 template <typename NSE>
 void State<NSE>::writeVTKs_3D()
 {
-	dataManager.initEngine(DataManager::SimulationType::SIM_3D, fmt::format("results_{}/output_3D", id));
+	dataManager.initEngine(fmt::format("results_{}/output_3D", id));
 	TNL::Timer timer;
 	for (const auto& block : nse.blocks) {
 		const std::string fname = fmt::format("results_{}/output_3D", id);
@@ -434,7 +434,7 @@ void State<NSE>::writeVTKs_3Dcut()
 	if (probe3Dvec.size() <= 0)
 		return;
 
-	dataManager.initEngine(DataManager::SimulationType::SIM_3D_CUT, fmt::format("results_{}/output_3Dcut_box", id));
+	dataManager.initEngine(fmt::format("results_{}/output_3Dcut_box", id));
 
 	// browse all 3D vtk cuts
 	for (auto& probevec : probe3Dvec) {
@@ -489,7 +489,7 @@ void State<NSE>::add2Dcut_X(idx x, const char* fmts, ARGS... args)
 	probe2Dvec[last].position = x;
 	const std::string fname = fmt::format("results_{}/output_2D_{}", id, probe2Dvec[last].name);
 	create_parent_directories(fname.c_str());
-	dataManager.initEngine(DataManager::SimulationType::SIM_2D_X, fname);
+	dataManager.initEngine(fname);
 }
 
 template <typename NSE>
@@ -504,6 +504,9 @@ void State<NSE>::add2Dcut_Y(idx y, const char* fmts, ARGS... args)
 	probe2Dvec[last].type = 1;
 	probe2Dvec[last].cycle = 0;
 	probe2Dvec[last].position = y;
+	const std::string fname = fmt::format("results_{}/output_2D_{}", id, probe2Dvec[last].name);
+	create_parent_directories(fname.c_str());
+	dataManager.initEngine(fname);
 }
 
 template <typename NSE>
@@ -518,6 +521,10 @@ void State<NSE>::add2Dcut_Z(idx z, const char* fmts, ARGS... args)
 	probe2Dvec[last].type = 2;
 	probe2Dvec[last].cycle = 0;
 	probe2Dvec[last].position = z;
+
+	const std::string fname = fmt::format("results_{}/output_2D_{}", id, probe2Dvec[last].name);
+	create_parent_directories(fname.c_str());
+	dataManager.initEngine(fname);
 }
 
 template <typename NSE>
@@ -526,8 +533,6 @@ void State<NSE>::writeVTKs_2D()
 	if (probe2Dvec.size() <= 0)
 		return;
 
-	dataManager.initEngine(DataManager::SimulationType::SIM_2D_Y, fmt::format("results_{}/output_2D_{}", id, "Y"));
-	dataManager.initEngine(DataManager::SimulationType::SIM_2D_Z, fmt::format("results_{}/output_2D_{}", id, "Z"));
 	// browse all 2D vtk cuts
 	for (auto& probevec : probe2Dvec) {
 		for (const auto& block : nse.blocks) {

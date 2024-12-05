@@ -11,33 +11,15 @@
 class DataManager
 {
 public:
-    enum class SimulationType {
-        SIM_3D,
-        SIM_3D_CUT,
-        SIM_2D_X,
-        SIM_2D_Y,
-        SIM_2D_Z
-    };
 
     DataManager(adios2::ADIOS* adios) 
         : adios(adios)
     {
-        engines_[SimulationType::SIM_3D] = nullptr;
-        engines_[SimulationType::SIM_3D_CUT] = nullptr;
-        engines_[SimulationType::SIM_2D_X] = nullptr;
-        engines_[SimulationType::SIM_2D_Y] = nullptr;
-        engines_[SimulationType::SIM_2D_Z] = nullptr;
-
-        variables_[SimulationType::SIM_3D] = {};
-        variables_[SimulationType::SIM_3D_CUT] = {};
-        variables_[SimulationType::SIM_2D_X] = {};
-        variables_[SimulationType::SIM_2D_Y] = {};
-        variables_[SimulationType::SIM_2D_Z] = {};
     }
 
-    void initEngine(SimulationType type, const std::string& name)
+    void initEngine(const std::string& name)
     {
-        if (engines_[type]) {
+        if (engines_.count(name) >0) {
             return;     
         }
 
@@ -45,18 +27,21 @@ public:
 
         adios2::IO io_ = adios->DeclareIO(fmt::format("IO_{}", name));
         io_.SetEngine("BP4");
-        engines_[type] = std::make_unique<adios2::Engine>(
+        engines_[name] = std::make_unique<adios2::Engine>(
             io_.Open(filename, adios2::Mode::Write)
         );
-        ios_[type] = io_;
-        engine_ = engines_[type].get();
+        ios_[name] = io_;
+        engine_ = engines_[name].get();
+
+        variables_[name] = {};
+        variable_dimensions_[name] = {};
     }
 
-    adios2::Engine& getEngine(SimulationType type) {
-        if (!engines_[type]) {
+    adios2::Engine& getEngine(const std::string& name) {
+        if (!engines_[name]) {
             throw std::runtime_error("Engine not initialized for this simulation type");
         }
-        return *engines_[type];
+        return *engines_[name];
     }
 
     ~DataManager() {
@@ -75,7 +60,7 @@ public:
 
     template<typename T>
     void defineData(const std::string& name, const adios2::Dims& shape,
-                   const adios2::Dims& start, const adios2::Dims& count, SimulationType type)
+                   const adios2::Dims& start, const adios2::Dims& count, const std::string& type)
     {
         adios2::Variable<T> var = ios_[type].DefineVariable<T>(name, shape, start, count);
         variables_[type][name] = var;
@@ -83,7 +68,7 @@ public:
     }
 
     template<typename T>
-    void defineData(const std::string& name, SimulationType type)
+    void defineData(const std::string& name, const std::string& type)
     {
         adios2::Variable<T> var = ios_[type].DefineVariable<T>(name);
         variables_[type][name] = var;
@@ -91,19 +76,19 @@ public:
     }
 
     template<typename T>
-    void defineAttribute(const std::string& name, const T& data, SimulationType type)
+    void defineAttribute(const std::string& name, const T& data, const std::string& type)
     {
         ios_[type].DefineAttribute<T>(name, data);
     }
 
     template<typename T>
-    void defineAttribute(const std::string& name, const T* data, size_t size, SimulationType type)
+    void defineAttribute(const std::string& name, const T* data, size_t size, const std::string& type)
     {
          ios_[type].DefineAttribute<T>(name, data, size);
     }
 
     template<typename T>
-    void outputData(const std::string& name, const T& data, SimulationType type)
+    void outputData(const std::string& name, const T& data, const std::string& type)
     {
         if (engines_[type] == nullptr) {
             throw std::runtime_error("Engine not initialized for this simulation type");
@@ -122,7 +107,7 @@ public:
     }
 
     template<typename T>
-    void outputData(const std::string& name, const T* data, SimulationType type)
+    void outputData(const std::string& name, const T* data, const std::string& type)
     {
         if (engines_[type] == nullptr) {
             throw std::runtime_error("Engine not initialized for this simulation type");
@@ -142,7 +127,7 @@ public:
     }
 
 
-    void beginStep(SimulationType type)
+    void beginStep(const std::string& type)
     {
         if (engines_[type] == nullptr) {
             throw std::runtime_error("Engine not initialized for this simulation type");
@@ -151,7 +136,7 @@ public:
         engine_->BeginStep();
     }
 
-    void performPutsAndStep(SimulationType type)
+    void performPutsAndStep(const std::string& type)
     {
         if (engines_[type] == nullptr) {
             throw std::runtime_error("Engine not initialized for this simulation type");
@@ -161,7 +146,7 @@ public:
         engine_->EndStep();
     }
 
-    const std::map<std::string, std::any>& getVariables(SimulationType type) const
+    const std::map<std::string, std::any>& getVariables(const std::string& type) const
     {
         auto it = variables_.find(type);
         if(it != variables_.end()) {
@@ -170,7 +155,7 @@ public:
         throw std::runtime_error("No variables defined for this simulation type");
     }
 
-    const std::map<std::string, int>& getVariableDimensions(SimulationType type) const
+    const std::map<std::string, int>& getVariableDimensions(const std::string& type) const
     {
         auto it = variable_dimensions_.find(type);
         if(it != variable_dimensions_.end()) {
@@ -180,21 +165,11 @@ public:
     }
 
 private:
-    std::string getSimTypeString(SimulationType type) {
-        switch(type) {
-            case SimulationType::SIM_3D: return "3D";
-            case SimulationType::SIM_3D_CUT: return "3D_CUT";
-            case SimulationType::SIM_2D_X: return "2D_X";
-            case SimulationType::SIM_2D_Y: return "2D_Y";
-            case SimulationType::SIM_2D_Z: return "2D_Z";
-            default: return "UNKNOWN";
-        }
-    }
 
     adios2::ADIOS* adios;
-    std::map<SimulationType, adios2::IO> ios_; //pair pro 2d cuts 
-    std::map<SimulationType, std::unique_ptr<adios2::Engine>> engines_;
-    std::map<SimulationType, std::map<std::string, std::any>> variables_;
-    std::map<SimulationType, std::map<std::string, int>> variable_dimensions_; 
+    std::map<std::string, adios2::IO> ios_;
+    std::map<std::string, std::unique_ptr<adios2::Engine>> engines_;
+    std::map<std::string, std::map<std::string, std::any>> variables_;
+    std::map<std::string, std::map<std::string, int>> variable_dimensions_; 
     adios2::Engine* engine_ = nullptr;
 };

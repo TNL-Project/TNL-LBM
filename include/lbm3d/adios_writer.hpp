@@ -6,8 +6,9 @@
 
 template <typename TRAITS>
 ADIOSWriter<TRAITS>::ADIOSWriter(
-	idx3d global, idx3d local, idx3d offset, point_t physOrigin, real physDl, DataManager& dataManager, DataManager::SimulationType simType
+	idx3d global, idx3d local, idx3d offset, point_t physOrigin, real physDl, DataManager& dataManager, const std::string& simType
 )
+: simType(simType)
 {
 	this->global = global;
 	this->local = local;
@@ -15,7 +16,6 @@ ADIOSWriter<TRAITS>::ADIOSWriter(
 	this->physOrigin = physOrigin;
 	this->physDl = physDl;
 	this->dataManager = &dataManager;
-	this->simType = simType;
 	dataManager.beginStep(simType);
 }
 

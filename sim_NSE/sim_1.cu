@@ -140,6 +140,7 @@ int sim(int RESOLUTION = 2)
 	// add cuts
 	state.cnt[VTK2D].period = 0.001;
 	state.add2Dcut_X(X / 2, "cutsX/cut_X");
+	state.add2Dcut_X(X / 4, "cutsX/cut_X4");
 	state.add2Dcut_Y(Y / 2, "cutsY/cut_Y");
 	state.add2Dcut_Z(Z / 2, "cutsZ/cut_Z");
 
