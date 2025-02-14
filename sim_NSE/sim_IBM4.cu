@@ -1,9 +1,16 @@
 #include "lbm3d/core.h"
 #include "lbm3d/lagrange_3D.h"
 #include "lbm3d/obstacles_ibm.h"
-
 // bouncing ball in 3D
 // IBM-LBM
+
+//int n1;
+//int n2;
+//struct rectangleN1N2 
+//{
+//	int n1;
+//	int n2;
+//};
 
 template < typename TRAITS >
 struct MacroLocal : D3Q27_MACRO_Base< TRAITS >
@@ -124,28 +131,331 @@ struct StateLocal : State<NSE>
 
 		cycle++;
 	}
+////////////////////////////////////////////////////////////////////////////////////////////////
+//Delta t =1
+//h = 1
+//number of j and i  coordinates
+int N1=0;
+int N2=0;
+
+//differences
+template<typename LL_array>
+point_t second_central_difference(int i, int j,bool by_s1, LL_array& LL)
+{
+	point_t X = LL[i*N2+j];
+	point_t Xnext = by_s1? LL[(i+1)*N2+j] : LL[(i)*N2+j +1];
+	point_t Xprev = by_s1 ? LL[(i-1)*N2+j] : LL[(i)*N2+j -1];
+	return Xnext -2*X + Xprev;
+}
+template<typename LL_array>
+point_t second_central_difference(int i, int j, LL_array& LL)
+{
+	return (LL[(i+1)*N2 +j + 1] - LL[(i+1)*N2 +j - 1] - LL[(i-1)*N2 +j + 1] + LL[(i-1)*N2 +j - 1])/4;
+}
+template<typename LL_array>
+point_t fourth_central_difference(int i, int j, bool by_s1, LL_array& LL)
+{
+	point_t X = LL[i*N2+j];
+	point_t Xnext = by_s1? LL[(i+1)*N2+j] : LL[(i)*N2+j +1];
+	point_t Xnext2 = by_s1? LL[(i+2)*N2+j] : LL[(i)*N2+j +2];
+	point_t Xprev = by_s1 ? LL[(i-1)*N2+j] : LL[(i)*N2+j -1];
+	point_t Xprev2 = by_s1 ? LL[(i-2)*N2+j] : LL[(i)*N2+j -2];
+	return Xnext2 - 4*Xnext + 6*X - 4*Xprev +Xprev2;
+}
+template<typename LL_array>
+point_t fourth_central_difference(int i, int j, LL_array& LL)
+{
+	return (
+		LL[(i+2)*N2+j+2] +LL[(i+2)*N2+j-2] + LL[(i-2)*N2+j+2] + LL[(i-2)*N2+j-2]
+		- 2*LL[(i+2)*N2+j]- 2*LL[(i)*N2+j+2]- 2*LL[(i)*N2+j-2]- 2*LL[(i-2)*N2+j]
+		+ 4*LL[(i)*N2+j]
+	)/16;
+}
+//////////////////////////////////////////////////////////////////////////////////////
+template<typename LL_array>
+point_t second_forward_diff_RHS(int i, int j,bool by_s1, LL_array& LL)
+{
+	//point_t X = LL[i*N2+j];
+	point_t Xnext = by_s1? LL[(i+1)*N2+j] : LL[(i)*N2+j +1];
+	point_t Xnext2 = by_s1 ? LL[(i+2)*N2+j] : LL[(i)*N2+j +2];
+	return -(Xnext2 -2*Xnext);
+}
+template<typename LL_array>
+point_t second_backward_diff_RHS(int i, int j,bool by_s1, LL_array& LL)
+{
+	//point_t X = LL[i*N2+j];
+	point_t Xprev2 = by_s1? LL[(i-2)*N2+j] : LL[(i)*N2+j -2];
+	point_t Xprev = by_s1 ? LL[(i-1)*N2+j] : LL[(i)*N2+j -1];
+	return -(-2*Xprev + Xprev2);
+}
+template<typename LL_array>
+point_t third_forward_diff_RHS(int i, int j,bool by_s1, LL_array& LL)
+{
+	//point_t X = LL[i*N2+j];
+	point_t Xnext = by_s1? LL[(i+1)*N2+j] : LL[(i)*N2+j +1];
+	point_t Xnext2 = by_s1 ? LL[(i+2)*N2+j] : LL[(i)*N2+j +2];
+	point_t Xnext3 = by_s1 ? LL[(i+3)*N2+j] : LL[(i)*N2+j +3];
+	return +3*Xnext -3*Xnext2 + Xnext3;//-X
+}
+template<typename LL_array>
+point_t third_backward_diff_RHS(int i, int j,bool by_s1, LL_array& LL)
+{
+	//point_t X = LL[i*N2+j];
+	point_t Xprev = by_s1? LL[(i-1)*N2+j] : LL[(i)*N2+j -1];
+	point_t Xprev2 = by_s1 ? LL[(i-2)*N2+j] : LL[(i)*N2+j -2];
+	point_t Xprev3 = by_s1 ? LL[(i-3)*N2+j] : LL[(i)*N2+j -3];
+	return -(-3*Xprev +3*Xprev2 - Xprev3);
+}
+dreal sigma;
+dreal gama=0.0001;
+dreal density = 1;
+dreal fi11 = 10*10*10;
+dreal fi22 = fi11;
+dreal fi12 =10;
+dreal kappa = pow(10,5);
+int L = N1;
+int H = N2;
+bool by_s1 =true;
+bool by_s2 = false;
+//gravity neglected g=0
+
+template<typename LL_array>
+point_t elastic_force_sum(int i,int j,LL_array& LL)
+{
+std::cout<< "elastic force sum is called"<<" i = "<<i<<" j = "<<j <<std::endl;
+	//sum from i,j = 1 to i,j =2
+	//i=j=1 s1,s1
+	point_t sigma_s1s1 = second_central_difference(i,j,by_s1,LL);
+	point_t sigma_s1s2 = second_central_difference(i,j,LL);
+	point_t sigma_s2s2 = second_central_difference(i,j,by_s2,LL);
+	point_t sigmaSum = sigma*(sigma_s1s1 + 2*sigma_s1s2 + sigma_s2s2);
+
+	point_t gama_s1s1 = fourth_central_difference(i,j,by_s1,LL);
+	point_t gama_s1s2 = fourth_central_difference(i,j,LL);
+	point_t gama_s2s2 = fourth_central_difference(i,j,by_s2,LL);
+	point_t gamaSum = gama*(gama_s1s1 + 2*gama_s1s2 + gama_s2s2);
+	std::cout<<"gama sum = "<< gamaSum<<std::endl;
+	std::cout<<"sigma sum = "<< sigmaSum<<std::endl;
+	   return sigmaSum - gamaSum;
+}
+template<typename LL_array>
+point_t lagrangian_force(LL_array& previous, LL_array& LL, int i, int j)
+{
+	point_t U_ib;
+	//if (...)   rozhodnout jestli hb nebo db
+	U_ib = point_t{
+		ibm.ws_tnl_hb[0][i*N2+j],
+		ibm.ws_tnl_hb[1][i*N2+j],
+		ibm.ws_tnl_hb[2][i*N2+j]
+	};
+	point_t Xn = LL[i*N2+j];
+	//point_t Xn_ib = point_t{dvx,dvy,dvz};
+	point_t Xn_ib = Xn;  // mozna to je jinak...
+	point_t waveX_ibPlus1 = Xn_ib + U_ib*1;//delta t =1
+	point_t XnMinus1 = previous[i*N2+j];
+	std::cout << " langangian_force \n i= " << i << "\n" <<
+		"j= " << j <<"\n" << 
+	" result " << -kappa*(waveX_ibPlus1 -2*Xn + XnMinus1)<<std::endl; 
+	return -kappa*(waveX_ibPlus1 -2*Xn + XnMinus1);
+}
+//operations for point_t
+//how to get time--the point in previous time
+//is point_t the proper type
+//are all of point_t coordinates defined?
+
+using HLPVECTOR = decltype(ibm.hLL_lat);
+using DLPVECTOR = decltype(ibm.dLL_lat);
+HLPVECTOR previous;
+HLPVECTOR next;
+
+template<typename LL_array>
+void deformX(int i, int j,LL_array& previous ,LL_array& LL,LL_array& next)
+{
+	//boundaries
+	//s1=0
+	//i*N2 +j
+	 if(i ==0)
+	 {
+		std::cout<< "i ==0" <<" i "<<i<<" j " << j<<std::endl;
+		 next[i*N2+j] = LL[i*N2+j];
+		//next[i*N2+j] = point_t{0,0,j};
+		//next[i*N2+j]+= second_forward_diff_RHS(i,j,by_s1,LL);
+
+
+	 }
+	 //s1 = L = N1
+	 else if(i==N1)
+	 {std::cout<< "i ==N1"  <<" i "<<i<<" j " << j<<std::endl;
+		next[i*N2+j] +=second_backward_diff_RHS(i,j,by_s1,LL);
+		next[i*N2+j]+=third_backward_diff_RHS(i,j,by_s1,LL);
+		//sigma=0;
+		//gama=0;
+
+	 }
+	 //s2=0 or s2 = H = N2
+	 else if(j==0 || j == N2)
+	 {
+		std::cout<< "j ==0 or N2"  <<" i "<<i<<" j " << j<<std::endl;
+		next[i*N2+j]+=second_forward_diff_RHS(i,j,by_s2,LL);
+		next[i+N2+j]+=third_forward_diff_RHS(i,j,by_s2,LL);
+		//sigma=0;
+		//gama=0;
+
+	 }
+	 else
+	 {
+		std::cout<< "else " <<" i "<<i<<" j " << j <<std::endl;
+		next[i*N2+j] += (elastic_force_sum(i,j,LL) -lagrangian_force(previous,LL,i,j) -2*LL[i*N2+j] +previous[i*N2+j])/density;
+
+	 }
+
+
+}
+template<typename LL_array>
+void deform(LL_array&previous, LL_array& LL, LL_array&next)
+{
+	std::cout << "deform is called" << std::endl;
+
+std::cout<<"N1 == "<<N1<<" N2 == " <<N2<<std::endl;
+for(int i = 1; i<= N1-1;i++)
+{
+	for(int j =1; j<= N2-1;j++)
+	{
+		std::cout << "firs for i = "<<i<< " j = "<<j<<std::endl;
+		deformX(i,j,previous,LL,next);
+
+	}
+
+
+}
+for(int j = 0; j<=N2;j++)
+{
+	int i = 0;
+	std::cout << "second for i = "<<i<< " j = "<<j<<std::endl;
+	deformX(i,j,previous,LL,next);
+
+
+}
+for(int j = 0; j<=N2;j++)
+{
+	int i = N1;
+	std::cout << "third for i = "<<i<< " j = "<<j<<std::endl;
+	deformX(i,j,previous,LL,next);
+
+
+}
+for(int i = 0; i<=N1;i++)
+{
+	int j = 0;
+	std::cout << "fourth for i = "<<i<< " j = "<<j<<std::endl;
+	deformX(i,j,previous,LL,next);
+
+
+}
+for(int i = 0; i<=N1;i++)
+{
+	int j = N2;
+	std::cout << "fifth for i = "<<i<< " j = "<<j<<std::endl;
+	deformX(i,j,previous,LL,next);
+
+
+}
+
+}
+//check for first run
+//let the position of the desk unchanged for this time
 
 	virtual void computeBeforeLBMKernel()
 	{
+		std::cout << "compute before kernel"<< std::endl;
+
 		// update ball position
 		const dreal velocity_amplitude = 2 * ball_amplitude / ball_period;
 		const dreal vz = TNL::sign( cos(2*TNL::pi*nse.iterations/ball_period) ) * velocity_amplitude;
+
 		if (ibm.computeVariant == IbmCompute::CPU) {
 			//ibm.hLL_velocity_lat = point_t{0,0,vz};
-			ibm.hLL_velocity_lat = point_t{0,vz,0};
-			ibm.hLL_lat += ibm.hLL_velocity_lat;	// Delta t = 1
+			//HLPVECTOR previous; --> definovat globalne
+			//HLPVECTOR next; --> taky definovat globalne
+			std::cout << "if ibm compute cpu"<<std::endl;
+			next.setLike(ibm.hLL_lat);
+			//previous.setLike(ibm.hLL_lat);
+			if(nse.iterations == 0)
+			{
+				std::cout << "if iteration == 0"<<std::endl;
+				previous = ibm.hLL_lat;
+				next = ibm.hLL_lat;
+			}
+			else
+			{
+				std::cout << "else call deform"<<std::endl;
+				const auto hvx = ibm.hmacroVector(MACRO::e_vx);
+				const auto hvy = ibm.hmacroVector(MACRO::e_vy);
+				const auto hvz = ibm.hmacroVector(MACRO::e_vz);
+				ibm.ws_tnl_hM.vectorProduct(hvx, ibm.ws_tnl_hb[0]);
+				ibm.ws_tnl_hM.vectorProduct(hvy, ibm.ws_tnl_hb[1]);
+				ibm.ws_tnl_hM.vectorProduct(hvz, ibm.ws_tnl_hb[2]);
+				deform(previous, ibm.hLL_lat, next);
+				previous = ibm.hLL_lat;
+				ibm.hLL_lat = next;
+			}
+			//deform(ibm.hLL_lat);
+			ibm.hLL_velocity_lat = ibm.hLL_lat - previous;
 		}
 		else {
+			//deform(ibm.dLL_lat);
 			//ibm.dLL_velocity_lat = point_t{0,0,vz};
 			ibm.dLL_velocity_lat = point_t{0,vz,0};
 			ibm.dLL_lat += ibm.dLL_velocity_lat;	// Delta t = 1
+
+				//const auto dvx = ibm.dmacroVector(MACRO::e_vx);
+				//const auto dvy = ibm.dmacroVector(MACRO::e_vy);
+				//const auto dvz = ibm.dmacroVector(MACRO::e_vz);
+				//ibm.ws_tnl_dM.vectorProduct(dvx, ibm.ws_tnl_db[0]);
+				//ibm.ws_tnl_dM.vectorProduct(dvy, ibm.ws_tnl_db[1]);
+				//ibm.ws_tnl_dM.vectorProduct(dvz, ibm.ws_tnl_db[2]);
 		}
+
 		ibm.constructed = false;
 		ibm.use_LL_velocity_in_solution = true;
 
 		// update the ball center for drawing
 		//ball_c += point_t{0,0,vz*nse.lat.physDl};
-		ball_c += point_t{0,vz*nse.lat.physDl,0};
+		//ball_c += point_t{0,vz*nse.lat.physDl,0};
+
+		//rotation
+		//The residue is NaN.
+		// const point_t rotation_axis = point_t{0,0,1};
+		// const point_t rotation_radius = point_t{1,1,2};
+		// const point_t radius_axis_cross_product = point_t{
+		// 	rotation_radius[1]*rotation_axis[2] - rotation_radius[2]*rotation_axis[1],
+		// 	-(rotation_radius[0]*rotation_axis[2] - rotation_radius[2]*rotation_axis[0]),
+		// 	rotation_radius[0]*rotation_axis[1] - rotation_radius[1]*rotation_axis[0]
+		// };
+		// const dreal radius_axis_cross_product_length = sqrt(pow(radius_axis_cross_product[0],2)+pow(radius_axis_cross_product[1],2) + pow(radius_axis_cross_product[2],2));
+		// //T=1
+		// const dreal T = nse.iterations;
+		// const dreal angular_speed = (2*TNL::pi)/T;
+		// const dreal length_of_radius = sqrt(pow(rotation_radius[0],2)+pow(rotation_radius[1],2)+pow(rotation_radius[2],2));
+		// const dreal magnitude_orbital_velocity = angular_speed*length_of_radius;
+		// const dreal scalar = magnitude_orbital_velocity/radius_axis_cross_product_length;
+		// //           velocity = scalar*radius_axis_cross_product;
+
+		// if (ibm.computeVariant == IbmCompute::CPU) {
+		// 	//ibm.hLL_velocity_lat = point_t{0,0,vz};
+		// 	ibm.hLL_velocity_lat = point_t{scalar*radius_axis_cross_product[0],scalar*radius_axis_cross_product[1],scalar*radius_axis_cross_product[2]};
+		// 	ibm.hLL_lat += ibm.hLL_velocity_lat;	// Delta t = 1
+		// }
+		// else {
+		// 	//ibm.dLL_velocity_lat = point_t{0,0,vz};
+		// 	ibm.dLL_velocity_lat = point_t{scalar*radius_axis_cross_product[0],scalar*radius_axis_cross_product[1],scalar*radius_axis_cross_product[2]};
+		// 	ibm.dLL_lat += ibm.dLL_velocity_lat;	// Delta t = 1
+		// }
+
+		// ibm.constructed = false;
+		// ibm.use_LL_velocity_in_solution = true;
+
+
 	}
 
 	virtual void updateKernelVelocities()
@@ -228,11 +538,11 @@ int sim(int RES=2, double i_Re=1000, double nasobek=2.0, int dirac_delta=2, int 
 	state.ball_period = 2.0 / PHYS_DT;	// [lbm units]
 
 	state.cnt[PRINT].period = 0.1;
-	state.nse.physFinalTime = 30.0;
+	state.nse.physFinalTime = 10*PHYS_DT; //1.0; //30.0;
 
-//	state.cnt[VTK3D].period = 1.0;
-	state.cnt[VTK2D].period = 0.01;
-	state.cnt[PROBE1].period = 0.01;	// Lagrangian points VTK output
+	state.cnt[VTK3D].period = PHYS_DT; //1.0;
+	state.cnt[VTK2D].period = PHYS_DT; //0.01;
+	state.cnt[PROBE1].period = PHYS_DT; //0.01;	// Lagrangian points VTK output
 
 	// select compute method
 	IbmCompute computeVariant;
@@ -259,7 +569,9 @@ int sim(int RES=2, double i_Re=1000, double nasobek=2.0, int dirac_delta=2, int 
 	state.ball_c[1] = 5.5*state.ball_diameter;
 	state.ball_c[2] = 5.5*state.ball_diameter;
 	real sigma = nasobek * PHYS_DL;
-	ibmSetupRectangle(state.ibm, state.ball_c, state.ball_diameter/2.0, sigma);
+	std::vector<int> N1N2 = ibmSetupRectangle(state.ibm, state.ball_c, state.ball_diameter/2.0, sigma);
+	state.N1 = N1N2[0];
+	state.N2 = N1N2[1];
 
 	// configure IBM
 	state.ibm.computeVariant = computeVariant;
@@ -333,7 +645,7 @@ int main(int argc, char **argv)
 		const int pars=6;
 		if (argc <= pars)
 		{
-			fprintf(stderr, "error: %d parameters required:\n %s method{0,1} dirac{1,2,3,4} Re{100,200} hi[0,%d] res[1,22] compute[1,7]\n", pars, argv[0],hmax-1);
+			fprintf(stderr, "error: %d parameters required:\n %s method{0,1} dirac{1,2,3,4} Re{100,200} hi[0,%d] res[1,22] compute[0,3]\n", pars, argv[0],hmax-1);
 			return 1;
 		}
 		int method = atoi(argv[1]);	// 0=modified 1=original

@@ -1,9 +1,12 @@
 #pragma once
 
 #include "lbm3d/lagrange_3D.h"
+#include <vector>
+//int n2=0;
+//int n1=0;
 
 template < typename LBM>
-void ibmSetupRectangle(Lagrange3D<LBM>& ibm, typename LBM::point_t center, double width, double sigma)
+std::vector<int> ibmSetupRectangle(Lagrange3D<LBM>& ibm, typename LBM::point_t center, double width, double sigma)
 {
 	using real = typename Lagrange3D<LBM>::real;
 	using point_t = typename Lagrange3D<LBM>::point_t;
@@ -16,31 +19,34 @@ void ibmSetupRectangle(Lagrange3D<LBM>& ibm, typename LBM::point_t center, doubl
 	real dx = width/N1;
 	//W--total height for rectanel available with a buffer on top and bottom
 	real W = ibm.lbm.lat.physDl*(ibm.lbm.lat.global.y()-2);
+	real w = W/2;
 	//N2-number of points on z direction
 	int N2 = floor(W/dx);
-	//dm --spacing of points by arytmetical average 
+	//dm centering the rectangle
 	real dm = (W-N2*dx)/2;
-
-	real start_z = center.z() - width/2;
-	real start_y = center.y() - W/2;
 
 
     // compute the amount of N for the lowest radius such that min_dist
 	int points=0;
-	for (int i=0;i<N1;i++) 
+	for (int i=0;i<N1;i++)
 	for (int j=0;j<N2;j++)// y-direction-height
 	{
 		point_t fp3;
-		real x = center.x();
-		real y = start_z + j*dx;//dm + i * dx;
-		real z =   start_y + i*dm;//+ radius * sin( 2.0*PI*j/((real)N2) + PI);
-		//rotation around z-axis
-		//​cos -sin 0
-		//sin cos 0
-		//0 0 1
-		fp3.x()=cos(45)*x +(-sin(45))*y + 0*z;
-		fp3.y()=sin(45)*x + cos(45)*y + 0*z;
-		fp3.z() = 0*x + 0*y + 1*z;
+		real x = 0;
+		real y = i*dx;//dm + i * dx;
+		real z = j*dx; //start from 0
+		//no rotaion
+		//fp3.x()= center.x() + x;
+		//fp3.y()=center.y() + y;
+		//fp3.z() =dm + z;
+		//rotation around z-axis and the center of the rectangle
+		fp3.x()=center.x() + cos(45)*x +(-sin(45))*y + 0*z;
+		fp3.y()=center.y() + sin(45)*x + cos(45)*y + 0*z;
+		fp3.z() =center.z() + dm + 0*x + 0*y + 1*z;
+		//rotaion around x-axis and the center of the rectangle
+		//fp3.x()=center.x() + 1*x +0*y + 0*z;
+		//fp3.y()=2*center.y() + 0*x + cos(45)*y + (-sin(45))*z;
+		//fp3.z() =dm + 0*x + sin(45)*y + cos(45)*z;
 
 
 		ibm.LL.push_back(fp3);
@@ -62,8 +68,9 @@ void ibmSetupRectangle(Lagrange3D<LBM>& ibm, typename LBM::point_t center, doubl
 	spdlog::info("h=physdl {:e} sigma max {:e} sigma/h {:e}", ibm.lbm.lat.physDl, sigma_max, sigma_max/ibm.lbm.lat.physDl);
 
 
-
-
+//n1=N1;
+//n2=N2;
+return std::vector<int>{N1,N2};
 }
 
 template < typename LBM >
