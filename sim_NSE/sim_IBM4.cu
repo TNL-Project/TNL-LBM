@@ -156,20 +156,132 @@ template<typename LL_array>
 point_t fourth_central_difference(int i, int j, bool by_s1, LL_array& LL)
 {
 	point_t X = LL[i*N2+j];
+	// if (by_s1) {
+
+	// }
+	// else {
+
+	// }
 	point_t Xnext = by_s1? LL[(i+1)*N2+j] : LL[(i)*N2+j +1];
-	point_t Xnext2 = by_s1? LL[(i+2)*N2+j] : LL[(i)*N2+j +2];
+	point_t Xnext2 = by_s1? LL[(i+1)*N2+j] : LL[(i)*N2+j +1];	// zkontrolovat jestli tu nema byt +-1 nebo doplnit dalsi podminky?
 	point_t Xprev = by_s1 ? LL[(i-1)*N2+j] : LL[(i)*N2+j -1];
-	point_t Xprev2 = by_s1 ? LL[(i-2)*N2+j] : LL[(i)*N2+j -2];
+	point_t Xprev2 = by_s1 ? LL[(i-1)*N2+j] : LL[(i)*N2+j -1];  // zkontrolovat jestli tu nema byt +-2
+	if(i<2 && j>=2)
+	{
+		if(j<N2-2) 
+		{
+			Xnext2 = by_s1? LL[(i+1)*N2+j] : LL[(i)*N2+j +2];
+		Xprev2 = by_s1 ? LL[(i-1)*N2+j] : LL[(i)*N2+j -2];
+		}
+		else
+		{
+			Xnext2 = by_s1? LL[(i+1)*N2+j] : LL[(i)*N2+j +1];
+		Xprev2 = by_s1 ? LL[(i-1)*N2+j] : LL[(i)*N2+j -1];
+
+		}
+	}
+	if(i>=2 && j<2)
+	{  
+		if(i<N1-2)
+		{
+		Xnext2 = by_s1? LL[(i+2)*N2+j] : LL[(i)*N2+j +1];
+		Xprev2 = by_s1 ? LL[(i-2)*N2+j] : LL[(i)*N2+j -1];
+		}
+		else
+		{
+			Xnext2 = by_s1? LL[(i+1)*N2+j] : LL[(i)*N2+j +1];
+		Xprev2 = by_s1 ? LL[(i-1)*N2+j] : LL[(i)*N2+j -1];
+		}
+	}
+	if(i<2 && j<2)
+	{
+		Xnext2 = by_s1? LL[(i+1)*N2+j] : LL[(i)*N2+j +1];
+		Xprev2 = by_s1 ? LL[(i-1)*N2+j] : LL[(i)*N2+j -1];
+	}
+	if(i>=2 && j>=2)
+	{
+		if(i<N1-2 && j<N2-2)
+		{
+		Xprev2 = by_s1 ? LL[(i-2)*N2+j] : LL[(i)*N2+j -2];
+		Xnext2 = by_s1? LL[(i+2)*N2+j] : LL[(i)*N2+j +2];
+		}
+		else
+		{
+			Xprev2 = by_s1 ? LL[(i-1)*N2+j] : LL[(i)*N2+j -1];
+		Xnext2 = by_s1? LL[(i+1)*N2+j] : LL[(i)*N2+j +1];
+		}
+	}
 	return Xnext2 - 4*Xnext + 6*X - 4*Xprev +Xprev2;
 }
 template<typename LL_array>
 point_t fourth_central_difference(int i, int j, LL_array& LL)
 {
-	return (
+	if(i<2 && j>=2)
+	{
+		if(j<N2-2)
+		{
+		return (
+		LL[(i+1)*N2+j+2] +LL[(i+1)*N2+j-2] + LL[(i-1)*N2+j+2] + LL[(i-1)*N2+j-2]
+		- 2*LL[(i+1)*N2+j]- 2*LL[(i)*N2+j+2]- 2*LL[(i)*N2+j-2]- 2*LL[(i-1)*N2+j]
+		+ 4*LL[(i)*N2+j]
+		)/16;
+		}
+		else
+		{
+		return (
+		LL[(i+1)*N2+j+1] +LL[(i+1)*N2+j-1] + LL[(i-1)*N2+j+1] + LL[(i-1)*N2+j-1]
+		- 2*LL[(i+1)*N2+j]- 2*LL[(i)*N2+j+1]- 2*LL[(i)*N2+j-1]- 2*LL[(i-1)*N2+j]
+		+ 4*LL[(i)*N2+j]
+		)/16;
+		}
+	}
+	else if(i>=2 && j<2)
+	{
+		if(i<N1-2)
+		{
+		return (
+		LL[(i+2)*N2+j+1] +LL[(i+2)*N2+j-1] + LL[(i-2)*N2+j+1] + LL[(i-2)*N2+j-1]
+		- 2*LL[(i+2)*N2+j]- 2*LL[(i)*N2+j+1]- 2*LL[(i)*N2+j-1]- 2*LL[(i-2)*N2+j]
+		+ 4*LL[(i)*N2+j]
+		)/16;
+		}
+		else
+		{
+		return (
+		LL[(i+1)*N2+j+1] +LL[(i+1)*N2+j-1] + LL[(i-1)*N2+j+1] + LL[(i-1)*N2+j-1]
+		- 2*LL[(i+1)*N2+j]- 2*LL[(i)*N2+j+1]- 2*LL[(i)*N2+j-1]- 2*LL[(i-1)*N2+j]
+		+ 4*LL[(i)*N2+j]
+		)/16;
+		}
+	}
+	else if(i<2 && j<2)
+	{
+		return (
+		LL[(i+1)*N2+j+1] +LL[(i+1)*N2+j-1] + LL[(i-1)*N2+j+1] + LL[(i-1)*N2+j-1]
+		- 2*LL[(i+1)*N2+j]- 2*LL[(i)*N2+j+1]- 2*LL[(i)*N2+j-1]- 2*LL[(i-1)*N2+j]
+		+ 4*LL[(i)*N2+j]
+		)/16;
+	}
+	else
+	{
+		if(i<N1-2 && j < N2-2)  // rozdelit podminku:  i < N1 - 2, j < N2 - 2
+		{
+		return (
 		LL[(i+2)*N2+j+2] +LL[(i+2)*N2+j-2] + LL[(i-2)*N2+j+2] + LL[(i-2)*N2+j-2]
 		- 2*LL[(i+2)*N2+j]- 2*LL[(i)*N2+j+2]- 2*LL[(i)*N2+j-2]- 2*LL[(i-2)*N2+j]
 		+ 4*LL[(i)*N2+j]
-	)/16;
+		)/16;
+		}
+		else
+		{
+		return (
+		LL[(i+1)*N2+j+1] +LL[(i+1)*N2+j-1] + LL[(i-1)*N2+j+1] + LL[(i-1)*N2+j-1]
+		- 2*LL[(i+1)*N2+j]- 2*LL[(i)*N2+j+1]- 2*LL[(i)*N2+j-1]- 2*LL[(i-1)*N2+j]
+		+ 4*LL[(i)*N2+j]
+		)/16;
+		}
+	}
+
 }
 //////////////////////////////////////////////////////////////////////////////////////
 template<typename LL_array>
@@ -225,12 +337,14 @@ point_t elastic_force_sum(int i,int j,LL_array& LL)
 std::cout<< "elastic force sum is called"<<" i = "<<i<<" j = "<<j <<std::endl;
 	//sum from i,j = 1 to i,j =2
 	//i=j=1 s1,s1
+	std::cout<<"second"<<std::endl;
 	point_t sigma_s1s1 = second_central_difference(i,j,by_s1,LL);
 	point_t sigma_s1s2 = second_central_difference(i,j,LL);
 	point_t sigma_s2s2 = second_central_difference(i,j,by_s2,LL);
 	point_t sigmaSum = sigma*(sigma_s1s1 + 2*sigma_s1s2 + sigma_s2s2);
-
+std::cout<<"fourtth"<<std::endl;
 	point_t gama_s1s1 = fourth_central_difference(i,j,by_s1,LL);
+	std::cout<<"fourth difference by both i j"<<std::endl;
 	point_t gama_s1s2 = fourth_central_difference(i,j,LL);
 	point_t gama_s2s2 = fourth_central_difference(i,j,by_s2,LL);
 	point_t gamaSum = gama*(gama_s1s1 + 2*gama_s1s2 + gama_s2s2);
@@ -274,10 +388,12 @@ void deformX(int i, int j,LL_array& previous ,LL_array& LL,LL_array& next)
 	//boundaries
 	//s1=0
 	//i*N2 +j
+	//does it work correctly for (0,0)and (N1,N2)
 	 if(i ==0)
 	 {
 		std::cout<< "i ==0" <<" i "<<i<<" j " << j<<std::endl;
 		 next[i*N2+j] = LL[i*N2+j];
+		 
 		//next[i*N2+j] = point_t{0,0,j};
 		//next[i*N2+j]+= second_forward_diff_RHS(i,j,by_s1,LL);
 
@@ -317,9 +433,11 @@ void deform(LL_array&previous, LL_array& LL, LL_array&next)
 	std::cout << "deform is called" << std::endl;
 
 std::cout<<"N1 == "<<N1<<" N2 == " <<N2<<std::endl;
-for(int i = 1; i<= N1-1;i++)
+//i=0 && j=0 is computed twice
+//i=N1 && j=N2 is computed twice
+for(int i = 1; i< N1;i++)
 {
-	for(int j =1; j<= N2-1;j++)
+	for(int j =1; j< N2;j++)
 	{
 		std::cout << "firs for i = "<<i<< " j = "<<j<<std::endl;
 		deformX(i,j,previous,LL,next);
