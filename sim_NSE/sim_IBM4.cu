@@ -381,7 +381,7 @@ using HLPVECTOR = decltype(ibm.hLL_lat);
 using DLPVECTOR = decltype(ibm.dLL_lat);
 HLPVECTOR previous;
 HLPVECTOR next;
-
+//LL array indexed from 0-> N1-1 N2-1
 template<typename LL_array>
 void deformX(int i, int j,LL_array& previous ,LL_array& LL,LL_array& next)
 {
@@ -400,7 +400,7 @@ void deformX(int i, int j,LL_array& previous ,LL_array& LL,LL_array& next)
 
 	 }
 	 //s1 = L = N1
-	 else if(i==N1)
+	 else if(i==N1-1)
 	 {std::cout<< "i ==N1"  <<" i "<<i<<" j " << j<<std::endl;
 		next[i*N2+j] +=second_backward_diff_RHS(i,j,by_s1,LL);
 		next[i*N2+j]+=third_backward_diff_RHS(i,j,by_s1,LL);
@@ -409,7 +409,7 @@ void deformX(int i, int j,LL_array& previous ,LL_array& LL,LL_array& next)
 
 	 }
 	 //s2=0 or s2 = H = N2
-	 else if(j==0 || j == N2)
+	 else if(j==0 || j == N2-1)
 	 {
 		std::cout<< "j ==0 or N2"  <<" i "<<i<<" j " << j<<std::endl;
 		next[i*N2+j]+=second_forward_diff_RHS(i,j,by_s2,LL);
@@ -435,9 +435,9 @@ void deform(LL_array&previous, LL_array& LL, LL_array&next)
 std::cout<<"N1 == "<<N1<<" N2 == " <<N2<<std::endl;
 //i=0 && j=0 is computed twice
 //i=N1 && j=N2 is computed twice
-for(int i = 1; i< N1;i++)
+for(int i = 1; i< N1-1;i++)
 {
-	for(int j =1; j< N2;j++)
+	for(int j =1; j< N2-1;j++)
 	{
 		std::cout << "firs for i = "<<i<< " j = "<<j<<std::endl;
 		deformX(i,j,previous,LL,next);
@@ -446,7 +446,7 @@ for(int i = 1; i< N1;i++)
 
 
 }
-for(int j = 0; j<=N2;j++)
+for(int j = 0; j<N2;j++)
 {
 	int i = 0;
 	std::cout << "second for i = "<<i<< " j = "<<j<<std::endl;
@@ -454,15 +454,15 @@ for(int j = 0; j<=N2;j++)
 
 
 }
-for(int j = 0; j<=N2;j++)
+for(int j = 0; j<N2;j++)
 {
-	int i = N1;
+	int i = N1-1;
 	std::cout << "third for i = "<<i<< " j = "<<j<<std::endl;
 	deformX(i,j,previous,LL,next);
 
 
 }
-for(int i = 0; i<=N1;i++)
+for(int i = 0; i<N1;i++)
 {
 	int j = 0;
 	std::cout << "fourth for i = "<<i<< " j = "<<j<<std::endl;
@@ -470,9 +470,9 @@ for(int i = 0; i<=N1;i++)
 
 
 }
-for(int i = 0; i<=N1;i++)
+for(int i = 0; i<N1;i++)
 {
-	int j = N2;
+	int j = N2-1;
 	std::cout << "fifth for i = "<<i<< " j = "<<j<<std::endl;
 	deformX(i,j,previous,LL,next);
 
