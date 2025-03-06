@@ -404,6 +404,7 @@ void deformX(int i, int j,LL_array& previous ,LL_array& LL,LL_array& next)
 	 {std::cout<< "i ==N1"  <<" i "<<i<<" j " << j<<std::endl;
 		next[i*N2+j] +=second_backward_diff_RHS(i,j,by_s1,LL);
 		next[i*N2+j]+=third_backward_diff_RHS(i,j,by_s1,LL);
+		 //next[i*N2+j] = LL[i*N2+j];
 		//sigma=0;
 		//gama=0;
 
@@ -414,6 +415,7 @@ void deformX(int i, int j,LL_array& previous ,LL_array& LL,LL_array& next)
 		std::cout<< "j ==0 or N2"  <<" i "<<i<<" j " << j<<std::endl;
 		next[i*N2+j]+=second_forward_diff_RHS(i,j,by_s2,LL);
 		next[i+N2+j]+=third_forward_diff_RHS(i,j,by_s2,LL);
+		 //next[i*N2+j] = LL[i*N2+j];
 		//sigma=0;
 		//gama=0;
 
@@ -421,7 +423,8 @@ void deformX(int i, int j,LL_array& previous ,LL_array& LL,LL_array& next)
 	 else
 	 {
 		std::cout<< "else " <<" i "<<i<<" j " << j <<std::endl;
-		next[i*N2+j] += (elastic_force_sum(i,j,LL) -lagrangian_force(previous,LL,i,j) -2*LL[i*N2+j] +previous[i*N2+j])/density;
+		//next[i*N2+j] += (elastic_force_sum(i,j,LL) -lagrangian_force(previous,LL,i,j) -2*LL[i*N2+j] +previous[i*N2+j])/density;
+		next[i*N2+j] = (elastic_force_sum(i,j,LL) -lagrangian_force(previous,LL,i,j))/density +2*LL[i*N2+j] -previous[i*N2+j];
 
 	 }
 
@@ -435,17 +438,19 @@ void deform(LL_array&previous, LL_array& LL, LL_array&next)
 std::cout<<"N1 == "<<N1<<" N2 == " <<N2<<std::endl;
 //i=0 && j=0 is computed twice
 //i=N1 && j=N2 is computed twice
-for(int i = 1; i< N1-1;i++)
+//for(int i = 1; i< N1-1;i++)
+//{
+//	for(int j =1; j< N2-1;j++)
+for(int i = 0; i< N1;i++)
 {
-	for(int j =1; j< N2-1;j++)
+	for(int j = 0; j< N2;j++)
 	{
 		std::cout << "firs for i = "<<i<< " j = "<<j<<std::endl;
 		deformX(i,j,previous,LL,next);
 
 	}
-
-
 }
+/*
 for(int j = 0; j<N2;j++)
 {
 	int i = 0;
@@ -478,6 +483,7 @@ for(int i = 0; i<N1;i++)
 
 
 }
+*/
 
 }
 //check for first run
@@ -625,7 +631,7 @@ int sim(int RES=2, double i_Re=1000, double nasobek=2.0, int dirac_delta=2, int 
 	real i_PHYS_VISCOSITY = 0.00001; // proc ne?
 	// mam:
 	real i_LBM_VISCOSITY = i_LBM_VELOCITY * BALL_DIAMETER / PHYS_DL / i_Re;
-	real i_PHYS_VELOCITY = i_PHYS_VISCOSITY * i_Re / BALL_DIAMETER;
+	real i_PHYS_VELOCITY = 0; //i_PHYS_VISCOSITY * i_Re / BALL_DIAMETER;
 	fmt::print("input phys velocity {:f}\ninput lbm velocity {:f}\nRe {:f}\nlbm viscosity{:f}\nphys viscosity {:f}\n", i_PHYS_VELOCITY, i_LBM_VELOCITY, i_Re, i_LBM_VISCOSITY, i_PHYS_VISCOSITY);
 
 	real LBM_VISCOSITY = i_LBM_VISCOSITY;// 0.0001*RES;//*SIT;//1.0/6.0; /// GIVEN: optimal is 1/6
@@ -683,11 +689,11 @@ int sim(int RES=2, double i_Re=1000, double nasobek=2.0, int dirac_delta=2, int 
 	state.add2Dcut_Z(LBM_Z/2,"cut_Z");
 
 	// create immersed objects
-	state.ball_c[0] = 2*state.ball_diameter;
+	state.ball_c[0] = 5.5*state.ball_diameter;
 	state.ball_c[1] = 5.5*state.ball_diameter;
 	state.ball_c[2] = 5.5*state.ball_diameter;
 	real sigma = nasobek * PHYS_DL;
-	std::vector<int> N1N2 = ibmSetupRectangle(state.ibm, state.ball_c, state.ball_diameter/2.0, sigma);
+	std::vector<int> N1N2 = ibmSetupRectangle(state.ibm, state.ball_c, state.ball_diameter/2.0, state.ball_diameter/2.0, sigma);
 	state.N1 = N1N2[0];
 	state.N2 = N1N2[1];
 

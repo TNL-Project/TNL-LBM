@@ -6,7 +6,7 @@
 //int n1=0;
 
 template < typename LBM>
-std::vector<int> ibmSetupRectangle(Lagrange3D<LBM>& ibm, typename LBM::point_t center, double width, double sigma)
+std::vector<int> ibmSetupRectangle(Lagrange3D<LBM>& ibm, typename LBM::point_t center, double width, double height, double sigma)
 {
 	using real = typename Lagrange3D<LBM>::real;
 	using point_t = typename Lagrange3D<LBM>::point_t;
@@ -18,12 +18,15 @@ std::vector<int> ibmSetupRectangle(Lagrange3D<LBM>& ibm, typename LBM::point_t c
 	//spaccing dx between points on width direction
 	real dx = width/N1;
 	//W--total height for rectanel available with a buffer on top and bottom
-	real W = ibm.lbm.lat.physDl*(ibm.lbm.lat.global.y()-2);
-	real w = W/2;
+	//real W = ibm.lbm.lat.physDl*(ibm.lbm.lat.global.y()-2);
+	//real w = W/2;
 	//N2-number of points on z direction
-	int N2 = floor(W/dx);
+	//int N2 = N1; //floor(w/dx);
+	int N2 = ceil(height/sigma);
+	real dy = height/N2;
 	//dm centering the rectangle
-	real dm = (W-N2*dx)/2;
+	real dm = -width/2; //-W/4;
+	real angle = 0; //45;
 
 
     // compute the amount of N for the lowest radius such that min_dist
@@ -40,8 +43,8 @@ std::vector<int> ibmSetupRectangle(Lagrange3D<LBM>& ibm, typename LBM::point_t c
 		//fp3.y()=center.y() + y;
 		//fp3.z() =dm + z;
 		//rotation around z-axis and the center of the rectangle
-		fp3.x()=center.x() + cos(45)*x +(-sin(45))*y + 0*z;
-		fp3.y()=center.y() + sin(45)*x + cos(45)*y + 0*z;
+		fp3.x()=center.x() + cos(angle)*x +(-sin(angle))*y + 0*z;
+		fp3.y()=center.y() + sin(angle)*x + cos(angle)*y + 0*z;
 		fp3.z() =center.z() + dm + 0*x + 0*y + 1*z;
 		//rotaion around x-axis and the center of the rectangle
 		//fp3.x()=center.x() + 1*x +0*y + 0*z;
