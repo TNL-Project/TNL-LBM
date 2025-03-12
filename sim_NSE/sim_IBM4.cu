@@ -318,7 +318,7 @@ point_t third_backward_diff_RHS(int i, int j,bool by_s1, LL_array& LL)
 	point_t Xprev3 = by_s1 ? LL[(i-3)*N2+j] : LL[(i)*N2+j -3];
 	return -(-3*Xprev +3*Xprev2 - Xprev3);
 }
-dreal sigma;
+dreal sigma=0.0001;
 dreal gama=0.0001;
 dreal density = 1;
 dreal fi11 = 10*10*10;
@@ -389,33 +389,46 @@ void deformX(int i, int j,LL_array& previous ,LL_array& LL,LL_array& next)
 	//s1=0
 	//i*N2 +j
 	//does it work correctly for (0,0)and (N1,N2)
+	//scaling factors for forward and backword differenes to mitigate oscilations etc
+	double a =0.5;//0.9999999;
+	double b =0.5;//0.0001;
 	 if(i ==0)
 	 {
 		std::cout<< "i ==0" <<" i "<<i<<" j " << j<<std::endl;
-		 next[i*N2+j] = LL[i*N2+j];
+		next[i*N2+j] = LL[i*N2+j];
 		 
 		//next[i*N2+j] = point_t{0,0,j};
-		//next[i*N2+j]+= second_forward_diff_RHS(i,j,by_s1,LL);
+		//next[i*N2+j]= a*second_forward_diff_RHS(i,j,by_s1,LL);
 
 
 	 }
 	 //s1 = L = N1
 	 else if(i==N1-1)
 	 {std::cout<< "i ==N1"  <<" i "<<i<<" j " << j<<std::endl;
-		next[i*N2+j] +=second_backward_diff_RHS(i,j,by_s1,LL);
-		next[i*N2+j]+=third_backward_diff_RHS(i,j,by_s1,LL);
-		 //next[i*N2+j] = LL[i*N2+j];
+		//next[i*N2+j] =a*second_backward_diff_RHS(i,j,by_s1,LL);
+		//next[i*N2+j]+=b*third_backward_diff_RHS(i,j,by_s1,LL);
+		next[i*N2+j] = LL[i*N2+j];
 		//sigma=0;
 		//gama=0;
 
 	 }
 	 //s2=0 or s2 = H = N2
-	 else if(j==0 || j == N2-1)
+	 else if(j==0)
 	 {
 		std::cout<< "j ==0 or N2"  <<" i "<<i<<" j " << j<<std::endl;
-		next[i*N2+j]+=second_forward_diff_RHS(i,j,by_s2,LL);
-		next[i+N2+j]+=third_forward_diff_RHS(i,j,by_s2,LL);
-		 //next[i*N2+j] = LL[i*N2+j];
+		//next[i*N2+j]=a*second_forward_diff_RHS(i,j,by_s2,LL);
+		//next[i+N2+j]+=b*third_forward_diff_RHS(i,j,by_s2,LL);
+		 next[i*N2+j] = LL[i*N2+j];
+		//sigma=0;
+		//gama=0;
+
+	 }
+	 else if(j == N2-1)
+	 {
+		std::cout<< "j ==0 or N2"  <<" i "<<i<<" j " << j<<std::endl;
+		//next[i*N2+j]=a*second_backward_diff_RHS(i,j,by_s2,LL);
+		//next[i+N2+j]+=b*third_backward_diff_RHS(i,j,by_s2,LL);
+		 next[i*N2+j] = LL[i*N2+j];
 		//sigma=0;
 		//gama=0;
 
@@ -424,6 +437,7 @@ void deformX(int i, int j,LL_array& previous ,LL_array& LL,LL_array& next)
 	 {
 		std::cout<< "else " <<" i "<<i<<" j " << j <<std::endl;
 		//next[i*N2+j] += (elastic_force_sum(i,j,LL) -lagrangian_force(previous,LL,i,j) -2*LL[i*N2+j] +previous[i*N2+j])/density;
+		
 		next[i*N2+j] = (elastic_force_sum(i,j,LL) -lagrangian_force(previous,LL,i,j))/density +2*LL[i*N2+j] -previous[i*N2+j];
 
 	 }
@@ -662,11 +676,16 @@ int sim(int RES=2, double i_Re=1000, double nasobek=2.0, int dirac_delta=2, int 
 	state.ball_period = 2.0 / PHYS_DT;	// [lbm units]
 
 	state.cnt[PRINT].period = 0.1;
-	state.nse.physFinalTime = 10*PHYS_DT; //1.0; //30.0;
 
-	state.cnt[VTK3D].period = PHYS_DT; //1.0;
-	state.cnt[VTK2D].period = PHYS_DT; //0.01;
-	state.cnt[PROBE1].period = PHYS_DT; //0.01;	// Lagrangian points VTK output
+	//state.nse.physFinalTime = 10*PHYS_DT; //1.0; //30.0;
+	//state.cnt[VTK3D].period = PHYS_DT; //1.0;
+	//state.cnt[VTK2D].period = PHYS_DT; //0.01;
+	//state.cnt[PROBE1].period = PHYS_DT; //0.01;	// Lagrangian points VTK output
+
+	state.nse.physFinalTime = 1.0; //30.0;
+	state.cnt[VTK3D].period = 0.01;
+	state.cnt[VTK2D].period = 0.01;
+	state.cnt[PROBE1].period = 0.01;	// Lagrangian points VTK output
 
 	// select compute method
 	IbmCompute computeVariant;
