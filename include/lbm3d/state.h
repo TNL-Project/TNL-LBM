@@ -291,14 +291,17 @@ struct State
 #ifdef HAVE_MPI
 	  adios(communicator),
 #else
-	  adios(),
+	  adios("adios2.xml"),
 #endif
 	  checkpoint(adios),
 	  nse(communicator, lat, std::forward<ARGS>(args)...),
 	  ibm(nse, id),
 	  dataManager(&adios)
 	{
-		// try to lock the results directory
+		// Set DataManager in CheckpointManager
+		checkpoint.setDataManager(dataManager);
+
+		// Try to lock the results directory
 		if (nse.rank == 0) {
 			const std::string dir = fmt::format("results_{}", id);
 			mkdir(dir.c_str(), 0777);
@@ -322,10 +325,10 @@ struct State
 		if (! global_result)
 			throw std::runtime_error("Not enough memory available (CPU or GPU).");
 
-		// allocate host data -- after the estimate
+		// Allocate host data after the estimate
 		nse.allocateHostData();
 
-		// initial time of current simulation
+		// Start the timer for the simulation
 		timer_total.start();
 	}
 

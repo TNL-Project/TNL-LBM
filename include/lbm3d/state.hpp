@@ -395,7 +395,7 @@ void State<NSE>::writeVTKs_3D()
 		timer.start();
 		block.writeVTK_3D(nse.lat, outputData, fname, nse.physTime(), cnt[VTK3D].count, dataManager);
 		timer.stop();
-		std::cout << "write3D saved in: " << timer.getRealTime() << std::endl;
+		spdlog::info("write3D saved in: {:.2f} seconds", timer.getRealTime());
 		timer.reset();
 		spdlog::info("[vtk {} written, time {:f}, cycle {:d}] ", fname, nse.physTime(), cnt[VTK3D].count);
 	}
@@ -757,45 +757,135 @@ void State<NSE>::checkpointState(adios2::Mode mode)
 template <typename NSE>
 void State<NSE>::saveState()
 {
-	// checkpoint to a staging file first to not break the previous checkpoint if we fail to create another one
-	const std::string filename_tmp = fmt::format("results_{}/checkpoint_tmp.bp", id);
-	spdlog::info("Saving checkpoint in {}", filename_tmp);
-	checkpoint.start(filename_tmp, adios2::Mode::Write);
-	checkpointState(adios2::Mode::Write);
-	checkpointStateLocal(adios2::Mode::Write);
-	checkpoint.finalize();
+	// Create directory if it doesn't exist
+	const std::string results_dir = fmt::format("results_{}", id);
+	mkdir_p(results_dir.c_str(), 0755);
 
-	if (nse.rank == 0) {
-		const std::string filename = fmt::format("results_{}/checkpoint.bp", id);
-		spdlog::info("Moving checkpoint {} to {}", filename_tmp, filename);
-		int status = rename_exchange(filename_tmp.c_str(), filename.c_str());
-		if (status != 0) {
-			spdlog::error("rename_exchange(\"{}\", \"{}\") failed: {}", filename_tmp, filename, strerror(errno));
-			return;
+	// Initialize temporary checkpoint file
+	const std::string checkpoint_tmp = fmt::format("results_{}/checkpoint_tmp", id);
+	dataManager.initEngine(checkpoint_tmp);
+
+	spdlog::info("Saving checkpoint to {}", checkpoint_tmp);
+	dataManager.beginStep(checkpoint_tmp);
+
+	// Save simulation attributes
+	dataManager.defineAttribute<int>("LBM_total_blocks", nse.total_blocks, checkpoint_tmp);
+	dataManager.defineAttribute<real>("LBM_physCharLength", nse.physCharLength, checkpoint_tmp);
+	dataManager.defineAttribute<real>("LBM_physFinalTime", nse.physFinalTime, checkpoint_tmp);
+	dataManager.defineAttribute<int>("LBM_iterations", nse.iterations, checkpoint_tmp);
+
+	// Save counter states
+	for (int c = 0; c < MAX_COUNTER; c++) {
+		const std::string name_count = fmt::format("State_counter_{}_count", c);
+		const std::string name_period = fmt::format("State_counter_{}_period", c);
+		dataManager.defineAttribute<int>(name_count, cnt[c].count, checkpoint_tmp);
+		dataManager.defineAttribute<real>(name_period, cnt[c].period, checkpoint_tmp);
+	}
+
+	// Save probe states
+	for (std::size_t i = 0; i < probe3Dvec.size(); i++) {
+		const std::string name = fmt::format("State_probe3D_{}_cycle", i);
+		dataManager.defineAttribute<int>(name, probe3Dvec[i].cycle, checkpoint_tmp);
+	}
+	for (std::size_t i = 0; i < probe2Dvec.size(); i++) {
+		const std::string name = fmt::format("State_probe2D_{}_cycle", i);
+		dataManager.defineAttribute<int>(name, probe2Dvec[i].cycle, checkpoint_tmp);
+	}
+	for (std::size_t i = 0; i < probe1Dvec.size(); i++) {
+		const std::string name = fmt::format("State_probe1D_{}_cycle", i);
+		dataManager.defineAttribute<int>(name, probe1Dvec[i].cycle, checkpoint_tmp);
+	}
+	for (std::size_t i = 0; i < probe1Dlinevec.size(); i++) {
+		const std::string name = fmt::format("State_probe1Dline_{}_cycle", i);
+		dataManager.defineAttribute<int>(name, probe1Dlinevec[i].cycle, checkpoint_tmp);
+	}
+
+	// Save data for each block
+	for (auto& block : nse.blocks) {
+		// Variables for map
+		adios2::Dims shape, start, count;
+#ifdef HAVE_MPI
+		shape = count = {std::size_t(block.hmap.getLocalStorageSize())};
+#else
+		shape = count = {std::size_t(block.hmap.getStorageSize())};
+#endif
+		start = {0};
+		std::string mapName = fmt::format("LBM_map_block_{}", block.id);
+
+		dataManager.defineData<map_t>(mapName, shape, start, count, checkpoint_tmp);
+		dataManager.outputData<map_t>(mapName, block.hmap.getData(), checkpoint_tmp);
+
+		// DF variables
+		for (int dfty = 0; dfty < DFMAX; dfty++) {
+#ifdef HAVE_MPI
+			shape = count = {std::size_t(block.hfs[dfty].getLocalStorageSize())};
+#else
+			shape = count = {std::size_t(block.hfs[dfty].getStorageSize())};
+#endif
+			std::string dfName = fmt::format("LBM_df_{}_block_{}", dfty, block.id);
+
+			dataManager.defineData<dreal>(dfName, shape, start, count, checkpoint_tmp);
+			dataManager.outputData<dreal>(dfName, block.hfs[dfty].getData(), checkpoint_tmp);
 		}
-		// update the modification timestamp on the checkpoint directory
-		// (it would be weird to keep the old timestamp of a moved directory)
-		status = utimensat(AT_FDCWD, filename.c_str(), NULL, 0);
-		if (status != 0) {
-			spdlog::error("touch(\"{}\") failed: {}", filename, strerror(errno));
+
+		// Macro variables
+		if constexpr (NSE::MACRO::N > 0) {
+#ifdef HAVE_MPI
+			shape = count = {std::size_t(block.hmacro.getLocalStorageSize())};
+#else
+			shape = count = {std::size_t(block.hmacro.getStorageSize())};
+#endif
+			std::string macroName = fmt::format("LBM_macro_block_{}", block.id);
+
+			dataManager.defineData<dreal>(macroName, shape, start, count, checkpoint_tmp);
+			dataManager.outputData<dreal>(macroName, block.hmacro.getData(), checkpoint_tmp);
 		}
 	}
 
-	// Indicate that state can be loaded after restart (e.g. after a
-	// failed/cancelled run or running over the walltime limit). The flag will
-	// be deleted from core.h when a finished/terminated flag is created.
+	// Finalize checkpoint writing
+	dataManager.performPutsAndStep(checkpoint_tmp);
+	//spdlog::warn("engine wiil close");
+	dataManager.closeEngine(checkpoint_tmp);
+
+	// Move temporary checkpoint directory to main checkpoint
+	if (nse.rank == 0) {
+		const std::string tmp_dir = fmt::format("{}.bp", checkpoint_tmp);
+		const std::string final_dir = fmt::format("results_{}/checkpoint.bp", id);
+
+		spdlog::info("Moving checkpoint {} to {}", tmp_dir, final_dir);
+
+		// Use rename_exchange to move the directory
+		int status = rename_exchange(tmp_dir.c_str(), final_dir.c_str());
+		if (status != 0) {
+			spdlog::error("rename_exchange(\"{}\", \"{}\") failed: {}", tmp_dir, final_dir, strerror(errno));
+			return;
+		}
+	}
+
+	// Create flag that state is saved and can be loaded
 	flagCreate("loadstate");
 }
 
 template <typename NSE>
 void State<NSE>::loadState()
 {
-	const std::string filename = fmt::format("results_{}/checkpoint.bp", id);
+	const std::string filename = fmt::format("results_{}/checkpoint", id);
 	spdlog::info("Loading data from checkpoint in {}", filename);
+
+	checkpoint.setDataManager(dataManager);
 	checkpoint.start(filename, adios2::Mode::Read);
 	checkpointState(adios2::Mode::Read);
 	checkpointStateLocal(adios2::Mode::Read);
+
 	checkpoint.finalize();
+
+	nse.physStartTime = nse.physTime();
+
+	nse.startIterations = nse.iterations;
+	glups_prev_iterations = nse.startIterations;
+	glups_prev_time = timer_total.getRealTime();
+
+	spdlog::info("Checkpoint loaded successfully: {} iterations, physical time: {}", nse.iterations, nse.physTime());
 }
 
 template <typename NSE>

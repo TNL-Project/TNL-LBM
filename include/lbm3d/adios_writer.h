@@ -1,11 +1,12 @@
 #pragma once
 
-#include <string>
-#include <map>
-
-#include <adios2.h>
-#include "DataManager.h"
 #include <TNL/MPI/Comm.h>
+#include <adios2.h>
+
+#include <map>
+#include <string>
+
+#include "DataManager.h"
 
 template <typename TRAITS>
 class ADIOSWriter
@@ -23,13 +24,12 @@ private:
 	point_t physOrigin;
 	real physDl;
 
-	// ADIOS2 interface
-	std::string filename;
-
-	DataManager* dataManager;
-	const std::string& simType;
 	// data variables recorded for output (mapping of name to dimension)
 	std::map<std::string, int> variables;
+
+	// DataManager reference
+	DataManager* dataManager;
+	const std::string& simType;
 
 	void recordVariable(const std::string& name, int dim);
 

@@ -82,20 +82,19 @@ void ADIOSWriter<TRAITS>::addVTKAttributes()
 	}
 
 	const std::string imageData = R"(
-		<?xml version="1.0"?>
-		<VTKFile type="ImageData" version="0.1" byte_order="LittleEndian">
-			<ImageData WholeExtent=")"
+        <?xml version="1.0"?>
+        <VTKFile type="ImageData" version="0.1" byte_order="LittleEndian">
+            <ImageData WholeExtent=")"
 								+ extentG + R"(" Origin=")" + origin + R"(" Spacing=")" + spacing + R"(">
-				<Piece Extent=")"
+                <Piece Extent=")"
 								+ extentL + R"(">
-					<CellData Scalars="data">)"
+                    <CellData Scalars="data">)"
 								+ dataArrays + R"(
-					</CellData>
-				</Piece>
-			</ImageData>
-		</VTKFile>)";
+                    </CellData>
+                </Piece>
+            </ImageData>
+        </VTKFile>)";
 
-	//io.DefineAttribute<std::string>("vtk.xml", imageData);
 	dataManager->defineAttribute<std::string>("vtk.xml", imageData, simType);
 }
 

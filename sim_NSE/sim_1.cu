@@ -11,6 +11,7 @@ struct StateLocal : State<NSE>
 	using MACRO = typename NSE::MACRO;
 	using BLOCK = LBM_BLOCK<NSE>;
 
+	using State<NSE>::checkpoint;
 	using State<NSE>::nse;
 	using State<NSE>::vtk_helper;
 
@@ -21,6 +22,20 @@ struct StateLocal : State<NSE>
 	using lat_t = Lattice<3, real, idx>;
 
 	real lbm_inflow_vx = 0;
+
+	// Override checkpointStateLocal to save/load additional state data
+	void checkpointStateLocal(adios2::Mode mode) override
+	{
+		// Save/load the inflow velocity
+		checkpoint.saveLoadAttribute("lbm_inflow_vx", lbm_inflow_vx);
+
+		// You can add any additional state data that needs to be saved/loaded here
+
+		if (mode == adios2::Mode::Read)
+			spdlog::info("Checkpoint loaded local state (mode: Read)");
+		else
+			spdlog::info("Checkpoint saved local state (mode: Write)");
+	}
 
 	void setupBoundaries() override
 	{
@@ -92,21 +107,18 @@ int sim(int RESOLUTION = 2)
 	using lat_t = Lattice<3, real, idx>;
 
 	int block_size = 32;
-	int X = 128 * RESOLUTION;  // width in pixels
-	//int Y = 41*RESOLUTION;// height in pixels --- top and bottom walls 1px
-	//int Z = 41*RESOLUTION;// height in pixels --- top and bottom walls 1px
+	int X = 128 * RESOLUTION;		  // width in pixels
 	int Y = block_size * RESOLUTION;  // height in pixels --- top and bottom walls 1px
 	int Z = Y;						  // height in pixels --- top and bottom walls 1px
 	real LBM_VISCOSITY = 0.00001;	  //1.0/6.0; /// GIVEN: optimal is 1/6
 	real PHYS_HEIGHT = 0.41;		  // [m] domain height (physical)
 	real PHYS_VISCOSITY = 1.5e-5;	  // [m^2/s] fluid viscosity .... blood?
-	//real PHYS_VELOCITY = 2.25; // m/s ... will be multip
 	real PHYS_VELOCITY = 1.0;
 	real PHYS_DL = PHYS_HEIGHT / ((real) Y - 2);
-	real PHYS_DT = LBM_VISCOSITY / PHYS_VISCOSITY * PHYS_DL * PHYS_DL;	//PHYS_HEIGHT/(real)LBM_HEIGHT;
+	real PHYS_DT = LBM_VISCOSITY / PHYS_VISCOSITY * PHYS_DL * PHYS_DL;
 	point_t PHYS_ORIGIN = {0., 0., 0.};
 
-	// initialize the lattice
+	// Initialize the lattice
 	lat_t lat;
 	lat.global = typename lat_t::CoordinatesType(X, Y, Z);
 	lat.physOrigin = PHYS_ORIGIN;
@@ -120,24 +132,18 @@ int sim(int RESOLUTION = 2)
 	if (! state.canCompute())
 		return 0;
 
-	// problem parameters
+	// Problem parameters
 	state.lbm_inflow_vx = lat.phys2lbmVelocity(PHYS_VELOCITY);
 
-	state.nse.physFinalTime = 1.0;
-	state.cnt[PRINT].period = 0.001;
-	// test
-	//state.cnt[PRINT].period = 100*PHYS_DT;
-	//state.nse.physFinalTime = 1000*PHYS_DT;
-	//state.cnt[VTK3D].period = 1000*PHYS_DT;
-	//state.cnt[SAVESTATE].period = 600;  // save state every [period] of wall time
-	//state.wallTime = 60;
-	// RCI
-	//state.nse.physFinalTime = 0.5;
-	//state.cnt[VTK3D].period = 0.5;
-	//state.cnt[SAVESTATE].period = 3600;  // save state every [period] of wall time
-	//state.wallTime = 3600 * 23.5;
+	// Set up simulation parameters
+	state.nse.physFinalTime = 1.0;	  // Final physical time of simulation
+	state.cnt[PRINT].period = 0.001;  // Print info every 0.001 physical time units
 
-	// add cuts
+	// Enable checkpointing - create a checkpoint every 10 seconds of wall time
+	// state.cnt[SAVESTATE].period = 10;
+	// state.wallTime = 600;
+
+	// Add visualization cuts
 	state.cnt[VTK2D].period = 0.001;
 	state.add2Dcut_X(X / 2, "cutsX/cut_X");
 	state.add2Dcut_X(X / 4, "cutsX/cut_X4");
@@ -148,6 +154,10 @@ int sim(int RESOLUTION = 2)
 	state.cnt[VTK3DCUT].period = 0.001;
 	state.add3Dcut(X / 4, Y / 4, Z / 4, X / 2, Y / 2, Z / 2, 2, "box");
 
+	// Execute the simulation
+	spdlog::info("Starting simulation with checkpointing. Wall time limit: {} seconds", state.wallTime);
+	spdlog::info("Creating checkpoints every {} seconds of wall time", state.cnt[SAVESTATE].period);
+
 	execute(state);
 
 	return 0;
@@ -156,7 +166,6 @@ int sim(int RESOLUTION = 2)
 template <typename TRAITS = TraitsSP>
 void run(int RES)
 {
-	//	using COLL = D3Q27_CUM< TRAITS >;
 	using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
 
 	using NSE_CONFIG = LBM_CONFIG<
