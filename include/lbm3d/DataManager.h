@@ -21,12 +21,18 @@ public:
 	void initEngine(const std::string& name, adios2::Mode mode = adios2::Mode::Write)
 	{
 		if (engines_.count(name) > 0 && current_mode_[name] != mode) {
-			closeEngine(name);
+			engines_[name]->Close();
+			engines_.erase(name);
+		}
+		else if (engines_.count(name) > 0 && current_mode_[name] == mode) {
+			spdlog::trace("Engine '{}' already initialized with requested mode.", name);
+			engine_ = engines_[name].get();
+			return;
 		}
 		//spdlog::warn("engine closed, count: {}", engines_.size());
 
 		if (engines_.count(name) == 0) {
-			std::string filename = fmt::format("{}", name);
+			std::string filename = name;
 			adios2::IO io_;
 			if (ios_.count(name) != 0) {
 				io_ = ios_[name];
@@ -46,11 +52,25 @@ public:
 			engines_[name] = std::make_unique<adios2::Engine>(io_.Open(filename, mode));
 
 			current_mode_[name] = mode;
-			variables_[name] = {};
-			variable_dimensions_[name] = {};
+			{
+				variables_[name] = {};
+				variable_dimensions_[name] = {};
+			}
 		}
 
 		engine_ = engines_[name].get();
+	}
+
+	void ChangeEnginesToAppend()
+	{
+		for (auto& [name, engine] : engines_) {
+			if (engine && current_mode_[name] == adios2::Mode::Write) {
+				initEngine(name, adios2::Mode::Append);
+				// engines_[name]->Close();
+				// engines_[name] = std::make_unique<adios2::Engine>(ios_[name].Open(name, adios2::Mode::Append));
+				// current_mode_[name] = adios2::Mode::Append;
+			}
+		}
 	}
 
 	adios2::Engine& getEngine(const std::string& name)
@@ -167,7 +187,7 @@ public:
 			throw std::runtime_error("Engine not initialized for this simulation type");
 		}
 
-		if (current_mode_[type] != adios2::Mode::Write) {
+		if (current_mode_[type] != adios2::Mode::Write && current_mode_[type] != adios2::Mode::Append) {
 			throw std::runtime_error("Engine not in write mode");
 		}
 
@@ -189,7 +209,7 @@ public:
 			throw std::runtime_error("Engine not initialized for this simulation type");
 		}
 
-		if (current_mode_[type] != adios2::Mode::Write) {
+		if (current_mode_[type] != adios2::Mode::Write && current_mode_[type] != adios2::Mode::Append) {
 			throw std::runtime_error("Engine not in write mode");
 		}
 
@@ -290,7 +310,7 @@ public:
 		}
 		engine_ = engines_[type].get();
 
-		if (current_mode_[type] == adios2::Mode::Write) {
+		if (current_mode_[type] == adios2::Mode::Write || current_mode_[type] == adios2::Mode::Append) {
 			engine_->PerformPuts();
 		}
 		else {

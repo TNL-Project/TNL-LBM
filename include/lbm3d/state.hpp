@@ -383,7 +383,11 @@ void State<NSE>::write1Dcut_Z(idx x, idx y, const std::string& fname)
 template <typename NSE>
 void State<NSE>::writeVTKs_3D()
 {
-	dataManager.initEngine(fmt::format("results_{}/output_3D", id));
+	if (cnt[VTK3D].count == 0)
+		dataManager.initEngine(fmt::format("results_{}/output_3D", id));
+	else
+		dataManager.initEngine(fmt::format("results_{}/output_3D", id), adios2::Mode::Append);
+
 	TNL::Timer timer;
 	for (const auto& block : nse.blocks) {
 		const std::string fname = fmt::format("results_{}/output_3D", id);
@@ -433,14 +437,15 @@ void State<NSE>::writeVTKs_3Dcut()
 {
 	if (probe3Dvec.size() <= 0)
 		return;
-
-	dataManager.initEngine(fmt::format("results_{}/output_3Dcut_box", id));
-
 	// browse all 3D vtk cuts
 	for (auto& probevec : probe3Dvec) {
 		for (const auto& block : nse.blocks) {
 			const std::string fname = fmt::format("results_{}/output_3Dcut_{}", id, probevec.name);
 			create_parent_directories(fname.c_str());
+			if (probevec.cycle == 0)
+				dataManager.initEngine(fname);
+			else
+				dataManager.initEngine(fname, adios2::Mode::Append);
 			auto outputData = [this](const BLOCK_NSE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) mutable
 			{
 				return this->outputData(block, index, dof, desc, x, y, z, value, dofs);
@@ -487,9 +492,9 @@ void State<NSE>::add2Dcut_X(idx x, const char* fmts, ARGS... args)
 	probe2Dvec[last].type = 0;
 	probe2Dvec[last].cycle = 0;
 	probe2Dvec[last].position = x;
-	const std::string fname = fmt::format("results_{}/output_2D_{}", id, probe2Dvec[last].name);
-	create_parent_directories(fname.c_str());
-	dataManager.initEngine(fname);
+	//const std::string fname = fmt::format("results_{}/output_2D_{}", id, probe2Dvec[last].name);
+	// create_parent_directories(fname.c_str());
+	// dataManager.initEngine(fname);
 }
 
 template <typename NSE>
@@ -504,9 +509,9 @@ void State<NSE>::add2Dcut_Y(idx y, const char* fmts, ARGS... args)
 	probe2Dvec[last].type = 1;
 	probe2Dvec[last].cycle = 0;
 	probe2Dvec[last].position = y;
-	const std::string fname = fmt::format("results_{}/output_2D_{}", id, probe2Dvec[last].name);
-	create_parent_directories(fname.c_str());
-	dataManager.initEngine(fname);
+	//const std::string fname = fmt::format("results_{}/output_2D_{}", id, probe2Dvec[last].name);
+	// create_parent_directories(fname.c_str());
+	// dataManager.initEngine(fname);
 }
 
 template <typename NSE>
@@ -522,9 +527,9 @@ void State<NSE>::add2Dcut_Z(idx z, const char* fmts, ARGS... args)
 	probe2Dvec[last].cycle = 0;
 	probe2Dvec[last].position = z;
 
-	const std::string fname = fmt::format("results_{}/output_2D_{}", id, probe2Dvec[last].name);
-	create_parent_directories(fname.c_str());
-	dataManager.initEngine(fname);
+	// const std::string fname = fmt::format("results_{}/output_2D_{}", id, probe2Dvec[last].name);
+	// create_parent_directories(fname.c_str());
+	// dataManager.initEngine(fname);
 }
 
 template <typename NSE>
@@ -537,6 +542,11 @@ void State<NSE>::writeVTKs_2D()
 	for (auto& probevec : probe2Dvec) {
 		for (const auto& block : nse.blocks) {
 			const std::string fname = fmt::format("results_{}/output_2D_{}", id, probevec.name);
+			create_parent_directories(fname.c_str());
+			if (probevec.cycle == 0)
+				dataManager.initEngine(fname);
+			else
+				dataManager.initEngine(fname, adios2::Mode::Append);
 
 			auto outputData = [this](const BLOCK_NSE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) mutable
 			{
@@ -754,115 +764,73 @@ void State<NSE>::checkpointState(adios2::Mode mode)
 	}
 }
 
+// template <typename NSE>
+// void State<NSE>::saveState()
+// {
+//     // Initialize checkpoint file
+//     const std::string checkpoint_file = fmt::format("results_{}/checkpoint", id);
+//     dataManager.initEngine(checkpoint_file);
+
+//     spdlog::info("Saving checkpoint to {}", checkpoint_file);
+
+//     // Start the checkpoint process with write mode
+//     checkpoint.setDataManager(dataManager);
+//     checkpoint.start(checkpoint_file, adios2::Mode::Write);
+
+//     // Save all state data
+//     checkpointState(adios2::Mode::Write);
+//     checkpointStateLocal(adios2::Mode::Write);
+
+//     // Finalize the checkpoint
+//     checkpoint.finalize();
+
+//     // Set flag to indicate checkpoint exists
+//     flagCreate("loadstate");
+// }
+
 template <typename NSE>
 void State<NSE>::saveState()
 {
-	// Create directory if it doesn't exist
-	const std::string results_dir = fmt::format("results_{}", id);
-	mkdir_p(results_dir.c_str(), 0755);
+	// Add before starting the checkpoint
+	std::filesystem::create_directories(fmt::format("results_{}", id));
+	// checkpoint to a staging file first to not break the previous checkpoint if we fail to create another one
+	const std::string filename_tmp = fmt::format("results_{}/checkpoint_tmp", id);
+	spdlog::info("Saving checkpoint in {}", filename_tmp);
+	checkpoint.start(filename_tmp, adios2::Mode::Write);
+	checkpointState(adios2::Mode::Write);
+	checkpointStateLocal(adios2::Mode::Write);
+	checkpoint.finalize();
 
-	// Initialize temporary checkpoint file
-	const std::string checkpoint_tmp = fmt::format("results_{}/checkpoint_tmp", id);
-	dataManager.initEngine(checkpoint_tmp);
-
-	spdlog::info("Saving checkpoint to {}", checkpoint_tmp);
-	dataManager.beginStep(checkpoint_tmp);
-
-	// Save simulation attributes
-	dataManager.defineAttribute<int>("LBM_total_blocks", nse.total_blocks, checkpoint_tmp);
-	dataManager.defineAttribute<real>("LBM_physCharLength", nse.physCharLength, checkpoint_tmp);
-	dataManager.defineAttribute<real>("LBM_physFinalTime", nse.physFinalTime, checkpoint_tmp);
-	dataManager.defineAttribute<int>("LBM_iterations", nse.iterations, checkpoint_tmp);
-
-	// Save counter states
-	for (int c = 0; c < MAX_COUNTER; c++) {
-		const std::string name_count = fmt::format("State_counter_{}_count", c);
-		const std::string name_period = fmt::format("State_counter_{}_period", c);
-		dataManager.defineAttribute<int>(name_count, cnt[c].count, checkpoint_tmp);
-		dataManager.defineAttribute<real>(name_period, cnt[c].period, checkpoint_tmp);
-	}
-
-	// Save probe states
-	for (std::size_t i = 0; i < probe3Dvec.size(); i++) {
-		const std::string name = fmt::format("State_probe3D_{}_cycle", i);
-		dataManager.defineAttribute<int>(name, probe3Dvec[i].cycle, checkpoint_tmp);
-	}
-	for (std::size_t i = 0; i < probe2Dvec.size(); i++) {
-		const std::string name = fmt::format("State_probe2D_{}_cycle", i);
-		dataManager.defineAttribute<int>(name, probe2Dvec[i].cycle, checkpoint_tmp);
-	}
-	for (std::size_t i = 0; i < probe1Dvec.size(); i++) {
-		const std::string name = fmt::format("State_probe1D_{}_cycle", i);
-		dataManager.defineAttribute<int>(name, probe1Dvec[i].cycle, checkpoint_tmp);
-	}
-	for (std::size_t i = 0; i < probe1Dlinevec.size(); i++) {
-		const std::string name = fmt::format("State_probe1Dline_{}_cycle", i);
-		dataManager.defineAttribute<int>(name, probe1Dlinevec[i].cycle, checkpoint_tmp);
-	}
-
-	// Save data for each block
-	for (auto& block : nse.blocks) {
-		// Variables for map
-		adios2::Dims shape, start, count;
-#ifdef HAVE_MPI
-		shape = count = {std::size_t(block.hmap.getLocalStorageSize())};
-#else
-		shape = count = {std::size_t(block.hmap.getStorageSize())};
-#endif
-		start = {0};
-		std::string mapName = fmt::format("LBM_map_block_{}", block.id);
-
-		dataManager.defineData<map_t>(mapName, shape, start, count, checkpoint_tmp);
-		dataManager.outputData<map_t>(mapName, block.hmap.getData(), checkpoint_tmp);
-
-		// DF variables
-		for (int dfty = 0; dfty < DFMAX; dfty++) {
-#ifdef HAVE_MPI
-			shape = count = {std::size_t(block.hfs[dfty].getLocalStorageSize())};
-#else
-			shape = count = {std::size_t(block.hfs[dfty].getStorageSize())};
-#endif
-			std::string dfName = fmt::format("LBM_df_{}_block_{}", dfty, block.id);
-
-			dataManager.defineData<dreal>(dfName, shape, start, count, checkpoint_tmp);
-			dataManager.outputData<dreal>(dfName, block.hfs[dfty].getData(), checkpoint_tmp);
-		}
-
-		// Macro variables
-		if constexpr (NSE::MACRO::N > 0) {
-#ifdef HAVE_MPI
-			shape = count = {std::size_t(block.hmacro.getLocalStorageSize())};
-#else
-			shape = count = {std::size_t(block.hmacro.getStorageSize())};
-#endif
-			std::string macroName = fmt::format("LBM_macro_block_{}", block.id);
-
-			dataManager.defineData<dreal>(macroName, shape, start, count, checkpoint_tmp);
-			dataManager.outputData<dreal>(macroName, block.hmacro.getData(), checkpoint_tmp);
-		}
-	}
-
-	// Finalize checkpoint writing
-	dataManager.performPutsAndStep(checkpoint_tmp);
-	//spdlog::warn("engine wiil close");
-	dataManager.closeEngine(checkpoint_tmp);
-
-	// Move temporary checkpoint directory to main checkpoint
 	if (nse.rank == 0) {
-		const std::string tmp_dir = fmt::format("{}.bp", checkpoint_tmp);
-		const std::string final_dir = fmt::format("results_{}/checkpoint.bp", id);
+		const std::string filename = fmt::format("results_{}/checkpoint", id);
+		std::string src_path = filename_tmp + ".bp";
+		std::string dst_path = filename + ".bp";
 
-		spdlog::info("Moving checkpoint {} to {}", tmp_dir, final_dir);
+		// Check if the directory exists with .bp extension
+		if (! std::filesystem::exists(src_path) && std::filesystem::exists(filename_tmp)) {
+			// If not, use paths without .bp extension
+			src_path = filename_tmp;
+			dst_path = filename;
+		}
 
-		// Use rename_exchange to move the directory
-		int status = rename_exchange(tmp_dir.c_str(), final_dir.c_str());
+		spdlog::info("Moving checkpoint {} to {}", src_path, dst_path);
+
+		int status = rename_exchange(src_path.c_str(), dst_path.c_str());
 		if (status != 0) {
-			spdlog::error("rename_exchange(\"{}\", \"{}\") failed: {}", tmp_dir, final_dir, strerror(errno));
+			spdlog::error("rename_exchange(\"{}\", \"{}\") failed: {}", src_path, dst_path, strerror(errno));
 			return;
 		}
+		// update the modification timestamp on the checkpoint directory
+		// (it would be weird to keep the old timestamp of a moved directory)
+		status = utimensat(AT_FDCWD, dst_path.c_str(), NULL, 0);
+		if (status != 0) {
+			spdlog::error("touch(\"{}\") failed: {}", dst_path, strerror(errno));
+		}
 	}
 
-	// Create flag that state is saved and can be loaded
+	// Indicate that state can be loaded after restart (e.g. after a
+	// failed/cancelled run or running over the walltime limit). The flag will
+	// be deleted from core.h when a finished/terminated flag is created.
 	flagCreate("loadstate");
 }
 
@@ -884,6 +852,8 @@ void State<NSE>::loadState()
 	nse.startIterations = nse.iterations;
 	glups_prev_iterations = nse.startIterations;
 	glups_prev_time = timer_total.getRealTime();
+
+	//dataManager.ChangeEnginesToAppend();
 
 	spdlog::info("Checkpoint loaded successfully: {} iterations, physical time: {}", nse.iterations, nse.physTime());
 }

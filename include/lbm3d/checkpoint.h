@@ -59,6 +59,7 @@ public:
 		dataManager->performPutsAndStep(currentCheckpointName);
 		isActive = false;
 		currentMode = adios2::Mode::Undefined;
+		dataManager->closeEngine(currentCheckpointName);
 	}
 
 	// Save or load attributes
