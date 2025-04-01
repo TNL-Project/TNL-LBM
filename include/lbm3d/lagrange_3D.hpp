@@ -628,6 +628,10 @@ void Lagrange3D<LBM>::computeForces(real time)
 			constructed = true;
 			break;
 	}
+
+	spdlog::warn("computing implicit IBM forces is disabled");
+	return;
+
 	auto ibm_logger = spdlog::get("ibm");
 	ibm_logger->info("computing forces using computeVariant={}", compute_desc);
 

@@ -377,10 +377,14 @@ point_t lagrangian_force(LL_array& previous, LL_array& LL, int i, int j)
 //is point_t the proper type
 //are all of point_t coordinates defined?
 
+// point_t X1, X2;
+// norm1 = TNL::l2Norm(X1 - X2);
+
 using HLPVECTOR = decltype(ibm.hLL_lat);
 using DLPVECTOR = decltype(ibm.dLL_lat);
 HLPVECTOR previous;
 HLPVECTOR next;
+//HLPVECTOR previous2;
 //LL array indexed from 0-> N1-1 N2-1
 template<typename LL_array>
 void deformX(int i, int j,LL_array& previous ,LL_array& LL,LL_array& next)
@@ -399,7 +403,7 @@ void deformX(int i, int j,LL_array& previous ,LL_array& LL,LL_array& next)
 		 
 		//next[i*N2+j] = point_t{0,0,j};
 		//next[i*N2+j]= a*second_forward_diff_RHS(i,j,by_s1,LL);
-
+		//previous[i*N2+j]= ;
 
 	 }
 	 //s1 = L = N1
@@ -408,6 +412,7 @@ void deformX(int i, int j,LL_array& previous ,LL_array& LL,LL_array& next)
 		//next[i*N2+j] =a*second_backward_diff_RHS(i,j,by_s1,LL);
 		//next[i*N2+j]+=b*third_backward_diff_RHS(i,j,by_s1,LL);
 		next[i*N2+j] = LL[i*N2+j];
+		//previous[i*N2+j]= ;
 		//sigma=0;
 		//gama=0;
 
@@ -419,6 +424,7 @@ void deformX(int i, int j,LL_array& previous ,LL_array& LL,LL_array& next)
 		//next[i*N2+j]=a*second_forward_diff_RHS(i,j,by_s2,LL);
 		//next[i+N2+j]+=b*third_forward_diff_RHS(i,j,by_s2,LL);
 		 next[i*N2+j] = LL[i*N2+j];
+		 //previous[i*N2+j]= ;
 		//sigma=0;
 		//gama=0;
 
@@ -429,6 +435,7 @@ void deformX(int i, int j,LL_array& previous ,LL_array& LL,LL_array& next)
 		//next[i*N2+j]=a*second_backward_diff_RHS(i,j,by_s2,LL);
 		//next[i+N2+j]+=b*third_backward_diff_RHS(i,j,by_s2,LL);
 		 next[i*N2+j] = LL[i*N2+j];
+		 //previous[i*N2+j]= ;
 		//sigma=0;
 		//gama=0;
 
@@ -439,6 +446,7 @@ void deformX(int i, int j,LL_array& previous ,LL_array& LL,LL_array& next)
 		//next[i*N2+j] += (elastic_force_sum(i,j,LL) -lagrangian_force(previous,LL,i,j) -2*LL[i*N2+j] +previous[i*N2+j])/density;
 		
 		next[i*N2+j] = (elastic_force_sum(i,j,LL) -lagrangian_force(previous,LL,i,j))/density +2*LL[i*N2+j] -previous[i*N2+j];
+		//previous[i*N2+j] = (elastic_force_sum(i,j,LL) -lagrangian_force(previous2,LL,i,j))/density +2*LL[i*N2+j] -previous2[i*N2+j];
 
 	 }
 
@@ -510,7 +518,24 @@ for(int i = 0; i<N1;i++)
 		// update ball position
 		const dreal velocity_amplitude = 2 * ball_amplitude / ball_period;
 		const dreal vz = TNL::sign( cos(2*TNL::pi*nse.iterations/ball_period) ) * velocity_amplitude;
-
+/////////////////////////////////////////////////////////////////////////
+/*
+		//const auto drho = ibm.dmacroVector(MACRO::e_rho);
+        //const auto dvx = ibm.dmacroVector(MACRO::e_vx);
+        //const auto dvy = ibm.dmacroVector(MACRO::e_vy);
+        //const auto dvz = ibm.dmacroVector(MACRO::e_vz);
+        auto dfx = ibm.dmacroVector(MACRO::e_fx);
+        auto dfy = ibm.dmacroVector(MACRO::e_fy);
+        auto dfz = ibm.dmacroVector(MACRO::e_fz);
+        //const auto hrho = ibm.hmacroVector(MACRO::e_rho);
+        const auto hvx = ibm.hmacroVector(MACRO::e_vx);
+        const auto hvy = ibm.hmacroVector(MACRO::e_vy);
+        const auto hvz = ibm.hmacroVector(MACRO::e_vz);
+        auto hfx = ibm.hmacroVector(MACRO::e_fx);
+        auto hfy = ibm.hmacroVector(MACRO::e_fy);
+        auto hfz = ibm.hmacroVector(MACRO::e_fz);
+*/
+//////////////////////////////////////////////////////////
 		if (ibm.computeVariant == IbmCompute::CPU) {
 			//ibm.hLL_velocity_lat = point_t{0,0,vz};
 			//HLPVECTOR previous; --> definovat globalne
@@ -521,9 +546,17 @@ for(int i = 0; i<N1;i++)
 			if(nse.iterations == 0)
 			{
 				std::cout << "if iteration == 0"<<std::endl;
+				//previous2 = ibm.hLL_lat;
 				previous = ibm.hLL_lat;
 				next = ibm.hLL_lat;
 			}
+			// else if(nse.iterations == 0)
+			// {
+			// 	std::cout << "if iteration == 0"<<std::endl;
+			// 	//previous2 = ibm.hLL_lat;
+			// 	previous = ibm.hLL_lat;
+			// 	next = ibm.hLL_lat;
+			// }
 			else
 			{
 				std::cout << "else call deform"<<std::endl;
@@ -534,6 +567,131 @@ for(int i = 0; i<N1;i++)
 				ibm.ws_tnl_hM.vectorProduct(hvy, ibm.ws_tnl_hb[1]);
 				ibm.ws_tnl_hM.vectorProduct(hvz, ibm.ws_tnl_hb[2]);
 				deform(previous, ibm.hLL_lat, next);
+				/*
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+				// TODO: spočítat F_bK (3.41f) a F_bE (3.45)
+				//v = TNL::l2Norm( expr )
+				HLPVECTOR ref = ibm.hLL_lat;
+				HLPVECTOR LL = ibm.hLL_lat;
+				int N=0;
+				real fdist = TNL::l2Norm(ref[0]-ref[1]);
+				real eps = 1e-8*fdist;
+				real s =1;
+				real b=1;
+				for(int i =0;i<N;i++)
+				{
+					if(LL[i]==LL[0])
+					{
+						real norm1 = l2Norm(LL[1]-LL[0]);
+						real fdist1 = l2Norm(ref[1]-ref[0]);
+						F_bE[i][0]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[1][0] -LL[0][0] );
+						F_bE[i][1]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[1][1] -LL[0][1] );
+						F_bE[i][2]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[1][2] -LL[0][2] );
+
+					}
+					else if(LL[i]==LL[N-1])
+					{
+						real norm2 = l2Norm(LL[N-1]-LL[N-2]);
+						real fdist2 = l2Norm(ref[N-1]-ref[N-2]);
+						F_bE[i][0]= s/fdist2/fdist2*(1-fdist2/norm2)*(LL[N-1][0] -LL[N-2][0] );
+						F_bE[i][1]= s/fdist2/fdist2*(1-fdist2/norm2)*(LL[N-1][1] -LL[N-2][1] );
+						F_bE[i][2]= s/fdist2/fdist2*(1-fdist2/norm2)*(LL[N-1][2] -LL[N-2][2] );
+					}
+					else
+					{
+						real norm1 = l2Norm(LL[i+1]-LL[i]);
+						real norm2 = l2Norm(LL[i]-LL[i-1]);
+						real fdist1 = l2Norm(ref[i+1]=ref[i]);
+						real fdist2 = l2Norm(ref[i]=ref[i-1]);
+						if(norm1<eps) norm1=eps;
+						if(norm2<eps)norm2=eps;
+						F_bE[i][0]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[N+1][0] -LL[i][0] )+
+						s/fdist2/fdist2*(1-fdist2/norm2)*(LL[N+1][0] -LL[i][0] );
+						F_bE[i][1]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[N+1][1] -LL[i][1] )+
+						s/fdist2/fdist2*(1-fdist2/norm2)*(LL[N+1][1] -LL[i][1] );
+						F_bE[i][2]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[N+1][2] -LL[i][2] )+
+						s/fdist2/fdist2*(1-fdist2/norm2)*(LL[N+1][2] -LL[i][2] );	
+					}
+					if(LL[i-1]==LL[0])
+					{
+						F_bE[i][0]+=b/fdist/fdist/fdist/fdist*(2*(LL[1][0]-ref[1][0])-5*(LL[2][0]-ref[2][0])
+					+4*(LL[3][0]-ref[3][0])-(LL[4][0]-ref[4][0]));
+					F_bE[i][1]+=b/fdist/fdist/fdist/fdist*(2*(LL[1][1]-ref[1][1])-5*(LL[2][1]-ref[2][1])
+					+4*(LL[3][1]-ref[3][1])-(LL[4][1]-ref[4][1]));
+					F_bE[i][2]+=b/fdist/fdist/fdist/fdist*(2*(LL[1][2]-ref[1][2])-5*(LL[2][2]-ref[2][2])
+					+4*(LL[3][2]-ref[3][2])-(LL[4][2]-ref[4][2]));
+					}
+					else if(LL[i+1]==LL[N-1])
+					{
+						F_bE[i][0]+=b/fdist/fdist/fdist/fdist*(2*(LL[N-1][0]-ref[N-1][0])-5*(LL[N-2][0]-ref[N-2][0])
+					-(LL[N-3][0]-ref[N-3][0]));
+					F_bE[i][1]+=b/fdist/fdist/fdist/fdist*(2*(LL[N-1][1]-ref[N-1][1])-5*(LL[N-2][1]-ref[N-2][1])
+					-(LL[N-3][1]-ref[N-3][1]));
+					F_bE[i][2]+=b/fdist/fdist/fdist/fdist*(2*(LL[N-1][2]-ref[N-1][2])-5*(LL[N-2][2]-ref[N-2][2])
+					-(LL[N-3][2]-ref[N-3][2]));
+					}
+					else
+					{
+						F_bE[i][0]+=b/fdist/fdist/fdist/fdist*((LL[i-2][0]-ref[i-2][0])-
+						4*(LL[i-1][0]-ref[i-1][0])+6*(LL[i][0]-ref[i][0])-4*(LL[i+1][0]-ref[i+1][0])+(LL[i+2][0]-ref[i+2][0])
+						);
+						F_bE[i][1]+=b/fdist/fdist/fdist/fdist*((LL[i-2][1]-ref[i-2][1])-
+						4*(LL[i-1][1]-ref[i-1][1])+6*(LL[i][1]-ref[i][1])-4*(LL[i+1][1]-ref[i+1][1])+(LL[i+2][1]-ref[i+2][1])
+						);
+						F_bE[i][2]+=b/fdist/fdist/fdist/fdist*((LL[i-2][2]-ref[i-2][2])-
+						4*(LL[i-1][2]-ref[i-1][2])+6*(LL[i][2]-ref[i][2])-4*(LL[i+1][2]-ref[i+1][2])+(LL[i+2][2]-ref[i+2][2])
+						);
+					}
+					
+				F_bK[i] = U_ib = point_t{
+					ibm.ws_tnl_hb[0][i],
+					ibm.ws_tnl_hb[1][i],
+					ibm.ws_tnl_hb[2][i]
+				};
+
+				}
+
+				
+
+				// set hx = F_bK + F_bE
+				// (nahrada implicitni metody computeForces v Lagrange3D)
+				for(int i = 0; i< N;i++)
+				{
+						point_t F_b{
+							F_bK[i][0] + F_bE[i][0],
+							F_bK[i][1] + F_bE[i][1],
+							F_bK[i][2] + F_bE[i][2]
+						};
+						ibm.ws_tnl_hx[0][i] = F_b[0];
+						ibm.ws_tnl_hx[1][i] = F_b[1];
+						ibm.ws_tnl_hx[2][i] = F_b[2];
+				
+				}
+
+				// transform the force from Lagrangian to Eulerian coordinates
+				auto kernel = [&] (idx i) mutable
+				{
+					// skipping empty rows explicitly is much faster
+					if( ibm.ws_tnl_hMT.getRowCapacity(i) > 0 ) {
+						hfx[i] = rowVectorProduct(ibm.ws_tnl_hMT, i, ibm.ws_tnl_hx[0]);
+						hfy[i] = rowVectorProduct(ibm.ws_tnl_hMT, i, ibm.ws_tnl_hx[1]);
+						hfz[i] = rowVectorProduct(ibm.ws_tnl_hMT, i, ibm.ws_tnl_hx[2]);
+					}
+				};
+				idx n = nse.lat.global.x()*nse.lat.global.y()*nse.lat.global.z();
+				TNL::Algorithms::parallelFor< TNL::Devices::Host >((idx) 0, n, kernel);
+				// copy forces to the device
+				// FIXME: this is copied multiple times when there are multiple Lagrange3D objects
+				// (ideally there should be only one Lagrange3D object that comprises all immersed bodies)
+				
+				dfx = hfx;
+				dfy = hfy;
+				dfz = hfz;
+
+				*/
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+				
+				//previous2=previous;
 				previous = ibm.hLL_lat;
 				ibm.hLL_lat = next;
 			}
@@ -712,9 +870,9 @@ int sim(int RES=2, double i_Re=1000, double nasobek=2.0, int dirac_delta=2, int 
 	state.ball_c[1] = 5.5*state.ball_diameter;
 	state.ball_c[2] = 5.5*state.ball_diameter;
 	real sigma = nasobek * PHYS_DL;
-	std::vector<int> N1N2 = ibmSetupRectangle(state.ibm, state.ball_c, state.ball_diameter/2.0, state.ball_diameter/2.0, sigma);
-	state.N1 = N1N2[0];
-	state.N2 = N1N2[1];
+	std::pair<int,int> N1N2 = ibmSetupRectangle(state.ibm, state.ball_c, state.ball_diameter/2.0, state.ball_diameter/2.0, sigma);
+	state.N1 = N1N2.first;
+	state.N2 = N1N2.second;
 
 	// configure IBM
 	state.ibm.computeVariant = computeVariant;
