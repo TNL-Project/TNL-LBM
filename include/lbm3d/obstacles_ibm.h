@@ -26,15 +26,15 @@ int ibmSetupFilament(Lagrange3D<LBM>& ibm, typename LBM::point_t center, double 
 	for (int i=0;i<N;i++)
 	{
 		point_t fp3;
-		real x = 0;
+		real x = i*dx;
 		real y = i*dx;
 		real z = i*dx; 
 		
-		fp3.x() = center.x()+x;
+		fp3.x() = center.x() +x;
 
-		fp3.y() = center.y()+y;
+		fp3.y() = center.y();//+y;
 
-		fp3.z() = center.z() + dm+z;
+		fp3.z() = center.z() + dm;//+z;
 
 		ibm.LL.push_back(fp3);
 		points++;

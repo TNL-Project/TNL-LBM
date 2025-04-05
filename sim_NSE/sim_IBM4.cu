@@ -510,6 +510,10 @@ for(int i = 0; i<N1;i++)
 }
 //check for first run
 //let the position of the desk unchanged for this time
+int N=0;
+
+        HLPVECTOR ref;
+		HLPVECTOR LL;
 
 	virtual void computeBeforeLBMKernel()
 	{
@@ -519,7 +523,7 @@ for(int i = 0; i<N1;i++)
 		const dreal velocity_amplitude = 2 * ball_amplitude / ball_period;
 		const dreal vz = TNL::sign( cos(2*TNL::pi*nse.iterations/ball_period) ) * velocity_amplitude;
 /////////////////////////////////////////////////////////////////////////
-/*
+
 		//const auto drho = ibm.dmacroVector(MACRO::e_rho);
         //const auto dvx = ibm.dmacroVector(MACRO::e_vx);
         //const auto dvy = ibm.dmacroVector(MACRO::e_vy);
@@ -534,7 +538,7 @@ for(int i = 0; i<N1;i++)
         auto hfx = ibm.hmacroVector(MACRO::e_fx);
         auto hfy = ibm.hmacroVector(MACRO::e_fy);
         auto hfz = ibm.hmacroVector(MACRO::e_fz);
-*/
+
 //////////////////////////////////////////////////////////
 		if (ibm.computeVariant == IbmCompute::CPU) {
 			//ibm.hLL_velocity_lat = point_t{0,0,vz};
@@ -549,6 +553,8 @@ for(int i = 0; i<N1;i++)
 				//previous2 = ibm.hLL_lat;
 				previous = ibm.hLL_lat;
 				next = ibm.hLL_lat;
+				ref = ibm.hLL_lat;
+				LL = ibm.hLL_lat;
 			}
 			// else if(nse.iterations == 0)
 			// {
@@ -559,28 +565,31 @@ for(int i = 0; i<N1;i++)
 			// }
 			else
 			{
-				std::cout << "else call deform"<<std::endl;
-				const auto hvx = ibm.hmacroVector(MACRO::e_vx);
-				const auto hvy = ibm.hmacroVector(MACRO::e_vy);
-				const auto hvz = ibm.hmacroVector(MACRO::e_vz);
+				std::cout << "else called"<<std::endl;
+				//const auto hvx = ibm.hmacroVector(MACRO::e_vx);
+				//const auto hvy = ibm.hmacroVector(MACRO::e_vy);
+				//const auto hvz = ibm.hmacroVector(MACRO::e_vz);
 				ibm.ws_tnl_hM.vectorProduct(hvx, ibm.ws_tnl_hb[0]);
 				ibm.ws_tnl_hM.vectorProduct(hvy, ibm.ws_tnl_hb[1]);
 				ibm.ws_tnl_hM.vectorProduct(hvz, ibm.ws_tnl_hb[2]);
-				deform(previous, ibm.hLL_lat, next);
-				/*
+				//deform(previous, ibm.hLL_lat, next);
+				
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////
 				// TODO: spočítat F_bK (3.41f) a F_bE (3.45)
 				//v = TNL::l2Norm( expr )
-				HLPVECTOR ref = ibm.hLL_lat;
-				HLPVECTOR LL = ibm.hLL_lat;
-				int N=0;
+				
+				
+				//int N=0;
 				real fdist = TNL::l2Norm(ref[0]-ref[1]);
 				real eps = 1e-8*fdist;
-				real s =1;
-				real b=1;
+				real s = nse.lat.phys2lbmForce(1e+4);
+				real b = nse.lat.phys2lbmForce(1e-1);
+				HLPVECTOR F_bE(N);
+				HLPVECTOR F_bK(N);
 				for(int i =0;i<N;i++)
 				{
-					if(LL[i]==LL[0])
+					
+					if(i==0)
 					{
 						real norm1 = l2Norm(LL[1]-LL[0]);
 						real fdist1 = l2Norm(ref[1]-ref[0]);
@@ -589,13 +598,40 @@ for(int i = 0; i<N1;i++)
 						F_bE[i][2]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[1][2] -LL[0][2] );
 
 					}
-					else if(LL[i]==LL[N-1])
+					else if(i==N-1)
 					{
 						real norm2 = l2Norm(LL[N-1]-LL[N-2]);
 						real fdist2 = l2Norm(ref[N-1]-ref[N-2]);
-						F_bE[i][0]= s/fdist2/fdist2*(1-fdist2/norm2)*(LL[N-1][0] -LL[N-2][0] );
-						F_bE[i][1]= s/fdist2/fdist2*(1-fdist2/norm2)*(LL[N-1][1] -LL[N-2][1] );
-						F_bE[i][2]= s/fdist2/fdist2*(1-fdist2/norm2)*(LL[N-1][2] -LL[N-2][2] );
+						F_bE[i][0]= s/fdist2/fdist2*(1-fdist2/norm2)*(LL[N-2][0] -LL[N-1][0] );
+						F_bE[i][1]= s/fdist2/fdist2*(1-fdist2/norm2)*(LL[N-2][1] -LL[N-1][1] );
+						F_bE[i][2]= s/fdist2/fdist2*(1-fdist2/norm2)*(LL[N-2][2] -LL[N-1][2] );
+					}
+					//v referencin kodu se pouziva ukazatel na predchozi, proto se diference pocita az pro druhý bod
+					//v nasem kodu se můze spocitat v i==0? 
+					else if(i==1)
+					{
+						F_bE[i][0]+=b/fdist/fdist/fdist/fdist*(2*(LL[0][0]-ref[0][0])-5*(LL[1][0]-ref[1][0])
+					+4*(LL[2][0]-ref[2][0])-(LL[3][0]-ref[3][0]));
+
+					F_bE[i][1]+=b/fdist/fdist/fdist/fdist*(2*(LL[0][1]-ref[0][1])-5*(LL[1][1]-ref[1][1])
+					+4*(LL[2][1]-ref[2][1])-(LL[3][1]-ref[3][1]));
+
+					F_bE[i][2]+=b/fdist/fdist/fdist/fdist*(2*(LL[0][2]-ref[0][2])-5*(LL[1][2]-ref[1][2])
+					+4*(LL[2][2]-ref[2][2])-(LL[3][2]-ref[3][2]));
+					}
+					else if(i==N-2)
+					{
+						// nechybí zde ještě 4. člen?chyběl člen 4*(předpředposlední
+						F_bE[i][0]+=b/fdist/fdist/fdist/fdist*(2*(LL[N-1][0]-ref[N-1][0])-5*(LL[N-2][0]-ref[N-2][0])
+						+4*(LL[N-3][0]-ref[N-3][0])-(LL[N-4][0]-ref[N-4][0]));
+
+						F_bE[i][1]+=b/fdist/fdist/fdist/fdist*(2*(LL[N-1][1]-ref[N-1][1])-5*(LL[N-2][1]-ref[N-2][1])
+						+4*(LL[N-3][1]-ref[N-3][1])-(LL[N-4][1]-ref[N-4][1]));
+						
+						F_bE[i][2]+=b/fdist/fdist/fdist/fdist*(2*(LL[N-1][2]-ref[N-1][2])-5*(LL[N-2][2]-ref[N-2][2])
+						+4*(LL[N-3][2]-ref[N-3][2])-(LL[N-4][2]-ref[N-4][2]));
+
+					
 					}
 					else
 					{
@@ -605,33 +641,14 @@ for(int i = 0; i<N1;i++)
 						real fdist2 = l2Norm(ref[i]=ref[i-1]);
 						if(norm1<eps) norm1=eps;
 						if(norm2<eps)norm2=eps;
-						F_bE[i][0]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[N+1][0] -LL[i][0] )+
-						s/fdist2/fdist2*(1-fdist2/norm2)*(LL[N+1][0] -LL[i][0] );
-						F_bE[i][1]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[N+1][1] -LL[i][1] )+
-						s/fdist2/fdist2*(1-fdist2/norm2)*(LL[N+1][1] -LL[i][1] );
-						F_bE[i][2]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[N+1][2] -LL[i][2] )+
-						s/fdist2/fdist2*(1-fdist2/norm2)*(LL[N+1][2] -LL[i][2] );	
-					}
-					if(LL[i-1]==LL[0])
-					{
-						F_bE[i][0]+=b/fdist/fdist/fdist/fdist*(2*(LL[1][0]-ref[1][0])-5*(LL[2][0]-ref[2][0])
-					+4*(LL[3][0]-ref[3][0])-(LL[4][0]-ref[4][0]));
-					F_bE[i][1]+=b/fdist/fdist/fdist/fdist*(2*(LL[1][1]-ref[1][1])-5*(LL[2][1]-ref[2][1])
-					+4*(LL[3][1]-ref[3][1])-(LL[4][1]-ref[4][1]));
-					F_bE[i][2]+=b/fdist/fdist/fdist/fdist*(2*(LL[1][2]-ref[1][2])-5*(LL[2][2]-ref[2][2])
-					+4*(LL[3][2]-ref[3][2])-(LL[4][2]-ref[4][2]));
-					}
-					else if(LL[i+1]==LL[N-1])
-					{
-						F_bE[i][0]+=b/fdist/fdist/fdist/fdist*(2*(LL[N-1][0]-ref[N-1][0])-5*(LL[N-2][0]-ref[N-2][0])
-					-(LL[N-3][0]-ref[N-3][0]));
-					F_bE[i][1]+=b/fdist/fdist/fdist/fdist*(2*(LL[N-1][1]-ref[N-1][1])-5*(LL[N-2][1]-ref[N-2][1])
-					-(LL[N-3][1]-ref[N-3][1]));
-					F_bE[i][2]+=b/fdist/fdist/fdist/fdist*(2*(LL[N-1][2]-ref[N-1][2])-5*(LL[N-2][2]-ref[N-2][2])
-					-(LL[N-3][2]-ref[N-3][2]));
-					}
-					else
-					{
+						F_bE[i][0]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[i+1][0] -LL[i][0] )+
+						s/fdist2/fdist2*(1-fdist2/norm2)*(LL[i+1][0] -LL[i][0] );
+						F_bE[i][1]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[i+1][1] -LL[i][1] )+
+						s/fdist2/fdist2*(1-fdist2/norm2)*(LL[i+1][1] -LL[i][1] );
+						F_bE[i][2]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[i+1][2] -LL[i][2] )+
+						s/fdist2/fdist2*(1-fdist2/norm2)*(LL[i+1][2] -LL[i][2] );	
+				
+
 						F_bE[i][0]+=b/fdist/fdist/fdist/fdist*((LL[i-2][0]-ref[i-2][0])-
 						4*(LL[i-1][0]-ref[i-1][0])+6*(LL[i][0]-ref[i][0])-4*(LL[i+1][0]-ref[i+1][0])+(LL[i+2][0]-ref[i+2][0])
 						);
@@ -643,11 +660,12 @@ for(int i = 0; i<N1;i++)
 						);
 					}
 					
-				F_bK[i] = U_ib = point_t{
+				// spočítat podle (3.41f)
+				F_bK[i] =  point_t{
 					ibm.ws_tnl_hb[0][i],
 					ibm.ws_tnl_hb[1][i],
 					ibm.ws_tnl_hb[2][i]
-				};
+				};//U_ib =
 
 				}
 
@@ -688,7 +706,7 @@ for(int i = 0; i<N1;i++)
 				dfy = hfy;
 				dfz = hfz;
 
-				*/
+				LL=next;
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 				
 				//previous2=previous;
@@ -870,10 +888,12 @@ int sim(int RES=2, double i_Re=1000, double nasobek=2.0, int dirac_delta=2, int 
 	state.ball_c[1] = 5.5*state.ball_diameter;
 	state.ball_c[2] = 5.5*state.ball_diameter;
 	real sigma = nasobek * PHYS_DL;
-	std::pair<int,int> N1N2 = ibmSetupRectangle(state.ibm, state.ball_c, state.ball_diameter/2.0, state.ball_diameter/2.0, sigma);
-	state.N1 = N1N2.first;
-	state.N2 = N1N2.second;
+	//std::pair<int,int> N1N2 = ibmSetupRectangle(state.ibm, state.ball_c, state.ball_diameter/2.0, state.ball_diameter/2.0, sigma);
+	//state.N1 = N1N2.first;
+	//state.N2 = N1N2.second;
 
+	int N = ibmSetupFilament(state.ibm, state.ball_c,sigma, 2*state.ball_diameter);
+	state.N=N;
 	// configure IBM
 	state.ibm.computeVariant = computeVariant;
 	state.ibm.diracDeltaTypeEL = dirac_delta;
