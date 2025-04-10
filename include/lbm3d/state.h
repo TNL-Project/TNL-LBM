@@ -286,12 +286,12 @@ struct State
 	DataManager dataManager;
 	// constructors
 	template <typename... ARGS>
-	State(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, ARGS&&... args)
+	State(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath = "adios2.xml", ARGS&&... args)
 	: id(id),
 #ifdef HAVE_MPI
-	  adios(communicator),
+	  adios(adiosConfigPath, communicator),
 #else
-	  adios("adios2.xml"),
+	  adios(adiosConfigPath),
 #endif
 	  checkpoint(adios),
 	  nse(communicator, lat, std::forward<ARGS>(args)...),

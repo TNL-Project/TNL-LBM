@@ -93,13 +93,13 @@ struct StateLocal : State<NSE>
 		}
 	}
 
-	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat)
-	: State<NSE>(id, communicator, std::move(lat))
+	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath = "adios2.xml")
+	: State<NSE>(id, communicator, std::move(lat), adiosConfigPath)
 	{}
 };
 
 template <typename NSE>
-int sim(int RESOLUTION = 2)
+int sim(int RESOLUTION = 2, const std::string& adiosConfigPath = "adios2.xml")
 {
 	using idx = typename NSE::TRAITS::idx;
 	using real = typename NSE::TRAITS::real;
@@ -127,7 +127,7 @@ int sim(int RESOLUTION = 2)
 	lat.physViscosity = PHYS_VISCOSITY;
 
 	const std::string state_id = fmt::format("sim_1_res{:02d}_np{:03d}", RESOLUTION, TNL::MPI::GetSize(MPI_COMM_WORLD));
-	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat);
+	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, adiosConfigPath);
 
 	if (! state.canCompute())
 		return 0;
@@ -164,7 +164,7 @@ int sim(int RESOLUTION = 2)
 }
 
 template <typename TRAITS = TraitsSP>
-void run(int RES)
+void run(int RES, const std::string& adiosConfigPath)
 {
 	using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
 
@@ -178,7 +178,7 @@ void run(int RES)
 		D3Q27_BC_All,
 		D3Q27_MACRO_Default<TRAITS>>;
 
-	sim<NSE_CONFIG>(RES);
+	sim<NSE_CONFIG>(RES, adiosConfigPath);
 }
 
 int main(int argc, char** argv)
@@ -188,6 +188,8 @@ int main(int argc, char** argv)
 	argparse::ArgumentParser program("sim_1");
 	program.add_description("Simple incompressible Navier-Stokes simulation example.");
 	program.add_argument("resolution").help("resolution of the lattice").scan<'i', int>().default_value(1);
+
+	program.add_argument("--adios-config").help("path to adios2.xml configuration file").default_value(std::string("adios2.xml"));
 
 	try {
 		program.parse_args(argc, argv);
@@ -204,7 +206,8 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
-	run(resolution);
+	const auto adiosConfigPath = program.get<std::string>("adios-config");
+	run(resolution, adiosConfigPath);
 
 	return 0;
 }

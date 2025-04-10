@@ -29,7 +29,6 @@ public:
 			engine_ = engines_[name].get();
 			return;
 		}
-		//spdlog::warn("engine closed, count: {}", engines_.size());
 
 		if (engines_.count(name) == 0) {
 			std::string filename = name;
@@ -38,8 +37,8 @@ public:
 				io_ = ios_[name];
 			}
 			else {
-				io_ = adios->DeclareIO(fmt::format("IO_{}", name));	 //vzit to co za poslednim lomitkem
-																	 //
+				io_ = adios->DeclareIO(fmt::format("IO_{}", name));
+
 				if (! io_.InConfigFile()) {
 					io_.SetEngine(defaultIO.EngineType());
 					io_.SetParameters(defaultIO.Parameters());
@@ -47,28 +46,25 @@ public:
 				}
 				ios_[name] = io_;
 			}
+
 			if (io_.EngineType().substr(0, 2) == "BP")
 				filename += ".bp";
-			engines_[name] = std::make_unique<adios2::Engine>(io_.Open(filename, mode));
 
+			engines_[name] = std::make_unique<adios2::Engine>(io_.Open(filename, mode));
 			current_mode_[name] = mode;
-			{
-				variables_[name] = {};
-				variable_dimensions_[name] = {};
-			}
+			variables_[name] = {};
+			variable_dimensions_[name] = {};
 		}
 
 		engine_ = engines_[name].get();
 	}
 
+	//this function is not necessary right now
 	void ChangeEnginesToAppend()
 	{
 		for (auto& [name, engine] : engines_) {
 			if (engine && current_mode_[name] == adios2::Mode::Write) {
 				initEngine(name, adios2::Mode::Append);
-				// engines_[name]->Close();
-				// engines_[name] = std::make_unique<adios2::Engine>(ios_[name].Open(name, adios2::Mode::Append));
-				// current_mode_[name] = adios2::Mode::Append;
 			}
 		}
 	}
@@ -95,7 +91,6 @@ public:
 		if (engines_.count(name) > 0) {
 			engines_[name]->Close();
 			engines_.erase(name);
-			// ios_.erase(name);
 			variables_[name].clear();
 			variable_dimensions_[name].clear();
 			spdlog::debug("Closed engine for {}", name);
@@ -108,11 +103,9 @@ public:
 		for (auto& [name, engine] : engines_) {
 			if (engine) {
 				closeEngine(name);
-				//spdlog::warn("Closed engine for {}", name);
 			}
 		}
 		engines_.clear();
-		// ios_.clear();
 		variables_.clear();
 		variable_dimensions_.clear();
 	}
@@ -225,7 +218,6 @@ public:
 	}
 
 	// Methods for reading
-
 	template <typename T>
 	T readAttribute(const std::string& name, const std::string& type)
 	{
