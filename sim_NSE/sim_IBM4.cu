@@ -131,7 +131,9 @@ struct StateLocal : State<NSE>
 
 		cycle++;
 	}
-////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //Delta t =1
 //h = 1
 //number of j and i  coordinates
@@ -321,9 +323,9 @@ point_t third_backward_diff_RHS(int i, int j,bool by_s1, LL_array& LL)
 dreal sigma=0.0001;
 dreal gama=0.0001;
 dreal density = 1;
-dreal fi11 = 10*10*10;
-dreal fi22 = fi11;
-dreal fi12 =10;
+//dreal fi11 = 10*10*10;
+//dreal fi22 = fi11;
+//dreal fi12 =10;
 dreal kappa = pow(10,5);
 int L = N1;
 int H = N2;
@@ -458,11 +460,7 @@ void deform(LL_array&previous, LL_array& LL, LL_array&next)
 	std::cout << "deform is called" << std::endl;
 
 std::cout<<"N1 == "<<N1<<" N2 == " <<N2<<std::endl;
-//i=0 && j=0 is computed twice
-//i=N1 && j=N2 is computed twice
-//for(int i = 1; i< N1-1;i++)
-//{
-//	for(int j =1; j< N2-1;j++)
+
 for(int i = 0; i< N1;i++)
 {
 	for(int j = 0; j< N2;j++)
@@ -472,49 +470,29 @@ for(int i = 0; i< N1;i++)
 
 	}
 }
-/*
-for(int j = 0; j<N2;j++)
-{
-	int i = 0;
-	std::cout << "second for i = "<<i<< " j = "<<j<<std::endl;
-	deformX(i,j,previous,LL,next);
-
 
 }
-for(int j = 0; j<N2;j++)
-{
-	int i = N1-1;
-	std::cout << "third for i = "<<i<< " j = "<<j<<std::endl;
-	deformX(i,j,previous,LL,next);
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-
-}
-for(int i = 0; i<N1;i++)
-{
-	int j = 0;
-	std::cout << "fourth for i = "<<i<< " j = "<<j<<std::endl;
-	deformX(i,j,previous,LL,next);
-
-
-}
-for(int i = 0; i<N1;i++)
-{
-	int j = N2-1;
-	std::cout << "fifth for i = "<<i<< " j = "<<j<<std::endl;
-	deformX(i,j,previous,LL,next);
-
-
-}
-*/
-
-}
-//check for first run
-//let the position of the desk unchanged for this time
 int N=0;
 
         HLPVECTOR ref;
 		HLPVECTOR LL;
-
+		HLPVECTOR X;
+		HLPVECTOR Y;
+		HLPVECTOR previousY;
+		HLPVECTOR nextY;
+		//real K= nse.lat.phys2lbmForce(1e+6);
+		//real K= 1e+6 * nse.lat.physDl*nse.lat.physDl * nse.lat.physDt*nse.lat.physDt;
+		real K= 1e+4 * nse.lat.physDt*nse.lat.physDt;
+		//real local_density = nse.lat.phys2lbmForce(1e-1);;
+		real local_density = 1e-1 / pow(nse.lat.physDl, 3);
+//function for stifness
+//function for bending
+//function for F_bE
+//function for F_bK
 	virtual void computeBeforeLBMKernel()
 	{
 		std::cout << "compute before kernel"<< std::endl;
@@ -555,6 +533,16 @@ int N=0;
 				next = ibm.hLL_lat;
 				ref = ibm.hLL_lat;
 				LL = ibm.hLL_lat;
+				X=ibm.hLL_lat;
+				Y=ibm.hLL_lat;
+				previousY=ibm.hLL_lat;
+				nextY = ibm.hLL_lat;
+
+				for(int i =0;i<N;i++)
+				{
+					//test ref
+					std::cout<<"index " <<i<<" ref value "<<ref[i]<<std::endl;
+				}
 			}
 			// else if(nse.iterations == 0)
 			// {
@@ -574,6 +562,10 @@ int N=0;
 				ibm.ws_tnl_hM.vectorProduct(hvz, ibm.ws_tnl_hb[2]);
 				//deform(previous, ibm.hLL_lat, next);
 				
+				std::cout << TNL::max(TNL::abs(ibm.ws_tnl_hb[0])) << std::endl;
+				std::cout << TNL::max(TNL::abs(ibm.ws_tnl_hb[1])) << std::endl;
+				std::cout << TNL::max(TNL::abs(ibm.ws_tnl_hb[2])) << std::endl;
+				
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////
 				// TODO: spočítat F_bK (3.41f) a F_bE (3.45)
 				//v = TNL::l2Norm( expr )
@@ -582,13 +574,19 @@ int N=0;
 				//int N=0;
 				real fdist = TNL::l2Norm(ref[0]-ref[1]);
 				real eps = 1e-8*fdist;
-				real s = nse.lat.phys2lbmForce(1e+4);
-				real b = nse.lat.phys2lbmForce(1e-1);
+				//real s = nse.lat.phys2lbmForce(1e+4);
+				real s = 1e+2 * nse.lat.physDt * nse.lat.physDt;
+				real b = nse.lat.phys2lbmForce(1e-8);
 				HLPVECTOR F_bE(N);
 				HLPVECTOR F_bK(N);
+				///*
 				for(int i =0;i<N;i++)
 				{
-					
+					//test ref
+					std::cout<<"index " <<i<<" ref value "<<ref[i]<<std::endl;
+
+				///*
+					// stifness
 					if(i==0)
 					{
 						real norm1 = l2Norm(LL[1]-LL[0]);
@@ -596,7 +594,6 @@ int N=0;
 						F_bE[i][0]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[1][0] -LL[0][0] );
 						F_bE[i][1]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[1][1] -LL[0][1] );
 						F_bE[i][2]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[1][2] -LL[0][2] );
-
 					}
 					else if(i==N-1)
 					{
@@ -606,18 +603,41 @@ int N=0;
 						F_bE[i][1]= s/fdist2/fdist2*(1-fdist2/norm2)*(LL[N-2][1] -LL[N-1][1] );
 						F_bE[i][2]= s/fdist2/fdist2*(1-fdist2/norm2)*(LL[N-2][2] -LL[N-1][2] );
 					}
+					else
+					{
+						real norm1 = l2Norm(LL[i+1]-LL[i]);
+						real norm2 = l2Norm(LL[i]-LL[i-1]);
+						real fdist1 = l2Norm(ref[i+1]-ref[i]);
+						real fdist2 = l2Norm(ref[i]-ref[i-1]);
+						if(norm1<eps) norm1=eps;
+						if(norm2<eps)norm2=eps;
+						F_bE[i][0]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[i+1][0] -LL[i][0] )+
+						s/fdist2/fdist2*(1-fdist2/norm2)*(LL[i+1][0] -LL[i][0] );
+						F_bE[i][1]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[i+1][1] -LL[i][1] )+
+						s/fdist2/fdist2*(1-fdist2/norm2)*(LL[i+1][1] -LL[i][1] );
+						F_bE[i][2]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[i+1][2] -LL[i][2] )+
+						s/fdist2/fdist2*(1-fdist2/norm2)*(LL[i+1][2] -LL[i][2] );	
+					}
+
+					// bending
+					if(i==0)
+					{
+					}
+					else if(i==N-1)
+					{
+					}
 					//v referencin kodu se pouziva ukazatel na predchozi, proto se diference pocita az pro druhý bod
 					//v nasem kodu se můze spocitat v i==0? 
 					else if(i==1)
 					{
 						F_bE[i][0]+=b/fdist/fdist/fdist/fdist*(2*(LL[0][0]-ref[0][0])-5*(LL[1][0]-ref[1][0])
-					+4*(LL[2][0]-ref[2][0])-(LL[3][0]-ref[3][0]));
+						+4*(LL[2][0]-ref[2][0])-(LL[3][0]-ref[3][0]));
 
-					F_bE[i][1]+=b/fdist/fdist/fdist/fdist*(2*(LL[0][1]-ref[0][1])-5*(LL[1][1]-ref[1][1])
-					+4*(LL[2][1]-ref[2][1])-(LL[3][1]-ref[3][1]));
+						F_bE[i][1]+=b/fdist/fdist/fdist/fdist*(2*(LL[0][1]-ref[0][1])-5*(LL[1][1]-ref[1][1])
+						+4*(LL[2][1]-ref[2][1])-(LL[3][1]-ref[3][1]));
 
-					F_bE[i][2]+=b/fdist/fdist/fdist/fdist*(2*(LL[0][2]-ref[0][2])-5*(LL[1][2]-ref[1][2])
-					+4*(LL[2][2]-ref[2][2])-(LL[3][2]-ref[3][2]));
+						F_bE[i][2]+=b/fdist/fdist/fdist/fdist*(2*(LL[0][2]-ref[0][2])-5*(LL[1][2]-ref[1][2])
+						+4*(LL[2][2]-ref[2][2])-(LL[3][2]-ref[3][2]));
 					}
 					else if(i==N-2)
 					{
@@ -630,25 +650,9 @@ int N=0;
 						
 						F_bE[i][2]+=b/fdist/fdist/fdist/fdist*(2*(LL[N-1][2]-ref[N-1][2])-5*(LL[N-2][2]-ref[N-2][2])
 						+4*(LL[N-3][2]-ref[N-3][2])-(LL[N-4][2]-ref[N-4][2]));
-
-					
 					}
 					else
 					{
-						real norm1 = l2Norm(LL[i+1]-LL[i]);
-						real norm2 = l2Norm(LL[i]-LL[i-1]);
-						real fdist1 = l2Norm(ref[i+1]=ref[i]);
-						real fdist2 = l2Norm(ref[i]=ref[i-1]);
-						if(norm1<eps) norm1=eps;
-						if(norm2<eps)norm2=eps;
-						F_bE[i][0]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[i+1][0] -LL[i][0] )+
-						s/fdist2/fdist2*(1-fdist2/norm2)*(LL[i+1][0] -LL[i][0] );
-						F_bE[i][1]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[i+1][1] -LL[i][1] )+
-						s/fdist2/fdist2*(1-fdist2/norm2)*(LL[i+1][1] -LL[i][1] );
-						F_bE[i][2]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[i+1][2] -LL[i][2] )+
-						s/fdist2/fdist2*(1-fdist2/norm2)*(LL[i+1][2] -LL[i][2] );	
-				
-
 						F_bE[i][0]+=b/fdist/fdist/fdist/fdist*((LL[i-2][0]-ref[i-2][0])-
 						4*(LL[i-1][0]-ref[i-1][0])+6*(LL[i][0]-ref[i][0])-4*(LL[i+1][0]-ref[i+1][0])+(LL[i+2][0]-ref[i+2][0])
 						);
@@ -659,22 +663,55 @@ int N=0;
 						4*(LL[i-1][2]-ref[i-1][2])+6*(LL[i][2]-ref[i][2])-4*(LL[i+1][2]-ref[i+1][2])+(LL[i+2][2]-ref[i+2][2])
 						);
 					}
+						//*/
 					
+
+						///*
 				// spočítat podle (3.41f)
-				F_bK[i] =  point_t{
+				
+
+				//F_bK[i] = K*(Y[i]-X[i]);
+				F_bK[i] = K*(Y[i]-LL[i]);//0;hh
+
+				std::cout << "K = " << K << std::endl;
+				
+
+				X[i] =  point_t{
 					ibm.ws_tnl_hb[0][i],
 					ibm.ws_tnl_hb[1][i],
 					ibm.ws_tnl_hb[2][i]
 				};//U_ib =
 
-				}
-
 				
 
+
+				}
+
+				//*/
+
+
+			///*
+				
+
+				//for(int i = 0;i<N;i++)
+				for(int i = 1;i<N-1;i++)
+				{
+
+				nextY[i] = +2*Y[i] -previousY[i] -(1/local_density)*F_bK[i];
+
+				}
+//*/
+
+
+							
 				// set hx = F_bK + F_bE
 				// (nahrada implicitni metody computeForces v Lagrange3D)
 				for(int i = 0; i< N;i++)
 				{
+					//std::cout<<"F_bK F_bE"<<std::endl;
+					//std::cout<< F_bK[i][0] << " " <<  F_bE[i][0]<<std::endl;
+					//std::cout<< F_bK[i][1] << " " <<  F_bE[i][1]<<std::endl;
+					//std::cout<< F_bK[i][2] << " " <<  F_bE[i][2]<<std::endl;
 						point_t F_b{
 							F_bK[i][0] + F_bE[i][0],
 							F_bK[i][1] + F_bE[i][1],
@@ -685,6 +722,10 @@ int N=0;
 						ibm.ws_tnl_hx[2][i] = F_b[2];
 				
 				}
+				std::cout << "force" << std::endl;
+				std::cout << TNL::max(TNL::abs(ibm.ws_tnl_hx[0])) << std::endl;
+				std::cout << TNL::max(TNL::abs(ibm.ws_tnl_hx[1])) << std::endl;
+				std::cout << TNL::max(TNL::abs(ibm.ws_tnl_hx[2])) << std::endl;
 
 				// transform the force from Lagrangian to Eulerian coordinates
 				auto kernel = [&] (idx i) mutable
@@ -706,12 +747,22 @@ int N=0;
 				dfy = hfy;
 				dfz = hfz;
 
+//jeste funkce pro update LL
+                previousY = Y;
+				Y = nextY;
+
+				next = LL + X;  // X je ted rychlost
+				next[0] = LL[0];
+				next[N-1] = LL[N-1];
 				LL=next;
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 				
 				//previous2=previous;
 				previous = ibm.hLL_lat;
 				ibm.hLL_lat = next;
+
+
+				
 			}
 			//deform(ibm.hLL_lat);
 			ibm.hLL_velocity_lat = ibm.hLL_lat - previous;
@@ -722,17 +773,34 @@ int N=0;
 			ibm.dLL_velocity_lat = point_t{0,vz,0};
 			ibm.dLL_lat += ibm.dLL_velocity_lat;	// Delta t = 1
 
-				//const auto dvx = ibm.dmacroVector(MACRO::e_vx);
-				//const auto dvy = ibm.dmacroVector(MACRO::e_vy);
-				//const auto dvz = ibm.dmacroVector(MACRO::e_vz);
 				//ibm.ws_tnl_dM.vectorProduct(dvx, ibm.ws_tnl_db[0]);
 				//ibm.ws_tnl_dM.vectorProduct(dvy, ibm.ws_tnl_db[1]);
 				//ibm.ws_tnl_dM.vectorProduct(dvz, ibm.ws_tnl_db[2]);
+			
+				/*
+				const auto x1 = ws_tnl_dx[0].getConstView();
+			const auto x2 = ws_tnl_dx[1].getConstView();
+			const auto x3 = ws_tnl_dx[2].getConstView();
+			//vice moznosti pres view nebo neco jineho atd
+				TNL::Pointers::DevicePointer<dEllpack> MT_dptr(ws_tnl_dMT);
+			const dEllpack* MT = &MT_dptr.template getData<TNL::Devices::Cuda>();
+			auto kernel = [=] CUDA_HOSTDEV (idx i) mutable
+			{
+				// skipping empty rows explicitly is much faster
+				if( MT->getRowCapacity(i) > 0 ) {
+					dfx[i] += 2 * drho[i] * rowVectorProduct(*MT, i, x1);
+					dfy[i] += 2 * drho[i] * rowVectorProduct(*MT, i, x2);
+					dfz[i] += 2 * drho[i] * rowVectorProduct(*MT, i, x3);
+				}
+			};
+			TNL::Algorithms::parallelFor< TNL::Devices::Cuda >((idx) 0, n, kernel);
+			*/
 		}
 
 		ibm.constructed = false;
 		ibm.use_LL_velocity_in_solution = true;
 
+////////////////////////////////////////////////////////////////////////////////		
 		// update the ball center for drawing
 		//ball_c += point_t{0,0,vz*nse.lat.physDl};
 		//ball_c += point_t{0,vz*nse.lat.physDl,0};
