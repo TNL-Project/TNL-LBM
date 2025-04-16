@@ -520,15 +520,9 @@ int N=0;
 //////////////////////////////////////////////////////////
 		if (ibm.computeVariant == IbmCompute::CPU) {
 			//ibm.hLL_velocity_lat = point_t{0,0,vz};
-			//HLPVECTOR previous; --> definovat globalne
-			//HLPVECTOR next; --> taky definovat globalne
-			std::cout << "if ibm compute cpu"<<std::endl;
 			next.setLike(ibm.hLL_lat);
-			//previous.setLike(ibm.hLL_lat);
 			if(nse.iterations == 0)
 			{
-				std::cout << "if iteration == 0"<<std::endl;
-				//previous2 = ibm.hLL_lat;
 				previous = ibm.hLL_lat;
 				next = ibm.hLL_lat;
 				ref = ibm.hLL_lat;
@@ -537,20 +531,7 @@ int N=0;
 				Y=ibm.hLL_lat;
 				previousY=ibm.hLL_lat;
 				nextY = ibm.hLL_lat;
-
-				for(int i =0;i<N;i++)
-				{
-					//test ref
-					std::cout<<"index " <<i<<" ref value "<<ref[i]<<std::endl;
-				}
-			}
-			// else if(nse.iterations == 0)
-			// {
-			// 	std::cout << "if iteration == 0"<<std::endl;
-			// 	//previous2 = ibm.hLL_lat;
-			// 	previous = ibm.hLL_lat;
-			// 	next = ibm.hLL_lat;
-			// }
+			}		
 			else
 			{
 				std::cout << "else called"<<std::endl;
@@ -570,8 +551,6 @@ int N=0;
 				// TODO: spočítat F_bK (3.41f) a F_bE (3.45)
 				//v = TNL::l2Norm( expr )
 				
-				
-				//int N=0;
 				real fdist = TNL::l2Norm(ref[0]-ref[1]);
 				real eps = 1e-8*fdist;
 				//real s = nse.lat.phys2lbmForce(1e+4);
@@ -579,13 +558,9 @@ int N=0;
 				real b = nse.lat.phys2lbmForce(1e-8);
 				HLPVECTOR F_bE(N);
 				HLPVECTOR F_bK(N);
-				///*
+				
 				for(int i =0;i<N;i++)
 				{
-					//test ref
-					std::cout<<"index " <<i<<" ref value "<<ref[i]<<std::endl;
-
-				///*
 					// stifness
 					if(i==0)
 					{
@@ -622,12 +597,12 @@ int N=0;
 					// bending
 					if(i==0)
 					{
+						//
 					}
 					else if(i==N-1)
 					{
+						//
 					}
-					//v referencin kodu se pouziva ukazatel na predchozi, proto se diference pocita az pro druhý bod
-					//v nasem kodu se můze spocitat v i==0? 
 					else if(i==1)
 					{
 						F_bE[i][0]+=b/fdist/fdist/fdist/fdist*(2*(LL[0][0]-ref[0][0])-5*(LL[1][0]-ref[1][0])
@@ -641,7 +616,6 @@ int N=0;
 					}
 					else if(i==N-2)
 					{
-						// nechybí zde ještě 4. člen?chyběl člen 4*(předpředposlední
 						F_bE[i][0]+=b/fdist/fdist/fdist/fdist*(2*(LL[N-1][0]-ref[N-1][0])-5*(LL[N-2][0]-ref[N-2][0])
 						+4*(LL[N-3][0]-ref[N-3][0])-(LL[N-4][0]-ref[N-4][0]));
 
@@ -663,15 +637,10 @@ int N=0;
 						4*(LL[i-1][2]-ref[i-1][2])+6*(LL[i][2]-ref[i][2])-4*(LL[i+1][2]-ref[i+1][2])+(LL[i+2][2]-ref[i+2][2])
 						);
 					}
-						//*/
-					
-
-						///*
+						
 				// spočítat podle (3.41f)
 				
-
-				//F_bK[i] = K*(Y[i]-X[i]);
-				F_bK[i] = K*(Y[i]-LL[i]);//0;hh
+				F_bK[i] = K*(Y[i]-LL[i]);
 
 				std::cout << "K = " << K << std::endl;
 				
@@ -686,13 +655,7 @@ int N=0;
 
 
 				}
-
-				//*/
-
-
-			///*
 				
-
 				//for(int i = 0;i<N;i++)
 				for(int i = 1;i<N-1;i++)
 				{
@@ -700,9 +663,6 @@ int N=0;
 				nextY[i] = +2*Y[i] -previousY[i] -(1/local_density)*F_bK[i];
 
 				}
-//*/
-
-
 							
 				// set hx = F_bK + F_bE
 				// (nahrada implicitni metody computeForces v Lagrange3D)
