@@ -476,23 +476,137 @@ for(int i = 0; i< N1;i++)
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-int N=0;
-
-        HLPVECTOR ref;
-		HLPVECTOR LL;
-		HLPVECTOR X;
-		HLPVECTOR Y;
-		HLPVECTOR previousY;
-		HLPVECTOR nextY;
-		//real K= nse.lat.phys2lbmForce(1e+6);
-		//real K= 1e+6 * nse.lat.physDl*nse.lat.physDl * nse.lat.physDt*nse.lat.physDt;
-		real K= 1e+4 * nse.lat.physDt*nse.lat.physDt;
-		//real local_density = nse.lat.phys2lbmForce(1e-1);;
-		real local_density = 1e-1 / pow(nse.lat.physDl, 3);
+    int N=0;
+    HLPVECTOR ref;
+	HLPVECTOR LL;
+	HLPVECTOR X;
+	HLPVECTOR Y;
+	HLPVECTOR previousY;
+	HLPVECTOR nextY;
+	//real K= nse.lat.phys2lbmForce(1e+6);
+	//real K= 1e+6 * nse.lat.physDl*nse.lat.physDl * nse.lat.physDt*nse.lat.physDt;
+	real K= 1e+4 * nse.lat.physDt*nse.lat.physDt;
+	//real local_density = nse.lat.phys2lbmForce(1e-1);;
+	real local_density = 1e-1 / pow(nse.lat.physDl, 3);
 //function for stifness
+    template<typename LL_array>
+	void compute_Stiffness_F_bE(LL_array& F_bE, const LL_array& ref, const real& s, const real& eps, int i)
+	{
+		if(i==0)
+		{
+			real norm1 = l2Norm(LL[1]-LL[0]);
+			real fdist1 = l2Norm(ref[1]-ref[0]);
+			F_bE[i][0]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[1][0] -LL[0][0] );
+			F_bE[i][1]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[1][1] -LL[0][1] );
+			F_bE[i][2]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[1][2] -LL[0][2] );
+		}
+		else if(i==N-1)
+		{
+			real norm2 = l2Norm(LL[N-1]-LL[N-2]);
+			real fdist2 = l2Norm(ref[N-1]-ref[N-2]);
+			F_bE[i][0]= s/fdist2/fdist2*(1-fdist2/norm2)*(LL[N-2][0] -LL[N-1][0] );
+			F_bE[i][1]= s/fdist2/fdist2*(1-fdist2/norm2)*(LL[N-2][1] -LL[N-1][1] );
+			F_bE[i][2]= s/fdist2/fdist2*(1-fdist2/norm2)*(LL[N-2][2] -LL[N-1][2] );
+		}
+		else
+		{
+			real norm1 = l2Norm(LL[i+1]-LL[i]);
+			real norm2 = l2Norm(LL[i]-LL[i-1]);
+			real fdist1 = l2Norm(ref[i+1]-ref[i]);
+			real fdist2 = l2Norm(ref[i]-ref[i-1]);
+			if(norm1<eps) norm1=eps;
+			if(norm2<eps)norm2=eps;
+			F_bE[i][0]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[i+1][0] -LL[i][0] )+
+			s/fdist2/fdist2*(1-fdist2/norm2)*(LL[i+1][0] -LL[i][0] );
+			F_bE[i][1]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[i+1][1] -LL[i][1] )+
+			s/fdist2/fdist2*(1-fdist2/norm2)*(LL[i+1][1] -LL[i][1] );
+			F_bE[i][2]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[i+1][2] -LL[i][2] )+
+			s/fdist2/fdist2*(1-fdist2/norm2)*(LL[i+1][2] -LL[i][2] );	
+		}
+
+	}
 //function for bending
+    template<typename LL_array>
+	void compute_Bending_F_bE(LL_array& F_bE, const LL_array& ref, const real& b, const real& fdist,int i)
+	{
+		// bending
+		if(i==0)
+		{
+			//continue;
+		}
+		else if(i==N-1)
+		{
+			//continue;
+		}
+		else if(i==1)
+		{
+			F_bE[i][0]+=b/fdist/fdist/fdist/fdist*(2*(LL[0][0]-ref[0][0])-5*(LL[1][0]-ref[1][0])
+			+4*(LL[2][0]-ref[2][0])-(LL[3][0]-ref[3][0]));
+
+			F_bE[i][1]+=b/fdist/fdist/fdist/fdist*(2*(LL[0][1]-ref[0][1])-5*(LL[1][1]-ref[1][1])
+			+4*(LL[2][1]-ref[2][1])-(LL[3][1]-ref[3][1]));
+
+			F_bE[i][2]+=b/fdist/fdist/fdist/fdist*(2*(LL[0][2]-ref[0][2])-5*(LL[1][2]-ref[1][2])
+			+4*(LL[2][2]-ref[2][2])-(LL[3][2]-ref[3][2]));
+		}
+		else if(i==N-2)
+		{
+			F_bE[i][0]+=b/fdist/fdist/fdist/fdist*(2*(LL[N-1][0]-ref[N-1][0])-5*(LL[N-2][0]-ref[N-2][0])
+			+4*(LL[N-3][0]-ref[N-3][0])-(LL[N-4][0]-ref[N-4][0]));
+
+			F_bE[i][1]+=b/fdist/fdist/fdist/fdist*(2*(LL[N-1][1]-ref[N-1][1])-5*(LL[N-2][1]-ref[N-2][1])
+			+4*(LL[N-3][1]-ref[N-3][1])-(LL[N-4][1]-ref[N-4][1]));
+			
+			F_bE[i][2]+=b/fdist/fdist/fdist/fdist*(2*(LL[N-1][2]-ref[N-1][2])-5*(LL[N-2][2]-ref[N-2][2])
+			+4*(LL[N-3][2]-ref[N-3][2])-(LL[N-4][2]-ref[N-4][2]));
+		}
+		else
+		{
+			F_bE[i][0]+=b/fdist/fdist/fdist/fdist*((LL[i-2][0]-ref[i-2][0])-
+			4*(LL[i-1][0]-ref[i-1][0])+6*(LL[i][0]-ref[i][0])-4*(LL[i+1][0]-ref[i+1][0])+(LL[i+2][0]-ref[i+2][0])
+			);
+			F_bE[i][1]+=b/fdist/fdist/fdist/fdist*((LL[i-2][1]-ref[i-2][1])-
+			4*(LL[i-1][1]-ref[i-1][1])+6*(LL[i][1]-ref[i][1])-4*(LL[i+1][1]-ref[i+1][1])+(LL[i+2][1]-ref[i+2][1])
+			);
+			F_bE[i][2]+=b/fdist/fdist/fdist/fdist*((LL[i-2][2]-ref[i-2][2])-
+			4*(LL[i-1][2]-ref[i-1][2])+6*(LL[i][2]-ref[i][2])-4*(LL[i+1][2]-ref[i+1][2])+(LL[i+2][2]-ref[i+2][2])
+			);
+		}
+
+	}
 //function for F_bE
+    template<typename LL_array>
+	void compute_F_bE(LL_array& F_bE,const LL_array& ref, const  real& s, const real& b)
+	{
+		real fdist = TNL::l2Norm(ref[0]-ref[1]);
+		real eps = 1e-8*fdist;
+		//real s = nse.lat.phys2lbmForce(1e+4);
+		//real s = 1e+2 * nse.lat.physDt * nse.lat.physDt;
+		//real b = nse.lat.phys2lbmForce(1e-8);
+		for(int i =0;i<N;i++)
+		{
+			compute_Stiffness_F_bE(F_bE, ref, s, eps,i);
+			compute_Bending_F_bE(F_bE,ref,b,fdist,i);
+		}	
+	}
 //function for F_bK
+    template<typename LL_array>
+    void compute_F_bK(LL_array & F_bK,const LL_array&Y,LL_array&nextY,const LL_array& previousY, const LL_array& LL, const real& K)
+    {
+		for(int i = 0;i<N;i++)
+		{
+
+		F_bK[i] = K*(Y[i]-LL[i]);
+
+		//std::cout << "K = " << K << std::endl;
+		}
+		for(int i = 1;i<N-1;i++)
+		{
+		nextY[i] = +2*Y[i] -previousY[i] -(1/local_density)*F_bK[i];
+		}
+
+    }
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////	
 	virtual void computeBeforeLBMKernel()
 	{
 		std::cout << "compute before kernel"<< std::endl;
@@ -551,14 +665,15 @@ int N=0;
 				// TODO: spočítat F_bK (3.41f) a F_bE (3.45)
 				//v = TNL::l2Norm( expr )
 				
-				real fdist = TNL::l2Norm(ref[0]-ref[1]);
-				real eps = 1e-8*fdist;
+				//real fdist = TNL::l2Norm(ref[0]-ref[1]);
+				//real eps = 1e-8*fdist;
 				//real s = nse.lat.phys2lbmForce(1e+4);
 				real s = 1e+2 * nse.lat.physDt * nse.lat.physDt;
 				real b = nse.lat.phys2lbmForce(1e-8);
 				HLPVECTOR F_bE(N);
 				HLPVECTOR F_bK(N);
 				
+				/*
 				for(int i =0;i<N;i++)
 				{
 					// stifness
@@ -645,11 +760,7 @@ int N=0;
 				std::cout << "K = " << K << std::endl;
 				
 
-				X[i] =  point_t{
-					ibm.ws_tnl_hb[0][i],
-					ibm.ws_tnl_hb[1][i],
-					ibm.ws_tnl_hb[2][i]
-				};//U_ib =
+				//U_ib =
 
 				
 
@@ -663,6 +774,17 @@ int N=0;
 				nextY[i] = +2*Y[i] -previousY[i] -(1/local_density)*F_bK[i];
 
 				}
+				*/
+			for(int i =0;i<N;i++)
+			{
+			X[i] =  point_t{
+					ibm.ws_tnl_hb[0][i],
+					ibm.ws_tnl_hb[1][i],
+					ibm.ws_tnl_hb[2][i]
+				};
+			}
+			compute_F_bE(F_bE,ref, s, b);
+			compute_F_bK(F_bK,Y,nextY,previousY,LL,K);
 							
 				// set hx = F_bK + F_bE
 				// (nahrada implicitni metody computeForces v Lagrange3D)
@@ -732,7 +854,20 @@ int N=0;
 			//ibm.dLL_velocity_lat = point_t{0,0,vz};
 			ibm.dLL_velocity_lat = point_t{0,vz,0};
 			ibm.dLL_lat += ibm.dLL_velocity_lat;	// Delta t = 1
-
+/*
+			next.setLike(ibm.dLL_lat);
+			if(nse.iterations == 0)
+			{
+				previous = ibm.dLL_lat;
+				next = ibm.dLL_lat;
+				ref = ibm.dLL_lat;
+				LL = ibm.dLL_lat;
+				X=ibm.dLL_lat;
+				Y=ibm.dLL_lat;
+				previousY=ibm.dLL_lat;
+				nextY = ibm.dLL_lat;
+			}	
+				*/	
 				//ibm.ws_tnl_dM.vectorProduct(dvx, ibm.ws_tnl_db[0]);
 				//ibm.ws_tnl_dM.vectorProduct(dvy, ibm.ws_tnl_db[1]);
 				//ibm.ws_tnl_dM.vectorProduct(dvz, ibm.ws_tnl_db[2]);
