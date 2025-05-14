@@ -6,7 +6,7 @@
 //int n1=0;
 
 template <typename LBM>
-int ibmSetupFilament(Lagrange3D<LBM>& ibm, typename LBM::point_t center, double sigma, double length)
+int ibmSetupFilament(Lagrange3D<LBM>& ibm, typename LBM::point_t center, double sigma, double length, char coordinate = 'x')
 {
 	using real = typename Lagrange3D<LBM>::real;
 	using point_t = typename Lagrange3D<LBM>::point_t;
@@ -29,12 +29,39 @@ int ibmSetupFilament(Lagrange3D<LBM>& ibm, typename LBM::point_t center, double 
 		real x = i*dx;
 		real y = i*dx;
 		real z = i*dx; 
-		
+
+		switch(coordinate)
+		{
+			case 'x':
 		fp3.x() = center.x() +x;
 
 		fp3.y() = center.y();//+y;
 
 		fp3.z() = center.z() + dm;//+z;
+		break;
+
+		case 'y':
+		fp3.x() = center.x();
+
+		fp3.y() = center.y() +y;
+
+		fp3.z() = center.z() + dm;//+z;
+		break;
+		case 'z':
+		fp3.x() = center.x();
+
+		fp3.y() = center.y();//+y;
+
+		fp3.z() = center.z() + dm+z;
+		break;
+
+		default:
+		fp3.x() = center.x() +x;
+
+		fp3.y() = center.y();//+y;
+
+		fp3.z() = center.z() + dm;//+z;
+		}
 
 		ibm.LL.push_back(fp3);
 		points++;
