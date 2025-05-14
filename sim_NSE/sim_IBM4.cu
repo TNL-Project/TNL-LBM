@@ -56,6 +56,7 @@ void compute_Stiffness_F_bE(LL_array& F_bE, const ConstLL_array& ref, const Cons
 	}
 	else if(i==N-1)
 	{
+		// TODO: tohle je pro pevny konec, co se ma delat pro volny konec?
 		real norm2 = l2Norm(LL[N-1]-LL[N-2]);
 		real fdist2 = l2Norm(ref[N-1]-ref[N-2]);
 		F_bE[i][0]= s/fdist2/fdist2*(1-fdist2/norm2)*(LL[N-2][0] -LL[N-1][0] );
@@ -92,6 +93,7 @@ void compute_Bending_F_bE(LL_array& F_bE, const ConstLL_array& ref, const ConstL
 	else if(i==N-1)
 	{
 		//continue;
+		// TODO: tohle je pro pevny konec, co se ma delat pro volny konec?
 	}
 	else if(i==1)
 	{
@@ -106,6 +108,8 @@ void compute_Bending_F_bE(LL_array& F_bE, const ConstLL_array& ref, const ConstL
 	}
 	else if(i==N-2)
 	{
+		// TODO: tohle je pro pevny konec, co se ma delat pro volny konec?
+
 		F_bE[i][0]+=b/fdist/fdist/fdist/fdist*(2*(LL[N-1][0]-ref[N-1][0])-5*(LL[N-2][0]-ref[N-2][0])
 		+4*(LL[N-3][0]-ref[N-3][0])-(LL[N-4][0]-ref[N-4][0]));
 
@@ -569,6 +573,8 @@ for(int i = 0; i< N1;i++)
 	HLPVECTOR  Y;
 	HLPVECTOR  previousY;
 	HLPVECTOR  nextY;
+	HLPVECTOR F_bE;
+	HLPVECTOR F_bK;
 
 	DLPVECTOR ref_device;
 	DLPVECTOR  LL_device;
@@ -576,114 +582,24 @@ for(int i = 0; i< N1;i++)
 	DLPVECTOR  Y_device;
 	DLPVECTOR  previousY_device;
 	DLPVECTOR  nextY_device;
-	//real K= nse.lat.phys2lbmForce(1e+6);
+	DLPVECTOR F_bE_device;
+	DLPVECTOR F_bK_device;
+
 	//real K= 1e+6 * nse.lat.physDl*nse.lat.physDl * nse.lat.physDt*nse.lat.physDt;
+	//real K= 1e+4 * nse.lat.physDt*nse.lat.physDt;
 	real K= 1e+4 * nse.lat.physDt*nse.lat.physDt;
-	//real local_density = nse.lat.phys2lbmForce(1e-1);;
 	real local_density = 1e-1 / pow(nse.lat.physDl, 3);
-//function for stifness
-/*
-    template<typename LL_array>
-	CUDA_HOSTDEV
-	void compute_Stiffness_F_bE(LL_array& F_bE, const LL_array& ref, const real& s, const real& eps, int i)
-	{
-		if(i==0)
-		{
-			real norm1 = l2Norm(LL[1]-LL[0]);
-			real fdist1 = l2Norm(ref[1]-ref[0]);
-			F_bE[i][0]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[1][0] -LL[0][0] );
-			F_bE[i][1]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[1][1] -LL[0][1] );
-			F_bE[i][2]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[1][2] -LL[0][2] );
-		}
-		else if(i==N-1)
-		{
-			real norm2 = l2Norm(LL[N-1]-LL[N-2]);
-			real fdist2 = l2Norm(ref[N-1]-ref[N-2]);
-			F_bE[i][0]= s/fdist2/fdist2*(1-fdist2/norm2)*(LL[N-2][0] -LL[N-1][0] );
-			F_bE[i][1]= s/fdist2/fdist2*(1-fdist2/norm2)*(LL[N-2][1] -LL[N-1][1] );
-			F_bE[i][2]= s/fdist2/fdist2*(1-fdist2/norm2)*(LL[N-2][2] -LL[N-1][2] );
-		}
-		else
-		{
-			real norm1 = l2Norm(LL[i+1]-LL[i]);
-			real norm2 = l2Norm(LL[i]-LL[i-1]);
-			real fdist1 = l2Norm(ref[i+1]-ref[i]);
-			real fdist2 = l2Norm(ref[i]-ref[i-1]);
-			if(norm1<eps) norm1=eps;
-			if(norm2<eps)norm2=eps;
-			F_bE[i][0]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[i+1][0] -LL[i][0] )+
-			s/fdist2/fdist2*(1-fdist2/norm2)*(LL[i+1][0] -LL[i][0] );
-			F_bE[i][1]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[i+1][1] -LL[i][1] )+
-			s/fdist2/fdist2*(1-fdist2/norm2)*(LL[i+1][1] -LL[i][1] );
-			F_bE[i][2]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[i+1][2] -LL[i][2] )+
-			s/fdist2/fdist2*(1-fdist2/norm2)*(LL[i+1][2] -LL[i][2] );	
-		}
+	real fdist = 0;  //TNL::l2Norm(ref.getElement(0)-ref.getElement(1));	
 
-	}
-//function for bending
-    template<typename LL_array>
-	CUDA_HOSTDEV
-	void compute_Bending_F_bE(LL_array& F_bE, const LL_array& ref, const real& b, const real& fdist,int i)
-	{
-		// bending
-		if(i==0)
-		{
-			//continue;
-		}
-		else if(i==N-1)
-		{
-			//continue;
-		}
-		else if(i==1)
-		{
-			F_bE[i][0]+=b/fdist/fdist/fdist/fdist*(2*(LL[0][0]-ref[0][0])-5*(LL[1][0]-ref[1][0])
-			+4*(LL[2][0]-ref[2][0])-(LL[3][0]-ref[3][0]));
-
-			F_bE[i][1]+=b/fdist/fdist/fdist/fdist*(2*(LL[0][1]-ref[0][1])-5*(LL[1][1]-ref[1][1])
-			+4*(LL[2][1]-ref[2][1])-(LL[3][1]-ref[3][1]));
-
-			F_bE[i][2]+=b/fdist/fdist/fdist/fdist*(2*(LL[0][2]-ref[0][2])-5*(LL[1][2]-ref[1][2])
-			+4*(LL[2][2]-ref[2][2])-(LL[3][2]-ref[3][2]));
-		}
-		else if(i==N-2)
-		{
-			F_bE[i][0]+=b/fdist/fdist/fdist/fdist*(2*(LL[N-1][0]-ref[N-1][0])-5*(LL[N-2][0]-ref[N-2][0])
-			+4*(LL[N-3][0]-ref[N-3][0])-(LL[N-4][0]-ref[N-4][0]));
-
-			F_bE[i][1]+=b/fdist/fdist/fdist/fdist*(2*(LL[N-1][1]-ref[N-1][1])-5*(LL[N-2][1]-ref[N-2][1])
-			+4*(LL[N-3][1]-ref[N-3][1])-(LL[N-4][1]-ref[N-4][1]));
-			
-			F_bE[i][2]+=b/fdist/fdist/fdist/fdist*(2*(LL[N-1][2]-ref[N-1][2])-5*(LL[N-2][2]-ref[N-2][2])
-			+4*(LL[N-3][2]-ref[N-3][2])-(LL[N-4][2]-ref[N-4][2]));
-		}
-		else
-		{
-			F_bE[i][0]+=b/fdist/fdist/fdist/fdist*((LL[i-2][0]-ref[i-2][0])-
-			4*(LL[i-1][0]-ref[i-1][0])+6*(LL[i][0]-ref[i][0])-4*(LL[i+1][0]-ref[i+1][0])+(LL[i+2][0]-ref[i+2][0])
-			);
-			F_bE[i][1]+=b/fdist/fdist/fdist/fdist*((LL[i-2][1]-ref[i-2][1])-
-			4*(LL[i-1][1]-ref[i-1][1])+6*(LL[i][1]-ref[i][1])-4*(LL[i+1][1]-ref[i+1][1])+(LL[i+2][1]-ref[i+2][1])
-			);
-			F_bE[i][2]+=b/fdist/fdist/fdist/fdist*((LL[i-2][2]-ref[i-2][2])-
-			4*(LL[i-1][2]-ref[i-1][2])+6*(LL[i][2]-ref[i][2])-4*(LL[i+1][2]-ref[i+1][2])+(LL[i+2][2]-ref[i+2][2])
-			);
-		}
-
-	}
-		*/
-//function for F_bE
     template<typename LL_array>
 	void compute_F_bE(LL_array& F_bE,const LL_array& ref, const LL_array& LL, const  real& s, const real& b)
 	{
-		// TODO: fdist počítat jenom jednou v první iteraci
-		real fdist = TNL::l2Norm(ref.getElement(0)-ref.getElement(1));
+		// TODO: fdist počítat jenom jednou v první iteraci 
+		//,error?
 		real eps = 1e-8*fdist;
-
+/*
 		if(ibm.computeVariant == IbmCompute::CPU)
 		{
-		//real s = nse.lat.phys2lbmForce(1e+4);
-		//real s = 1e+2 * nse.lat.physDt * nse.lat.physDt;
-		//real b = nse.lat.phys2lbmForce(1e-8);
 		    for(int i =0;i<N;i++)
 		    {
 			    compute_Stiffness_F_bE(F_bE, ref, LL, s, eps, N, i);
@@ -692,32 +608,40 @@ for(int i = 0; i< N1;i++)
 	    }
 		else 
 		{
+			*/
 			auto F_bE_view = F_bE.getView();
 			const auto ref_view = ref.getConstView();
 			const auto LL_view = LL.getConstView();
 			
 			int N = this->N;
+			real fdist = this->fdist;
 
 			auto kernel = [=] CUDA_HOSTDEV (idx i) mutable
 			{
 				compute_Stiffness_F_bE(F_bE_view, ref_view, LL_view,  s, eps, N, i);
 			    compute_Bending_F_bE(F_bE_view,ref_view, LL_view, b,fdist, N, i);
 			};
-			TNL::Algorithms::parallelFor< TNL::Devices::Cuda >((idx) 0, (idx) N, kernel);
 
-		}	
+			if(ibm.computeVariant == IbmCompute::CPU)
+			{
+				TNL::Algorithms::parallelFor< TNL::Devices::Host >((idx) 0, (idx) N, kernel);
+			}
+			else
+			{
+			     TNL::Algorithms::parallelFor< TNL::Devices::Cuda >((idx) 0, (idx) N, kernel);
+			}
+		//}	
 	}
-//function for F_bK
+
     template<typename LL_array>
     void compute_F_bK(LL_array & F_bK,const LL_array&Y,LL_array&nextY,const LL_array& previousY, const LL_array& LL, const real& K)
     {
-		
+		/*
 		if(ibm.computeVariant == IbmCompute::CPU)
 		{
 		    for(int i = 0;i<N;i++)
 		    {
 				F_bK[i] = K*(Y[i]-LL[i]);
-				//std::cout << "K = " << K << std::endl;
 		    }
 		    for(int i = 1;i<N-1;i++)
 		    {
@@ -725,29 +649,38 @@ for(int i = 0; i< N1;i++)
 		    }
 	    }
 		else 
-		{
+		{*/
 			// view je možné zachytit pomocí "=" v lambda funkci
-		    auto F_bK_view = F_bK.getView();
-		    const auto Y_view = Y.getConstView();
-			auto nextY_view = nextY.getView();
-			const auto previousY_view = previousY.getConstView();
-			const auto LL_view = LL.getConstView();
+		auto F_bK_view = F_bK.getView();
+		const auto Y_view = Y.getConstView();
+		auto nextY_view = nextY.getView();
+		const auto previousY_view = previousY.getConstView();
+		const auto LL_view = LL.getConstView();
 
-			int N = this->N;
-			real K = this->K;
-			real local_density = this->local_density;
+		int N = this->N;
+		//error with same name
+		real Kk = this->K;
+		real local_density = this->local_density;
 
-			auto kernel = [=] CUDA_HOSTDEV (idx i) mutable
+		auto kernel = [=] CUDA_HOSTDEV (idx i) mutable
+		{
+			F_bK_view[i] = Kk*(Y_view[i]-LL_view[i]);
+			// TODO: pro volny konec spocitat i N-1
+			if(i!=0 && i!= N-1)
 			{
-				F_bK_view[i] = K*(Y_view[i]-LL_view[i]);
-				if(i!=0 && i!= N-1)
-				{
-					nextY_view[i] = +2*Y_view[i] -previousY_view[i] -(1/local_density)*F_bK_view[i];
-				}
-			};
-			TNL::Algorithms::parallelFor<TNL::Devices::Cuda>((idx)0,(idx)N,kernel);
-
+				nextY_view[i] = +2*Y_view[i] -previousY_view[i] -(1/local_density)*F_bK_view[i];
+			}
+		};
+		if(ibm.computeVariant == IbmCompute::CPU)
+		{
+			TNL::Algorithms::parallelFor< TNL::Devices::Host >((idx) 0, (idx) N, kernel);
 		}
+		else
+		{
+			TNL::Algorithms::parallelFor<TNL::Devices::Cuda>((idx)0,(idx)N,kernel);
+		}	
+
+		//}
 
 
     }
@@ -790,6 +723,9 @@ for(int i = 0; i< N1;i++)
 				Y=ibm.hLL_lat;
 				previousY=ibm.hLL_lat;
 				nextY = ibm.hLL_lat;
+				fdist = TNL::l2Norm(ref.getElement(0)-ref.getElement(1));	
+				F_bE.setSize(N);
+				F_bK.setSize(N);
 			}		
 			else
 			{
@@ -807,119 +743,11 @@ for(int i = 0; i< N1;i++)
 				std::cout << TNL::max(TNL::abs(ibm.ws_tnl_hb[2])) << std::endl;
 				
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////
-				// TODO: spočítat F_bK (3.41f) a F_bE (3.45)
-				//v = TNL::l2Norm( expr )
-				
-				//real fdist = TNL::l2Norm(ref[0]-ref[1]);
-				//real eps = 1e-8*fdist;
-				//real s = nse.lat.phys2lbmForce(1e+4);
 				real s = 1e+2 * nse.lat.physDt * nse.lat.physDt;
 				real b = nse.lat.phys2lbmForce(1e-8);
-				HLPVECTOR F_bE(N);
-				HLPVECTOR F_bK(N);
+				//HLPVECTOR F_bE(N);
+	            //HLPVECTOR F_bK(N);
 				
-				/*
-				for(int i =0;i<N;i++)
-				{
-					// stifness
-					if(i==0)
-					{
-						real norm1 = l2Norm(LL[1]-LL[0]);
-						real fdist1 = l2Norm(ref[1]-ref[0]);
-						F_bE[i][0]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[1][0] -LL[0][0] );
-						F_bE[i][1]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[1][1] -LL[0][1] );
-						F_bE[i][2]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[1][2] -LL[0][2] );
-					}
-					else if(i==N-1)
-					{
-						real norm2 = l2Norm(LL[N-1]-LL[N-2]);
-						real fdist2 = l2Norm(ref[N-1]-ref[N-2]);
-						F_bE[i][0]= s/fdist2/fdist2*(1-fdist2/norm2)*(LL[N-2][0] -LL[N-1][0] );
-						F_bE[i][1]= s/fdist2/fdist2*(1-fdist2/norm2)*(LL[N-2][1] -LL[N-1][1] );
-						F_bE[i][2]= s/fdist2/fdist2*(1-fdist2/norm2)*(LL[N-2][2] -LL[N-1][2] );
-					}
-					else
-					{
-						real norm1 = l2Norm(LL[i+1]-LL[i]);
-						real norm2 = l2Norm(LL[i]-LL[i-1]);
-						real fdist1 = l2Norm(ref[i+1]-ref[i]);
-						real fdist2 = l2Norm(ref[i]-ref[i-1]);
-						if(norm1<eps) norm1=eps;
-						if(norm2<eps)norm2=eps;
-						F_bE[i][0]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[i+1][0] -LL[i][0] )+
-						s/fdist2/fdist2*(1-fdist2/norm2)*(LL[i+1][0] -LL[i][0] );
-						F_bE[i][1]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[i+1][1] -LL[i][1] )+
-						s/fdist2/fdist2*(1-fdist2/norm2)*(LL[i+1][1] -LL[i][1] );
-						F_bE[i][2]= s/fdist1/fdist1*(1-fdist1/norm1)*(LL[i+1][2] -LL[i][2] )+
-						s/fdist2/fdist2*(1-fdist2/norm2)*(LL[i+1][2] -LL[i][2] );	
-					}
-
-					// bending
-					if(i==0)
-					{
-						//
-					}
-					else if(i==N-1)
-					{
-						//
-					}
-					else if(i==1)
-					{
-						F_bE[i][0]+=b/fdist/fdist/fdist/fdist*(2*(LL[0][0]-ref[0][0])-5*(LL[1][0]-ref[1][0])
-						+4*(LL[2][0]-ref[2][0])-(LL[3][0]-ref[3][0]));
-
-						F_bE[i][1]+=b/fdist/fdist/fdist/fdist*(2*(LL[0][1]-ref[0][1])-5*(LL[1][1]-ref[1][1])
-						+4*(LL[2][1]-ref[2][1])-(LL[3][1]-ref[3][1]));
-
-						F_bE[i][2]+=b/fdist/fdist/fdist/fdist*(2*(LL[0][2]-ref[0][2])-5*(LL[1][2]-ref[1][2])
-						+4*(LL[2][2]-ref[2][2])-(LL[3][2]-ref[3][2]));
-					}
-					else if(i==N-2)
-					{
-						F_bE[i][0]+=b/fdist/fdist/fdist/fdist*(2*(LL[N-1][0]-ref[N-1][0])-5*(LL[N-2][0]-ref[N-2][0])
-						+4*(LL[N-3][0]-ref[N-3][0])-(LL[N-4][0]-ref[N-4][0]));
-
-						F_bE[i][1]+=b/fdist/fdist/fdist/fdist*(2*(LL[N-1][1]-ref[N-1][1])-5*(LL[N-2][1]-ref[N-2][1])
-						+4*(LL[N-3][1]-ref[N-3][1])-(LL[N-4][1]-ref[N-4][1]));
-						
-						F_bE[i][2]+=b/fdist/fdist/fdist/fdist*(2*(LL[N-1][2]-ref[N-1][2])-5*(LL[N-2][2]-ref[N-2][2])
-						+4*(LL[N-3][2]-ref[N-3][2])-(LL[N-4][2]-ref[N-4][2]));
-					}
-					else
-					{
-						F_bE[i][0]+=b/fdist/fdist/fdist/fdist*((LL[i-2][0]-ref[i-2][0])-
-						4*(LL[i-1][0]-ref[i-1][0])+6*(LL[i][0]-ref[i][0])-4*(LL[i+1][0]-ref[i+1][0])+(LL[i+2][0]-ref[i+2][0])
-						);
-						F_bE[i][1]+=b/fdist/fdist/fdist/fdist*((LL[i-2][1]-ref[i-2][1])-
-						4*(LL[i-1][1]-ref[i-1][1])+6*(LL[i][1]-ref[i][1])-4*(LL[i+1][1]-ref[i+1][1])+(LL[i+2][1]-ref[i+2][1])
-						);
-						F_bE[i][2]+=b/fdist/fdist/fdist/fdist*((LL[i-2][2]-ref[i-2][2])-
-						4*(LL[i-1][2]-ref[i-1][2])+6*(LL[i][2]-ref[i][2])-4*(LL[i+1][2]-ref[i+1][2])+(LL[i+2][2]-ref[i+2][2])
-						);
-					}
-						
-				// spočítat podle (3.41f)
-				
-				F_bK[i] = K*(Y[i]-LL[i]);
-
-				std::cout << "K = " << K << std::endl;
-				
-
-				//U_ib =
-
-				
-
-
-				}
-				
-				//for(int i = 0;i<N;i++)
-				for(int i = 1;i<N-1;i++)
-				{
-
-				nextY[i] = +2*Y[i] -previousY[i] -(1/local_density)*F_bK[i];
-
-				}
-				*/
 			for(int i =0;i<N;i++)
 			{
 			    U[i] =  point_t{
@@ -935,10 +763,6 @@ for(int i = 0; i< N1;i++)
 				// (nahrada implicitni metody computeForces v Lagrange3D)
 				for(int i = 0; i< N;i++)
 				{
-					//std::cout<<"F_bK F_bE"<<std::endl;
-					//std::cout<< F_bK[i][0] << " " <<  F_bE[i][0]<<std::endl;
-					//std::cout<< F_bK[i][1] << " " <<  F_bE[i][1]<<std::endl;
-					//std::cout<< F_bK[i][2] << " " <<  F_bE[i][2]<<std::endl;
 						point_t F_b{
 							F_bK[i][0] + F_bE[i][0],
 							F_bK[i][1] + F_bE[i][1],
@@ -974,17 +798,14 @@ for(int i = 0; i< N1;i++)
 				dfy = hfy;
 				dfz = hfz;
 
-//jeste funkce pro update LL
                 previousY = Y;
 				Y = nextY;
 
-				next = LL + U;  // X je ted rychlost
+				next = LL + U;  
 				next[0] = LL[0];
 				next[N-1] = LL[N-1];
 				LL=next;
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-				
-				//previous2=previous;
+
 				previous = ibm.hLL_lat;
 				ibm.hLL_lat = next;
 
@@ -1012,6 +833,9 @@ for(int i = 0; i< N1;i++)
 				Y_device = ibm.dLL_lat;
 				previousY_device = ibm.dLL_lat;
 				nextY_device = ibm.dLL_lat;
+				fdist = TNL::l2Norm(ref_device.getElement(0)-ref_device.getElement(1));	
+				F_bE_device.setSize(N);
+				F_bK_device.setSize(N);
 			}
 			else
 			{
@@ -1026,10 +850,12 @@ for(int i = 0; i< N1;i++)
 				std::cout << TNL::max(TNL::abs(ibm.ws_tnl_db[1])) << std::endl;
 				std::cout << TNL::max(TNL::abs(ibm.ws_tnl_db[2])) << std::endl;
 					
-				real s = 1e+2 * nse.lat.physDt * nse.lat.physDt;
-				real b = nse.lat.phys2lbmForce(1e-8);
-				DLPVECTOR F_bE(N);
-				DLPVECTOR F_bK(N);
+				//real s = 1e+2 * nse.lat.physDt * nse.lat.physDt;
+				real s = 1e+2 * nse.lat.physDt * nse.lat.physDt;//2//1
+				//real b = nse.lat.phys2lbmForce(1e-8);
+				real b = nse.lat.phys2lbmForce(1e-8);//7//10 
+				//DLPVECTOR F_bE(N);
+				//DLPVECTOR F_bK(N);
 					
 				const auto Ux = ibm.ws_tnl_db[0].getConstView();
 				const auto Uy = ibm.ws_tnl_db[1].getConstView();	
@@ -1044,19 +870,9 @@ for(int i = 0; i< N1;i++)
 					};
 				};
 				TNL::Algorithms::parallelFor< TNL::Devices::Cuda >((idx) 0, (idx) N, kernelU);
-				/*
-				for(int i =0;i<N;i++)
-				{
-				    U[i] =  point_t{
-						ibm.ws_tnl_db[0][i],
-						ibm.ws_tnl_db[1][i],
-						ibm.ws_tnl_db[2][i]
-					};
-				}
-				*/
 			    
-			    compute_F_bE(F_bE, ref_device, LL_device, s, b);
-			    compute_F_bK(F_bK, Y_device, nextY_device, previousY_device, LL_device, K);
+			    compute_F_bE(F_bE_device, ref_device, LL_device, s, b);
+			    compute_F_bK(F_bK_device, Y_device, nextY_device, previousY_device, LL_device, K);
 				// TODO: ref na GPU
 				//compute_F_bE(F_bE,ref, s, b);
 				// TODO: LL na GPU
@@ -1068,8 +884,8 @@ for(int i = 0; i< N1;i++)
 				auto dxy = ibm.ws_tnl_dx[1].getView();
 				auto dxz = ibm.ws_tnl_dx[2].getView();
 
-				auto F_bK_view = F_bK.getView();
-				auto F_bE_view = F_bE.getView();
+				auto F_bK_view = F_bK_device.getView();
+				auto F_bE_view = F_bE_device.getView();
 
 				auto kernelFb = [=] CUDA_HOSTDEV (idx i) mutable
 				{
@@ -1083,20 +899,7 @@ for(int i = 0; i< N1;i++)
 					dxz[i] = F_b[2];
 				};
 				TNL::Algorithms::parallelFor< TNL::Devices::Cuda >((idx) 0, (idx) N, kernelFb);
-				/*
-				for(int i = 0; i< N;i++)
-				{
-					point_t F_b{
-						F_bK[i][0] + F_bE[i][0],
-						F_bK[i][1] + F_bE[i][1],
-						F_bK[i][2] + F_bE[i][2]
-					};
-					ibm.ws_tnl_dx[0][i] = F_b[0];
-					ibm.ws_tnl_dx[1][i] = F_b[1];
-					ibm.ws_tnl_dx[2][i] = F_b[2];
-					
-				}
-				*/
+				
 				std::cout << "force" << std::endl;
 				std::cout << TNL::max(TNL::abs(ibm.ws_tnl_dx[0])) << std::endl;
 				std::cout << TNL::max(TNL::abs(ibm.ws_tnl_dx[1])) << std::endl;
@@ -1124,17 +927,15 @@ for(int i = 0; i< N1;i++)
 				idx n = nse.lat.global.x()*nse.lat.global.y()*nse.lat.global.z();
 				TNL::Algorithms::parallelFor< TNL::Devices::Cuda >((idx) 0, n, kernel);
 	
-	//jeste funkce pro update LL
 				previousY_device = Y_device;
 				Y_device = nextY_device;
 	
-				next_device = LL_device + U_device;  // X je ted rychlost
+				next_device = LL_device + U_device;  
 				next_device.setElement(0, LL_device.getElement(0));
+				// TODO: parametr pro nastaveni okrajove podminky: pevny/volny konec
 				next_device.setElement(N-1, LL_device.getElement(N-1));
 				LL_device=next_device;
-	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-					
-					//previous2=previous;
+
 				previous_device = ibm.dLL_lat;
 				ibm.dLL_lat = next_device;
 	
@@ -1144,30 +945,6 @@ for(int i = 0; i< N1;i++)
 				//deform(ibm.hLL_lat);
 			ibm.dLL_velocity_lat = ibm.dLL_lat - previous_device;
 			
-			//}
-					
-				//ibm.ws_tnl_dM.vectorProduct(dvx, ibm.ws_tnl_db[0]);
-				//ibm.ws_tnl_dM.vectorProduct(dvy, ibm.ws_tnl_db[1]);
-				//ibm.ws_tnl_dM.vectorProduct(dvz, ibm.ws_tnl_db[2]);
-			
-				/*
-				const auto x1 = ws_tnl_dx[0].getConstView();
-			const auto x2 = ws_tnl_dx[1].getConstView();
-			const auto x3 = ws_tnl_dx[2].getConstView();
-			//vice moznosti pres view nebo neco jineho atd
-				TNL::Pointers::DevicePointer<dEllpack> MT_dptr(ws_tnl_dMT);
-			const dEllpack* MT = &MT_dptr.template getData<TNL::Devices::Cuda>();
-			auto kernel = [=] CUDA_HOSTDEV (idx i) mutable
-			{
-				// skipping empty rows explicitly is much faster
-				if( MT->getRowCapacity(i) > 0 ) {
-					dfx[i] += 2 * drho[i] * rowVectorProduct(*MT, i, x1);
-					dfy[i] += 2 * drho[i] * rowVectorProduct(*MT, i, x2);
-					dfz[i] += 2 * drho[i] * rowVectorProduct(*MT, i, x3);
-				}
-			};
-			TNL::Algorithms::parallelFor< TNL::Devices::Cuda >((idx) 0, n, kernel);
-			*/
 		}
 
 		ibm.constructed = false;
@@ -1231,6 +1008,17 @@ for(int i = 0; i< N1;i++)
 		nse.setBoundaryY(nse.lat.global.y()-1, BC::GEO_INFLOW);// front
 		nse.setBoundaryZ(0, BC::GEO_INFLOW);// top
 		nse.setBoundaryZ(nse.lat.global.z()-1, BC::GEO_INFLOW);// bottom
+													
+		// draw a sphere
+		/*
+		int cx=floor(0.20/nse.lat.physDl);
+		int width=nse.lat.global.z()/10;
+		for (int px=cx;px<=cx+width;px++)
+		for (int pz=1;pz<=nse.lat.global.z()-2;pz++)
+		for (int py=1;py<=nse.lat.global.y()-2;py++)
+			if (!(pz>=nse.lat.global.z()*4/10 && pz<=nse.lat.global.z()*6/10 && py>=nse.lat.global.y()*4/10 && py<=nse.lat.global.y()*6/10))
+				nse.setMap(px,py,pz,BC::GEO_WALL);
+		*/
 	}
 
 	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat)
