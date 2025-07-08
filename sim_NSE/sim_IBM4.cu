@@ -3,7 +3,7 @@
 #include "lbm3d/obstacles_ibm.h"
 // bouncing ball in 3D
 // IBM-LBM
-
+#include "lbm3d/obstacles_lbm.h"
 
 
 template < typename TRAITS >
@@ -44,7 +44,7 @@ struct MacroLocal : D3Q27_MACRO_Base< TRAITS >
 //function for stifness
 template<typename LL_array, typename ConstLL_array, typename real>
 CUDA_HOSTDEV
-void compute_Stiffness_F_bE(LL_array& F_bE, const ConstLL_array& ref, const ConstLL_array& LL, const real& s, const real& eps, int N, int i)
+void compute_Stiffness_F_bE(LL_array& F_bE, const ConstLL_array& ref, const ConstLL_array& LL, const real& s, const real& eps, int N, int i, bool free_end)
 {
 	if(i==0)
 	{
@@ -56,12 +56,23 @@ void compute_Stiffness_F_bE(LL_array& F_bE, const ConstLL_array& ref, const Cons
 	}
 	else if(i==N-1)
 	{
+		
 		// TODO: tohle je pro pevny konec, co se ma delat pro volny konec?
+		
+		if(free_end == false)
+		{
 		real norm2 = l2Norm(LL[N-1]-LL[N-2]);
 		real fdist2 = l2Norm(ref[N-1]-ref[N-2]);
+		
 		F_bE[i][0]= s/fdist2/fdist2*(1-fdist2/norm2)*(LL[N-2][0] -LL[N-1][0] );
 		F_bE[i][1]= s/fdist2/fdist2*(1-fdist2/norm2)*(LL[N-2][1] -LL[N-1][1] );
 		F_bE[i][2]= s/fdist2/fdist2*(1-fdist2/norm2)*(LL[N-2][2] -LL[N-1][2] );
+		}
+		else
+		{
+			
+
+		}
 	}
 	else
 	{
@@ -83,7 +94,7 @@ void compute_Stiffness_F_bE(LL_array& F_bE, const ConstLL_array& ref, const Cons
 //function for bending
 template<typename LL_array, typename ConstLL_array, typename real>
 CUDA_HOSTDEV
-void compute_Bending_F_bE(LL_array& F_bE, const ConstLL_array& ref, const ConstLL_array& LL, const real& b, const real& fdist, int N, int i)
+void compute_Bending_F_bE(LL_array& F_bE, const ConstLL_array& ref, const ConstLL_array& LL, const real& b, const real& fdist, int N, int i, bool free_end)
 {
 	// bending
 	if(i==0)
@@ -94,6 +105,15 @@ void compute_Bending_F_bE(LL_array& F_bE, const ConstLL_array& ref, const ConstL
 	{
 		//continue;
 		// TODO: tohle je pro pevny konec, co se ma delat pro volny konec?
+		if(free_end == false)
+		{
+
+		}
+		else
+		{
+
+
+		}
 	}
 	else if(i==1)
 	{
@@ -109,7 +129,8 @@ void compute_Bending_F_bE(LL_array& F_bE, const ConstLL_array& ref, const ConstL
 	else if(i==N-2)
 	{
 		// TODO: tohle je pro pevny konec, co se ma delat pro volny konec?
-
+		if(free_end == false)
+		{
 		F_bE[i][0]+=b/fdist/fdist/fdist/fdist*(2*(LL[N-1][0]-ref[N-1][0])-5*(LL[N-2][0]-ref[N-2][0])
 		+4*(LL[N-3][0]-ref[N-3][0])-(LL[N-4][0]-ref[N-4][0]));
 
@@ -118,6 +139,11 @@ void compute_Bending_F_bE(LL_array& F_bE, const ConstLL_array& ref, const ConstL
 		
 		F_bE[i][2]+=b/fdist/fdist/fdist/fdist*(2*(LL[N-1][2]-ref[N-1][2])-5*(LL[N-2][2]-ref[N-2][2])
 		+4*(LL[N-3][2]-ref[N-3][2])-(LL[N-4][2]-ref[N-4][2]));
+		}
+		else
+		{
+
+		}
 	}
 	else
 	{
@@ -566,6 +592,9 @@ for(int i = 0; i< N1;i++)
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+    bool add_ball = false;
+	bool free_end = false;
+
     int N=0;
     HLPVECTOR ref;
 	HLPVECTOR  LL;
@@ -615,21 +644,15 @@ for(int i = 0; i< N1;i++)
 			
 			int N = this->N;
 			real fdist = this->fdist;
+			bool free_end = this->free_end;
+			//bool free_end = this->free_end;
 
 			auto kernel = [=] CUDA_HOSTDEV (idx i) mutable
 			{
-				compute_Stiffness_F_bE(F_bE_view, ref_view, LL_view,  s, eps, N, i);
-			    compute_Bending_F_bE(F_bE_view,ref_view, LL_view, b,fdist, N, i);
+				compute_Stiffness_F_bE(F_bE_view, ref_view, LL_view,  s, eps, N, i, free_end);
+			    compute_Bending_F_bE(F_bE_view,ref_view, LL_view, b,fdist, N, i, free_end);
 			};
-
-			if(ibm.computeVariant == IbmCompute::CPU)
-			{
-				TNL::Algorithms::parallelFor< TNL::Devices::Host >((idx) 0, (idx) N, kernel);
-			}
-			else
-			{
-			     TNL::Algorithms::parallelFor< TNL::Devices::Cuda >((idx) 0, (idx) N, kernel);
-			}
+			TNL::Algorithms::parallelFor< typename LL_array::DeviceType >((idx) 0, (idx) N, kernel);
 		//}	
 	}
 
@@ -661,24 +684,29 @@ for(int i = 0; i< N1;i++)
 		//error with same name
 		real Kk = this->K;
 		real local_density = this->local_density;
+		bool free_end = this->free_end;
 
 		auto kernel = [=] CUDA_HOSTDEV (idx i) mutable
 		{
 			F_bK_view[i] = Kk*(Y_view[i]-LL_view[i]);
 			// TODO: pro volny konec spocitat i N-1
+			if(free_end == false)
+			{
 			if(i!=0 && i!= N-1)
 			{
 				nextY_view[i] = +2*Y_view[i] -previousY_view[i] -(1/local_density)*F_bK_view[i];
 			}
+		    }
+			else
+			{
+				if(i!=0)
+			{
+				nextY_view[i] = +2*Y_view[i] -previousY_view[i] -(1/local_density)*F_bK_view[i];
+			}
+
+			}
 		};
-		if(ibm.computeVariant == IbmCompute::CPU)
-		{
-			TNL::Algorithms::parallelFor< TNL::Devices::Host >((idx) 0, (idx) N, kernel);
-		}
-		else
-		{
-			TNL::Algorithms::parallelFor<TNL::Devices::Cuda>((idx)0,(idx)N,kernel);
-		}	
+		TNL::Algorithms::parallelFor< typename LL_array::DeviceType >((idx) 0, (idx) N, kernel);
 
 		//}
 
@@ -803,7 +831,11 @@ for(int i = 0; i< N1;i++)
 
 				next = LL + U;  
 				next[0] = LL[0];
+				if(free_end==false)
 				next[N-1] = LL[N-1];
+				else{
+
+				}
 				LL=next;
 
 				previous = ibm.hLL_lat;
@@ -836,6 +868,8 @@ for(int i = 0; i< N1;i++)
 				fdist = TNL::l2Norm(ref_device.getElement(0)-ref_device.getElement(1));	
 				F_bE_device.setSize(N);
 				F_bK_device.setSize(N);
+				//std::cout<<"ref"<<(point_t)ref[0]<<std::endl;
+
 			}
 			else
 			{
@@ -933,7 +967,14 @@ for(int i = 0; i< N1;i++)
 				next_device = LL_device + U_device;  
 				next_device.setElement(0, LL_device.getElement(0));
 				// TODO: parametr pro nastaveni okrajove podminky: pevny/volny konec
+				if(free_end==false)
+				{
 				next_device.setElement(N-1, LL_device.getElement(N-1));
+				}
+				else
+				{
+
+				}
 				LL_device=next_device;
 
 				previous_device = ibm.dLL_lat;
@@ -999,7 +1040,8 @@ for(int i = 0; i< N1;i++)
 			block.data.inflow_vz = 0;
 		}
 	}
-
+	point_t fiber_start = {0,0,0};
+real cube_radius =0;
 	virtual void setupBoundaries()
 	{
 		nse.setBoundaryX(0, BC::GEO_INFLOW_LEFT); // left
@@ -1010,15 +1052,39 @@ for(int i = 0; i< N1;i++)
 		nse.setBoundaryZ(nse.lat.global.z()-1, BC::GEO_INFLOW);// bottom
 													
 		// draw a sphere
-		/*
-		int cx=floor(0.20/nse.lat.physDl);
-		int width=nse.lat.global.z()/10;
-		for (int px=cx;px<=cx+width;px++)
-		for (int pz=1;pz<=nse.lat.global.z()-2;pz++)
-		for (int py=1;py<=nse.lat.global.y()-2;py++)
-			if (!(pz>=nse.lat.global.z()*4/10 && pz<=nse.lat.global.z()*6/10 && py>=nse.lat.global.y()*4/10 && py<=nse.lat.global.y()*6/10))
+		if(add_ball==true)
+		{
+		//coordinates of the first point of the fiber
+		fiber_start = nse.lat.phys2lbmPoint(this->fiber_start);
+
+		cube_radius = (this->cube_radius)/nse.lat.physDl;
+		//for size
+
+		//for non X coordinates i want the center to be fiber start
+		point_t center = point_t{fiber_start.x() -cube_radius,///2
+		fiber_start.y(), fiber_start.z()};
+
+		for (int px=center.x() - cube_radius;px<=center.x()+cube_radius;px++)
+		for (int pz=center.z() - cube_radius;pz<=center.z()+cube_radius;pz++)
+		for (int py=center.y() - cube_radius;py<=center.y()+cube_radius;py++)
+		{
+
+			if (px-center.x() < cube_radius &&
+			py-center.y() < cube_radius &&
+			pz-center.z() < cube_radius )
 				nse.setMap(px,py,pz,BC::GEO_WALL);
+		}
+		//*/
+	//odkud vzit lbm?lbm=nse
+		/*
+		lbmDrawCube(nse, BC::GEO_WALL,
+		center ,
+		cube_radius
+		);
 		*/
+		
+		}
+	
 	}
 
 	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat)
@@ -1123,6 +1189,11 @@ int sim(int RES=2, double i_Re=1000, double nasobek=2.0, int dirac_delta=2, int 
 
 	int N = ibmSetupFilament(state.ibm, state.ball_c,sigma, 2*state.ball_diameter);
 	state.N=N;
+	state.add_ball = true;
+	state.free_end=true;
+	state.fiber_start = state.ibm.LL[0];
+	state.cube_radius = 2*state.ball_diameter;
+	//state.fiber_start = lat.phys2lbmPoint(state.fiber_start);
 	// configure IBM
 	state.ibm.computeVariant = computeVariant;
 	state.ibm.diracDeltaTypeEL = dirac_delta;
