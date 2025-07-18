@@ -2,6 +2,8 @@
 
 #include "defs.h"
 
+//fiber
+////////////////////////////////////
 //function for stifness
 template<typename LL_array, typename ConstLL_array, typename real>
 CUDA_HOSTDEV
