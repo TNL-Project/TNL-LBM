@@ -636,11 +636,21 @@ real cube_radius =0;
 		for (int pz=center.z() - cube_radius;pz<=center.z()+cube_radius;pz++)
 		for (int py=center.y() - cube_radius;py<=center.y()+cube_radius;py++)
 		{
-
+			//cube
+			/*
 			if (px-center.x() < cube_radius &&
 			py-center.y() < cube_radius &&
 			pz-center.z() < cube_radius )
 				nse.setMap(px,py,pz,BC::GEO_WALL);
+				*/
+			//ball 
+			point_t p = {px,py,pz};
+			real dist = TNL::l2Norm(p - center);
+			if(dist < cube_radius)
+			{
+				nse.setMap(px,py,pz, BC::GEO_WALL);
+			}
+			
 		}
 		//*/
 	//odkud vzit lbm?lbm=nse
