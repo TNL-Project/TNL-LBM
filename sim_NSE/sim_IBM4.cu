@@ -123,7 +123,15 @@ struct StateLocal : State<NSE>
 	//real K= 1e+4 * nse.lat.physDt*nse.lat.physDt;
 	real K= 1e+4 * nse.lat.physDt*nse.lat.physDt;
 	real local_density = 1e-1 / pow(nse.lat.physDl, 3);
-	real fdist = 0;  //TNL::l2Norm(ref.getElement(0)-ref.getElement(1));
+	real fdist = 0;
+
+	real s = 1e+2 * nse.lat.physDt * nse.lat.physDt;
+	real b = nse.lat.phys2lbmForce(1e-8);
+
+	//real s = 1e+2 * nse.lat.physDt * nse.lat.physDt;
+	//real s = this->s;//2//1
+	//real b = nse.lat.phys2lbmForce(1e-8);
+	//real b = this->b;//7//10 
 
 
 	virtual bool outputData(const BLOCK& block, int index, int dof, char *desc, idx x, idx y, idx z, real &value, int &dofs)
@@ -193,6 +201,7 @@ struct StateLocal : State<NSE>
 	{
 		// TODO: fdist počítat jenom jednou v první iteraci 
 		//,error?
+		fdist = TNL::l2Norm(ref.getElement(0)-ref.getElement(1));//0;
 		real eps = 1e-8*fdist;
 /*
 		if(ibm.computeVariant == IbmCompute::CPU)
@@ -339,8 +348,8 @@ struct StateLocal : State<NSE>
 				std::cout << TNL::max(TNL::abs(ibm.ws_tnl_hb[2])) << std::endl;
 				
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////
-				real s = 1e+2 * nse.lat.physDt * nse.lat.physDt;
-				real b = nse.lat.phys2lbmForce(1e-8);
+				real s = this->s;
+				real b = this->b;
 				//HLPVECTOR F_bE(N);
 	            //HLPVECTOR F_bK(N);
 				
@@ -453,9 +462,10 @@ struct StateLocal : State<NSE>
 				std::cout << TNL::max(TNL::abs(ibm.ws_tnl_db[2])) << std::endl;
 					
 				//real s = 1e+2 * nse.lat.physDt * nse.lat.physDt;
-				real s = 1e+2 * nse.lat.physDt * nse.lat.physDt;//2//1
+				real s = this->s;//2//1
 				//real b = nse.lat.phys2lbmForce(1e-8);
-				real b = nse.lat.phys2lbmForce(1e-8);//7//10 
+				real b = this->b;//7//10 
+				
 				//DLPVECTOR F_bE(N);
 				//DLPVECTOR F_bK(N);
 					
@@ -710,7 +720,7 @@ int sim(int RES=2, double i_Re=1000, double nasobek=2.0, int dirac_delta=2, int 
 	lat.physOrigin = PHYS_ORIGIN;
 	lat.physDl = PHYS_DL;
 	lat.physDt = PHYS_DT;
-	lat.physViscosity = PHYS_VISCOSITY;
+	lat.physViscosity = PHYS_VISCOSITY;//*2
 
 	const std::string state_id = fmt::format("sim_IBM4_{}_{}_dirac_{}_res_{}_Re_{}_nas_{:05.4f}_compute_{}", NSE::COLL::id, (method>0)?"original":"modified", dirac_delta, RES, Re, nasobek, compute);
 	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat);
@@ -731,7 +741,7 @@ int sim(int RES=2, double i_Re=1000, double nasobek=2.0, int dirac_delta=2, int 
 	//state.cnt[VTK2D].period = PHYS_DT; //0.01;
 	//state.cnt[PROBE1].period = PHYS_DT; //0.01;	// Lagrangian points VTK output
 
-	state.nse.physFinalTime = 1.0; //30.0;
+	state.nse.physFinalTime = 3.0;//1.0;//30.0;
 	state.cnt[VTK3D].period = 0.01;
 	state.cnt[VTK2D].period = 0.01;
 	state.cnt[PROBE1].period = 0.01;	// Lagrangian points VTK output
@@ -765,7 +775,7 @@ int sim(int RES=2, double i_Re=1000, double nasobek=2.0, int dirac_delta=2, int 
 	//state.N1 = N1N2.first;
 	//state.N2 = N1N2.second;
 
-	int N = ibmSetupFilament(state.ibm, state.ball_c,sigma, 2*state.ball_diameter);
+	int N = ibmSetupFilament(state.ibm, state.ball_c,sigma, 3*state.ball_diameter, 'x');
 	state.N=N;
 	state.add_ball = true;
 	state.free_end=true;
