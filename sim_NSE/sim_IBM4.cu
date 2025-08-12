@@ -122,10 +122,10 @@ struct StateLocal : State<NSE>
 	//real K= 1e+6 * nse.lat.physDl*nse.lat.physDl * nse.lat.physDt*nse.lat.physDt;
 	//real K= 1e+4 * nse.lat.physDt*nse.lat.physDt;
 	real K= 1e+4 * nse.lat.physDt*nse.lat.physDt;
-	real local_density = 1e-1 / pow(nse.lat.physDl, 3);
+	real local_density = (1e-1 / pow(nse.lat.physDl, 3));//1e-1 / pow(nse.lat.physDl, 3)
 	real fdist = 0;
 
-	real s = 1e+2 * nse.lat.physDt * nse.lat.physDt;
+	real s = 1e+2 * nse.lat.physDt * nse.lat.physDt;//4//5
 	real b = nse.lat.phys2lbmForce(1e-8);
 
 	//real s = 1e+2 * nse.lat.physDt * nse.lat.physDt;
@@ -201,7 +201,6 @@ struct StateLocal : State<NSE>
 	{
 		// TODO: fdist počítat jenom jednou v první iteraci 
 		//,error?
-		fdist = TNL::l2Norm(ref.getElement(0)-ref.getElement(1));//0;
 		real eps = 1e-8*fdist;
 /*
 		if(ibm.computeVariant == IbmCompute::CPU)
@@ -289,6 +288,151 @@ struct StateLocal : State<NSE>
 
 
     }
+
+	template<typename ComputeVariant, typename LL_array, typename Vel1, typename Vel2, typename Vel3, typename Idx, typename Auto, typename AutoConst>
+	void computingFunction(ComputeVariant computeVariant, LL_array & LL_lat, Vel1 & ws_tnl_M, Vel2 & ws_tnl_b, Idx & ws_tnl_x, 
+		LL_array & LL_velocity_lat, Vel3 &  ws_tnl_MT, Auto &dfx, Auto &dfy, Auto &dfz, AutoConst &dvx, AutoConst &dvy, AutoConst &dvz, 
+	    LL_array & ref_, LL_array &  LL_, LL_array &  U_, LL_array &  Y_, LL_array & previousY_, LL_array &  nextY_, LL_array & F_bE_, LL_array &F_bK_,
+	    LL_array & previous_, LL_array & next_)
+	{
+	    next_.setLike(LL_lat);
+		if(nse.iterations == 0)
+		{
+			previous_ = LL_lat;
+			next_ = LL_lat;
+			ref_ = LL_lat;
+			LL_ = LL_lat;
+			U_ = LL_lat;
+			Y_ = LL_lat;
+			previousY_ = LL_lat;
+			nextY_ = LL_lat;
+			fdist = TNL::l2Norm(ref_.getElement(0)-ref_.getElement(1));	
+			F_bE_.setSize(N);
+			F_bK_.setSize(N);
+		}
+		else
+		{
+			ws_tnl_M.vectorProduct(dvx, ws_tnl_b[0]);
+			ws_tnl_M.vectorProduct(dvy, ws_tnl_b[1]);
+			ws_tnl_M.vectorProduct(dvz, ws_tnl_b[2]);
+					
+			std::cout << TNL::max(TNL::abs(ws_tnl_b[0])) << std::endl;
+			std::cout << TNL::max(TNL::abs(ws_tnl_b[1])) << std::endl;
+			std::cout << TNL::max(TNL::abs(ws_tnl_b[2])) << std::endl;
+					
+			real s = this->s;
+			real b = this->b; 
+				
+			const auto Ux = ws_tnl_b[0].getConstView();
+			const auto Uy = ws_tnl_b[1].getConstView();	
+			const auto Uz = ws_tnl_b[2].getConstView();		
+			auto Uview = U_.getView();
+			auto kernelU = [=] CUDA_HOSTDEV (idx i) mutable
+			{
+				Uview[i] =  point_t{
+					Ux[i],
+					Uy[i],
+					Uz[i]
+				};
+			};
+			TNL::Algorithms::parallelFor<typename LL_array::DeviceType>((idx) 0, (idx) N, kernelU);
+			    
+			compute_F_bE(F_bE_, ref_, LL_, s, b);
+			compute_F_bK(F_bK_, Y_, nextY_, previousY_, LL_, K);
+			
+			auto dxx = ws_tnl_x[0].getView();
+			auto dxy = ws_tnl_x[1].getView();
+			auto dxz = ws_tnl_x[2].getView();
+
+			auto F_bK_view = F_bK_.getView();
+			auto F_bE_view = F_bE_.getView();
+
+			auto kernelFb = [=] CUDA_HOSTDEV (idx i) mutable
+			{
+				point_t F_b ={
+					F_bK_view[i][0] + F_bE_view[i][0],
+					F_bK_view[i][1] + F_bE_view[i][1],
+					F_bK_view[i][2] + F_bE_view[i][2]
+				};
+				dxx[i] = F_b[0];
+				dxy[i] = F_b[1];
+				dxz[i] = F_b[2];
+			};
+			TNL::Algorithms::parallelFor<typename LL_array::DeviceType>((idx) 0, (idx) N, kernelFb);
+				
+			std::cout << "force" << std::endl;
+			std::cout << TNL::max(TNL::abs(ws_tnl_x[0])) << std::endl;
+			std::cout << TNL::max(TNL::abs(ws_tnl_x[1])) << std::endl;
+			std::cout << TNL::max(TNL::abs(ws_tnl_x[2])) << std::endl;
+	
+			// transform the force from Lagrangian to Eulerian coordinates
+			/////////////////
+			const auto x1 = ws_tnl_x[0].getConstView();
+			const auto x2 = ws_tnl_x[1].getConstView();
+			const auto x3 = ws_tnl_x[2].getConstView();
+			//vice moznosti pres view nebo neco jineho atd
+
+			if(computeVariant != IbmCompute::CPU)
+			{
+			using dEllpack = typename Lagrange3D<NSE>::dEllpack;
+			TNL::Pointers::DevicePointer<dEllpack> MT_dptr(ibm.ws_tnl_dMT);
+			const dEllpack* MT = &MT_dptr.template getData<TNL::Devices::Cuda>();
+
+			auto kernel = [=] CUDA_HOSTDEV (idx i) mutable
+			{
+				// skipping empty rows explicitly is much faster
+				if( MT->getRowCapacity(i) > 0 ) 
+				{
+					dfx[i] = rowVectorProduct(*MT, i, x1);
+					dfy[i] = rowVectorProduct(*MT, i, x2);
+					dfz[i] = rowVectorProduct(*MT, i, x3);
+				}
+
+			};
+			idx n = nse.lat.global.x()*nse.lat.global.y()*nse.lat.global.z();
+			TNL::Algorithms::parallelFor<typename LL_array::DeviceType>((idx) 0, n, kernel);
+			}
+			else
+			{
+			// transform the force from Lagrangian to Eulerian coordinates
+				auto kernel = [&] (idx i) mutable
+				{
+					// skipping empty rows explicitly is much faster
+					if(ws_tnl_MT.getRowCapacity(i) > 0 ) {
+						dfx[i] = rowVectorProduct(ws_tnl_MT, i, ws_tnl_x[0]);
+						dfy[i] = rowVectorProduct(ws_tnl_MT, i, ws_tnl_x[1]);
+						dfz[i] = rowVectorProduct(ws_tnl_MT, i, ws_tnl_x[2]);
+					}
+				};
+				idx n = nse.lat.global.x()*nse.lat.global.y()*nse.lat.global.z();
+				TNL::Algorithms::parallelFor< TNL::Devices::Host >((idx) 0, n, kernel);
+		    }
+	
+			previousY_ = Y_;
+			Y_ = nextY_;
+	
+			next_ = LL_ + U_;  
+			next_.setElement(0, LL_.getElement(0));
+			if(free_end==false)
+			{
+				next_.setElement(N-1, LL_.getElement(N-1));
+			}
+			else
+			{
+
+			}
+			LL_=next_;
+
+			previous_ = LL_lat;
+			LL_lat = next_;
+	
+	
+					
+			}
+		//deform(ibm.hLL_lat);
+		LL_velocity_lat = LL_lat - previous_;
+
+	}
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////	
 	virtual void computeBeforeLBMKernel()
 	{
@@ -315,6 +459,13 @@ struct StateLocal : State<NSE>
         auto hfz = ibm.hmacroVector(MACRO::e_fz);
 
 //////////////////////////////////////////////////////////
+if(ibm.computeVariant == IbmCompute::CPU)
+computingFunction(ibm.computeVariant, ibm.hLL_lat, ibm.ws_tnl_hM, ibm.ws_tnl_hb, ibm.ws_tnl_hx, ibm.hLL_velocity_lat, ibm.ws_tnl_hMT, hfx, hfy, hfz, hvx, hvy, hvz,
+ref, LL, U, Y, previousY, nextY, F_bE, F_bK, previous, next);
+else
+computingFunction(ibm.computeVariant, ibm.dLL_lat, ibm.ws_tnl_dM, ibm.ws_tnl_db, ibm.ws_tnl_dx, ibm.dLL_velocity_lat, ibm.ws_tnl_dMT, dfx, dfy, dfz, dvx, dvy, dvz,
+ref_device, LL_device, U_device, Y_device, previousY_device, nextY_device, F_bE_device, F_bK_device, previous_device, next_device);
+/*
 		if (ibm.computeVariant == IbmCompute::CPU) {
 			//ibm.hLL_velocity_lat = point_t{0,0,vz};
 			next.setLike(ibm.hLL_lat);
@@ -565,6 +716,7 @@ struct StateLocal : State<NSE>
 			ibm.dLL_velocity_lat = ibm.dLL_lat - previous_device;
 			
 		}
+*/
 
 		ibm.constructed = false;
 		ibm.use_LL_velocity_in_solution = true;
@@ -719,7 +871,7 @@ int sim(int RES=2, double i_Re=1000, double nasobek=2.0, int dirac_delta=2, int 
 	lat.global = typename lat_t::CoordinatesType( LBM_X, LBM_Y, LBM_Z );
 	lat.physOrigin = PHYS_ORIGIN;
 	lat.physDl = PHYS_DL;
-	lat.physDt = PHYS_DT;
+	lat.physDt = PHYS_DT;///2;
 	lat.physViscosity = PHYS_VISCOSITY;//*2
 
 	const std::string state_id = fmt::format("sim_IBM4_{}_{}_dirac_{}_res_{}_Re_{}_nas_{:05.4f}_compute_{}", NSE::COLL::id, (method>0)?"original":"modified", dirac_delta, RES, Re, nasobek, compute);
@@ -777,10 +929,10 @@ int sim(int RES=2, double i_Re=1000, double nasobek=2.0, int dirac_delta=2, int 
 
 	int N = ibmSetupFilament(state.ibm, state.ball_c,sigma, 3*state.ball_diameter, 'x');
 	state.N=N;
-	state.add_ball = true;
-	state.free_end=true;
+	state.add_ball = false;
+	state.free_end=false;
 	state.fiber_start = state.ibm.LL[0];
-	state.cube_radius = 1.5*state.ball_diameter;
+	state.cube_radius = 2*state.ball_diameter;//1.5
 	//state.fiber_start = lat.phys2lbmPoint(state.fiber_start);
 	// configure IBM
 	state.ibm.computeVariant = computeVariant;
