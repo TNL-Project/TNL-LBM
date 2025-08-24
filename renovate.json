@@ -1,0 +1,8 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:best-practices",
+    "gitlab>tnl-project/renovate-config:cmake",
+    "gitlab>tnl-project/renovate-config:dont-pin-gitlabci-digests"
+  ]
+}
