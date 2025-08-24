@@ -58,7 +58,7 @@ idx3d get_optimal_block_size(idx3d domain_size, int max_threads = 256, int warp_
 			if( bs_i * bs_j > max_threads )
 				break;
 
-			// check optimiality condition
+			// check optimality condition
 			if( bs_i * bs_j > TNL::product( best ) ) {
 				best[i] = bs_i;
 				best[j] = bs_j;

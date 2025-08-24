@@ -58,7 +58,7 @@ decomposeLattice_D1Q3(const TNL::MPI::Comm& communicator, const TNL::Containers:
  * \brief Wraps \ref TNL::Containers::decomposeBlockOptimal with a permutation.
  *
  * \tparam Permutation is an \ref std::index_sequence that determines the order
- *                     in which the \e x, \e y, \e z directions are preferrably
+ *                     in which the \e x, \e y, \e z directions are preferably
  *                     decomposed.
  * \param global The large block to decompose.
  * \param num_blocks Number of blocks.

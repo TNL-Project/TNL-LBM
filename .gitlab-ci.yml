@@ -19,7 +19,17 @@ variables:
   GIT_SUBMODULE_STRATEGY: recursive
 
 stages:
+  - lint
   - build
+
+typos:
+  stage: lint
+  image: "quay.io/archlinux/archlinux:latest"
+  before_script:
+    - pacman -Syu --needed --noconfirm typos
+  script:
+    - typos --color always --sort
+  interruptible: true
 
 build_Release:
   stage: build
@@ -31,6 +41,7 @@ build_Release:
     # regression tests for LBM-IBM
     - ./tests/compare-IBM-matrices.sh CPU
     - ./tests/compare-IBM-matrices.sh GPU
+  interruptible: true
   tags:
     - docker
     - nvidia
@@ -42,6 +53,7 @@ build_Debug:
             -DCMAKE_BUILD_TYPE=Debug
             -DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCH}
     - cmake --build build
+  interruptible: true
 
 build_without_MPI:
   stage: build
@@ -51,6 +63,7 @@ build_without_MPI:
             -DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCH}
             -DTNL_LBM_ENABLE_MPI=OFF
     - cmake --build build
+  interruptible: true
 
 build_subproject:
   stage: build
@@ -62,3 +75,4 @@ build_subproject:
             -DCMAKE_BUILD_TYPE=Debug
             -DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCH}
     - cmake --build build
+  interruptible: true

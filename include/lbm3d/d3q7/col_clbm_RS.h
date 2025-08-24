@@ -22,7 +22,7 @@ struct D3Q7_CLBM : D3Q7_COMMON<TRAITS, LBM_EQ>
 		const dreal omegat5 = no1;	//no3*(omega1 - no2)/(omega1 - no3); //T_xxx ~ 0
 		const dreal omegats1 = no1;
 		const dreal omegats5 = no1;
-		//DF->CM tranform
+		//DF->CM transform
 		const dreal gc100 = -KS.phi * KS.vx + KS.f[pzz] - KS.f[mzz];
 		const dreal gc010 = -KS.phi * KS.vy + KS.f[zpz] - KS.f[zmz];
 		const dreal gc001 = -KS.phi * KS.vz + KS.f[zzp] - KS.f[zzm];

@@ -18,7 +18,7 @@ struct D3Q27_SRT : D3Q27_COMMON<TRAITS, LBM_EQ>
 	{
 		const dreal tau = no3 * KS.lbmViscosity + n1o2;
 
-		// NOTE: pro ADE rho muze byt 0 (ale vsechny fx,fy,fz jsou 0...)
+		// NOTE: rho for ADE can be 0 (but all fx,fy,fz are 0...)
 		const dreal iRho = no1 / (KS.rho == 0 ? no1 : KS.rho);
 
 		// forcing: vzorce_bgk_force.mw
