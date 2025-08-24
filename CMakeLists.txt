@@ -119,17 +119,16 @@ target_include_directories(
 include(FetchContent)
 FetchContent_Declare(fmt
     GIT_REPOSITORY https://github.com/fmtlib/fmt.git
-    GIT_TAG 11.0.2  # master is often broken :-(
+    GIT_TAG 11.2.0
     SYSTEM
-    # FIXME: nvcc V12.6.85 fails to compile code including fmt 11.1.0-11.1.1 https://gitlab.com/-/snippets/4789509
-    #FIND_PACKAGE_ARGS
+    FIND_PACKAGE_ARGS
 )
 set(FMT_INSTALL ON)  # needed for adding to the interface target
 FetchContent_MakeAvailable(fmt)
 
 FetchContent_Declare(spdlog
     GIT_REPOSITORY https://github.com/gabime/spdlog.git
-    GIT_TAG v1.x
+    GIT_TAG v1.15.3
     SYSTEM
     FIND_PACKAGE_ARGS
 )
@@ -139,7 +138,7 @@ FetchContent_MakeAvailable(spdlog)
 
 FetchContent_Declare(nlohmann_json
     GIT_REPOSITORY https://github.com/nlohmann/json.git
-    GIT_TAG master
+    GIT_TAG v3.12.0
     SYSTEM
     FIND_PACKAGE_ARGS
 )
@@ -149,7 +148,7 @@ FetchContent_MakeAvailable(nlohmann_json)
 
 FetchContent_Declare(argparse
     GIT_REPOSITORY https://github.com/p-ranav/argparse.git
-    GIT_TAG master
+    GIT_TAG v3.2
     SYSTEM
     FIND_PACKAGE_ARGS
 )
@@ -159,7 +158,7 @@ FetchContent_MakeAvailable(argparse)
 
 FetchContent_Declare(magic_enum
     GIT_REPOSITORY https://github.com/Neargye/magic_enum
-    GIT_TAG master
+    GIT_TAG v0.9.7
     SYSTEM
     FIND_PACKAGE_ARGS
 )
@@ -168,7 +167,8 @@ FetchContent_MakeAvailable(magic_enum)
 
 FetchContent_Declare(TNL
     GIT_REPOSITORY https://gitlab.com/tnl-project/tnl.git
-    GIT_TAG main
+    # TNL does not have any releases
+    GIT_TAG 836f1ca49dc4d724b8312ae50d553355fdc24151
     EXCLUDE_FROM_ALL
 )
 set(TNL_EXPORT_INTERFACE_TARGETS ON)  # needed for adding to the interface target
