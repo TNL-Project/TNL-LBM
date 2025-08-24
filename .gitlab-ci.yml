@@ -1,4 +1,5 @@
 default:
+  interruptible: true
   image: "jlk.fjfi.cvut.cz:5000/fjfi-mmg/archlinux-tnl-cuda:latest"
   before_script:
     # make sure that $PATH and other essential variables are set correctly
@@ -24,12 +25,11 @@ stages:
 
 typos:
   stage: lint
-  image: "quay.io/archlinux/archlinux:latest"
+  image: "quay.io/archlinux/archlinux:base"
   before_script:
     - pacman -Syu --needed --noconfirm typos
   script:
     - typos --color always --sort
-  interruptible: true
 
 build_Release:
   stage: build
@@ -41,7 +41,6 @@ build_Release:
     # regression tests for LBM-IBM
     - ./tests/compare-IBM-matrices.sh CPU
     - ./tests/compare-IBM-matrices.sh GPU
-  interruptible: true
   tags:
     - docker
     - nvidia
@@ -53,7 +52,6 @@ build_Debug:
             -DCMAKE_BUILD_TYPE=Debug
             -DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCH}
     - cmake --build build
-  interruptible: true
 
 build_without_MPI:
   stage: build
@@ -63,7 +61,6 @@ build_without_MPI:
             -DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCH}
             -DTNL_LBM_ENABLE_MPI=OFF
     - cmake --build build
-  interruptible: true
 
 build_subproject:
   stage: build
@@ -75,4 +72,3 @@ build_subproject:
             -DCMAKE_BUILD_TYPE=Debug
             -DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCH}
     - cmake --build build
-  interruptible: true
