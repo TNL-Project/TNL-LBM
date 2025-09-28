@@ -115,6 +115,29 @@ struct D3Q27_STREAMING
 		}
 	}
 
+	// NOTE: the A-A pattern does not currently support the interpolated outflow
+	// boundary condition. We provide a minimal stub so that code paths requiring
+	// the method compile; the fallback simply reuses the standard streaming
+	// routine. The interpolated boundary must not be used together with the A-A
+	// pattern.
+	template <typename LBM_DATA, typename LBM_KS>
+	__cuda_callable__ static void streamingInterpRight(
+		LBM_DATA& SD,
+		LBM_KS& KS,
+		idx xm,
+		idx x,
+		idx xp,
+		idx ym,
+		idx y,
+		idx yp,
+		idx zm,
+		idx z,
+		idx zp
+	)
+	{
+		streaming(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+	}
+
 // TODO: implement these methods for A-A pattern
 #ifdef TODO
 	template <typename LBM_DATA, typename LBM_KS>
