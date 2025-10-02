@@ -62,7 +62,7 @@ struct D3Q7_BC_All
 	}
 
 	template <typename LBM_KS>
-	__cuda_callable__ static void preCollision(DATA& SD, LBM_KS& KS, map_t mapgi, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
+	__cuda_callable__ static void preCollision(DATA& SD, LBM_KS& KS, map_t mapgi, typename LBM_KS::KernelStruct& streamGrid)
 	{
 		if (mapgi == GEO_NOTHING) {
 			// nema zadny vliv na vypocet, jen pro output
@@ -72,9 +72,9 @@ struct D3Q7_BC_All
 
 		// modify pull location for streaming
 		if (mapgi == GEO_OUTFLOW_RIGHT)
-			xp = x = xm;
+			for(int i = 0; i <= 2*LBM_KS::NoDV+1;i++){ streamGrid.x[i] = streamGrid.x[LBM_KS::NoDV-1]}
 
-		STREAMING::streaming(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+		STREAMING::streaming(SD, KS, streamGrid);
 
 		// boundary conditions
 		switch (mapgi) {

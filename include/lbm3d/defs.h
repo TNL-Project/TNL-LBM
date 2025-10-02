@@ -37,6 +37,8 @@ using TNLMPI_INIT = TNL::MPI::ScopedInitializer;
 	#include <cuda_profiler_api.h>
 #endif
 
+#define CONSTFUNC __attribute__((always_inline)) static constexpr
+
 // number of dist. functions, default=2
 // quick fix, use templates to define DFMAX ... through TRAITS maybe ?
 #ifdef USE_DFMAX3  // special 3 dfs
@@ -118,16 +120,67 @@ struct Traits
 using TraitsSP = Traits<float>;	 //_dreal is float only
 using TraitsDP = Traits<double>;
 
-// KernelStruct - D2Q9
-template <typename REAL>
-struct D2Q9_KernelStruct
+struct Coord{
+	int x,y,z;
+}
+
+template < typename INDEX, int NoDV>
+struct StreamGrid
 {
-	static constexpr int D = 2;
-	static constexpr int Q = 9;
+	INDEX x[2*NoDV + 1];
+	INDEX y[2*NoDV + 1];
+	INDEX z[2*NoDV + 1];
+
+	template<typename U>
+    CUDA_HOSTDEV operator StreamGrid<U, NoDV>() const {
+        StreamGrid<U,NoDV> result;
+        for (int i = 0; i < 2*NoDV + 1; ++i) {
+            result.x[i] = (double)(x[i]);
+            result.y[i] = (double)(y[i]);
+            result.z[i] = (double)(z[i]);
+        }
+        return result;
+    }
+};
+
+// KernelStruct - D2Q9
+template < typename REAL >
+struct KernelStructD2Q9
+{
+
+	static constexpr int NoDV = 1;
+	static constexpr int ONE_SIZE = 2*NoDV + 1;
+	static constexpr int Q = ONE_SIZE*ONE_SIZE;
+
+	using StreamGrid = typename StreamGrid<int, NoDV>;
+
+	// Same for all models, always can be ordered in the way that flipping id means flipping discrete velocity
+	CUDA_HOSTDEV CONSTFUNC int flip_coord(int val){return ONE_SIZE-val-1;}
+	CUDA_HOSTDEV CONSTFUNC int flip_id(int id){return Q - id - 1;}
+
+	CUDA_HOSTDEV CONSTFUNC Coord id_to_dv(int id){
+		int x = id/ONE_SIZE;
+		int y = id%ONE_SIZE;
+		return {x-NoDV,y-NoDV,0};
+	}
+
+	CUDA_HOSTDEV CONSTFUNC Coord id_to_coords(int id){
+		int x = id/ONE_SIZE;
+		int y = id%ONE_SIZE;
+		return {x,y,NoDV};
+	}
+
+	CUDA_HOSTDEV CONSTFUNC int dv_to_id(int cx, int cy, int cz){
+		return cy+NoDV + ONE_SIZE*(cx+NoDV);
+	}
+
+	CUDA_HOSTDEV CONSTFUNC int coords_to_id(int cx, int cy, int cz){
+		return cy + ONE_SIZE*cx;
+	}
+
+	REAL fx=0.,fy=0.,fz=0.;
 	REAL f[Q];
-	REAL fx = 0, fy = 0;
-	REAL vx = 0, vy = 0;
-	REAL rho = 1.0, lbmViscosity = 1.0;
+	REAL vx=0., vy=0., vz=0., rho=1.0, lbmViscosity=1.0, T=1./3;
 };
 
 // KernelStruct - D3Q7

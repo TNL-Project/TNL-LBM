@@ -19,7 +19,7 @@ struct D3Q7_STREAMING
 	}
 
 	template <typename LBM_DATA, typename LBM_KS>
-	__cuda_callable__ static void streaming(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
+	__cuda_callable__ static void streaming(LBM_DATA& SD, LBM_KS& KS, typename LBM_KS::StreamGrid streamGrid)
 	{
 		KS.f[mzz] = SD.df(df_cur, mzz, xp, y, z);
 		KS.f[zmz] = SD.df(df_cur, zmz, x, yp, z);

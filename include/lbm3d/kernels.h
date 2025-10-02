@@ -7,25 +7,20 @@ __cuda_callable__ void kernelInitIndices(
 	typename NSE::DATA SD,
 	typename NSE::TRAITS::map_t map,
 	short int nproc,
-	typename NSE::TRAITS::idx x,
-	typename NSE::TRAITS::idx y,
-	typename NSE::TRAITS::idx z,
-	typename NSE::TRAITS::idx& xp,
-	typename NSE::TRAITS::idx& xm,
-	typename NSE::TRAITS::idx& yp,
-	typename NSE::TRAITS::idx& ym,
-	typename NSE::TRAITS::idx& zp,
-	typename NSE::TRAITS::idx& zm
+	typename NSE::Traits::idx x,
+	typename NSE::Traits::idx y,
+	typename NSE::Traits::idx z,
+	typename NSE::KernelStruct::StreamGrid &streamGrid
 )
 {
 	if (NSE::BC::isPeriodic(map)) {
-		xp = (nproc == 1 && x == SD.X() - 1) ? 0 : (x + 1);
-		xm = (nproc == 1 && x == 0) ? (SD.X() - 1) : (x - 1);
+		for(int i = -NSE::KernelStruct::NoDV; i <= NSE::KernelStruct::NoDV; i++){
+			streamGrid.x[NSE::KernelStruct::NoDV+i] = (x+i+SD.X())%SD.X();
+			streamGrid.y[NSE::KernelStruct::NoDV+i] = (y+i+SD.Y())%SD.Y();
+			streamGrid.z[NSE::KernelStruct::NoDV+i] = (z+i+SD.Z())%SD.Z();
+		}
 		// TODO: use nproc_y and nproc_z
-		yp = (nproc == 1 && y == SD.Y() - 1) ? 0 : (y + 1);
-		ym = (nproc == 1 && y == 0) ? (SD.Y() - 1) : (y - 1);
-		zp = (nproc == 1 && z == SD.Z() - 1) ? 0 : (z + 1);
-		zm = (nproc == 1 && z == 0) ? (SD.Z() - 1) : (z - 1);
+		// TODO: use nproc
 	}
 	else {
 #ifdef AA_PATTERN
@@ -40,19 +35,21 @@ __cuda_callable__ void kernelInitIndices(
 		const typename NSE::TRAITS::idx& overlap_x = SD.indexer.template getOverlap<0>();
 		const typename NSE::TRAITS::idx& overlap_y = SD.indexer.template getOverlap<1>();
 		const typename NSE::TRAITS::idx& overlap_z = SD.indexer.template getOverlap<2>();
-		xp = TNL::min(x + 1, SD.X() - 1 + overlap_x);
-		xm = TNL::max(x - 1, -overlap_x);
-		yp = TNL::min(y + 1, SD.Y() - 1 + overlap_y);
-		ym = TNL::max(y - 1, -overlap_y);
-		zp = TNL::min(z + 1, SD.Z() - 1 + overlap_z);
-		zm = TNL::max(z - 1, -overlap_z);
+		for(int i = 1; i <= NSE::KernelStruct::NoDV; i++){
+			// not symmetric
+			streamGrid.x[NSE::KernelStruct::NoDV+i] = TNL::min(x + i, SD.X() - 1 + overlap_x);
+			streamGrid.x[NSE::KernelStruct::NoDV+i] = TNL::max(x - i, -overlap_x);
+			streamGrid.y[NSE::KernelStruct::NoDV+i] = TNL::min(y + i, SD.Y() - 1 + overlap_y);
+			streamGrid.y[NSE::KernelStruct::NoDV+i] = TNL::max(y - i, -overlap_y);
+			streamGrid.z[NSE::KernelStruct::NoDV+i] = TNL::min(z + i, SD.Z() - 1 + overlap_z);
+			streamGrid.z[NSE::KernelStruct::NoDV+i] = TNL::max(z - i, -overlap_z);
+		}
 #else
-		xp = TNL::min(x + 1, SD.X() - 1);
-		xm = TNL::max(x - 1, 0);
-		yp = TNL::min(y + 1, SD.Y() - 1);
-		ym = TNL::max(y - 1, 0);
-		zp = TNL::min(z + 1, SD.Z() - 1);
-		zm = TNL::max(z - 1, 0);
+		for(int i = -NSE::KernelStruct::NoDV; i <= NSE::KernelStruct::NoDV; i++){
+			streamGrid.x[NSE::KernelStruct::NoDV+i] = TNL::min(x(TNL::max(x+i,0)), SD.X()-1);;
+			streamGrid.y[NSE::KernelStruct::NoDV+i] = TNL::min(x(TNL::max(y+i,0)), SD.Y()-1);;
+			streamGrid.z[NSE::KernelStruct::NoDV+i] = TNL::min(x(TNL::max(z+i,0)), SD.Z()-1);;
+		}
 #endif
 	}
 }
@@ -80,8 +77,8 @@ LBMKernel(typename NSE::DATA SD, typename NSE::TRAITS::idx x, typename NSE::TRAI
 
 	map_t gi_map = SD.map(x, y, z);
 
-	idx xp, xm, yp, ym, zp, zm;
-	kernelInitIndices<NSE>(SD, gi_map, nproc, x, y, z, xp, xm, yp, ym, zp, zm);
+	typename NSE::KernelStruct::StreamGrid streamGrid;
+	kernelInitIndices<NSE>(SD, gi_map, nproc,x,y,z, streamGrid);
 
 	typename NSE::template KernelStruct<dreal> KS;
 
@@ -89,12 +86,12 @@ LBMKernel(typename NSE::DATA SD, typename NSE::TRAITS::idx x, typename NSE::TRAI
 	NSE::MACRO::copyQuantities(SD, KS, x, y, z);
 
 	// optional computation of the forcing term (e.g. for the non-Newtonian model)
-	NSE::MACRO::template computeForcing<typename NSE::BC>(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+	NSE::MACRO::template computeForcing<typename NSE::BC, NSE::KernelStruct::StreamGrid>(SD, KS, streamGrid);
 
-	NSE::BC::preCollision(SD, KS, gi_map, xm, x, xp, ym, y, yp, zm, z, zp);
+	NSE::BC::preCollision(SD, KS, gi_map, streamGrid);
 	if (NSE::BC::doCollision(gi_map))
 		NSE::COLL::collision(KS);
-	NSE::BC::postCollision(SD, KS, gi_map, xm, x, xp, ym, y, yp, zm, z, zp);
+	NSE::BC::postCollision(SD, KS, gi_map, streamGrid);
 
 	NSE::MACRO::outputMacro(SD, KS, x, y, z);
 }

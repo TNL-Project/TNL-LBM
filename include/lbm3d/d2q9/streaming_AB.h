@@ -11,48 +11,42 @@ struct D2Q9_STREAMING
 
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void
-	postCollisionStreaming(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm_unused, idx z, idx zp_unused)
+	postCollisionStreaming(LBM_DATA& SD, LBM_KS& KS, typename LBM_KS::StreamGrid streamGrid)
 	{
 		// no streaming actually, write to the (x,y,z) site
 		for (int i = 0; i < 9; i++)
-			SD.df(df_out, i, x, y, z) = KS.f[i];
+			SD.df(df_out, i, streamGrid.x[LBM_KS::NoDV], streamGrid.y[LBM_KS::NoDV], streamGrid.z[LBM_KS::NoDV]) = KS.f[i];
 	}
 
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void
-	streaming(uint8_t type, LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm_unused, idx z, idx zp_unused)
+	streaming(uint8_t type, LBM_DATA& SD, LBM_KS& KS, typename LBM_KS::StreamGrid streamGrid)
 	{
-		KS.f[mm] = TNL::Backend::ldg(SD.df(type, mm, xp, yp, z));
-		KS.f[mz] = TNL::Backend::ldg(SD.df(type, mz, xp, y, z));
-		KS.f[mp] = TNL::Backend::ldg(SD.df(type, mp, xp, ym, z));
-		KS.f[zm] = TNL::Backend::ldg(SD.df(type, zm, x, yp, z));
-		KS.f[zz] = TNL::Backend::ldg(SD.df(type, zz, x, y, z));
-		KS.f[zp] = TNL::Backend::ldg(SD.df(type, zp, x, ym, z));
-		KS.f[pm] = TNL::Backend::ldg(SD.df(type, pm, xm, yp, z));
-		KS.f[pz] = TNL::Backend::ldg(SD.df(type, pz, xm, y, z));
-		KS.f[pp] = TNL::Backend::ldg(SD.df(type, pp, xm, ym, z));
+		for(int id = 0; id < KernelStruct::Q; id++){
+			const int i = KernelStruct::id_to_coords(id).x;
+			const int j = KernelStruct::id_to_coords(id).y;
+			const int k = KernelStruct::id_to_coords(id).z;
+			KS.f[KS.coords_to_id(i,j,k)] = TNL::Backend::ldg(SD.df(type,id,streamGrid.x[KS.flip_coord(i)],streamGrid.y[KS.flip_coord(j)],streamGrid.z[KS.flip_coord(k)]));
+		}
 	}
 
 	template <typename LBM_DATA, typename LBM_KS>
-	__cuda_callable__ static void streaming(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
+	__cuda_callable__ static void streaming(LBM_DATA& SD, LBM_KS& KS, typename LBM_KS::StreamGrid streamGrid)
 	{
-		streaming(df_cur, SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+		streaming(df_cur, SD, KS, streamGrid);
 	}
 
 	// streaming with bounce-back rule applied
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void
-	streamingBounceBack(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm_unused, idx z, idx zp_unused)
+	streamingBounceBack(LBM_DATA& SD, LBM_KS& KS, typename LBM_KS::StreamGrid streamGrid)
 	{
-		KS.f[pp] = TNL::Backend::ldg(SD.df(df_cur, mm, xp, yp, z));
-		KS.f[pz] = TNL::Backend::ldg(SD.df(df_cur, mz, xp, y, z));
-		KS.f[pm] = TNL::Backend::ldg(SD.df(df_cur, mp, xp, ym, z));
-		KS.f[zp] = TNL::Backend::ldg(SD.df(df_cur, zm, x, yp, z));
-		KS.f[zz] = TNL::Backend::ldg(SD.df(df_cur, zz, x, y, z));
-		KS.f[zm] = TNL::Backend::ldg(SD.df(df_cur, zp, x, ym, z));
-		KS.f[mp] = TNL::Backend::ldg(SD.df(df_cur, pm, xm, yp, z));
-		KS.f[mz] = TNL::Backend::ldg(SD.df(df_cur, pz, xm, y, z));
-		KS.f[mm] = TNL::Backend::ldg(SD.df(df_cur, pp, xm, ym, z));
+		for(int id = 0; id < KernelStruct::Q; id++){
+			const int i = KernelStruct::id_to_coords(id).x;
+			const int j = KernelStruct::id_to_coords(id).y;
+			const int k = KernelStruct::id_to_coords(id).z;
+			KS.f[KS.coords_to_id(i,j,k)] = TNL::Backend::ldg(SD.df(df_cur, id, streamGrid.x[i],streamGrid.y[j],streamGrid.z[k]));
+		}
 	}
 
 	template <typename LBM_DATA, typename LBM_KS>
