@@ -49,7 +49,7 @@ struct D3Q27_BC_All
 	}
 
 	template <typename LBM_KS>
-	__cuda_callable__ static void preCollision(DATA& SD, LBM_KS& KS, map_t mapgi, typename LBM_KS::KernelStruct& streamGrid)
+	__cuda_callable__ static void preCollision(DATA& SD, LBM_KS& KS, map_t mapgi, typename LBM_KS::StreamGridInt& streamGrid)
 	{
 		if (mapgi == GEO_NOTHING) {
 			// nema zadny vliv na vypocet, jen pro output

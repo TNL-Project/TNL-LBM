@@ -122,9 +122,9 @@ using TraitsDP = Traits<double>;
 
 struct Coord{
 	int x,y,z;
-}
+};
 
-template < typename INDEX, int NoDV>
+template < typename INDEX, int NoDV >
 struct StreamGrid
 {
 	INDEX x[2*NoDV + 1];
@@ -145,14 +145,14 @@ struct StreamGrid
 
 // KernelStruct - D2Q9
 template < typename REAL >
-struct KernelStructD2Q9
+struct D2Q9_KernelStruct
 {
 
 	static constexpr int NoDV = 1;
 	static constexpr int ONE_SIZE = 2*NoDV + 1;
 	static constexpr int Q = ONE_SIZE*ONE_SIZE;
 
-	using StreamGrid = typename StreamGrid<int, NoDV>;
+	using StreamGridInt = StreamGrid<int, NoDV>;
 
 	// Same for all models, always can be ordered in the way that flipping id means flipping discrete velocity
 	CUDA_HOSTDEV CONSTFUNC int flip_coord(int val){return ONE_SIZE-val-1;}

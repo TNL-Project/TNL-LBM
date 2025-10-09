@@ -45,7 +45,7 @@ struct D2Q9_BC_All
 	}
 
 	template <typename LBM_KS>
-	__cuda_callable__ static void preCollision(DATA& SD, LBM_KS& KS, map_t mapgi, typename LBM_KS::KernelStruct& streamGrid)
+	__cuda_callable__ static void preCollision(DATA& SD, LBM_KS& KS, map_t mapgi, typename LBM_KS::StreamGridInt& streamGrid)
 	{
 		if (mapgi == GEO_NOTHING) {
 			// nema zadny vliv na vypocet, jen pro output
@@ -57,15 +57,15 @@ struct D2Q9_BC_All
 
 		// modify pull location for streaming
 		if (mapgi == GEO_OUTFLOW_RIGHT)
-			xp = x = xm;
+			streamGrid.x[LBM_KS::KernelStruct::NoDV+1] = streamGrid.x[LBM_KS::KernelStruct::NoDV] = streamGrid.x[LBM_KS::KernelStruct::NoDV-1];
 
 		if (mapgi != GEO_OUTFLOW_RIGHT_INTERP)
-			STREAMING::streaming(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+			STREAMING::streaming(SD, KS, streamGrid);
 
 		// boundary conditions
 		switch (mapgi) {
 			case GEO_INFLOW:
-				SD.inflow(KS, x, y, z);
+				SD.inflow(KS, streamGrid.x[LBM_KS::KernelStruct::NoDV], streamGrid.y[LBM_KS::KernelStruct::NoDV],streamGrid.z[LBM_KS::KernelStruct::NoDV]);
 				KS.rho = 1;
 				COLL::setEquilibrium(KS);
 				break;
@@ -79,7 +79,7 @@ struct D2Q9_BC_All
 				KS.rho = 1;
 				break;
 			case GEO_OUTFLOW_RIGHT_INTERP:
-				STREAMING::streamingInterpRight(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+				STREAMING::streamingInterpRight(SD, KS, streamGrid);
 				COLL::computeDensityAndVelocity(KS);
 				COLL::setEquilibriumDecomposition(KS, 1);
 				KS.rho = 1;
@@ -134,11 +134,11 @@ struct D2Q9_BC_All
 
 	template <typename LBM_KS>
 	__cuda_callable__ static void
-	postCollision(DATA& SD, LBM_KS& KS, map_t mapgi, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
+	postCollision(DATA& SD, LBM_KS& KS, map_t mapgi, typename LBM_KS::SteamGridInt streamGrid)
 	{
 		if (mapgi == GEO_NOTHING)
 			return;
 
-		STREAMING::postCollisionStreaming(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+		STREAMING::postCollisionStreaming(SD, KS, streamGrid);
 	}
 };

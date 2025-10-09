@@ -41,7 +41,7 @@ struct D2Q9_MACRO_Base
 	{}
 
 	template <typename LBM_BC, typename LBM_DATA, typename LBM_KS>
-	__cuda_callable__ static void computeForcing(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
+	__cuda_callable__ static void computeForcing(LBM_DATA& SD, LBM_KS& KS, typename LBM_KS::StreamGridInt& streamGrid)
 	{}
 };
 

@@ -77,7 +77,7 @@ LBMKernel(typename NSE::DATA SD, typename NSE::TRAITS::idx x, typename NSE::TRAI
 
 	map_t gi_map = SD.map(x, y, z);
 
-	typename NSE::KernelStruct::StreamGrid streamGrid;
+	typename NSE::KernelStruct::StreamGridInt streamGrid;
 	kernelInitIndices<NSE>(SD, gi_map, nproc,x,y,z, streamGrid);
 
 	typename NSE::template KernelStruct<dreal> KS;
@@ -86,7 +86,7 @@ LBMKernel(typename NSE::DATA SD, typename NSE::TRAITS::idx x, typename NSE::TRAI
 	NSE::MACRO::copyQuantities(SD, KS, x, y, z);
 
 	// optional computation of the forcing term (e.g. for the non-Newtonian model)
-	NSE::MACRO::template computeForcing<typename NSE::BC, NSE::KernelStruct::StreamGrid>(SD, KS, streamGrid);
+	NSE::MACRO::computeForcing(SD, KS, streamGrid);
 
 	NSE::BC::preCollision(SD, KS, gi_map, streamGrid);
 	if (NSE::BC::doCollision(gi_map))
@@ -128,8 +128,8 @@ CUDA_HOSTDEV void LBMKernel(
 	const map_t NSE_mapgi = NSE_SD.map(x, y, z);
 	const map_t ADE_mapgi = ADE_SD.map(x, y, z);
 
-	idx xp, xm, yp, ym, zp, zm;
-	kernelInitIndices<NSE>(NSE_SD, NSE_mapgi, nproc, x, y, z, xp, xm, yp, ym, zp, zm);
+	typename NSE::KernelStruct::StreamGridInt streamGrid;
+	kernelInitIndices<NSE>(NSE_SD, NSE_mapgi, nproc,x,y,z, streamGrid);
 
 	// NSE part
 	typename NSE::template KernelStruct<dreal> NSE_KS;
@@ -138,12 +138,12 @@ CUDA_HOSTDEV void LBMKernel(
 	NSE::MACRO::copyQuantities(NSE_SD, NSE_KS, x, y, z);
 
 	// optional computation of the forcing term (e.g. for the non-Newtonian model)
-	NSE::MACRO::template computeForcing<typename NSE::BC>(NSE_SD, NSE_KS, xm, x, xp, ym, y, yp, zm, z, zp);
+	NSE::MACRO::template computeForcing<typename NSE::BC>(NSE_SD, NSE_KS, streamGrid);
 
-	NSE::BC::preCollision(NSE_SD, NSE_KS, NSE_mapgi, xm, x, xp, ym, y, yp, zm, z, zp);
+	NSE::BC::preCollision(NSE_SD, NSE_KS, NSE_mapgi, streamGrid);
 	if (NSE::BC::doCollision(NSE_mapgi))
 		NSE::COLL::collision(NSE_KS);
-	NSE::BC::postCollision(NSE_SD, NSE_KS, NSE_mapgi, xm, x, xp, ym, y, yp, zm, z, zp);
+	NSE::BC::postCollision(NSE_SD, NSE_KS, NSE_mapgi, streamGrid);
 
 	NSE::MACRO::outputMacro(NSE_SD, NSE_KS, x, y, z);
 
@@ -164,10 +164,10 @@ CUDA_HOSTDEV void LBMKernel(
 	// copy quantities
 	ADE::MACRO::copyQuantities(ADE_SD, ADE_KS, x, y, z);
 
-	ADE::BC::preCollision(ADE_SD, ADE_KS, ADE_mapgi, xm, x, xp, ym, y, yp, zm, z, zp);
+	ADE::BC::preCollision(ADE_SD, ADE_KS, ADE_mapgi, streamGrid);
 	if (ADE::BC::doCollision(ADE_mapgi))
 		ADE::COLL::collision(ADE_KS);
-	ADE::BC::postCollision(ADE_SD, ADE_KS, ADE_mapgi, xm, x, xp, ym, y, yp, zm, z, zp);
+	ADE::BC::postCollision(ADE_SD, ADE_KS, ADE_mapgi, streamGrid);
 
 	ADE::MACRO::outputMacro(ADE_SD, ADE_KS, x, y, z);
 }
@@ -201,13 +201,13 @@ void LBMComputeVelocitiesStarAndZeroForce(
 	// copy quantities
 	NSE::MACRO::copyQuantities(SD, KS, x, y, z);
 
-	idx xp, xm, yp, ym, zp, zm;
-	kernelInitIndices<NSE>(SD, gi_map, nproc, x, y, z, xp, xm, yp, ym, zp, zm);
+	typename NSE::KernelStruct::StreamGridInt streamGrid;
+	kernelInitIndices<NSE>(SD, gi_map, nproc,x,y,z, streamGrid);
 
 	NSE::MACRO::zeroForcesInKS(KS);
 
 	// do streaming, compute density and velocity
-	NSE::BC::preCollision(SD, KS, gi_map, xm, x, xp, ym, y, yp, zm, z, zp);
+	NSE::BC::preCollision(SD, KS, gi_map, streamGrid);
 
 	NSE::MACRO::outputMacro(SD, KS, x, y, z);
 	// reset forces

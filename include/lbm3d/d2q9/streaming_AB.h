@@ -22,10 +22,10 @@ struct D2Q9_STREAMING
 	__cuda_callable__ static void
 	streaming(uint8_t type, LBM_DATA& SD, LBM_KS& KS, typename LBM_KS::StreamGrid streamGrid)
 	{
-		for(int id = 0; id < KernelStruct::Q; id++){
-			const int i = KernelStruct::id_to_coords(id).x;
-			const int j = KernelStruct::id_to_coords(id).y;
-			const int k = KernelStruct::id_to_coords(id).z;
+		for(int id = 0; id < LBM_KS::Q; id++){
+			const int i = LBM_KS::id_to_coords(id).x;
+			const int j = LBM_KS::id_to_coords(id).y;
+			const int k = LBM_KS::id_to_coords(id).z;
 			KS.f[KS.coords_to_id(i,j,k)] = TNL::Backend::ldg(SD.df(type,id,streamGrid.x[KS.flip_coord(i)],streamGrid.y[KS.flip_coord(j)],streamGrid.z[KS.flip_coord(k)]));
 		}
 	}
@@ -41,10 +41,10 @@ struct D2Q9_STREAMING
 	__cuda_callable__ static void
 	streamingBounceBack(LBM_DATA& SD, LBM_KS& KS, typename LBM_KS::StreamGrid streamGrid)
 	{
-		for(int id = 0; id < KernelStruct::Q; id++){
-			const int i = KernelStruct::id_to_coords(id).x;
-			const int j = KernelStruct::id_to_coords(id).y;
-			const int k = KernelStruct::id_to_coords(id).z;
+		for(int id = 0; id < LBM_KS::Q; id++){
+			const int i = LBM_KS::id_to_coords(id).x;
+			const int j = LBM_KS::id_to_coords(id).y;
+			const int k = LBM_KS::id_to_coords(id).z;
 			KS.f[KS.coords_to_id(i,j,k)] = TNL::Backend::ldg(SD.df(df_cur, id, streamGrid.x[i],streamGrid.y[j],streamGrid.z[k]));
 		}
 	}
