@@ -142,35 +142,5 @@ struct D3Q27_BGK : D3Q27_COMMON<TRAITS, EQ>
 		KS.f[ppm] += (feq_ppm - KS.f[ppm]) * omega1 + (no1 - n1o2 * omega1) * Sppm * feq_ppm;
 		KS.f[ppz] += (feq_ppz - KS.f[ppz]) * omega1 + (no1 - n1o2 * omega1) * Sppz * feq_ppz;
 		KS.f[ppp] += (feq_ppp - KS.f[ppp]) * omega1 + (no1 - n1o2 * omega1) * Sppp * feq_ppp;
-
-		/*
-		KS.f[mmm] = KS.f[mmm]*(no1-omega1) + omega1*(-KS.rho*Xm*Ym*Zm);
-		KS.f[mmz] = KS.f[mmz]*(no1-omega1) + omega1*(-KS.rho*Xm*Ym*Zz);
-		KS.f[mmp] = KS.f[mmp]*(no1-omega1) + omega1*(-KS.rho*Xm*Ym*Zp);
-		KS.f[mzm] = KS.f[mzm]*(no1-omega1) + omega1*(-KS.rho*Xm*Yz*Zm);
-		KS.f[mzz] = KS.f[mzz]*(no1-omega1) + omega1*(-KS.rho*Xm*Yz*Zz);
-		KS.f[mzp] = KS.f[mzp]*(no1-omega1) + omega1*(-KS.rho*Xm*Yz*Zp);
-		KS.f[mpm] = KS.f[mpm]*(no1-omega1) + omega1*(-KS.rho*Xm*Yp*Zm);
-		KS.f[mpz] = KS.f[mpz]*(no1-omega1) + omega1*(-KS.rho*Xm*Yp*Zz);
-		KS.f[mpp] = KS.f[mpp]*(no1-omega1) + omega1*(-KS.rho*Xm*Yp*Zp);
-		KS.f[zmm] = KS.f[zmm]*(no1-omega1) + omega1*(-KS.rho*Xz*Ym*Zm);
-		KS.f[zmz] = KS.f[zmz]*(no1-omega1) + omega1*(-KS.rho*Xz*Ym*Zz);
-		KS.f[zmp] = KS.f[zmp]*(no1-omega1) + omega1*(-KS.rho*Xz*Ym*Zp);
-		KS.f[zzm] = KS.f[zzm]*(no1-omega1) + omega1*(-KS.rho*Xz*Yz*Zm);
-		KS.f[zzz] = KS.f[zzz]*(no1-omega1) + omega1*(-KS.rho*Xz*Yz*Zz);
-		KS.f[zzp] = KS.f[zzp]*(no1-omega1) + omega1*(-KS.rho*Xz*Yz*Zp);
-		KS.f[zpm] = KS.f[zpm]*(no1-omega1) + omega1*(-KS.rho*Xz*Yp*Zm);
-		KS.f[zpz] = KS.f[zpz]*(no1-omega1) + omega1*(-KS.rho*Xz*Yp*Zz);
-		KS.f[zpp] = KS.f[zpp]*(no1-omega1) + omega1*(-KS.rho*Xz*Yp*Zp);
-		KS.f[pmm] = KS.f[pmm]*(no1-omega1) + omega1*(-KS.rho*Xp*Ym*Zm);
-		KS.f[pmz] = KS.f[pmz]*(no1-omega1) + omega1*(-KS.rho*Xp*Ym*Zz);
-		KS.f[pmp] = KS.f[pmp]*(no1-omega1) + omega1*(-KS.rho*Xp*Ym*Zp);
-		KS.f[pzm] = KS.f[pzm]*(no1-omega1) + omega1*(-KS.rho*Xp*Yz*Zm);
-		KS.f[pzz] = KS.f[pzz]*(no1-omega1) + omega1*(-KS.rho*Xp*Yz*Zz);
-		KS.f[pzp] = KS.f[pzp]*(no1-omega1) + omega1*(-KS.rho*Xp*Yz*Zp);
-		KS.f[ppm] = KS.f[ppm]*(no1-omega1) + omega1*(-KS.rho*Xp*Yp*Zm);
-		KS.f[ppz] = KS.f[ppz]*(no1-omega1) + omega1*(-KS.rho*Xp*Yp*Zz);
-		KS.f[ppp] = KS.f[ppp]*(no1-omega1) + omega1*(-KS.rho*Xp*Yp*Zp);
-		*/
 	}
 };
