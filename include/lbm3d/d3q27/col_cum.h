@@ -175,18 +175,18 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal omega1 = no1 / (no3 * KS.lbmViscosity + n1o2);	// shear viscosity
 		const dreal omega2 = no1;  ///(no3*KS.lbmViscosity*no2 + n1o2); // bulkViscosity > Viscosity ... test: bulkViscosity = 2/3 shearViscosity
 #ifdef USE_GEIER_CUM_2017
-		const dreal lambda3 = (dreal) (0.01);  // kolik mam zvolit??? ---> Section 7 @ Geier 2017
-		const dreal lambda4 = (dreal) (0.01);  // kolik mam zvolit???
-		const dreal lambda5 = (dreal) (0.01);  // kolik mam zvolit???
+		const dreal lambda3 = (dreal) (0.01);  // Section 7 @ Geier 2017 http://dx.doi.org/10.1016/j.jcp.2017.05.040
+		const dreal lambda4 = (dreal) (0.01);
+		const dreal lambda5 = (dreal) (0.01);
 		const dreal omega3 = no8 * (omega1 - no2) * (omega2 * (no3 * omega1 - no1) - no5 * omega1)
 						   / (no8 * (no5 - no2 * omega1) * omega1 + omega2 * (no8 + omega1 * (no9 * omega1 - no26)));
 		const dreal omega120p102 = omega3 + (no1 - omega3) * fabs(C_120 + C_102) / (KS.rho * lambda3 + fabs(C_120 + C_102));  // limiter
-		const dreal omega210p012 = omega3 + (no1 - omega3) * fabs(C_120 + C_102) / (KS.rho * lambda3 + fabs(C_120 + C_102));  // limiter
+		const dreal omega210p012 = omega3 + (no1 - omega3) * fabs(C_210 + C_012) / (KS.rho * lambda3 + fabs(C_210 + C_012));  // limiter
 		const dreal omega201p021 = omega3 + (no1 - omega3) * fabs(C_201 + C_021) / (KS.rho * lambda3 + fabs(C_201 + C_021));  // limiter
 		const dreal omega4 = no8 * (omega1 - no2) * (omega1 + omega2 * (no3 * omega1 - no7))
-						   / (omega2 * (no56 - no42 * omega1 + no8 * omega1 * omega1) - no8 * omega1);
+						   / (omega2 * (no56 - no42 * omega1 + no9 * omega1 * omega1) - no8 * omega1);
 		const dreal omega120m102 = omega4 + (no1 - omega4) * fabs(C_120 - C_102) / (KS.rho * lambda4 + fabs(C_120 - C_102));  // limiter
-		const dreal omega210m012 = omega4 + (no1 - omega4) * fabs(C_120 - C_102) / (KS.rho * lambda4 + fabs(C_120 - C_102));  // limiter
+		const dreal omega210m012 = omega4 + (no1 - omega4) * fabs(C_210 - C_012) / (KS.rho * lambda4 + fabs(C_210 - C_012));  // limiter
 		const dreal omega201m021 = omega4 + (no1 - omega4) * fabs(C_201 - C_021) / (KS.rho * lambda4 + fabs(C_201 - C_021));  // limiter
 		const dreal omega5 =
 			no24 * (omega1 - no2)
