@@ -15,8 +15,8 @@
 #include <TNL/Allocators/CudaHost.h>
 #include <TNL/Containers/Vector.h>
 
-template <typename Device, typename Index, typename IndexAlocator>
-using SlicedEllpackSegments = TNL::Algorithms::Segments::SlicedEllpack<Device, Index, IndexAlocator>;
+template <typename Device, typename Index, typename IndexAllocator>
+using SlicedEllpackSegments = TNL::Algorithms::Segments::SlicedEllpack<Device, Index, IndexAllocator>;
 template <typename Real, typename Device, typename Index>
 using SlicedEllpack = TNL::Matrices::SparseMatrix<Real, Device, Index, TNL::Matrices::GeneralMatrix, SlicedEllpackSegments>;
 
@@ -65,7 +65,7 @@ struct Lagrange3D
 	// ws_ using sparse matrices
 	hEllpackPtr ws_tnl_hA;
 	hEllpack ws_tnl_hM;	  // matrix realizing projection of u* to lagrange desc.
-	hEllpack ws_tnl_hMT;  // matrix realizing projection of uB from lagrange desc. to Euler desc. .... basially transpose of M
+	hEllpack ws_tnl_hMT;  // matrix realizing projection of uB from lagrange desc. to Euler desc. .... basically transpose of M
 	hVector ws_tnl_hx[3], ws_tnl_hb[3];
 
 	typename hEllpack::RowCapacitiesType hM_row_capacities;
@@ -80,7 +80,7 @@ struct Lagrange3D
 #ifdef USE_CUDA
 	dEllpackPtr ws_tnl_dA;	// square matrix A
 	dEllpack ws_tnl_dM;		// matrix realizing projection of u* to lagrange desc.
-	dEllpack ws_tnl_dMT;	// matrix realizing projection of uB from lagrange desc. to Euler desc. .... basially transpose of M
+	dEllpack ws_tnl_dMT;	// matrix realizing projection of uB from lagrange desc. to Euler desc. .... basically transpose of M
 	dVector ws_tnl_dx[3], ws_tnl_db[3];
 	// for IbmCompute::Hybrid_zerocopy
 	using hVectorPinned = TNL::Containers::Vector<dreal, TNL::Devices::Host, idx, TNL::Allocators::CudaHost<dreal>>;
