@@ -4,10 +4,10 @@ default:
   before_script:
     # make sure that $PATH and other essential variables are set correctly
     - source /etc/profile
-    # 1. fall back to arch 7.0 when the builder has no GPU to avoid building for all GPU architectures
+    # 1. fall back to arch 7.5 when the builder has no GPU to avoid building for all GPU architectures
     # 2. cmake can't detect the native architecture when using clang
     - if ! nvidia-smi --list-gpus > /dev/null; then
-            CUDA_ARCH=70;
+            CUDA_ARCH=75;
       elif [[ ${CUDACXX} == "clang++" ]]; then
             CUDA_ARCH=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n 1 | tr -d '.');
       else
