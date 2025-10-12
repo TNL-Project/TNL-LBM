@@ -1,6 +1,8 @@
 #pragma once
 
 #include "lbm3d/defs.h"
+#include "../defs.h"
+#include <TNL/Backend/Macros.h>
 
 // pull-scheme
 template <typename TRAITS>
@@ -11,7 +13,7 @@ struct D2Q9_STREAMING
 
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void
-	postCollisionStreaming(LBM_DATA& SD, LBM_KS& KS, typename LBM_KS::StreamGrid streamGrid)
+	postCollisionStreaming(LBM_DATA& SD, LBM_KS& KS, typename LBM_KS::SG streamGrid)
 	{
 		// no streaming actually, write to the (x,y,z) site
 		for (int i = 0; i < 9; i++)
@@ -20,7 +22,7 @@ struct D2Q9_STREAMING
 
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void
-	streaming(uint8_t type, LBM_DATA& SD, LBM_KS& KS, typename LBM_KS::StreamGrid streamGrid)
+	streaming(uint8_t type, LBM_DATA& SD, LBM_KS& KS, typename LBM_KS::SG streamGrid)
 	{
 		for(int id = 0; id < LBM_KS::Q; id++){
 			const int i = LBM_KS::id_to_coords(id).x;
@@ -31,7 +33,7 @@ struct D2Q9_STREAMING
 	}
 
 	template <typename LBM_DATA, typename LBM_KS>
-	__cuda_callable__ static void streaming(LBM_DATA& SD, LBM_KS& KS, typename LBM_KS::StreamGrid streamGrid)
+	__cuda_callable__ static void streaming(LBM_DATA& SD, LBM_KS& KS, typename LBM_KS::SG streamGrid)
 	{
 		streaming(df_cur, SD, KS, streamGrid);
 	}
@@ -39,7 +41,7 @@ struct D2Q9_STREAMING
 	// streaming with bounce-back rule applied
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void
-	streamingBounceBack(LBM_DATA& SD, LBM_KS& KS, typename LBM_KS::StreamGrid streamGrid)
+	streamingBounceBack(LBM_DATA& SD, LBM_KS& KS, typename LBM_KS::SG streamGrid)
 	{
 		for(int id = 0; id < LBM_KS::Q; id++){
 			const int i = LBM_KS::id_to_coords(id).x;
@@ -51,8 +53,17 @@ struct D2Q9_STREAMING
 
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void
-	streamingInterpRight(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm_unused, idx z, idx zp_unused)
+	streamingInterpRight(LBM_DATA& SD, LBM_KS& KS, typename LBM_KS::SG streamGrid)
 	{
+		idx xp = streamGrid.x[2];
+		idx x  = streamGrid.x[1];
+		idx xm = streamGrid.x[0];
+		idx yp = streamGrid.y[2];
+		idx y  = streamGrid.y[1];
+		idx ym = streamGrid.y[0];
+		idx zp = streamGrid.z[2];
+		idx z  = streamGrid.z[1];
+		idx zm = streamGrid.z[0];
 		// streaming: interpolation from Geier - CuLBM (2015)
 		// NOTE: velocity is neglected (for the case velocity << speed of sound)
 		constexpr dreal SpeedOfSound = 0.5773502691896257;

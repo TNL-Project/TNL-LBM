@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../defs.h"
 #include <TNL/Backend/Macros.h>
 
 // empty Macro containing required forcing quantities for IBM (see lbm.h -> hfx() etc.)
@@ -42,7 +43,7 @@ struct D3Q27_MACRO_Base
 	{}
 
 	template <typename LBM_BC, typename LBM_DATA, typename LBM_KS>
-	__cuda_callable__ static void computeForcing(LBM_DATA& SD, LBM_KS& KS, typename LBM_KS::StreamGridInt& streamGrid)
+	__cuda_callable__ static void computeForcing(LBM_DATA& SD, LBM_KS& KS, typename LBM_KS::SG streamGrid)
 	{}
 };
 

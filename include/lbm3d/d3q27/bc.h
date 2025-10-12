@@ -1,7 +1,9 @@
 #pragma once
 
 #include "lbm3d/defs.h"
+#include "../defs.h"
 #include "lbm_common/ciselnik.h"
+#include <TNL/Backend/Macros.h>
 
 template <typename CONFIG>
 struct D3Q27_BC_All
@@ -49,7 +51,7 @@ struct D3Q27_BC_All
 	}
 
 	template <typename LBM_KS>
-	__cuda_callable__ static void preCollision(DATA& SD, LBM_KS& KS, map_t mapgi, typename LBM_KS::StreamGridInt& streamGrid)
+	__cuda_callable__ static void preCollision(DATA& SD, LBM_KS& KS, map_t mapgi, typename LBM_KS::SG streamGrid)
 	{
 		if (mapgi == GEO_NOTHING) {
 			// nema zadny vliv na vypocet, jen pro output
@@ -59,6 +61,15 @@ struct D3Q27_BC_All
 			KS.vz = 0;
 			return;
 		}
+		int xp = streamGrid.x[2];
+		int x  = streamGrid.x[1];
+		int xm = streamGrid.x[0];
+		int yp = streamGrid.y[2];
+		int y  = streamGrid.y[1];
+		int ym = streamGrid.y[0];
+		int zp = streamGrid.z[2];
+		int z  = streamGrid.z[1];
+		int zm = streamGrid.z[0];
 
 		// modify pull location for streaming
 		if (mapgi == GEO_OUTFLOW_RIGHT)

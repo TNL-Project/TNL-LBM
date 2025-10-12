@@ -152,7 +152,7 @@ struct D2Q9_KernelStruct
 	static constexpr int ONE_SIZE = 2*NoDV + 1;
 	static constexpr int Q = ONE_SIZE*ONE_SIZE;
 
-	using StreamGridInt = StreamGrid<int, NoDV>;
+	using SG = StreamGrid<int, NoDV>;
 
 	// Same for all models, always can be ordered in the way that flipping id means flipping discrete velocity
 	CUDA_HOSTDEV CONSTFUNC int flip_coord(int val){return ONE_SIZE-val-1;}
@@ -189,6 +189,9 @@ struct D3Q7_KernelStruct
 {
 	static constexpr int D = 3;
 	static constexpr int Q = 7;
+	static constexpr int NoDV = 1;
+
+	using SG = StreamGrid<int, NoDV>;
 	REAL f[Q];
 	REAL vx = 0, vy = 0, vz = 0;
 	REAL phi = 1.0, lbmViscosity = 1.0;
@@ -202,6 +205,9 @@ struct D3Q27_KernelStruct
 {
 	static constexpr int D = 3;
 	static constexpr int Q = 27;
+	static constexpr int NoDV = 1;
+
+	using SG = StreamGrid<int, NoDV>;
 	REAL f[Q];
 	REAL fx = 0, fy = 0, fz = 0;
 	REAL vx = 0, vy = 0, vz = 0;
@@ -235,12 +241,14 @@ struct LBM_CONFIG
 	using TRAITS = _TRAITS;
 	template <typename REAL>
 	using KernelStruct = _KERNEL_STRUCT<REAL>;
+	using LBM_KS = KernelStruct<typename TRAITS::dreal>;
 	using DATA = _DATA;
 	using COLL = _COLL;
 	using EQ = _EQ;
 	using STREAMING = _STREAMING;
 	using BC = _BC<LBM_CONFIG>;
 	using MACRO = _MACRO;
+	using SG = StreamGrid<int, KernelStruct<typename TRAITS::dreal>::NoDV>; // whyyyy
 
 	static constexpr int D = KernelStruct<typename TRAITS::dreal>::D;
 	static constexpr int Q = KernelStruct<typename TRAITS::dreal>::Q;

@@ -10,7 +10,7 @@ __cuda_callable__ void kernelInitIndices(
 	typename NSE::Traits::idx x,
 	typename NSE::Traits::idx y,
 	typename NSE::Traits::idx z,
-	typename NSE::KernelStruct::StreamGrid &streamGrid
+	typename NSE::LBM_KS::SG &streamGrid
 )
 {
 	if (NSE::BC::isPeriodic(map)) {
@@ -77,7 +77,7 @@ LBMKernel(typename NSE::DATA SD, typename NSE::TRAITS::idx x, typename NSE::TRAI
 
 	map_t gi_map = SD.map(x, y, z);
 
-	typename NSE::KernelStruct::StreamGridInt streamGrid;
+	typename NSE::LBM_KS::SG streamGrid;
 	kernelInitIndices<NSE>(SD, gi_map, nproc,x,y,z, streamGrid);
 
 	typename NSE::template KernelStruct<dreal> KS;
@@ -128,7 +128,7 @@ CUDA_HOSTDEV void LBMKernel(
 	const map_t NSE_mapgi = NSE_SD.map(x, y, z);
 	const map_t ADE_mapgi = ADE_SD.map(x, y, z);
 
-	typename NSE::KernelStruct::StreamGridInt streamGrid;
+	StreamGrid<int,NSE::template KernelStruct<dreal>::NoDV> streamGrid;
 	kernelInitIndices<NSE>(NSE_SD, NSE_mapgi, nproc,x,y,z, streamGrid);
 
 	// NSE part
@@ -201,7 +201,7 @@ void LBMComputeVelocitiesStarAndZeroForce(
 	// copy quantities
 	NSE::MACRO::copyQuantities(SD, KS, x, y, z);
 
-	typename NSE::KernelStruct::StreamGridInt streamGrid;
+	typename NSE::LBM_KS::SG streamGrid;
 	kernelInitIndices<NSE>(SD, gi_map, nproc,x,y,z, streamGrid);
 
 	NSE::MACRO::zeroForcesInKS(KS);

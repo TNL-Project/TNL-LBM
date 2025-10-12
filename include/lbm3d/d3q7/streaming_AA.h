@@ -1,6 +1,8 @@
 #pragma once
 
 #include "lbm3d/defs.h"
+#include "../defs.h"
+#include <TNL/Backend/Macros.h>
 
 // A-A pattern
 template <typename TRAITS>
@@ -11,8 +13,17 @@ struct D3Q7_STREAMING
 
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void
-	postCollisionStreaming(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
+	postCollisionStreaming(LBM_DATA& SD, LBM_KS& KS, typename LBM_KS::SG streamGrid)
 	{
+		const int xp = streamGrid.x[2];
+		const int x  = streamGrid.x[1];
+		const int xm = streamGrid.x[0];
+		const int yp = streamGrid.y[2];
+		const int y  = streamGrid.y[1];
+		const int ym = streamGrid.y[0];
+		const int zp = streamGrid.z[2];
+		const int z  = streamGrid.z[1];
+		const int zm = streamGrid.z[0];
 		if (SD.even_iter) {
 			// write to the same lattice site, but the opposite DF direction
 			SD.df(df_cur, mzz, x, y, z) = KS.f[pzz];
@@ -36,8 +47,17 @@ struct D3Q7_STREAMING
 	}
 
 	template <typename LBM_DATA, typename LBM_KS>
-	__cuda_callable__ static void streaming(LBM_DATA& SD, LBM_KS& KS, typename LBM_KS::StreamGrid streamGrid)
+	__cuda_callable__ static void streaming(LBM_DATA& SD, LBM_KS& KS, typename LBM_KS::SG streamGrid)
 	{
+		const int xp = streamGrid.x[2];
+		const int x  = streamGrid.x[1];
+		const int xm = streamGrid.x[0];
+		const int yp = streamGrid.y[2];
+		const int y  = streamGrid.y[1];
+		const int ym = streamGrid.y[0];
+		const int zp = streamGrid.z[2];
+		const int z  = streamGrid.z[1];
+		const int zm = streamGrid.z[0];
 		if (SD.even_iter) {
 			// read from the same lattice site, same DF direction
 			for (int i = 0; i < 7; i++)

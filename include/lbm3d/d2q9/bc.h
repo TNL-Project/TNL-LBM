@@ -1,6 +1,8 @@
 #pragma once
 
 #include "lbm3d/defs.h"
+#include "../defs.h" // just for linter
+#include <TNL/Backend/Macros.h>
 
 template <typename CONFIG>
 struct D2Q9_BC_All
@@ -45,7 +47,7 @@ struct D2Q9_BC_All
 	}
 
 	template <typename LBM_KS>
-	__cuda_callable__ static void preCollision(DATA& SD, LBM_KS& KS, map_t mapgi, typename LBM_KS::StreamGridInt& streamGrid)
+	__cuda_callable__ static void preCollision(DATA& SD, LBM_KS& KS, map_t mapgi, typename LBM_KS::SG streamGrid)
 	{
 		if (mapgi == GEO_NOTHING) {
 			// nema zadny vliv na vypocet, jen pro output
@@ -57,7 +59,7 @@ struct D2Q9_BC_All
 
 		// modify pull location for streaming
 		if (mapgi == GEO_OUTFLOW_RIGHT)
-			streamGrid.x[LBM_KS::KernelStruct::NoDV+1] = streamGrid.x[LBM_KS::KernelStruct::NoDV] = streamGrid.x[LBM_KS::KernelStruct::NoDV-1];
+			streamGrid.x[LBM_KS::NoDV+1] = streamGrid.x[LBM_KS::NoDV] = streamGrid.x[LBM_KS::NoDV-1];
 
 		if (mapgi != GEO_OUTFLOW_RIGHT_INTERP)
 			STREAMING::streaming(SD, KS, streamGrid);
@@ -65,7 +67,7 @@ struct D2Q9_BC_All
 		// boundary conditions
 		switch (mapgi) {
 			case GEO_INFLOW:
-				SD.inflow(KS, streamGrid.x[LBM_KS::KernelStruct::NoDV], streamGrid.y[LBM_KS::KernelStruct::NoDV],streamGrid.z[LBM_KS::KernelStruct::NoDV]);
+				SD.inflow(KS, streamGrid.x[LBM_KS::NoDV], streamGrid.y[LBM_KS::NoDV],streamGrid.z[LBM_KS::NoDV]);
 				KS.rho = 1;
 				COLL::setEquilibrium(KS);
 				break;
@@ -134,7 +136,7 @@ struct D2Q9_BC_All
 
 	template <typename LBM_KS>
 	__cuda_callable__ static void
-	postCollision(DATA& SD, LBM_KS& KS, map_t mapgi, typename LBM_KS::SteamGridInt streamGrid)
+	postCollision(DATA& SD, LBM_KS& KS, map_t mapgi, typename LBM_KS::SG streamGrid)
 	{
 		if (mapgi == GEO_NOTHING)
 			return;

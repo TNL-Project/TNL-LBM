@@ -1,6 +1,8 @@
 #pragma once
 
 #include "lbm3d/defs.h"
+#include "../defs.h"
+#include <TNL/Backend/Macros.h>
 
 // pull-scheme
 template <typename TRAITS>
@@ -52,7 +54,7 @@ struct D3Q27_STREAMING
 	}
 
 	template <typename LBM_DATA, typename LBM_KS>
-	__cuda_callable__ static void streaming(LBM_DATA& SD, LBM_KS& KS, typename LBM_KS::StreamGrid streamGrid)
+	__cuda_callable__ static void streaming(LBM_DATA& SD, LBM_KS& KS, typename LBM_KS::SG streamGrid)
 	{
 		streaming(df_cur, SD, KS, streamGrid);
 	}
