@@ -7,17 +7,17 @@ __cuda_callable__ void kernelInitIndices(
 	typename NSE::DATA SD,
 	typename NSE::TRAITS::map_t map,
 	short int nproc,
-	typename NSE::Traits::idx x,
-	typename NSE::Traits::idx y,
-	typename NSE::Traits::idx z,
+	typename NSE::TRAITS::idx x,
+	typename NSE::TRAITS::idx y,
+	typename NSE::TRAITS::idx z,
 	typename NSE::LBM_KS::SG &streamGrid
 )
 {
 	if (NSE::BC::isPeriodic(map)) {
-		for(int i = -NSE::KernelStruct::NoDV; i <= NSE::KernelStruct::NoDV; i++){
-			streamGrid.x[NSE::KernelStruct::NoDV+i] = (x+i+SD.X())%SD.X();
-			streamGrid.y[NSE::KernelStruct::NoDV+i] = (y+i+SD.Y())%SD.Y();
-			streamGrid.z[NSE::KernelStruct::NoDV+i] = (z+i+SD.Z())%SD.Z();
+		for(int i = -NSE::LBM_KS::NoDV; i <= NSE::LBM_KS::NoDV; i++){
+			streamGrid.x[NSE::LBM_KS::NoDV+i] = (x+i+SD.X())%SD.X();
+			streamGrid.y[NSE::LBM_KS::NoDV+i] = (y+i+SD.Y())%SD.Y();
+			streamGrid.z[NSE::LBM_KS::NoDV+i] = (z+i+SD.Z())%SD.Z();
 		}
 		// TODO: use nproc_y and nproc_z
 		// TODO: use nproc
@@ -35,20 +35,20 @@ __cuda_callable__ void kernelInitIndices(
 		const typename NSE::TRAITS::idx& overlap_x = SD.indexer.template getOverlap<0>();
 		const typename NSE::TRAITS::idx& overlap_y = SD.indexer.template getOverlap<1>();
 		const typename NSE::TRAITS::idx& overlap_z = SD.indexer.template getOverlap<2>();
-		for(int i = 1; i <= NSE::KernelStruct::NoDV; i++){
+		for(int i = 1; i <= NSE::LBM_KS::NoDV; i++){
 			// not symmetric
-			streamGrid.x[NSE::KernelStruct::NoDV+i] = TNL::min(x + i, SD.X() - 1 + overlap_x);
-			streamGrid.x[NSE::KernelStruct::NoDV+i] = TNL::max(x - i, -overlap_x);
-			streamGrid.y[NSE::KernelStruct::NoDV+i] = TNL::min(y + i, SD.Y() - 1 + overlap_y);
-			streamGrid.y[NSE::KernelStruct::NoDV+i] = TNL::max(y - i, -overlap_y);
-			streamGrid.z[NSE::KernelStruct::NoDV+i] = TNL::min(z + i, SD.Z() - 1 + overlap_z);
-			streamGrid.z[NSE::KernelStruct::NoDV+i] = TNL::max(z - i, -overlap_z);
+			streamGrid.x[NSE::LBM_KS::NoDV+i] = TNL::min(x + i, SD.X() - 1 + overlap_x);
+			streamGrid.x[NSE::LBM_KS::NoDV+i] = TNL::max(x - i, -overlap_x);
+			streamGrid.y[NSE::LBM_KS::NoDV+i] = TNL::min(y + i, SD.Y() - 1 + overlap_y);
+			streamGrid.y[NSE::LBM_KS::NoDV+i] = TNL::max(y - i, -overlap_y);
+			streamGrid.z[NSE::LBM_KS::NoDV+i] = TNL::min(z + i, SD.Z() - 1 + overlap_z);
+			streamGrid.z[NSE::LBM_KS::NoDV+i] = TNL::max(z - i, -overlap_z);
 		}
 #else
-		for(int i = -NSE::KernelStruct::NoDV; i <= NSE::KernelStruct::NoDV; i++){
-			streamGrid.x[NSE::KernelStruct::NoDV+i] = TNL::min(x(TNL::max(x+i,0)), SD.X()-1);;
-			streamGrid.y[NSE::KernelStruct::NoDV+i] = TNL::min(x(TNL::max(y+i,0)), SD.Y()-1);;
-			streamGrid.z[NSE::KernelStruct::NoDV+i] = TNL::min(x(TNL::max(z+i,0)), SD.Z()-1);;
+		for(int i = -NSE::LBM_KS::NoDV; i <= NSE::LBM_KS::NoDV; i++){
+			streamGrid.x[NSE::LBM_KS::NoDV+i] = TNL::min(x(TNL::max(x+i,0)), SD.X()-1);;
+			streamGrid.y[NSE::LBM_KS::NoDV+i] = TNL::min(x(TNL::max(y+i,0)), SD.Y()-1);;
+			streamGrid.z[NSE::LBM_KS::NoDV+i] = TNL::min(x(TNL::max(z+i,0)), SD.Z()-1);;
 		}
 #endif
 	}
@@ -86,7 +86,7 @@ LBMKernel(typename NSE::DATA SD, typename NSE::TRAITS::idx x, typename NSE::TRAI
 	NSE::MACRO::copyQuantities(SD, KS, x, y, z);
 
 	// optional computation of the forcing term (e.g. for the non-Newtonian model)
-	NSE::MACRO::computeForcing(SD, KS, streamGrid);
+	NSE::MACRO::computeForcing<NSE::BC,NSE::DATA,NSE::LBM_KS>(SD, KS, streamGrid);
 
 	NSE::BC::preCollision(SD, KS, gi_map, streamGrid);
 	if (NSE::BC::doCollision(gi_map))
