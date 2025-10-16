@@ -3,3 +3,9 @@
 results_*/
 /.vscode/
 *.orig
+frames/
+__pycache__/
+*.py[cod]
+.DS_Store
+*.swp
+*.tmp
