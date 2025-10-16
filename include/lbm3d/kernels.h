@@ -128,7 +128,7 @@ CUDA_HOSTDEV void LBMKernel(
 	const map_t NSE_mapgi = NSE_SD.map(x, y, z);
 	const map_t ADE_mapgi = ADE_SD.map(x, y, z);
 
-	StreamGrid<int,NSE::template KernelStruct<dreal>::NoDV> streamGrid;
+	typename NSE::LBM_KS::SG streamGrid;
 	kernelInitIndices<NSE>(NSE_SD, NSE_mapgi, nproc,x,y,z, streamGrid);
 
 	// NSE part

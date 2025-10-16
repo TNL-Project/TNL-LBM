@@ -76,7 +76,7 @@ struct D3Q27_BC_All
 			xp = x = xm;
 
 		if (mapgi != GEO_OUTFLOW_RIGHT_INTERP)
-			STREAMING::streaming(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+			STREAMING::streaming(SD, KS, streamGrid);
 
 		// boundary conditions
 		switch (mapgi) {
@@ -260,11 +260,19 @@ struct D3Q27_BC_All
 
 	template <typename LBM_KS>
 	__cuda_callable__ static void
-	postCollision(DATA& SD, LBM_KS& KS, map_t mapgi, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
+	postCollision(DATA& SD, LBM_KS& KS, map_t mapgi, typename LBM_KS::SG streamGrid)
 	{
 		if (mapgi == GEO_NOTHING)
 			return;
-
+		int xp = streamGrid.x[2];
+		int x  = streamGrid.x[1];
+		int xm = streamGrid.x[0];
+		int yp = streamGrid.y[2];
+		int y  = streamGrid.y[1];
+		int ym = streamGrid.y[0];
+		int zp = streamGrid.z[2];
+		int z  = streamGrid.z[1];
+		int zm = streamGrid.z[0];
 		STREAMING::postCollisionStreaming(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 	}
 };

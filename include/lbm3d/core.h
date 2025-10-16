@@ -2,6 +2,8 @@
 
 // default
 #include "lbm_data.h"  // LBM_Data is a general template (for any Q)
+#include "d3q27/macro.h"
+#include "d3q27/bc.h"
 
 #include "d3q27/eq.h"
 #include "d3q27/eq_inv_cum.h"

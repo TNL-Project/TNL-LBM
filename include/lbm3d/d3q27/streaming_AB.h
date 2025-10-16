@@ -61,8 +61,17 @@ struct D3Q27_STREAMING
 
 	// streaming with bounce-back rule applied
 	template <typename LBM_DATA, typename LBM_KS>
-	__cuda_callable__ static void streamingBounceBack(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
+	__cuda_callable__ static void streamingBounceBack(LBM_DATA& SD, LBM_KS& KS,typename LBM_KS::SG streamGrid)
 	{
+		int xp = streamGrid.x[2];
+		int x  = streamGrid.x[1];
+		int xm = streamGrid.x[0];
+		int yp = streamGrid.y[2];
+		int y  = streamGrid.y[1];
+		int ym = streamGrid.y[0];
+		int zp = streamGrid.z[2];
+		int z  = streamGrid.z[1];
+		int zm = streamGrid.z[0];
 		KS.f[ppp] = TNL::Backend::ldg(SD.df(df_cur, mmm, xp, yp, zp));
 		KS.f[ppz] = TNL::Backend::ldg(SD.df(df_cur, mmz, xp, yp, z));
 		KS.f[ppm] = TNL::Backend::ldg(SD.df(df_cur, mmp, xp, yp, zm));
