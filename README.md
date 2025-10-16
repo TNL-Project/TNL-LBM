@@ -86,6 +86,10 @@ example, to build and run `sim_1` as in the previous example:
 
     ./sim_NSE/run sim_1 4
 
+
+Follow the [Catalyst Frame Exporter Guide](./catalyst/README.md) to generate PNG slices from ADIOS2 output for visualization and analysis.
+
+
 ## Getting involved
 
 The TNL project welcomes and encourages participation by everyone. While most of the work for TNL
