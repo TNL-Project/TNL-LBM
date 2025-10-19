@@ -35,20 +35,25 @@ __cuda_callable__ void kernelInitIndices(
 		const typename NSE::TRAITS::idx& overlap_x = SD.indexer.template getOverlap<0>();
 		const typename NSE::TRAITS::idx& overlap_y = SD.indexer.template getOverlap<1>();
 		const typename NSE::TRAITS::idx& overlap_z = SD.indexer.template getOverlap<2>();
-		for(int i = 1; i <= NSE::LBM_KS::NoDV; i++){
-			// not symmetric
-			streamGrid.x[NSE::LBM_KS::NoDV+i] = TNL::min(x + i, SD.X() - 1 + overlap_x);
-			streamGrid.x[NSE::LBM_KS::NoDV+i] = TNL::max(x - i, -overlap_x);
-			streamGrid.y[NSE::LBM_KS::NoDV+i] = TNL::min(y + i, SD.Y() - 1 + overlap_y);
-			streamGrid.y[NSE::LBM_KS::NoDV+i] = TNL::max(y - i, -overlap_y);
-			streamGrid.z[NSE::LBM_KS::NoDV+i] = TNL::min(z + i, SD.Z() - 1 + overlap_z);
-			streamGrid.z[NSE::LBM_KS::NoDV+i] = TNL::max(z - i, -overlap_z);
+		for(int i = -NSE::LBM_KS::NoDV; i <= NSE::LBM_KS::NoDV; i++){
+			streamGrid.x[NSE::LBM_KS::NoDV+i] = TNL::min(TNL::max(x+i,-overlap_x), SD.X()-1+overlap_x);
+			streamGrid.y[NSE::LBM_KS::NoDV+i] = TNL::min(TNL::max(y+i,-overlap_y), SD.Y()-1+overlap_y);
+			streamGrid.z[NSE::LBM_KS::NoDV+i] = TNL::min(TNL::max(z+i,-overlap_z), SD.Z()-1+overlap_z);
 		}
+		//for(int i = 1; i <= NSE::LBM_KS::NoDV; i++){
+		//	// not symmetric, fix ids
+		//	streamGrid.x[NSE::LBM_KS::NoDV-i] = TNL::min(x + i, SD.X() - 1 + overlap_x);
+		//	streamGrid.x[NSE::LBM_KS::NoDV+i] = TNL::max(x - i, -overlap_x);
+		//	streamGrid.y[NSE::LBM_KS::NoDV-i] = TNL::min(y + i, SD.Y() - 1 + overlap_y);
+		//	streamGrid.y[NSE::LBM_KS::NoDV+i] = TNL::max(y - i, -overlap_y);
+		//	streamGrid.z[NSE::LBM_KS::NoDV-i] = TNL::min(z + i, SD.Z() - 1 + overlap_z);
+		//	streamGrid.z[NSE::LBM_KS::NoDV+i] = TNL::max(z - i, -overlap_z);
+		//}
 #else
 		for(int i = -NSE::LBM_KS::NoDV; i <= NSE::LBM_KS::NoDV; i++){
-			streamGrid.x[NSE::LBM_KS::NoDV+i] = TNL::min(x(TNL::max(x+i,0)), SD.X()-1);;
-			streamGrid.y[NSE::LBM_KS::NoDV+i] = TNL::min(x(TNL::max(y+i,0)), SD.Y()-1);;
-			streamGrid.z[NSE::LBM_KS::NoDV+i] = TNL::min(x(TNL::max(z+i,0)), SD.Z()-1);;
+			streamGrid.x[NSE::LBM_KS::NoDV+i] = TNL::min(TNL::max(x+i,0), SD.X()-1);
+			streamGrid.y[NSE::LBM_KS::NoDV+i] = TNL::min(TNL::max(y+i,0), SD.Y()-1);
+			streamGrid.z[NSE::LBM_KS::NoDV+i] = TNL::min(TNL::max(z+i,0), SD.Z()-1);
 		}
 #endif
 	}
