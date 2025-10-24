@@ -212,11 +212,11 @@ struct D3Q27_KernelStruct
 	CUDA_HOSTDEV CONSTFUNC int flip_coord(int val){return ONE_SIZE-val-1;}
 	CUDA_HOSTDEV CONSTFUNC int flip_id(int id){return Q - id - 1;}
 
-	CUDA_HOSTDEV static Coord id_to_dv(int id){
+	CUDA_HOSTDEV CONSTFUNC Coord id_to_dv(int id){
 		return {(id / ONE_SIZE) % ONE_SIZE-NoDV,(id / ONE_SIZE) % ONE_SIZE-NoDV,id % ONE_SIZE-NoDV};
 	}
 
-	CUDA_HOSTDEV static Coord id_to_coords(int id){
+	CUDA_HOSTDEV CONSTFUNC Coord id_to_coords(int id){
 		return {id / (ONE_SIZE * ONE_SIZE),(id / ONE_SIZE) % ONE_SIZE,id % ONE_SIZE};
 	}
 
