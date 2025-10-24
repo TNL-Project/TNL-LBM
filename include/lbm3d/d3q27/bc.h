@@ -61,15 +61,15 @@ struct D3Q27_BC_All
 			KS.vz = 0;
 			return;
 		}
-		int xp = streamGrid.x[2];
-		int x  = streamGrid.x[1];
-		int xm = streamGrid.x[0];
-		int yp = streamGrid.y[2];
-		int y  = streamGrid.y[1];
-		int ym = streamGrid.y[0];
-		int zp = streamGrid.z[2];
-		int z  = streamGrid.z[1];
-		int zm = streamGrid.z[0];
+		int xp = streamGrid.x(2);
+		int x  = streamGrid.x(1);
+		int xm = streamGrid.x(0);
+		int yp = streamGrid.y(2);
+		int y  = streamGrid.y(1);
+		int ym = streamGrid.y(0);
+		int zp = streamGrid.z(2);
+		int z  = streamGrid.z(1);
+		int zm = streamGrid.z(0);
 
 		// modify pull location for streaming
 		if (mapgi == GEO_OUTFLOW_RIGHT)

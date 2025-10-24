@@ -72,7 +72,7 @@ struct D3Q7_BC_All
 
 		// modify pull location for streaming
 		if (mapgi == GEO_OUTFLOW_RIGHT)
-			for(int i = 0; i <= 2*LBM_KS::NoDV+1;i++){ streamGrid.x[i] = streamGrid.x[LBM_KS::NoDV-1]}
+			for(int i = 0; i <= 2*LBM_KS::NoDV+1;i++){ streamGrid.x(i) = streamGrid.x(LBM_KS::NoDV-1)}
 
 		STREAMING::streaming(SD, KS, streamGrid);
 

@@ -124,23 +124,21 @@ struct Coord{
 	int x,y,z;
 };
 
+//template < typename INDEX, int NoDV >
+//struct StreamGrid
+//{
+//	INDEX x[2*NoDV + 1];
+//	INDEX y[2*NoDV + 1];
+//	INDEX z[2*NoDV + 1];
+//};
+
 template < typename INDEX, int NoDV >
 struct StreamGrid
 {
-	INDEX x[2*NoDV + 1];
-	INDEX y[2*NoDV + 1];
-	INDEX z[2*NoDV + 1];
-
-	template<typename U>
-    CUDA_HOSTDEV operator StreamGrid<U, NoDV>() const {
-        StreamGrid<U,NoDV> result;
-        for (int i = 0; i < 2*NoDV + 1; ++i) {
-            result.x[i] = (double)(x[i]);
-            result.y[i] = (double)(y[i]);
-            result.z[i] = (double)(z[i]);
-        }
-        return result;
-    }
+	INDEX ids[6*NoDV+3];
+	CUDA_HOSTDEV INDEX& x(int id){return ids[id];};
+	CUDA_HOSTDEV INDEX& y(int id){return ids[2*NoDV+1+id];};
+	CUDA_HOSTDEV INDEX& z(int id){return ids[4*NoDV+2+id];};
 };
 
 // KernelStruct - D2Q9
@@ -158,16 +156,16 @@ struct D2Q9_KernelStruct
 	CUDA_HOSTDEV CONSTFUNC int flip_coord(int val){return ONE_SIZE-val-1;}
 	CUDA_HOSTDEV CONSTFUNC int flip_id(int id){return Q - id - 1;}
 
-	CUDA_HOSTDEV CONSTFUNC Coord id_to_dv(int id){
-		int x = id/ONE_SIZE;
-		int y = id%ONE_SIZE;
-		return {x-NoDV,y-NoDV,0};
+	CUDA_HOSTDEV Coord id_to_dv(int id){
+		return {id/ONE_SIZE-NoDV,id%ONE_SIZE-NoDV,0};
 	}
 
-	CUDA_HOSTDEV CONSTFUNC Coord id_to_coords(int id){
-		int x = id/ONE_SIZE;
-		int y = id%ONE_SIZE;
-		return {x,y,NoDV};
+	CUDA_HOSTDEV Coord id_to_coords(int id){
+		return {id/ONE_SIZE,id%ONE_SIZE,NoDV};
+	}
+
+	CUDA_HOSTDEV Coord id_to_flip_coords(int id){
+		return {flip_coord(id/ONE_SIZE),flip_coord(id%ONE_SIZE),NoDV};
 	}
 
 	CUDA_HOSTDEV CONSTFUNC int dv_to_id(int cx, int cy, int cz){
@@ -206,8 +204,29 @@ struct D3Q27_KernelStruct
 	static constexpr int D = 3;
 	static constexpr int Q = 27;
 	static constexpr int NoDV = 1;
+	static constexpr int ONE_SIZE = 2*NoDV + 1;
 
 	using SG = StreamGrid<int, NoDV>;
+	StreamGrid<int, NoDV> streamGrid;
+
+	CUDA_HOSTDEV CONSTFUNC int flip_coord(int val){return ONE_SIZE-val-1;}
+	CUDA_HOSTDEV CONSTFUNC int flip_id(int id){return Q - id - 1;}
+
+	CUDA_HOSTDEV static Coord id_to_dv(int id){
+		return {(id / ONE_SIZE) % ONE_SIZE-NoDV,(id / ONE_SIZE) % ONE_SIZE-NoDV,id % ONE_SIZE-NoDV};
+	}
+
+	CUDA_HOSTDEV static Coord id_to_coords(int id){
+		return {id / (ONE_SIZE * ONE_SIZE),(id / ONE_SIZE) % ONE_SIZE,id % ONE_SIZE};
+	}
+
+	CUDA_HOSTDEV CONSTFUNC int dv_to_id(int cx, int cy, int cz){
+		return (cx + NoDV) * ONE_SIZE * ONE_SIZE + (cy + NoDV) * ONE_SIZE + (cz + NoDV);
+	}
+	CUDA_HOSTDEV CONSTFUNC int coords_to_id(int cx, int cy, int cz){
+		return cx * ONE_SIZE * ONE_SIZE + cy * ONE_SIZE + cz;
+	}
+
 	REAL f[Q];
 	REAL fx = 0, fy = 0, fz = 0;
 	REAL vx = 0, vy = 0, vz = 0;
