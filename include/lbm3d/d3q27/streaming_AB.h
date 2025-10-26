@@ -24,11 +24,13 @@ struct D3Q27_STREAMING
 	__cuda_callable__ static void
 	streaming(uint8_t type, LBM_DATA& SD, LBM_KS& KS, typename LBM_KS::SG streamGrid)
 	{
+		#ifdef __CUDA_ARCH__
+		#pragma unroll
+		#endif
 		for(int id = 0; id < LBM_KS::Q; id++){
-			const int i = LBM_KS::id_to_coords(id).x;
-			const int j = LBM_KS::id_to_coords(id).y;
-			const int k = LBM_KS::id_to_coords(id).z;
-			KS.f[KS.flip_id(id)] = TNL::Backend::ldg(SD.df(type,KS.flip_id(id),streamGrid.x[i],streamGrid.y[j],streamGrid.z[k]));
+			const Coord c = LBM_KS::id_to_coords(id);
+			const int flip_id = LBM_KS::flip_id(id);
+			KS.f[flip_id] = TNL::Backend::ldg(SD.df(type,flip_id,streamGrid.x[c.x],streamGrid.y[c.y],streamGrid.z[c.z]));
 		}
 	}
 
