@@ -206,6 +206,31 @@ struct D3Q27_KernelStruct
 	static constexpr int D = 3;
 	static constexpr int Q = 27;
 	static constexpr int NoDV = 1;
+	static constexpr int ONE_SIZE = 2*NoDV + 1;
+
+	__cuda_callable__ CUDA_HOSTDEV CONSTFUNC int flip_coord(int val){return ONE_SIZE-val-1;}
+	__cuda_callable__ CUDA_HOSTDEV CONSTFUNC int flip_id(int id){return Q - id - 1;}
+
+	__cuda_callable__ CUDA_HOSTDEV CONSTFUNC Coord id_to_dv(int id){
+		int x = id / (ONE_SIZE * ONE_SIZE);
+		int y = (id / ONE_SIZE) % ONE_SIZE;
+		int z = id % ONE_SIZE;
+		return {x-NoDV,y-NoDV,z-NoDV};
+	}
+
+	__cuda_callable__ CUDA_HOSTDEV CONSTFUNC Coord id_to_coords(int id){
+		int x = id / (ONE_SIZE * ONE_SIZE);
+		int y = (id / ONE_SIZE) % ONE_SIZE;
+		int z = id % ONE_SIZE;
+		return {x,y,z};
+	}
+
+	__cuda_callable__ CUDA_HOSTDEV CONSTFUNC int dv_to_id(int cx, int cy, int cz){
+		return (cx + NoDV) * ONE_SIZE * ONE_SIZE + (cy + NoDV) * ONE_SIZE + (cz + NoDV);
+	}
+	__cuda_callable__ CUDA_HOSTDEV CONSTFUNC int coords_to_id(int cx, int cy, int cz){
+		return cx * ONE_SIZE * ONE_SIZE + cy * ONE_SIZE + cz;
+	}
 
 	using SG = StreamGrid<int, NoDV>;
 	REAL f[Q];
@@ -330,69 +355,63 @@ enum : std::uint8_t
 // NOTE: df_sync_directions must be kept consistent with this enum!
 enum : std::uint8_t
 {
-	// Q7
-	zzz = 0,
-	pzz = 1,
-	mzz = 2,
-	zpz = 3,
-	zmz = 4,
-	zzp = 5,
-	zzm = 6,
-	// +Q19
-	ppz = 7,
-	mmz = 8,
-	pmz = 9,
-	mpz = 10,
-	pzp = 11,
-	mzm = 12,
-	pzm = 13,
-	mzp = 14,
-	zpp = 15,
-	zmm = 16,
-	zpm = 17,
-	zmp = 18,
-	// +Q27
-	ppp = 19,
-	mmm = 20,
-	ppm = 21,
-	mmp = 22,
-	pmp = 23,
-	mpm = 24,
-	pmm = 25,
-	mpp = 26,
+	mmm,
+	mmz,
+	mmp,
+	mzm,
+	mzz,
+	mzp,
+	mpm,
+	mpz,
+	mpp,
+	zmm,
+	zmz,
+	zmp,
+	zzm,
+	zzz,
+	zzp,
+	zpm,
+	zpz,
+	zpp,
+	pmm,
+	pmz,
+	pmp,
+	pzm,
+	pzz,
+	pzp,
+	ppm,
+	ppz,
+	ppp
 };
 
 // array of sync directions for the MPI synchronizer
 // (indexing must correspond to the enum above)
 inline constexpr TNL::Containers::SyncDirection df_sync_directions[27] = {
-	// Q7
+	TNL::Containers::SyncDirection::BackBottomLeft,
+	TNL::Containers::SyncDirection::BackBottom,
+	TNL::Containers::SyncDirection::BackBottomRight,
+	TNL::Containers::SyncDirection::BackLeft,
+	TNL::Containers::SyncDirection::Back,
+	TNL::Containers::SyncDirection::BackRight,
+	TNL::Containers::SyncDirection::BackTopLeft,
+	TNL::Containers::SyncDirection::BackTop,
+	TNL::Containers::SyncDirection::BackTopRight,
+	TNL::Containers::SyncDirection::BottomLeft,
+	TNL::Containers::SyncDirection::Bottom,
+	TNL::Containers::SyncDirection::BottomRight,
+	TNL::Containers::SyncDirection::Left,
 	TNL::Containers::SyncDirection::None,
 	TNL::Containers::SyncDirection::Right,
-	TNL::Containers::SyncDirection::Left,
-	TNL::Containers::SyncDirection::Top,
-	TNL::Containers::SyncDirection::Bottom,
-	TNL::Containers::SyncDirection::Front,
-	TNL::Containers::SyncDirection::Back,
-	// +Q19
-	TNL::Containers::SyncDirection::TopRight,
-	TNL::Containers::SyncDirection::BottomLeft,
-	TNL::Containers::SyncDirection::BottomRight,
 	TNL::Containers::SyncDirection::TopLeft,
-	TNL::Containers::SyncDirection::FrontRight,
-	TNL::Containers::SyncDirection::BackLeft,
-	TNL::Containers::SyncDirection::BackRight,
-	TNL::Containers::SyncDirection::FrontLeft,
-	TNL::Containers::SyncDirection::FrontTop,
-	TNL::Containers::SyncDirection::BackBottom,
-	TNL::Containers::SyncDirection::BackTop,
-	TNL::Containers::SyncDirection::FrontBottom,
-	// +Q27
-	TNL::Containers::SyncDirection::FrontTopRight,
-	TNL::Containers::SyncDirection::BackBottomLeft,
-	TNL::Containers::SyncDirection::BackTopRight,
+	TNL::Containers::SyncDirection::Top,
+	TNL::Containers::SyncDirection::TopRight,
 	TNL::Containers::SyncDirection::FrontBottomLeft,
+	TNL::Containers::SyncDirection::FrontBottom,
 	TNL::Containers::SyncDirection::FrontBottomRight,
-	TNL::Containers::SyncDirection::BackTopLeft,
-	TNL::Containers::SyncDirection::BackBottomRight,
+	TNL::Containers::SyncDirection::FrontLeft,
+	TNL::Containers::SyncDirection::Front,
+	TNL::Containers::SyncDirection::FrontRight,
 	TNL::Containers::SyncDirection::FrontTopLeft,
+	TNL::Containers::SyncDirection::FrontTop,
+	TNL::Containers::SyncDirection::FrontTopRight
 };

@@ -16,37 +16,23 @@ struct D3Q27_COMMON
 	template <typename LBM_KS>
 	__cuda_callable__ static void computeDensityAndVelocity(LBM_KS& KS)
 	{
-#ifdef USE_HIGH_PRECISION_RHO
-		// src: https://en.wikipedia.org/wiki/Kahan_summation_algorithm
-		KS.rho = 0;
-		dreal c = 0;  // A running compensation for lost low-order bits.
-		for (int i = 0; i < 27; i++) {
-			dreal y = KS.f[i] - c;
-			dreal t = KS.rho + y;
-			c = (t - KS.rho) - y;
-			KS.rho = t;
+		dreal vx  = 0;
+		dreal vy  = 0;
+		dreal vz  = 0;
+		dreal rho = 0;
+		for(int id = 0; id < LBM_KS::Q; id++){
+			const int i = LBM_KS::id_to_dv(id).x;
+			const int j = LBM_KS::id_to_dv(id).y;
+			const int k = LBM_KS::id_to_dv(id).z;
+			rho += KS.f[id];
+			vx  += KS.f[id]*i;
+			vy  += KS.f[id]*j;
+			vz  += KS.f[id]*k;
 		}
-#else
-		// based on Geier 2015 Appendix J
-		KS.rho = ((((KS.f[ppp] + KS.f[mmm]) + (KS.f[pmp] + KS.f[mpm])) + ((KS.f[ppm] + KS.f[mmp]) + (KS.f[mpp] + KS.f[pmm])))
-				  + (((KS.f[zpp] + KS.f[zmm]) + (KS.f[zpm] + KS.f[zmp])) + ((KS.f[pzp] + KS.f[mzm]) + (KS.f[pzm] + KS.f[mzp]))
-					 + ((KS.f[ppz] + KS.f[mmz]) + (KS.f[pmz] + KS.f[mpz])))
-				  + ((KS.f[pzz] + KS.f[mzz]) + (KS.f[zpz] + KS.f[zmz]) + (KS.f[zzp] + KS.f[zzm])))
-			   + KS.f[zzz];
-#endif
-
-		KS.vz = ((((KS.f[ppp] - KS.f[mmm]) + (KS.f[mpp] - KS.f[pmm])) + ((KS.f[pmp] - KS.f[mpm]) + (KS.f[mmp] - KS.f[ppm])))
-				 + (((KS.f[zpp] - KS.f[zmm]) + (KS.f[zmp] - KS.f[zpm])) + ((KS.f[pzp] - KS.f[mzm]) + (KS.f[mzp] - KS.f[pzm])))
-				 + (KS.f[zzp] - KS.f[zzm]) + KS.fz * n1o2)
-			  / KS.rho;
-		KS.vx = ((((KS.f[ppp] - KS.f[mmm]) + (KS.f[pmp] - KS.f[mpm])) + ((KS.f[ppm] - KS.f[mmp]) + (KS.f[pmm] - KS.f[mpp])))
-				 + (((KS.f[pzp] - KS.f[mzm]) + (KS.f[pzm] - KS.f[mzp])) + ((KS.f[ppz] - KS.f[mmz]) + (KS.f[pmz] - KS.f[mpz])))
-				 + (KS.f[pzz] - KS.f[mzz]) + KS.fx * n1o2)
-			  / KS.rho;
-		KS.vy = ((((KS.f[ppp] - KS.f[mmm]) + (KS.f[ppm] - KS.f[mmp])) + ((KS.f[mpp] - KS.f[pmm]) + (KS.f[mpm] - KS.f[pmp])))
-				 + (((KS.f[ppz] - KS.f[mmz]) + (KS.f[mpz] - KS.f[pmz])) + ((KS.f[zpp] - KS.f[zmm]) + (KS.f[zpm] - KS.f[zmp])))
-				 + (KS.f[zpz] - KS.f[zmz]) + KS.fy * n1o2)
-			  / KS.rho;
+		KS.rho = rho;
+		KS.vx = vx/rho + KS.fx/2;
+		KS.vy = vy/rho + KS.fy/2;
+		KS.vz = vz/rho + KS.fz/2;
 	}
 
 	template <typename LBM_KS>

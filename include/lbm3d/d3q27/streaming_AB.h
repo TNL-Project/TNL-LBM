@@ -24,42 +24,12 @@ struct D3Q27_STREAMING
 	__cuda_callable__ static void
 	streaming(uint8_t type, LBM_DATA& SD, LBM_KS& KS, typename LBM_KS::SG streamGrid)
 	{
-		int xp = streamGrid.x[2];
-		int x  = streamGrid.x[1];
-		int xm = streamGrid.x[0];
-		int yp = streamGrid.y[2];
-		int y  = streamGrid.y[1];
-		int ym = streamGrid.y[0];
-		int zp = streamGrid.z[2];
-		int z  = streamGrid.z[1];
-		int zm = streamGrid.z[0];
-		KS.f[mmm] = TNL::Backend::ldg(SD.df(type, mmm, xp, yp, zp));
-		KS.f[mmz] = TNL::Backend::ldg(SD.df(type, mmz, xp, yp, z));
-		KS.f[mmp] = TNL::Backend::ldg(SD.df(type, mmp, xp, yp, zm));
-		KS.f[mzm] = TNL::Backend::ldg(SD.df(type, mzm, xp, y, zp));
-		KS.f[mzz] = TNL::Backend::ldg(SD.df(type, mzz, xp, y, z));
-		KS.f[mzp] = TNL::Backend::ldg(SD.df(type, mzp, xp, y, zm));
-		KS.f[mpm] = TNL::Backend::ldg(SD.df(type, mpm, xp, ym, zp));
-		KS.f[mpz] = TNL::Backend::ldg(SD.df(type, mpz, xp, ym, z));
-		KS.f[mpp] = TNL::Backend::ldg(SD.df(type, mpp, xp, ym, zm));
-		KS.f[zmm] = TNL::Backend::ldg(SD.df(type, zmm, x, yp, zp));
-		KS.f[zmz] = TNL::Backend::ldg(SD.df(type, zmz, x, yp, z));
-		KS.f[zmp] = TNL::Backend::ldg(SD.df(type, zmp, x, yp, zm));
-		KS.f[zzm] = TNL::Backend::ldg(SD.df(type, zzm, x, y, zp));
-		KS.f[zzz] = TNL::Backend::ldg(SD.df(type, zzz, x, y, z));
-		KS.f[zzp] = TNL::Backend::ldg(SD.df(type, zzp, x, y, zm));
-		KS.f[zpm] = TNL::Backend::ldg(SD.df(type, zpm, x, ym, zp));
-		KS.f[zpz] = TNL::Backend::ldg(SD.df(type, zpz, x, ym, z));
-		KS.f[zpp] = TNL::Backend::ldg(SD.df(type, zpp, x, ym, zm));
-		KS.f[pmm] = TNL::Backend::ldg(SD.df(type, pmm, xm, yp, zp));
-		KS.f[pmz] = TNL::Backend::ldg(SD.df(type, pmz, xm, yp, z));
-		KS.f[pmp] = TNL::Backend::ldg(SD.df(type, pmp, xm, yp, zm));
-		KS.f[pzm] = TNL::Backend::ldg(SD.df(type, pzm, xm, y, zp));
-		KS.f[pzz] = TNL::Backend::ldg(SD.df(type, pzz, xm, y, z));
-		KS.f[pzp] = TNL::Backend::ldg(SD.df(type, pzp, xm, y, zm));
-		KS.f[ppm] = TNL::Backend::ldg(SD.df(type, ppm, xm, ym, zp));
-		KS.f[ppz] = TNL::Backend::ldg(SD.df(type, ppz, xm, ym, z));
-		KS.f[ppp] = TNL::Backend::ldg(SD.df(type, ppp, xm, ym, zm));
+		for(int id = 0; id < LBM_KS::Q; id++){
+			const int i = LBM_KS::id_to_coords(id).x;
+			const int j = LBM_KS::id_to_coords(id).y;
+			const int k = LBM_KS::id_to_coords(id).z;
+			KS.f[KS.flip_id(id)] = TNL::Backend::ldg(SD.df(type,KS.flip_id(id),streamGrid.x[i],streamGrid.y[j],streamGrid.z[k]));
+		}
 	}
 
 	template <typename LBM_DATA, typename LBM_KS>
@@ -72,42 +42,12 @@ struct D3Q27_STREAMING
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void streamingBounceBack(LBM_DATA& SD, LBM_KS& KS,typename LBM_KS::SG streamGrid)
 	{
-		int xp = streamGrid.x[2];
-		int x  = streamGrid.x[1];
-		int xm = streamGrid.x[0];
-		int yp = streamGrid.y[2];
-		int y  = streamGrid.y[1];
-		int ym = streamGrid.y[0];
-		int zp = streamGrid.z[2];
-		int z  = streamGrid.z[1];
-		int zm = streamGrid.z[0];
-		KS.f[ppp] = TNL::Backend::ldg(SD.df(df_cur, mmm, xp, yp, zp));
-		KS.f[ppz] = TNL::Backend::ldg(SD.df(df_cur, mmz, xp, yp, z));
-		KS.f[ppm] = TNL::Backend::ldg(SD.df(df_cur, mmp, xp, yp, zm));
-		KS.f[pzp] = TNL::Backend::ldg(SD.df(df_cur, mzm, xp, y, zp));
-		KS.f[pzz] = TNL::Backend::ldg(SD.df(df_cur, mzz, xp, y, z));
-		KS.f[pzm] = TNL::Backend::ldg(SD.df(df_cur, mzp, xp, y, zm));
-		KS.f[pmp] = TNL::Backend::ldg(SD.df(df_cur, mpm, xp, ym, zp));
-		KS.f[pmz] = TNL::Backend::ldg(SD.df(df_cur, mpz, xp, ym, z));
-		KS.f[pmm] = TNL::Backend::ldg(SD.df(df_cur, mpp, xp, ym, zm));
-		KS.f[zpp] = TNL::Backend::ldg(SD.df(df_cur, zmm, x, yp, zp));
-		KS.f[zpz] = TNL::Backend::ldg(SD.df(df_cur, zmz, x, yp, z));
-		KS.f[zpm] = TNL::Backend::ldg(SD.df(df_cur, zmp, x, yp, zm));
-		KS.f[zzp] = TNL::Backend::ldg(SD.df(df_cur, zzm, x, y, zp));
-		KS.f[zzz] = TNL::Backend::ldg(SD.df(df_cur, zzz, x, y, z));
-		KS.f[zzm] = TNL::Backend::ldg(SD.df(df_cur, zzp, x, y, zm));
-		KS.f[zmp] = TNL::Backend::ldg(SD.df(df_cur, zpm, x, ym, zp));
-		KS.f[zmz] = TNL::Backend::ldg(SD.df(df_cur, zpz, x, ym, z));
-		KS.f[zmm] = TNL::Backend::ldg(SD.df(df_cur, zpp, x, ym, zm));
-		KS.f[mpp] = TNL::Backend::ldg(SD.df(df_cur, pmm, xm, yp, zp));
-		KS.f[mpz] = TNL::Backend::ldg(SD.df(df_cur, pmz, xm, yp, z));
-		KS.f[mpm] = TNL::Backend::ldg(SD.df(df_cur, pmp, xm, yp, zm));
-		KS.f[mzp] = TNL::Backend::ldg(SD.df(df_cur, pzm, xm, y, zp));
-		KS.f[mzz] = TNL::Backend::ldg(SD.df(df_cur, pzz, xm, y, z));
-		KS.f[mzm] = TNL::Backend::ldg(SD.df(df_cur, pzp, xm, y, zm));
-		KS.f[mmp] = TNL::Backend::ldg(SD.df(df_cur, ppm, xm, ym, zp));
-		KS.f[mmz] = TNL::Backend::ldg(SD.df(df_cur, ppz, xm, ym, z));
-		KS.f[mmm] = TNL::Backend::ldg(SD.df(df_cur, ppp, xm, ym, zm));
+		for(int id = 0; id < LBM_KS::Q; id++){
+			const int i = LBM_KS::id_to_coords(id).x;
+			const int j = LBM_KS::id_to_coords(id).y;
+			const int k = LBM_KS::id_to_coords(id).z;
+			KS.f[id] = TNL::Backend::ldg(SD.df(df_cur,KS.flip_id(id),streamGrid.x[i],streamGrid.y[j],streamGrid.z[k]));
+		}
 	}
 
 	template <typename LBM_DATA, typename LBM_KS>
