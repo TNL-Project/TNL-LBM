@@ -243,6 +243,47 @@ struct D3Q27_KernelStruct
 #endif
 };
 
+// KernelStruct - D3Q27
+template <typename REAL>
+struct D3Q27_KernelStruct
+{
+	static constexpr int D = 3;
+	static constexpr int Q = 343;
+	static constexpr int NoDV = 3;
+	static constexpr int ONE_SIZE = 2*NoDV + 1;
+
+	__cuda_callable__ CONSTFUNC int flip_coord(int val){return ONE_SIZE-val-1;}
+	__cuda_callable__ CONSTFUNC int flip_id(int id){return Q - id - 1;}
+
+	__cuda_callable__ CONSTFUNC Coord id_to_dv(int id){
+		int x = id / (ONE_SIZE * ONE_SIZE);
+		int y = (id / ONE_SIZE) % ONE_SIZE;
+		int z = id % ONE_SIZE;
+		return {x-NoDV,y-NoDV,z-NoDV};
+	}
+
+	__cuda_callable__ CONSTFUNC Coord id_to_coords(int id){
+		int x = id / (ONE_SIZE * ONE_SIZE);
+		int y = (id / ONE_SIZE) % ONE_SIZE;
+		int z = id % ONE_SIZE;
+		return {x,y,z};
+	}
+
+	__cuda_callable__ CONSTFUNC int dv_to_id(int cx, int cy, int cz){
+		return (cx + NoDV) * ONE_SIZE * ONE_SIZE + (cy + NoDV) * ONE_SIZE + (cz + NoDV);
+	}
+	__cuda_callable__ CONSTFUNC int coords_to_id(int cx, int cy, int cz){
+		return cx * ONE_SIZE * ONE_SIZE + cy * ONE_SIZE + cz;
+	}
+
+	using SG = StreamGrid<int, NoDV>;
+
+	REAL f[Q];
+	REAL fx = 0, fy = 0, fz = 0;
+	REAL vx = 0, vy = 0, vz = 0;
+	REAL rho = 1.0, lbmViscosity = 1.0;
+};
+
 template <
 	typename _TRAITS,
 	template <typename> class _KERNEL_STRUCT,
@@ -341,68 +382,4 @@ enum : std::uint8_t
 	mm = 6,
 	pm = 7,
 	mp = 8,
-};
-
-// NOTE: df_sync_directions must be kept consistent with this enum!
-enum : std::uint8_t
-{
-	mmm,
-	mmz,
-	mmp,
-	mzm,
-	mzz,
-	mzp,
-	mpm,
-	mpz,
-	mpp,
-	zmm,
-	zmz,
-	zmp,
-	zzm,
-	zzz,
-	zzp,
-	zpm,
-	zpz,
-	zpp,
-	pmm,
-	pmz,
-	pmp,
-	pzm,
-	pzz,
-	pzp,
-	ppm,
-	ppz,
-	ppp
-};
-
-// array of sync directions for the MPI synchronizer
-// (indexing must correspond to the enum above)
-inline constexpr TNL::Containers::SyncDirection df_sync_directions[27] = {
-	TNL::Containers::SyncDirection::BackBottomLeft,
-	TNL::Containers::SyncDirection::BackBottom,
-	TNL::Containers::SyncDirection::BackBottomRight,
-	TNL::Containers::SyncDirection::BackLeft,
-	TNL::Containers::SyncDirection::Back,
-	TNL::Containers::SyncDirection::BackRight,
-	TNL::Containers::SyncDirection::BackTopLeft,
-	TNL::Containers::SyncDirection::BackTop,
-	TNL::Containers::SyncDirection::BackTopRight,
-	TNL::Containers::SyncDirection::BottomLeft,
-	TNL::Containers::SyncDirection::Bottom,
-	TNL::Containers::SyncDirection::BottomRight,
-	TNL::Containers::SyncDirection::Left,
-	TNL::Containers::SyncDirection::None,
-	TNL::Containers::SyncDirection::Right,
-	TNL::Containers::SyncDirection::TopLeft,
-	TNL::Containers::SyncDirection::Top,
-	TNL::Containers::SyncDirection::TopRight,
-	TNL::Containers::SyncDirection::FrontBottomLeft,
-	TNL::Containers::SyncDirection::FrontBottom,
-	TNL::Containers::SyncDirection::FrontBottomRight,
-	TNL::Containers::SyncDirection::FrontLeft,
-	TNL::Containers::SyncDirection::Front,
-	TNL::Containers::SyncDirection::FrontRight,
-	TNL::Containers::SyncDirection::FrontTopLeft,
-	TNL::Containers::SyncDirection::FrontTop,
-	TNL::Containers::SyncDirection::FrontTopRight
 };

@@ -1,6 +1,8 @@
 #include <argparse/argparse.hpp>
 #include <utility>
 
+// As of now, enum and sync direction are specific for different models and need to be included before core!!!
+#include "lbm3d/d3q27/defs.h"
 #include "lbm3d/core.h"
 
 template <typename NSE>
