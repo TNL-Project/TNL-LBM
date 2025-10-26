@@ -206,50 +206,31 @@ struct D3Q27_KernelStruct
 	static constexpr int NoDV = 1;
 	static constexpr int ONE_SIZE = 2*NoDV + 1;
 
-	__cuda_callable__ CUDA_HOSTDEV CONSTFUNC int flip_coord(int val){return ONE_SIZE-val-1;}
-	__cuda_callable__ CUDA_HOSTDEV CONSTFUNC int flip_id(int id){return Q - id - 1;}
+	__cuda_callable__ CONSTFUNC int flip_coord(int val){return ONE_SIZE-val-1;}
+	__cuda_callable__ CONSTFUNC int flip_id(int id){return Q - id - 1;}
 
-	__cuda_callable__ CUDA_HOSTDEV CONSTFUNC Coord id_to_dv(int id){
+	__cuda_callable__ CONSTFUNC Coord id_to_dv(int id){
 		int x = id / (ONE_SIZE * ONE_SIZE);
 		int y = (id / ONE_SIZE) % ONE_SIZE;
 		int z = id % ONE_SIZE;
 		return {x-NoDV,y-NoDV,z-NoDV};
 	}
 
-	__cuda_callable__ CUDA_HOSTDEV CONSTFUNC Coord id_to_coords(int id){
+	__cuda_callable__ CONSTFUNC Coord id_to_coords(int id){
 		int x = id / (ONE_SIZE * ONE_SIZE);
 		int y = (id / ONE_SIZE) % ONE_SIZE;
 		int z = id % ONE_SIZE;
 		return {x,y,z};
 	}
 
-	__cuda_callable__ CUDA_HOSTDEV CONSTFUNC int dv_to_id(int cx, int cy, int cz){
+	__cuda_callable__ CONSTFUNC int dv_to_id(int cx, int cy, int cz){
 		return (cx + NoDV) * ONE_SIZE * ONE_SIZE + (cy + NoDV) * ONE_SIZE + (cz + NoDV);
 	}
-	__cuda_callable__ CUDA_HOSTDEV CONSTFUNC int coords_to_id(int cx, int cy, int cz){
+	__cuda_callable__ CONSTFUNC int coords_to_id(int cx, int cy, int cz){
 		return cx * ONE_SIZE * ONE_SIZE + cy * ONE_SIZE + cz;
 	}
 
 	using SG = StreamGrid<int, NoDV>;
-	StreamGrid<int, NoDV> streamGrid;
-
-	CUDA_HOSTDEV CONSTFUNC int flip_coord(int val){return ONE_SIZE-val-1;}
-	CUDA_HOSTDEV CONSTFUNC int flip_id(int id){return Q - id - 1;}
-
-	CUDA_HOSTDEV CONSTFUNC Coord id_to_dv(int id){
-		return {(id / ONE_SIZE) % ONE_SIZE-NoDV,(id / ONE_SIZE) % ONE_SIZE-NoDV,id % ONE_SIZE-NoDV};
-	}
-
-	CUDA_HOSTDEV CONSTFUNC Coord id_to_coords(int id){
-		return {id / (ONE_SIZE * ONE_SIZE),(id / ONE_SIZE) % ONE_SIZE,id % ONE_SIZE};
-	}
-
-	CUDA_HOSTDEV CONSTFUNC int dv_to_id(int cx, int cy, int cz){
-		return (cx + NoDV) * ONE_SIZE * ONE_SIZE + (cy + NoDV) * ONE_SIZE + (cz + NoDV);
-	}
-	CUDA_HOSTDEV CONSTFUNC int coords_to_id(int cx, int cy, int cz){
-		return cx * ONE_SIZE * ONE_SIZE + cy * ONE_SIZE + cz;
-	}
 
 	REAL f[Q];
 	REAL fx = 0, fy = 0, fz = 0;
