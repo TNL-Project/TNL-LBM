@@ -228,9 +228,9 @@ void LBM_BLOCK<CONFIG>::setEquilibrium(real rho, real vx, real vy, real vz)
 
 	// NOTE: it is important to reset *all* lattice sites (i.e. including ghost layers) when using the A-A pattern
 	// (because GEO_INFLOW and GEO_OUTFLOW_EQ access the ghost layer in streaming)
-	const int overlap_x = local_df.template getOverlap<0>();
-	const int overlap_y = local_df.template getOverlap<1>();
-	const int overlap_z = local_df.template getOverlap<2>();
+	const int overlap_x = local_df.template getOverlap<1>();
+	const int overlap_y = local_df.template getOverlap<2>();
+	const int overlap_z = local_df.template getOverlap<3>();
 	const idx3d begin = {-overlap_y, -overlap_z, -overlap_x};
 	const idx3d end = {local.y() + overlap_y, local.z() + overlap_z, local.x() + overlap_x};
 
