@@ -381,6 +381,7 @@ void Lagrange3D<LBM>::constructMatricesCPU()
 template <typename LBM>
 void Lagrange3D<LBM>::allocateMatricesGPU()
 {
+#ifdef USE_CUDA
 	idx m = LL.size();													   // number of lagrangian nodes
 	idx n = lbm.lat.global.x() * lbm.lat.global.y() * lbm.lat.global.z();  // number of eulerian nodes
 
@@ -403,14 +404,11 @@ void Lagrange3D<LBM>::allocateMatricesGPU()
 
 	// Create vectors for the solution of the linear system
 	for (int k = 0; k < 3; k++) {
-#ifdef USE_CUDA
 		ws_tnl_dx[k].setSize(m);
 		ws_tnl_db[k].setSize(m);
-#endif
 	}
 
-// Zero-initialize x1, x2, x3
-#ifdef USE_CUDA
+	// Zero-initialize x1, x2, x3
 	for (int k = 0; k < 3; k++)
 		ws_tnl_dx[k].setValue(0);
 #endif
@@ -419,6 +417,7 @@ void Lagrange3D<LBM>::allocateMatricesGPU()
 template <typename LBM>
 void Lagrange3D<LBM>::constructMatricesGPU()
 {
+#ifdef USE_CUDA
 	auto ibm_logger = spdlog::get("ibm");
 
 	// Start timer to measure WuShu construction time
@@ -463,11 +462,11 @@ void Lagrange3D<LBM>::constructMatricesGPU()
 		dLL_lat.getConstView(),
 		ws_tnl_dM.getView(),
 		lbm.blocks.front().local,
-#ifdef HAVE_MPI
+	#ifdef HAVE_MPI
 		lbm.blocks.front().dmap.getConstLocalView(),
-#else
+	#else
 		lbm.blocks.front().dmap.getConstView(),
-#endif
+	#endif
 		diracDeltaTypeEL
 	);
 
@@ -548,6 +547,7 @@ void Lagrange3D<LBM>::constructMatricesGPU()
 	j["time_matrixWrite"] = time_matrixWrite;
 	j["time_matrixCopy"] = time_matrixCopy;
 	ibm_logger->info("constructMatricesJSON: {}", j.dump());
+#endif
 }
 
 template <typename Matrix, typename Vector>
@@ -613,6 +613,7 @@ void Lagrange3D<LBM>::computeForces(real time)
 	idx m = LL.size();
 	idx n = lbm.lat.global.x() * lbm.lat.global.y() * lbm.lat.global.z();
 
+#ifdef USE_CUDA
 	const auto drho = dmacroVector(MACRO::e_rho);
 	const auto dvx = dmacroVector(MACRO::e_vx);
 	const auto dvy = dmacroVector(MACRO::e_vy);
@@ -620,6 +621,7 @@ void Lagrange3D<LBM>::computeForces(real time)
 	auto dfx = dmacroVector(MACRO::e_fx);
 	auto dfy = dmacroVector(MACRO::e_fy);
 	auto dfz = dmacroVector(MACRO::e_fz);
+#endif
 
 	const auto hrho = hmacroVector(MACRO::e_rho);
 	const auto hvx = hmacroVector(MACRO::e_vx);
@@ -844,12 +846,19 @@ void Lagrange3D<LBM>::computeForces(real time)
 					}
 				};
 				TNL::Algorithms::parallelFor<TNL::Devices::Host>((idx) 0, n, kernel);
+#ifdef USE_CUDA
 				// copy forces to the device
 				dfx = hfx;
 				dfy = hfy;
 				dfz = hfz;
+#endif
 				break;
 			}
+
+#ifndef USE_CUDA
+		default:
+			throw std::runtime_error("unsupported compute variant");
+#endif
 	}
 	timer.stop();
 

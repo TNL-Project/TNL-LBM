@@ -268,8 +268,8 @@ struct State_NSE_ADE : State<NSE>
 		}
 	#ifdef HAVE_MPI
 		// TODO: overlap computation with synchronization, just like above
-		nse.synchronizeDFsDevice(output_df);
-		ade.synchronizeDFsDevice(output_df);
+		nse.synchronizeDFsAndMacroDevice(output_df);
+		ade.synchronizeDFsAndMacroDevice(output_df);
 	#endif
 #endif
 

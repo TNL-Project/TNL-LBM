@@ -1122,10 +1122,12 @@ void State<NSE>::SimUpdate()
 	}
 	timer_compute.stop();
 	#ifdef HAVE_MPI
-	// TODO: overlap computation with synchronization, just like above
-	timer_wait_communication.start();
-	nse.synchronizeDFsAndMacroDevice(output_df);
-	timer_wait_communication.stop();
+	if (nse.nproc > 1) {
+		// TODO: overlap computation with synchronization, just like above
+		timer_wait_communication.start();
+		nse.synchronizeDFsAndMacroDevice(output_df);
+		timer_wait_communication.stop();
+	}
 	#endif
 #endif
 
