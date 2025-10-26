@@ -17,7 +17,7 @@ struct D3Q27_STREAMING
 	{
 		// no streaming actually, write to the (x,y,z) site
 		for (int i = 0; i < 27; i++)
-			SD.df(df_out, i, streamGrid.x[LBM_KS::NoDV], streamGrid.y[LBM_KS::NoDV], streamGrid.z[LBM_KS::NoDV]) = KS.f[i];
+			SD.df(df_out, i, streamGrid.x(LBM_KS::NoDV), streamGrid.y(LBM_KS::NoDV), streamGrid.z(LBM_KS::NoDV)) = KS.f[i];
 	}
 
 	template <typename LBM_DATA, typename LBM_KS>
@@ -30,7 +30,7 @@ struct D3Q27_STREAMING
 		for(int id = 0; id < LBM_KS::Q; id++){
 			const Coord c = LBM_KS::id_to_coords(id);
 			const int flip_id = LBM_KS::flip_id(id);
-			KS.f[flip_id] = TNL::Backend::ldg(SD.df(type,flip_id,streamGrid.x[c.x],streamGrid.y[c.y],streamGrid.z[c.z]));
+			KS.f[flip_id] = TNL::Backend::ldg(SD.df(type,flip_id,streamGrid.x(c.x),streamGrid.y(c.y),streamGrid.z(c.z)));
 		}
 	}
 
@@ -44,13 +44,14 @@ struct D3Q27_STREAMING
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void streamingBounceBack(LBM_DATA& SD, LBM_KS& KS,typename LBM_KS::SG streamGrid)
 	{
+		#ifdef __CUDA_ARCH__
+		#pragma unroll
+		#endif
 		for(int id = 0; id < LBM_KS::Q; id++){
-			const int i = LBM_KS::id_to_coords(id).x;
-			const int j = LBM_KS::id_to_coords(id).y;
-			const int k = LBM_KS::id_to_coords(id).z;
-			KS.f[id] = TNL::Backend::ldg(SD.df(df_cur,KS.flip_id(id),streamGrid.x[i],streamGrid.y[j],streamGrid.z[k]));
-		}
-	}
+			const Coord c = LBM_KS::id_to_coords(id);
+			const int flip_id = LBM_KS::flip_id(id);
+			KS.f[id] = TNL::Backend::ldg(SD.df(df_cur,flip_id,streamGrid.x(c.x),streamGrid.y(c.y),streamGrid.z(c.z)));
+		}}
 
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void streamingRho(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)

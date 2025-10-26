@@ -15,9 +15,9 @@ __cuda_callable__ void kernelInitIndices(
 {
 	if (NSE::BC::isPeriodic(map)) {
 		for(int i = -NSE::LBM_KS::NoDV; i <= NSE::LBM_KS::NoDV; i++){
-			streamGrid.x[NSE::LBM_KS::NoDV+i] = (x+i+SD.X())%SD.X();
-			streamGrid.y[NSE::LBM_KS::NoDV+i] = (y+i+SD.Y())%SD.Y();
-			streamGrid.z[NSE::LBM_KS::NoDV+i] = (z+i+SD.Z())%SD.Z();
+			streamGrid.x(NSE::LBM_KS::NoDV+i) = (x+i+SD.X())%SD.X();
+			streamGrid.y(NSE::LBM_KS::NoDV+i) = (y+i+SD.Y())%SD.Y();
+			streamGrid.z(NSE::LBM_KS::NoDV+i) = (z+i+SD.Z())%SD.Z();
 		}
 		// TODO: use nproc_y and nproc_z
 		// TODO: use nproc

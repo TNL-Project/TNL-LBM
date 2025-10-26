@@ -15,15 +15,15 @@ struct D3Q7_STREAMING
 	__cuda_callable__ static void
 	postCollisionStreaming(LBM_DATA& SD, LBM_KS& KS, typename LBM_KS::SG streamGrid)
 	{
-		const int xp = streamGrid.x[2];
-		const int x  = streamGrid.x[1];
-		const int xm = streamGrid.x[0];
-		const int yp = streamGrid.y[2];
-		const int y  = streamGrid.y[1];
-		const int ym = streamGrid.y[0];
-		const int zp = streamGrid.z[2];
-		const int z  = streamGrid.z[1];
-		const int zm = streamGrid.z[0];
+		const int xp = streamGrid.x(2);
+		const int x  = streamGrid.x(1);
+		const int xm = streamGrid.x(0);
+		const int yp = streamGrid.y(2);
+		const int y  = streamGrid.y(1);
+		const int ym = streamGrid.y(0);
+		const int zp = streamGrid.z(2);
+		const int z  = streamGrid.z(1);
+		const int zm = streamGrid.z(0);
 		if (SD.even_iter) {
 			// write to the same lattice site, but the opposite DF direction
 			SD.df(df_cur, mzz, x, y, z) = KS.f[pzz];
@@ -49,15 +49,15 @@ struct D3Q7_STREAMING
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void streaming(LBM_DATA& SD, LBM_KS& KS, typename LBM_KS::SG streamGrid)
 	{
-		const int xp = streamGrid.x[2];
-		const int x  = streamGrid.x[1];
-		const int xm = streamGrid.x[0];
-		const int yp = streamGrid.y[2];
-		const int y  = streamGrid.y[1];
-		const int ym = streamGrid.y[0];
-		const int zp = streamGrid.z[2];
-		const int z  = streamGrid.z[1];
-		const int zm = streamGrid.z[0];
+		const int xp = streamGrid.x(2);
+		const int x  = streamGrid.x(1);
+		const int xm = streamGrid.x(0);
+		const int yp = streamGrid.y(2);
+		const int y  = streamGrid.y(1);
+		const int ym = streamGrid.y(0);
+		const int zp = streamGrid.z(2);
+		const int z  = streamGrid.z(1);
+		const int zm = streamGrid.z(0);
 		if (SD.even_iter) {
 			// read from the same lattice site, same DF direction
 			for (int i = 0; i < 7; i++)

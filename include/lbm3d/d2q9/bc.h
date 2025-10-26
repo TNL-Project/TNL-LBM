@@ -59,7 +59,7 @@ struct D2Q9_BC_All
 
 		// modify pull location for streaming
 		if (mapgi == GEO_OUTFLOW_RIGHT)
-			streamGrid.x[LBM_KS::NoDV+1] = streamGrid.x[LBM_KS::NoDV] = streamGrid.x[LBM_KS::NoDV-1];
+			streamGrid.x(LBM_KS::NoDV+1) = streamGrid.x(LBM_KS::NoDV) = streamGrid.x(LBM_KS::NoDV-1);
 
 		if (mapgi != GEO_OUTFLOW_RIGHT_INTERP)
 			STREAMING::streaming(SD, KS, streamGrid);
@@ -67,7 +67,7 @@ struct D2Q9_BC_All
 		// boundary conditions
 		switch (mapgi) {
 			case GEO_INFLOW:
-				SD.inflow(KS, streamGrid.x[LBM_KS::NoDV], streamGrid.y[LBM_KS::NoDV],streamGrid.z[LBM_KS::NoDV]);
+				SD.inflow(KS, streamGrid.x(LBM_KS::NoDV), streamGrid.y(LBM_KS::NoDV),streamGrid.z(LBM_KS::NoDV));
 				KS.rho = 1;
 				COLL::setEquilibrium(KS);
 				break;
