@@ -14,6 +14,9 @@ __cuda_callable__ void kernelInitIndices(
 )
 {
 	if (NSE::BC::isPeriodic(map)) {
+		#ifdef __CUDA_ARCH__
+		#pragma unroll
+		#endif
 		for(int i = -NSE::LBM_KS::NoDV; i <= NSE::LBM_KS::NoDV; i++){
 			streamGrid.x(NSE::LBM_KS::NoDV+i) = (x+i+SD.X())%SD.X();
 			streamGrid.y(NSE::LBM_KS::NoDV+i) = (y+i+SD.Y())%SD.Y();
@@ -38,6 +41,9 @@ __cuda_callable__ void kernelInitIndices(
 		streamGrid.x(NSE::LBM_KS::NoDV) = x;
 		streamGrid.y(NSE::LBM_KS::NoDV) = y;
 		streamGrid.z(NSE::LBM_KS::NoDV) = z;
+		#ifdef __CUDA_ARCH__
+		#pragma unroll
+		#endif
 		for(int i = 1; i <= NSE::LBM_KS::NoDV; i++){
 			streamGrid.x(NSE::LBM_KS::NoDV+i) = TNL::min(x + i, SD.X() - 1 + overlap_x);
 			streamGrid.x(NSE::LBM_KS::NoDV-i) = TNL::max(x - i, -overlap_x);
@@ -50,6 +56,9 @@ __cuda_callable__ void kernelInitIndices(
 		streamGrid.x(NSE::LBM_KS::NoDV) = x;
 		streamGrid.y(NSE::LBM_KS::NoDV) = y;
 		streamGrid.z(NSE::LBM_KS::NoDV) = z;
+		#ifdef __CUDA_ARCH__
+		#pragma unroll
+		#endif
 		for(int i = 1; i <= NSE::LBM_KS::NoDV; i++){
 			streamGrid.x(NSE::LBM_KS::NoDV+i) = TNL::min(x + i, SD.X() - 1);
 			streamGrid.x(NSE::LBM_KS::NoDV-i) = TNL::max(x - i, 0);

@@ -2,6 +2,7 @@
 
 #include "lbm3d/defs.h"
 #include "lbm_common/ciselnik.h"
+#include "../defs.h"
 
 template <typename T_TRAITS, typename T_EQ>
 struct D3Q27_COMMON
@@ -16,23 +17,24 @@ struct D3Q27_COMMON
 	template <typename LBM_KS>
 	__cuda_callable__ static void computeDensityAndVelocity(LBM_KS& KS)
 	{
-		dreal vx  = 0;
-		dreal vy  = 0;
-		dreal vz  = 0;
-		dreal rho = 0;
+		dreal vx  = 0.;
+		dreal vy  = 0.;
+		dreal vz  = 0.;
+		dreal rho = 0.;
+		#ifdef __CUDA_ARCH__
+		#pragma unroll
+		#endif
 		for(int id = 0; id < LBM_KS::Q; id++){
-			const int i = LBM_KS::id_to_dv(id).x;
-			const int j = LBM_KS::id_to_dv(id).y;
-			const int k = LBM_KS::id_to_dv(id).z;
+			const Coord c = LBM_KS::id_to_dv(id);
 			rho += KS.f[id];
-			vx  += KS.f[id]*i;
-			vy  += KS.f[id]*j;
-			vz  += KS.f[id]*k;
+			vx  += KS.f[id]*c.x;
+			vy  += KS.f[id]*c.y;
+			vz  += KS.f[id]*c.z;
 		}
 		KS.rho = rho;
-		KS.vx = vx/rho + KS.fx/2;
-		KS.vy = vy/rho + KS.fy/2;
-		KS.vz = vz/rho + KS.fz/2;
+		KS.vx  = vx/rho + KS.fx/2;
+		KS.vy  = vy/rho + KS.fy/2;
+		KS.vz  = vz/rho + KS.fz/2;
 	}
 
 	template <typename LBM_KS>

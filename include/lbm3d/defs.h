@@ -124,14 +124,6 @@ struct Coord{
 	int x,y,z;
 };
 
-//template < typename INDEX, int NoDV >
-//struct StreamGrid
-//{
-//	INDEX x[2*NoDV + 1];
-//	INDEX y[2*NoDV + 1];
-//	INDEX z[2*NoDV + 1];
-//};
-
 template < typename INDEX, int NoDV >
 struct StreamGrid
 {
