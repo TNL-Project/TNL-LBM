@@ -1,36 +1,6 @@
+#pragma once
 #include "../defs.h"
 
-// NOTE: df_sync_directions must be kept consistent with this enum!
-enum : std::uint8_t
-{
-	mmm,
-	mmz,
-	mmp,
-	mzm,
-	mzz,
-	mzp,
-	mpm,
-	mpz,
-	mpp,
-	zmm,
-	zmz,
-	zmp,
-	zzm,
-	zzz,
-	zzp,
-	zpm,
-	zpz,
-	zpp,
-	pmm,
-	pmz,
-	pmp,
-	pzm,
-	pzz,
-	pzp,
-	ppm,
-	ppz,
-	ppp
-};
 
 // array of sync directions for the MPI synchronizer
 // (indexing must correspond to the enum above)

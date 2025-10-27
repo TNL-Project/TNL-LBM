@@ -61,15 +61,15 @@ struct D3Q27_BC_All
 			KS.vz = 0;
 			return;
 		}
-		int xp = streamGrid.x(2);
-		int x  = streamGrid.x(1);
-		int xm = streamGrid.x(0);
-		int yp = streamGrid.y(2);
-		int y  = streamGrid.y(1);
-		int ym = streamGrid.y(0);
-		int zp = streamGrid.z(2);
-		int z  = streamGrid.z(1);
-		int zm = streamGrid.z(0);
+		int xp = streamGrid.x(LBM_KS::NoDV-1+2);
+		int x  = streamGrid.x(LBM_KS::NoDV-1+1);
+		int xm = streamGrid.x(LBM_KS::NoDV-1+0);
+		int yp = streamGrid.y(LBM_KS::NoDV-1+2);
+		int y  = streamGrid.y(LBM_KS::NoDV-1+1);
+		int ym = streamGrid.y(LBM_KS::NoDV-1+0);
+		int zp = streamGrid.z(LBM_KS::NoDV-1+2);
+		int z  = streamGrid.z(LBM_KS::NoDV-1+1);
+		int zm = streamGrid.z(LBM_KS::NoDV-1+0);
 
 		// modify pull location for streaming
 		if (mapgi == GEO_OUTFLOW_RIGHT)
@@ -159,19 +159,12 @@ struct D3Q27_BC_All
 				KS.vy = 0;
 				KS.vz = 0;
 				// collision step: bounce-back
-				TNL::swap(KS.f[mmm], KS.f[ppp]);
-				TNL::swap(KS.f[mmz], KS.f[ppz]);
-				TNL::swap(KS.f[mmp], KS.f[ppm]);
-				TNL::swap(KS.f[mzm], KS.f[pzp]);
-				TNL::swap(KS.f[mzz], KS.f[pzz]);
-				TNL::swap(KS.f[mzp], KS.f[pzm]);
-				TNL::swap(KS.f[mpm], KS.f[pmp]);
-				TNL::swap(KS.f[mpz], KS.f[pmz]);
-				TNL::swap(KS.f[mpp], KS.f[pmm]);
-				TNL::swap(KS.f[zmm], KS.f[zpp]);
-				TNL::swap(KS.f[zzm], KS.f[zzp]);
-				TNL::swap(KS.f[zmz], KS.f[zpz]);
-				TNL::swap(KS.f[zmp], KS.f[zpm]);
+				#ifdef __CUDA_ARCH__
+				#pragma unroll
+				#endif
+				for(int id = 0; id < LBM_KS::Qhalf; id++){
+					TNL::swap(KS.f[id], KS.f[KS.flip_id(id)]);
+				}
 				break;
 			case GEO_SYM_TOP:
 				KS.f[mmm] = KS.f[mmp];
