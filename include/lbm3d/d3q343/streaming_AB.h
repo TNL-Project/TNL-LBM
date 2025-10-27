@@ -16,7 +16,10 @@ struct D3Q343_STREAMING
 	postCollisionStreaming(LBM_DATA& SD, LBM_KS& KS, typename LBM_KS::SG streamGrid)
 	{
 		// no streaming actually, write to the (x,y,z) site
-		for (int i = 0; i < 27; i++)
+		#ifdef __CUDA_ARCH__
+		#pragma unroll
+		#endif
+		for (int i = 0; i < LBM_KS::Q; i++)
 			SD.df(df_out, i, streamGrid.x(LBM_KS::NoDV), streamGrid.y(LBM_KS::NoDV), streamGrid.z(LBM_KS::NoDV)) = KS.f[i];
 	}
 
