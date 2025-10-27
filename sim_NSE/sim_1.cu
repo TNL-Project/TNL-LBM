@@ -3,6 +3,7 @@
 
 // As of now, enum and sync direction are specific for different models and need to be included before core!!!
 #include "lbm3d/d3q27/defs.h"
+//#include "lbm3d/d3q343/defs.h"
 #include "lbm3d/core.h"
 
 template <typename NSE>
@@ -26,13 +27,32 @@ struct StateLocal : State<NSE>
 
 	void setupBoundaries() override
 	{
-		nse.setBoundaryX(0, BC::GEO_INFLOW_LEFT);						  // left
-		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT);  // right
+		//nse.setBoundaryX(0, BC::GEO_INFLOW_LEFT);						  // left
+		//nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT);						  // left
+		//nse.setBoundaryX(2, BC::GEO_INFLOW_LEFT);						  // left
+		//nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT);  // right
+		//nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT);  // right
+		//nse.setBoundaryX(nse.lat.global.x() - 3, BC::GEO_OUTFLOW_RIGHT);  // right
+
+		nse.setBoundaryX(0,                      BC::GEO_PERIODIC);						  // left
+		nse.setBoundaryX(1,                      BC::GEO_PERIODIC);						  // left
+		nse.setBoundaryX(2,                      BC::GEO_PERIODIC);						  // left
+		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_PERIODIC);  // right
+		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_PERIODIC);  // right
+		nse.setBoundaryX(nse.lat.global.x() - 3, BC::GEO_PERIODIC);  // right
 
 		nse.setBoundaryZ(1, BC::GEO_WALL);						 // top
+		nse.setBoundaryZ(2, BC::GEO_WALL);						 // top
+		nse.setBoundaryZ(3, BC::GEO_WALL);						 // top
 		nse.setBoundaryZ(nse.lat.global.z() - 2, BC::GEO_WALL);	 // bottom
+		nse.setBoundaryZ(nse.lat.global.z() - 3, BC::GEO_WALL);	 // bottom
+		nse.setBoundaryZ(nse.lat.global.z() - 4, BC::GEO_WALL);	 // bottom
 		nse.setBoundaryY(1, BC::GEO_WALL);						 // back
+		nse.setBoundaryY(2, BC::GEO_WALL);						 // back
+		nse.setBoundaryY(3, BC::GEO_WALL);						 // back
 		nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_WALL);	 // front
+		nse.setBoundaryY(nse.lat.global.y() - 3, BC::GEO_WALL);	 // front
+		nse.setBoundaryY(nse.lat.global.y() - 4, BC::GEO_WALL);	 // front
 
 		// extra layer needed due to A-A pattern
 		nse.setBoundaryZ(0, BC::GEO_NOTHING);						// top
@@ -158,17 +178,31 @@ template <typename TRAITS = TraitsSP>
 void run(int RES)
 {
 	//	using COLL = D3Q27_CUM< TRAITS >;
-	using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
+	//using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
+//
+	//using NSE_CONFIG = LBM_CONFIG<
+	//	TRAITS,
+	//	D3Q27_KernelStruct,
+	//	NSE_Data_ConstInflow<TRAITS>,
+	//	COLL,
+	//	typename COLL::EQ,
+	//	D3Q27_STREAMING<TRAITS>,
+	//	D3Q27_BC_All,
+	//	D3Q27_MACRO_Default<TRAITS>>;
+
+	// D3Q343
+	//	using COLL = D3Q27_CUM< TRAITS >;
+	using COLL = D3Q343_SRT<TRAITS, D3Q343_EQ<TRAITS>>;
 
 	using NSE_CONFIG = LBM_CONFIG<
 		TRAITS,
-		D3Q27_KernelStruct,
+		D3Q343_KernelStruct,
 		NSE_Data_ConstInflow<TRAITS>,
 		COLL,
 		typename COLL::EQ,
-		D3Q27_STREAMING<TRAITS>,
-		D3Q27_BC_All,
-		D3Q27_MACRO_Default<TRAITS>>;
+		D3Q343_STREAMING<TRAITS>,
+		D3Q343_BC_All,
+		D3Q343_MACRO_Default<TRAITS>>;
 
 	sim<NSE_CONFIG>(RES);
 }
