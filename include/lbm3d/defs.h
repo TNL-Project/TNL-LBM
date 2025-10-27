@@ -224,7 +224,7 @@ struct D3Q27_KernelStruct
 		return cx * ONE_SIZE * ONE_SIZE + cy * ONE_SIZE + cz;
 	}
 
-	using SG = StreamGrid<int, NoDV>;
+	using SG = StreamGrid<int, 1>;
 
 	REAL f[Q];
 	REAL fx = 0, fy = 0, fz = 0;
@@ -279,7 +279,7 @@ struct D3Q343_KernelStruct
 		return cx * ONE_SIZE * ONE_SIZE + cy * ONE_SIZE + cz;
 	}
 
-	using SG = StreamGrid<int, NoDV>;
+	using SG = StreamGrid<int, 3>;
 
 	REAL f[Q];
 	REAL fx = 0, fy = 0, fz = 0;
