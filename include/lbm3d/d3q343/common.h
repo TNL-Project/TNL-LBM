@@ -94,35 +94,12 @@ struct D3Q343_COMMON
 	template <typename LBM_KS, typename LAT_DFS>
 	__cuda_callable__ static void setEquilibriumLat(LAT_DFS& f, idx x, idx y, idx z, real rho, real vx, real vy, real vz)
 	{
-
-		f(mmm, x, y, z) = EQ::eq_mmm(rho, vx, vy, vz);
-		f(zmm, x, y, z) = EQ::eq_zmm(rho, vx, vy, vz);
-		f(pmm, x, y, z) = EQ::eq_pmm(rho, vx, vy, vz);
-		f(mzm, x, y, z) = EQ::eq_mzm(rho, vx, vy, vz);
-		f(zzm, x, y, z) = EQ::eq_zzm(rho, vx, vy, vz);
-		f(pzm, x, y, z) = EQ::eq_pzm(rho, vx, vy, vz);
-		f(mpm, x, y, z) = EQ::eq_mpm(rho, vx, vy, vz);
-		f(zpm, x, y, z) = EQ::eq_zpm(rho, vx, vy, vz);
-		f(ppm, x, y, z) = EQ::eq_ppm(rho, vx, vy, vz);
-
-		f(mmz, x, y, z) = EQ::eq_mmz(rho, vx, vy, vz);
-		f(zmz, x, y, z) = EQ::eq_zmz(rho, vx, vy, vz);
-		f(pmz, x, y, z) = EQ::eq_pmz(rho, vx, vy, vz);
-		f(mzz, x, y, z) = EQ::eq_mzz(rho, vx, vy, vz);
-		f(zzz, x, y, z) = EQ::eq_zzz(rho, vx, vy, vz);
-		f(pzz, x, y, z) = EQ::eq_pzz(rho, vx, vy, vz);
-		f(mpz, x, y, z) = EQ::eq_mpz(rho, vx, vy, vz);
-		f(zpz, x, y, z) = EQ::eq_zpz(rho, vx, vy, vz);
-		f(ppz, x, y, z) = EQ::eq_ppz(rho, vx, vy, vz);
-
-		f(mmp, x, y, z) = EQ::eq_mmp(rho, vx, vy, vz);
-		f(zmp, x, y, z) = EQ::eq_zmp(rho, vx, vy, vz);
-		f(pmp, x, y, z) = EQ::eq_pmp(rho, vx, vy, vz);
-		f(mzp, x, y, z) = EQ::eq_mzp(rho, vx, vy, vz);
-		f(zzp, x, y, z) = EQ::eq_zzp(rho, vx, vy, vz);
-		f(pzp, x, y, z) = EQ::eq_pzp(rho, vx, vy, vz);
-		f(mpp, x, y, z) = EQ::eq_mpp(rho, vx, vy, vz);
-		f(zpp, x, y, z) = EQ::eq_zpp(rho, vx, vy, vz);
-		f(ppp, x, y, z) = EQ::eq_ppp(rho, vx, vy, vz);
+		#ifdef __CUDA_ARCH__
+		#pragma unroll
+		#endif
+		for(int id = 0; id < LBM_KS::Q; id++){
+			const Coord c = LBM_KS::id_to_dv(id);
+            f(id,x,y,z) = EQ::feq(rho,c.x,c.y,c.z,vx,vy,vz);
+        }
 	}
 };
