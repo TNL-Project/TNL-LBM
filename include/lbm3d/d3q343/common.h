@@ -91,9 +91,10 @@ struct D3Q343_COMMON
 		KS.f[ppp] += EQ::eq_ppp(rho_out, KS.vx, KS.vy, KS.vz) - EQ::eq_ppp(KS.rho, KS.vx, KS.vy, KS.vz);
 	}
 
-	template <typename LAT_DFS>
+	template <typename LBM_KS, typename LAT_DFS>
 	__cuda_callable__ static void setEquilibriumLat(LAT_DFS& f, idx x, idx y, idx z, real rho, real vx, real vy, real vz)
 	{
+
 		f(mmm, x, y, z) = EQ::eq_mmm(rho, vx, vy, vz);
 		f(zmm, x, y, z) = EQ::eq_zmm(rho, vx, vy, vz);
 		f(pmm, x, y, z) = EQ::eq_pmm(rho, vx, vy, vz);

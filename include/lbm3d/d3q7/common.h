@@ -48,7 +48,7 @@ struct D3Q7_COMMON
 		KS.f[pzz] = EQ::eq_pzz(KS.phi, KS.vx, KS.vy, KS.vz);
 	}
 
-	template <typename LAT_DFS>
+	template <typename LBM_KS, typename LAT_DFS>
 	__cuda_callable__ static void setEquilibriumLat(LAT_DFS& f, idx x, idx y, idx z, real phi, real vx, real vy, real vz)
 	{
 		f(mzz, x, y, z) = EQ::eq_mzz(phi, vx, vy, vz);

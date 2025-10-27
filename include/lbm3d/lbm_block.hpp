@@ -240,7 +240,7 @@ void LBM_BLOCK<CONFIG>::setEquilibrium(real rho, real vx, real vy, real vz)
 		[local_df, rho, vx, vy, vz] __cuda_callable__(idx3d yzx) mutable
 		{
 			const auto& [y, z, x] = yzx;
-			CONFIG::COLL::setEquilibriumLat(local_df, x, y, z, rho, vx, vy, vz);
+			CONFIG::COLL::template setEquilibriumLat<typename CONFIG::LBM_KS>(local_df, x, y, z, rho, vx, vy, vz);
 		}
 	);
 
