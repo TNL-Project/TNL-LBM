@@ -33,6 +33,13 @@
 #include "d3q27/col_bgk_well.h"
 
 
+#include "d3q343/eq.h"
+#include "d3q343/col_srt.h"
+#include "d3q343/streaming_AB.h"
+#include "d3q343/macro.h"
+#include "d3q343/bc.h"
+
+
 #include "state.h"
 
 template <typename STATE>

@@ -18,9 +18,12 @@ struct D3Q343_SRT : D3Q343_COMMON<TRAITS, LBM_EQ>
 	{
 		const dreal tau = no3 * KS.lbmViscosity + n1o2;
 
+		#ifdef __CUDA_ARCH__
+		#pragma unroll
+		#endif
 		for(int id = 0; id < LBM_KS::Q; id++){
 			const Coord c = LBM_KS::id_to_dv(id);
-            KS.f[id] += KS.alpha/tau*(LBM_EQ::feq(KS.rho,c.x,c.y,c.z,KS.vx,KS.vy,KS.vz) - KS.f[id]);
+            KS.f[id] += (LBM_EQ::feq(KS.rho,c.x,c.y,c.z,KS.vx,KS.vy,KS.vz) - KS.f[id])/tau;
         }
 	}
 };
