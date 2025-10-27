@@ -10,6 +10,8 @@ struct D3Q27_EQ
 {
 	using dreal = typename TRAITS::dreal;
 
+
+
 	__cuda_callable__ static dreal feq(int qx, int qy, int qz, dreal vx, dreal vy, dreal vz)
 	{
 		return no1 - n3o2 * (vx * vx + vy * vy + vz * vz) + no3 * (qx * vx + qy * vy + qz * vz)
@@ -126,5 +128,13 @@ struct D3Q27_EQ
 	__cuda_callable__ static dreal eq_pmm(dreal rho, dreal vx, dreal vy, dreal vz)
 	{
 		return n1o216 * rho * feq(1, -1, -1, vx, vy, vz);
+	}
+	__cuda_callable__ static dreal feq_all(dreal rho, int qx, int qy, int qz, dreal vx, dreal vy, dreal vz){
+		const dreal w0 = (dreal)(2./3);
+    	const dreal w1 = (dreal)(1./6);
+		const dreal ws[2] = {w0,w1};
+		const dreal eq = no1 - n3o2 * (vx * vx + vy * vy + vz * vz) + no3 * (qx * vx + qy * vy + qz * vz)
+		+ n9o2 * (qx * vx + qy * vy + qz * vz) * (qx * vx + qy * vy + qz * vz);
+		return ws[abs(qx)]*ws[abs(qy)]*ws[abs(qz)]*rho*eq;
 	}
 };
