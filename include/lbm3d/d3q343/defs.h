@@ -1,6 +1,6 @@
 #include "../defs.h"
 
-
+//#define OVERLAP_3 // somehow works without overlap_width = 3
 
 // array of sync directions for the MPI synchronizer
 // (indexing must correspond to the enum above)

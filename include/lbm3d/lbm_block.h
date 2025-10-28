@@ -117,7 +117,11 @@ struct LBM_BLOCK
 // maximum width of overlaps for the map and fs arrays
 // (the real overlap may still be 0 if there is no neighbor in the particular direction)
 #ifdef HAVE_MPI
+	#ifdef OVERLAP_3
+	static constexpr int overlap_width = 3;
+	#else
 	static constexpr int overlap_width = 1;
+	#endif
 #else
 	static constexpr int overlap_width = 0;
 #endif
