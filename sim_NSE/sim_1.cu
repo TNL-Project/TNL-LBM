@@ -27,38 +27,39 @@ struct StateLocal : State<NSE>
 
 	void setupBoundaries() override
 	{
-		//nse.setBoundaryX(0, BC::GEO_INFLOW_LEFT);						  // left
-		//nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT);						  // left
-		//nse.setBoundaryX(2, BC::GEO_INFLOW_LEFT);						  // left
-		//nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT);  // right
-		//nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT);  // right
-		//nse.setBoundaryX(nse.lat.global.x() - 3, BC::GEO_OUTFLOW_RIGHT);  // right
+		nse.setBoundaryX(0, BC::GEO_INFLOW);						  // left
+		nse.setBoundaryX(1, BC::GEO_INFLOW);						  // left
+		nse.setBoundaryX(2, BC::GEO_INFLOW);						  // left
+		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT);  // right
+		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT);  // right
+		nse.setBoundaryX(nse.lat.global.x() - 3, BC::GEO_OUTFLOW_RIGHT);  // right
 
-		nse.setBoundaryX(0,                      BC::GEO_PERIODIC);						  // left
-		nse.setBoundaryX(1,                      BC::GEO_PERIODIC);						  // left
-		nse.setBoundaryX(2,                      BC::GEO_PERIODIC);						  // left
-		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_PERIODIC);  // right
-		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_PERIODIC);  // right
-		nse.setBoundaryX(nse.lat.global.x() - 3, BC::GEO_PERIODIC);  // right
+		//nse.setBoundaryX(0,                      BC::GEO_PERIODIC);						  // left
+		//nse.setBoundaryX(1,                      BC::GEO_PERIODIC);						  // left
+		//nse.setBoundaryX(2,                      BC::GEO_PERIODIC);						  // left
+		//nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_PERIODIC);  // right
+		//nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_PERIODIC);  // right
+		//nse.setBoundaryX(nse.lat.global.x() - 3, BC::GEO_PERIODIC);  // right
 
-		nse.setBoundaryZ(1, BC::GEO_WALL);						 // top
-		nse.setBoundaryZ(2, BC::GEO_WALL);						 // top
-		nse.setBoundaryZ(3, BC::GEO_WALL);						 // top
-		nse.setBoundaryZ(nse.lat.global.z() - 2, BC::GEO_WALL);	 // bottom
-		nse.setBoundaryZ(nse.lat.global.z() - 3, BC::GEO_WALL);	 // bottom
-		nse.setBoundaryZ(nse.lat.global.z() - 4, BC::GEO_WALL);	 // bottom
-		nse.setBoundaryY(1, BC::GEO_WALL);						 // back
-		nse.setBoundaryY(2, BC::GEO_WALL);						 // back
-		nse.setBoundaryY(3, BC::GEO_WALL);						 // back
-		nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_WALL);	 // front
-		nse.setBoundaryY(nse.lat.global.y() - 3, BC::GEO_WALL);	 // front
-		nse.setBoundaryY(nse.lat.global.y() - 4, BC::GEO_WALL);	 // front
+		const int margin = 0;
+		nse.setBoundaryZ(1-1+margin,                      BC::GEO_WALL);						 // top
+		nse.setBoundaryZ(2-1+margin,                      BC::GEO_WALL);						 // top
+		nse.setBoundaryZ(3-1+margin,                      BC::GEO_WALL);						 // top
+		nse.setBoundaryZ(nse.lat.global.z() - 2+1-margin, BC::GEO_WALL);	 // bottom
+		nse.setBoundaryZ(nse.lat.global.z() - 3+1-margin, BC::GEO_WALL);	 // bottom
+		nse.setBoundaryZ(nse.lat.global.z() - 4+1-margin, BC::GEO_WALL);	 // bottom
+		nse.setBoundaryY(1-1+margin, 					  BC::GEO_WALL);						 // back
+		nse.setBoundaryY(2-1+margin, 					  BC::GEO_WALL);						 // back
+		nse.setBoundaryY(3-1+margin, 					  BC::GEO_WALL);						 // back
+		nse.setBoundaryY(nse.lat.global.y() - 2+1-margin, BC::GEO_WALL);	 // front
+		nse.setBoundaryY(nse.lat.global.y() - 3+1-margin, BC::GEO_WALL);	 // front
+		nse.setBoundaryY(nse.lat.global.y() - 4+1-margin, BC::GEO_WALL);	 // front
 
 		// extra layer needed due to A-A pattern
-		nse.setBoundaryZ(0, BC::GEO_NOTHING);						// top
-		nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_NOTHING);	// bottom
-		nse.setBoundaryY(0, BC::GEO_NOTHING);						// back
-		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_NOTHING);	// front
+		//nse.setBoundaryZ(0, BC::GEO_NOTHING);						// top
+		//nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_NOTHING);	// bottom
+		//nse.setBoundaryY(0, BC::GEO_NOTHING);						// back
+		//nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_NOTHING);	// front
 
 		// draw a wall with a hole
 		int cx = floor(0.20 / nse.lat.physDl);
