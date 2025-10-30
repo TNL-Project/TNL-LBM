@@ -764,30 +764,6 @@ void State<NSE>::checkpointState(adios2::Mode mode)
 	}
 }
 
-// template <typename NSE>
-// void State<NSE>::saveState()
-// {
-//     // Initialize checkpoint file
-//     const std::string checkpoint_file = fmt::format("results_{}/checkpoint", id);
-//     dataManager.initEngine(checkpoint_file);
-
-//     spdlog::info("Saving checkpoint to {}", checkpoint_file);
-
-//     // Start the checkpoint process with write mode
-//     checkpoint.setDataManager(dataManager);
-//     checkpoint.start(checkpoint_file, adios2::Mode::Write);
-
-//     // Save all state data
-//     checkpointState(adios2::Mode::Write);
-//     checkpointStateLocal(adios2::Mode::Write);
-
-//     // Finalize the checkpoint
-//     checkpoint.finalize();
-
-//     // Set flag to indicate checkpoint exists
-//     flagCreate("loadstate");
-// }
-
 template <typename NSE>
 void State<NSE>::saveState()
 {

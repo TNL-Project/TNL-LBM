@@ -117,6 +117,7 @@ struct State
 	std::string id;
 
 	adios2::ADIOS adios;
+	DataManager dataManager;
 	CheckpointManager checkpoint;
 
 	LBM<NSE> nse;
@@ -283,7 +284,6 @@ struct State
 	// timers for profiling
 	TNL::Timer timer_SimInit, timer_SimUpdate, timer_AfterSimUpdate, timer_compute, timer_compute_overlaps, timer_wait_communication,
 		timer_wait_computation;
-	DataManager dataManager;
 	// constructors
 	template <typename... ARGS>
 	State(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath = "adios2.xml", ARGS&&... args)
@@ -293,14 +293,11 @@ struct State
 #else
 	  adios(adiosConfigPath),
 #endif
-	  checkpoint(adios),
+	  dataManager(&adios),
+	  checkpoint(dataManager),
 	  nse(communicator, lat, std::forward<ARGS>(args)...),
-	  ibm(nse, id),
-	  dataManager(&adios)
+	  ibm(nse, id)
 	{
-		// Set DataManager in CheckpointManager
-		checkpoint.setDataManager(dataManager);
-
 		// Try to lock the results directory
 		if (nse.rank == 0) {
 			const std::string dir = fmt::format("results_{}", id);

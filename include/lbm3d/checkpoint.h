@@ -7,16 +7,14 @@
 class CheckpointManager
 {
 private:
-	adios2::ADIOS* adios;
 	DataManager* dataManager;
 	std::string currentCheckpointName;
 	bool isActive = false;
 	adios2::Mode currentMode = adios2::Mode::Undefined;
 
 public:
-	CheckpointManager(adios2::ADIOS& adios)
-	: adios(&adios),
-	  dataManager(nullptr)
+	CheckpointManager(DataManager& dataManager)
+	: dataManager(&dataManager)
 	{}
 
 	// Set DataManager to use for checkpoint operations
