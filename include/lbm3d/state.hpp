@@ -5,7 +5,7 @@
 
 #include "state.h"
 #include "kernels.h"
-#include "vtk_writer.h"
+#include "UnstructuredPointsWriter.h"
 
 #include "../lbm_common/fileutils.h"
 #include "../lbm_common/png_tool.h"
@@ -92,25 +92,39 @@ void State<NSE>::writeVTK_Points(const char* name, real time, int cycle)
 template <typename NSE>
 void State<NSE>::writeVTK_Points(const char* name, real time, int cycle, const typename Lagrange3D::HLPVECTOR& hLL_lat)
 {
-	VTKWriter vtk;
+	if (cnt[VTK3D].count == 0)
+		dataManager.initEngine(fmt::format("results_{}/output_points", id));
+	else
+		dataManager.initEngine(fmt::format("results_{}/output_points", id), adios2::Mode::Append);
 
-	const std::string fname = fmt::format("results_{}/vtk3D/rank{:03d}_{}.vtk", id, nse.rank, name);
-	create_file(fname.c_str());
+	const std::string fname = fmt::format("results_{}/output_points", id);
+	create_parent_directories(fname.c_str());
 
-	FILE* fp = fopen(fname.c_str(), "w+");
-	vtk.writeHeader(fp);
+	const std::string& coordinates_variable = "points";
+	const std::string& connectivity_variable = "connectivity";
+	const std::string cell_types_variable = "cell_types";
+	UnstructuredPointsWriter<TRAITS> writer(dataManager, fname, coordinates_variable, connectivity_variable, cell_types_variable);
 
-	fprintf(fp, "DATASET POLYDATA\n");
-
-	fprintf(fp, "POINTS %d float\n", (int) hLL_lat.getSize());
+	std::vector<float> points_data;
+	std::vector<idx> connectivity_data;
 	for (idx i = 0; i < hLL_lat.getSize(); i++) {
 		const point_t phys = nse.lat.lbm2physPoint(hLL_lat[i]);
-		vtk.writeFloat(fp, phys.x());
-		vtk.writeFloat(fp, phys.y());
-		vtk.writeFloat(fp, phys.z());
+		points_data.push_back(phys.x());
+		points_data.push_back(phys.y());
+		points_data.push_back(phys.z());
+		// vertices are not connected so connectivity_data contains only vertex indices
+		connectivity_data.push_back(i);
 	}
-	vtk.writeBuffer(fp);
-	fclose(fp);
+	writer.write(coordinates_variable, points_data, 3, hLL_lat.getSize());
+	writer.write(connectivity_variable, connectivity_data, 1, hLL_lat.getSize());
+
+	// This is only for the ADIOS2VTXReader
+	const std::uint32_t cell_type = 1;	// VTK_VERTEX
+	writer.write(cell_types_variable, cell_type);
+
+	// This is only for the ADIOS2VTXReader
+	const idx npoints = hLL_lat.getSize();
+	writer.write("number_of_points", npoints);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
