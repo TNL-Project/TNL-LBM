@@ -256,8 +256,10 @@ struct StateLocal : State<NSE>
 			);
 	}
 
-	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, bool periodic_lattice)
-	: State<NSE>(id, communicator, std::move(lat), periodic_lattice)
+	StateLocal(
+		const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, bool periodic_lattice, const std::string& adiosConfigPath = "adios2.xml"
+	)
+	: State<NSE>(id, communicator, std::move(lat), adiosConfigPath, periodic_lattice)
 	{
 		errors_count = 10;
 		l1errors = new real[errors_count];
@@ -272,7 +274,7 @@ struct StateLocal : State<NSE>
 };
 
 template <typename NSE>
-int sim(int RES, bool use_forcing, Scaling scaling, double final_time)
+int sim(int RES, bool use_forcing, Scaling scaling, double final_time, const std::string& adiosConfigPath)
 {
 	using idx = typename NSE::TRAITS::idx;
 	using real = typename NSE::TRAITS::real;
@@ -316,7 +318,7 @@ int sim(int RES, bool use_forcing, Scaling scaling, double final_time)
 	const auto scaling_variant = magic_enum::enum_name(scaling);
 	const std::string state_id =
 		fmt::format("sim_2_{}_{}_{}_{}_res_{}_np_{}", NSE::COLL::id, prec, bc_variant, scaling_variant, RES, TNL::MPI::GetSize(MPI_COMM_WORLD));
-	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, use_forcing);
+	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, use_forcing, adiosConfigPath);
 
 	if (! state.canCompute())
 		return 0;
@@ -436,7 +438,7 @@ int sim(int RES, bool use_forcing, Scaling scaling, double final_time)
 }
 
 template <typename TRAITS = TraitsSP>
-void run(int RES, bool use_forcing, Scaling scaling, double final_time)
+void run(int RES, bool use_forcing, Scaling scaling, double final_time, const std::string& adiosConfigPath)
 {
 	using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
 	//using COLL = D3Q27_FCLBM<TRAITS>;
@@ -462,7 +464,7 @@ void run(int RES, bool use_forcing, Scaling scaling, double final_time)
 		D3Q27_BC_All,
 		D3Q27_MACRO_Default<TRAITS>>;
 
-	sim<NSE_CONFIG>(RES, use_forcing, scaling, final_time);
+	sim<NSE_CONFIG>(RES, use_forcing, scaling, final_time, adiosConfigPath);
 }
 
 int main(int argc, char** argv)
@@ -485,6 +487,7 @@ int main(int argc, char** argv)
 		.choices("single", "double")
 		.default_value("single")
 		.nargs(1);
+	program.add_argument("--adios-config").help("path to adios2 configuration file").default_value(std::string("adios2.xml")).nargs(1);
 
 	try {
 		program.parse_args(argc, argv);
@@ -515,13 +518,14 @@ int main(int argc, char** argv)
 	const bool use_forcing = program.get<bool>("--use-forcing");
 	const auto scaling_name = program.get<std::string>("--scaling");
 	const Scaling scaling = magic_enum::enum_cast<Scaling>(scaling_name).value_or(Scaling::strong);
+	const auto adiosConfigPath = program.get<std::string>("--adios-config");
 
 	for (int i = min_resolution; i <= max_resolution; i++) {
 		int res = pow(2, i);
 		if (program.get<std::string>("--precision") == "double")
-			run<TraitsDP>(res, use_forcing, scaling, final_time);
+			run<TraitsDP>(res, use_forcing, scaling, final_time, adiosConfigPath);
 		else
-			run<TraitsSP>(res, use_forcing, scaling, final_time);
+			run<TraitsSP>(res, use_forcing, scaling, final_time, adiosConfigPath);
 	}
 
 	return 0;
