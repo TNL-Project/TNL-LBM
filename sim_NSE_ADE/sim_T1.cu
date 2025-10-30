@@ -308,8 +308,10 @@ struct StateLocal : State_NSE_ADE<NSE, ADE>
 	dreal lbm_inflow_vx = 0;
 
 	// constructor
-	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat_nse, lat_t lat_ade)
-	: State_NSE_ADE<NSE, ADE>(id, communicator, lat_nse, lat_ade)
+	StateLocal(
+		const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat_nse, lat_t lat_ade, const std::string& adiosConfigPath = "adios2.xml"
+	)
+	: State_NSE_ADE<NSE, ADE>(id, communicator, lat_nse, lat_ade, adiosConfigPath)
 	{}
 
 	void setupBoundaries() override
@@ -469,7 +471,7 @@ struct StateLocal : State_NSE_ADE<NSE, ADE>
 };
 
 template <typename NSE, typename ADE>
-int simT1_test(int RESOLUTION = 2)
+int simT1_test(int RESOLUTION = 2, const std::string& adiosConfigPath = "adios2.xml")
 {
 	using idx = typename NSE::TRAITS::idx;
 	using real = typename NSE::TRAITS::real;
@@ -504,7 +506,7 @@ int simT1_test(int RESOLUTION = 2)
 	lat_ade.physViscosity = PHYS_DIFFUSION;
 
 	const std::string state_id = fmt::format("sim_T1_res{:02d}_np{:03d}", RESOLUTION, TNL::MPI::GetSize(MPI_COMM_WORLD));
-	StateLocal<NSE, ADE> state(state_id, MPI_COMM_WORLD, lat_nse, lat_ade);
+	StateLocal<NSE, ADE> state(state_id, MPI_COMM_WORLD, lat_nse, lat_ade, adiosConfigPath);
 
 	if (! state.canCompute())
 		return 0;
@@ -546,7 +548,7 @@ int simT1_test(int RESOLUTION = 2)
 
 //template <typename TRAITS=TraitsSP>
 template <typename TRAITS = TraitsDP>
-void run(int RES)
+void run(int RES, const std::string& adiosConfigPath)
 {
 	using NSE_COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
 	using NSE_CONFIG = LBM_CONFIG<
@@ -576,7 +578,7 @@ void run(int RES)
 		D3Q7_BC_All,
 		D3Q7_MACRO_Default<TRAITS>>;
 
-	simT1_test<NSE_CONFIG, ADE_CONFIG>(RES);
+	simT1_test<NSE_CONFIG, ADE_CONFIG>(RES, adiosConfigPath);
 }
 
 int main(int argc, char** argv)
@@ -586,6 +588,7 @@ int main(int argc, char** argv)
 	argparse::ArgumentParser program("sim_T1");
 	program.add_description("Simple coupled D3Q27-D3Q7 simulation example.");
 	program.add_argument("resolution").help("resolution of the lattice").scan<'i', int>().default_value(1);
+	program.add_argument("--adios-config").help("path to adios2 configuration file").default_value(std::string("adios2.xml")).nargs(1);
 
 	try {
 		program.parse_args(argc, argv);
@@ -597,10 +600,12 @@ int main(int argc, char** argv)
 	}
 
 	const auto resolution = program.get<int>("resolution");
+	const auto adiosConfigPath = program.get<std::string>("--adios-config");
+
 	if (resolution < 1)
 		throw std::invalid_argument("CLI error: resolution must be at least 1");
 
-	run(resolution);
+	run(resolution, adiosConfigPath);
 
 	return 0;
 }

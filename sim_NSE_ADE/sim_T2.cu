@@ -43,8 +43,15 @@ struct StateLocal : State_NSE_ADE<NSE, ADE>
 	real diffusion_top = 0;
 	real diffusion_bottom = 0;
 
-	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat_nse, lat_t lat_ade, real iphysVelocity)
-	: State_NSE_ADE<NSE, ADE>(id, communicator, lat_nse, lat_ade)
+	StateLocal(
+		const std::string& id,
+		const TNL::MPI::Comm& communicator,
+		lat_t lat_nse,
+		lat_t lat_ade,
+		real iphysVelocity,
+		const std::string& adiosConfigPath = "adios2.xml"
+	)
+	: State_NSE_ADE<NSE, ADE>(id, communicator, lat_nse, lat_ade, adiosConfigPath)
 	{
 		//for (auto& block : nse.blocks)
 		//{
@@ -165,7 +172,7 @@ struct StateLocal : State_NSE_ADE<NSE, ADE>
 };
 
 template <typename NSE, typename ADE>
-int sim(int RESOLUTION = 2)
+int sim(int RESOLUTION = 2, const std::string& adiosConfigPath = "adios2.xml")
 {
 	using idx = typename NSE::TRAITS::idx;
 	using real = typename NSE::TRAITS::real;
@@ -196,7 +203,7 @@ int sim(int RESOLUTION = 2)
 	lat_ade.physViscosity = 0;	// unused, the diffusion coeff for ADE is set below
 
 	const std::string state_id = fmt::format("sim_T2_res{:02d}_np{:03d}", RESOLUTION, TNL::MPI::GetSize(MPI_COMM_WORLD));
-	StateLocal<NSE, ADE> state(state_id, MPI_COMM_WORLD, lat_nse, lat_ade, PHYS_VELOCITY);
+	StateLocal<NSE, ADE> state(state_id, MPI_COMM_WORLD, lat_nse, lat_ade, PHYS_VELOCITY, adiosConfigPath);
 
 	if (! state.canCompute())
 		return 0;
@@ -227,7 +234,7 @@ int sim(int RESOLUTION = 2)
 
 //template <typename TRAITS=TraitsSP>
 template <typename TRAITS = TraitsDP>
-void run(int RES)
+void run(int RES, const std::string& adiosConfigPath)
 {
 	using NSE_COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
 	using NSE_CONFIG = LBM_CONFIG<
@@ -253,7 +260,7 @@ void run(int RES)
 		D3Q7_BC_All,
 		D3Q7_MACRO_Default<TRAITS>>;
 
-	sim<NSE_CONFIG, ADE_CONFIG>(RES);
+	sim<NSE_CONFIG, ADE_CONFIG>(RES, adiosConfigPath);
 }
 
 int main(int argc, char** argv)
@@ -263,6 +270,7 @@ int main(int argc, char** argv)
 	argparse::ArgumentParser program("sim_T2");
 	program.add_description("Simple coupled D3Q27-D3Q7 simulation example.");
 	program.add_argument("resolution").help("resolution of the lattice").scan<'i', int>().default_value(1);
+	program.add_argument("--adios-config").help("path to ADIOS2 XML configuration file").default_value(std::string("adios2.xml"));
 
 	try {
 		program.parse_args(argc, argv);
@@ -277,7 +285,9 @@ int main(int argc, char** argv)
 	if (resolution < 1)
 		throw std::invalid_argument("CLI error: resolution must be at least 1");
 
-	run(resolution);
+	const auto adiosConfigPath = program.get<std::string>("--adios-config");
+
+	run(resolution, adiosConfigPath);
 
 	return 0;
 }

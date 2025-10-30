@@ -23,8 +23,10 @@ struct State_NSE_ADE : State<NSE>
 	LBM<ADE> ade;
 
 	// constructor
-	State_NSE_ADE(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat_nse, lat_t lat_ade)
-	: State<NSE>(id, communicator, lat_nse),
+	State_NSE_ADE(
+		const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat_nse, lat_t lat_ade, const std::string& adiosConfigPath = "adios2.xml"
+	)
+	: State<NSE>(id, communicator, lat_nse, adiosConfigPath),
 	  ade(communicator, lat_ade)
 	{
 		// ADE allocation
