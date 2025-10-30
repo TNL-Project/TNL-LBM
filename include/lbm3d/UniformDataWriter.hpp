@@ -2,10 +2,10 @@
 
 #include <fmt/format.h>
 
-#include "adios_writer.h"
+#include "UniformDataWriter.h"
 
 template <typename TRAITS>
-ADIOSWriter<TRAITS>::ADIOSWriter(
+UniformDataWriter<TRAITS>::UniformDataWriter(
 	idx3d global, idx3d local, idx3d offset, point_t physOrigin, real physDl, DataManager& dataManager, const std::string& simType
 )
 : simType(simType)
@@ -21,7 +21,7 @@ ADIOSWriter<TRAITS>::ADIOSWriter(
 
 template <typename TRAITS>
 template <typename T>
-void ADIOSWriter<TRAITS>::write(std::string varName, T val)
+void UniformDataWriter<TRAITS>::write(std::string varName, T val)
 {
 	if (dataManager->getVariables(simType).count(varName) == 0) {
 		dataManager->defineData<T>(varName, simType);
@@ -32,14 +32,14 @@ void ADIOSWriter<TRAITS>::write(std::string varName, T val)
 
 template <typename TRAITS>
 template <typename T>
-void ADIOSWriter<TRAITS>::write(std::string varName, std::vector<T>& val, int dim)
+void UniformDataWriter<TRAITS>::write(std::string varName, std::vector<T>& val, int dim)
 {
 	recordVariable(varName, dim);
 
 	if (dataManager->getVariables(simType).count(varName) == 0) {
-		adios2::Dims shape{static_cast<size_t>(global.z()), static_cast<size_t>(global.y()), static_cast<size_t>(global.x())};
-		adios2::Dims start{static_cast<size_t>(offset.z()), static_cast<size_t>(offset.y()), static_cast<size_t>(offset.x())};
-		adios2::Dims count{static_cast<size_t>(local.z()), static_cast<size_t>(local.y()), static_cast<size_t>(local.x())};
+		adios2::Dims shape{static_cast<std::size_t>(global.z()), static_cast<std::size_t>(global.y()), static_cast<std::size_t>(global.x())};
+		adios2::Dims start{static_cast<std::size_t>(offset.z()), static_cast<std::size_t>(offset.y()), static_cast<std::size_t>(offset.x())};
+		adios2::Dims count{static_cast<std::size_t>(local.z()), static_cast<std::size_t>(local.y()), static_cast<std::size_t>(local.x())};
 		dataManager->defineData<T>(varName, shape, start, count, simType);
 	}
 
@@ -47,7 +47,7 @@ void ADIOSWriter<TRAITS>::write(std::string varName, std::vector<T>& val, int di
 }
 
 template <typename TRAITS>
-void ADIOSWriter<TRAITS>::recordVariable(const std::string& name, int dim)
+void UniformDataWriter<TRAITS>::recordVariable(const std::string& name, int dim)
 {
 	if (variables.count(name) > 0)
 		throw std::invalid_argument("Variable \"" + name + "\" is already defined.");
@@ -58,7 +58,7 @@ void ADIOSWriter<TRAITS>::recordVariable(const std::string& name, int dim)
 }
 
 template <typename TRAITS>
-void ADIOSWriter<TRAITS>::addVTKAttributes()
+void UniformDataWriter<TRAITS>::addVTKAttributes()
 {
 	const std::string extentG = fmt::format("0 {} 0 {} 0 {}", global.z(), global.y(), global.x());
 	const std::string extentL = fmt::format("0 {} 0 {} 0 {}", local.z(), local.y(), local.x());
@@ -81,7 +81,8 @@ void ADIOSWriter<TRAITS>::addVTKAttributes()
 		}
 	}
 
-	const std::string imageData = R"(
+	// https://adios2.readthedocs.io/en/latest/ecosystem/visualization.html#saving-the-vtk-xml-data-model
+	const std::string dataModel = R"(
         <?xml version="1.0"?>
         <VTKFile type="ImageData" version="0.1" byte_order="LittleEndian">
             <ImageData WholeExtent=")"
@@ -95,13 +96,14 @@ void ADIOSWriter<TRAITS>::addVTKAttributes()
             </ImageData>
         </VTKFile>)";
 
-	dataManager->defineAttribute<std::string>("vtk.xml", imageData, simType);
+	dataManager->defineAttribute<std::string>("vtk.xml", dataModel, simType);
 }
 
 template <typename TRAITS>
-void ADIOSWriter<TRAITS>::addFidesAttributes()
+void UniformDataWriter<TRAITS>::addFidesAttributes()
 {
 	// add attributes for Fides
+	// https://fides.readthedocs.io/en/latest/components/components.html#uniform-data-model
 	dataManager->defineAttribute<std::string>("Fides_Data_Model", "uniform", simType);
 	dataManager->defineAttribute<typename point_t::ValueType>("Fides_Origin", &physOrigin[0], point_t::getSize(), simType);
 	real spacing[3] = {physDl, physDl, physDl};
@@ -122,7 +124,7 @@ void ADIOSWriter<TRAITS>::addFidesAttributes()
 				dimension_variable_set = true;
 			}
 			variable_list.push_back(name);
-			variable_associations.push_back("points");
+			variable_associations.emplace_back("points");
 		}
 	}
 	dataManager->defineAttribute<std::string>("Fides_Variable_List", variable_list.data(), variable_list.size(), simType);
@@ -131,7 +133,7 @@ void ADIOSWriter<TRAITS>::addFidesAttributes()
 }
 
 template <typename TRAITS>
-ADIOSWriter<TRAITS>::~ADIOSWriter()
+UniformDataWriter<TRAITS>::~UniformDataWriter()
 {
 	if (! variables.empty()) {
 		addVTKAttributes();

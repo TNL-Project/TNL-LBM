@@ -1,7 +1,7 @@
 #pragma once
 
 #include "lbm_block.h"
-#include "adios_writer.h"
+#include "UniformDataWriter.h"
 #include "block_size_optimizer.h"
 
 template <typename CONFIG>
@@ -762,13 +762,13 @@ void LBM_BLOCK<CONFIG>::writeVTK_3D(lat_t lat, Output&& outputData, const std::s
 	std::vector<int> tempIData;
 	std::vector<float> tempFData;
 	const point_t origin = lat.lbm2physPoint(0, 0, 0);
-	ADIOSWriter<TRAITS> adios(global, local, offset, origin, lat.physDl, dataManager, filename);
+	UniformDataWriter<TRAITS> writer(global, local, offset, origin, lat.physDl, dataManager, filename);
 
 	for (idx z = offset.z(); z < offset.z() + local.z(); z++)
 		for (idx y = offset.y(); y < offset.y() + local.y(); y++)
 			for (idx x = offset.x(); x < offset.x() + local.x(); x++)
 				tempIData.push_back(hmap(x, y, z));
-	adios.write("wall", tempIData, 1);
+	writer.write("wall", tempIData, 1);
 	tempIData.clear();
 
 	char idd[500];
@@ -789,24 +789,24 @@ void LBM_BLOCK<CONFIG>::writeVTK_3D(lat_t lat, Output&& outputData, const std::s
 			switch (dof) {
 				case 0:
 					if (dofs > 1) {
-						adios.write(IDD + "X", tempFData, dofs);
+						writer.write(IDD + "X", tempFData, dofs);
 					}
 					else {
-						adios.write(IDD, tempFData, dofs);
+						writer.write(IDD, tempFData, dofs);
 					}
 					break;
 				case 1:
-					adios.write(IDD + "Y", tempFData, dofs);
+					writer.write(IDD + "Y", tempFData, dofs);
 					break;
 				case 2:
-					adios.write(IDD + "Z", tempFData, dofs);
+					writer.write(IDD + "Z", tempFData, dofs);
 					break;
 			}
 			tempFData.clear();
 		}
 	}
 
-	adios.write("TIME", time);
+	writer.write("TIME", time);
 }
 
 template <typename CONFIG>
@@ -860,7 +860,7 @@ void LBM_BLOCK<CONFIG>::writeVTK_3Dcut(
 	std::vector<int> tempIData;
 	std::vector<float> tempFData;
 	const point_t origin = lat.lbm2physPoint(ox, oy, oz);
-	ADIOSWriter<TRAITS> adios({gX, gY, gZ}, {lX, lY, lZ}, {oX, oY, oZ}, origin, lat.physDl * step, dataManager, filename);
+	UniformDataWriter<TRAITS> writer({gX, gY, gZ}, {lX, lY, lZ}, {oX, oY, oZ}, origin, lat.physDl * step, dataManager, filename);
 
 	ox = TNL::max(ox, offset.x());
 	oy = TNL::max(oy, offset.y());
@@ -870,7 +870,7 @@ void LBM_BLOCK<CONFIG>::writeVTK_3Dcut(
 		for (idx y = oy; y < oy + ly; y += step)
 			for (idx x = ox; x < ox + lx; x += step)
 				tempIData.push_back(hmap(x, y, z));
-	adios.write("wall", tempIData, 1);
+	writer.write("wall", tempIData, 1);
 	tempIData.clear();
 
 	char idd[500];
@@ -891,24 +891,24 @@ void LBM_BLOCK<CONFIG>::writeVTK_3Dcut(
 			switch (dof) {
 				case 0:
 					if (dofs > 1) {
-						adios.write(IDD + "X", tempFData, dofs);
+						writer.write(IDD + "X", tempFData, dofs);
 					}
 					else {
-						adios.write(IDD, tempFData, dofs);
+						writer.write(IDD, tempFData, dofs);
 					}
 					break;
 				case 1:
-					adios.write(IDD + "Y", tempFData, dofs);
+					writer.write(IDD + "Y", tempFData, dofs);
 					break;
 				case 2:
-					adios.write(IDD + "Z", tempFData, dofs);
+					writer.write(IDD + "Z", tempFData, dofs);
 					break;
 			}
 			tempFData.clear();
 		}
 	}
 
-	adios.write("TIME", time);
+	writer.write("TIME", time);
 }
 
 template <typename CONFIG>
@@ -925,7 +925,7 @@ void LBM_BLOCK<CONFIG>::writeVTK_2DcutX(
 	std::vector<int> tempIData;
 	std::vector<float> tempFData;
 	const point_t origin = lat.lbm2physPoint(XPOS, 0, 0);
-	ADIOSWriter<TRAITS> adios(
+	UniformDataWriter<TRAITS> writer(
 		{1, global.y(), global.z()}, {1, local.y(), local.z()}, {0, offset.y(), offset.z()}, origin, lat.physDl, dataManager, filename
 	);
 
@@ -933,7 +933,7 @@ void LBM_BLOCK<CONFIG>::writeVTK_2DcutX(
 	for (idx z = offset.z(); z < offset.z() + local.z(); z++)
 		for (idx y = offset.y(); y < offset.y() + local.y(); y++)
 			tempIData.push_back(hmap(x, y, z));
-	adios.write("wall", tempIData, 1);
+	writer.write("wall", tempIData, 1);
 	tempIData.clear();
 
 	int index = 0;
@@ -953,24 +953,24 @@ void LBM_BLOCK<CONFIG>::writeVTK_2DcutX(
 			switch (dof) {
 				case 0:
 					if (dofs > 1) {
-						adios.write(IDD + "X", tempFData, dofs);
+						writer.write(IDD + "X", tempFData, dofs);
 					}
 					else {
-						adios.write(IDD, tempFData, dofs);
+						writer.write(IDD, tempFData, dofs);
 					}
 					break;
 				case 1:
-					adios.write(IDD + "Y", tempFData, dofs);
+					writer.write(IDD + "Y", tempFData, dofs);
 					break;
 				case 2:
-					adios.write(IDD + "Z", tempFData, dofs);
+					writer.write(IDD + "Z", tempFData, dofs);
 					break;
 			}
 			tempFData.clear();
 		}
 	}
 
-	adios.write("TIME", time);
+	writer.write("TIME", time);
 }
 
 template <typename CONFIG>
@@ -987,7 +987,7 @@ void LBM_BLOCK<CONFIG>::writeVTK_2DcutY(
 	std::vector<int> tempIData;
 	std::vector<float> tempFData;
 	const point_t origin = lat.lbm2physPoint(0, YPOS, 0);
-	ADIOSWriter<TRAITS> adios(
+	UniformDataWriter<TRAITS> writer(
 		{global.x(), 1, global.z()}, {local.x(), 1, local.z()}, {offset.x(), 0, offset.z()}, origin, lat.physDl, dataManager, filename
 	);
 
@@ -995,7 +995,7 @@ void LBM_BLOCK<CONFIG>::writeVTK_2DcutY(
 	for (idx z = offset.z(); z < offset.z() + local.z(); z++)
 		for (idx x = offset.x(); x < offset.x() + local.x(); x++)
 			tempIData.push_back(hmap(x, y, z));
-	adios.write("wall", tempIData, 1);
+	writer.write("wall", tempIData, 1);
 	tempIData.clear();
 
 	int index = 0;
@@ -1015,24 +1015,24 @@ void LBM_BLOCK<CONFIG>::writeVTK_2DcutY(
 			switch (dof) {
 				case 0:
 					if (dofs > 1) {
-						adios.write(IDD + "X", tempFData, dofs);
+						writer.write(IDD + "X", tempFData, dofs);
 					}
 					else {
-						adios.write(IDD, tempFData, dofs);
+						writer.write(IDD, tempFData, dofs);
 					}
 					break;
 				case 1:
-					adios.write(IDD + "Y", tempFData, dofs);
+					writer.write(IDD + "Y", tempFData, dofs);
 					break;
 				case 2:
-					adios.write(IDD + "Z", tempFData, dofs);
+					writer.write(IDD + "Z", tempFData, dofs);
 					break;
 			}
 			tempFData.clear();
 		}
 	}
 
-	adios.write("TIME", time);
+	writer.write("TIME", time);
 }
 
 template <typename CONFIG>
@@ -1049,7 +1049,7 @@ void LBM_BLOCK<CONFIG>::writeVTK_2DcutZ(
 	std::vector<int> tempIData;
 	std::vector<float> tempFData;
 	const point_t origin = lat.lbm2physPoint(0, 0, ZPOS);
-	ADIOSWriter<TRAITS> adios(
+	UniformDataWriter<TRAITS> writer(
 		{global.x(), global.y(), 1}, {local.x(), local.y(), 1}, {offset.x(), offset.y(), 0}, origin, lat.physDl, dataManager, filename
 	);
 
@@ -1057,7 +1057,7 @@ void LBM_BLOCK<CONFIG>::writeVTK_2DcutZ(
 	for (idx y = offset.y(); y < offset.y() + local.y(); y++)
 		for (idx x = offset.x(); x < offset.x() + local.x(); x++)
 			tempIData.push_back(hmap(x, y, z));
-	adios.write("wall", tempIData, 1);
+	writer.write("wall", tempIData, 1);
 	tempIData.clear();
 
 	int index = 0;
@@ -1077,22 +1077,22 @@ void LBM_BLOCK<CONFIG>::writeVTK_2DcutZ(
 			switch (dof) {
 				case 0:
 					if (dofs > 1) {
-						adios.write(IDD + "X", tempFData, dofs);
+						writer.write(IDD + "X", tempFData, dofs);
 					}
 					else {
-						adios.write(IDD, tempFData, dofs);
+						writer.write(IDD, tempFData, dofs);
 					}
 					break;
 				case 1:
-					adios.write(IDD + "Y", tempFData, dofs);
+					writer.write(IDD + "Y", tempFData, dofs);
 					break;
 				case 2:
-					adios.write(IDD + "Z", tempFData, dofs);
+					writer.write(IDD + "Z", tempFData, dofs);
 					break;
 			}
 			tempFData.clear();
 		}
 	}
 
-	adios.write("TIME", time);
+	writer.write("TIME", time);
 }

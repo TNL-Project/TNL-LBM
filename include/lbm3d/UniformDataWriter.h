@@ -1,15 +1,12 @@
 #pragma once
 
-#include <TNL/MPI/Comm.h>
-#include <adios2.h>
-
 #include <map>
 #include <string>
 
 #include "DataManager.h"
 
 template <typename TRAITS>
-class ADIOSWriter
+class UniformDataWriter
 {
 private:
 	using idx = typename TRAITS::idx;
@@ -38,9 +35,9 @@ private:
 	void addFidesAttributes();
 
 public:
-	ADIOSWriter() = delete;
+	UniformDataWriter() = delete;
 
-	ADIOSWriter(idx3d global, idx3d local, idx3d offset, point_t physOrigin, real physDl, DataManager& dataManager, const std::string& simType);
+	UniformDataWriter(idx3d global, idx3d local, idx3d offset, point_t physOrigin, real physDl, DataManager& dataManager, const std::string& simType);
 
 	template <typename T>
 	void write(std::string varName, T val);
@@ -48,7 +45,7 @@ public:
 	template <typename T>
 	void write(std::string varName, std::vector<T>& val, int dim);
 
-	~ADIOSWriter();
+	~UniformDataWriter();
 };
 
-#include "adios_writer.hpp"
+#include "UniformDataWriter.hpp"
