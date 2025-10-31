@@ -1018,12 +1018,12 @@ void State<NSE>::SimUpdate()
 	computeBeforeLBMKernel();
 
 #ifdef HAVE_MPI
-#ifdef AA_PATTERN
+	#ifdef AA_PATTERN
 	uint8_t output_df = df_cur;
-#endif
-#ifdef AB_PATTERN
+	#endif
+	#ifdef AB_PATTERN
 	uint8_t output_df = df_out;
-#endif
+	#endif
 #endif
 
 #ifdef USE_CUDA
