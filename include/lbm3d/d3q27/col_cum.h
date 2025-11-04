@@ -250,6 +250,11 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal DxvDyu = -no3 * omega1 * KS_rho_inv * C_110;
 		const dreal DxwDzu = -no3 * omega1 * KS_rho_inv * C_101;
 		const dreal DywDzv = -no3 * omega1 * KS_rho_inv * C_011;
+		// Eqs 33-35
+		const dreal Eq33RHS = (no1 - omega1) * (C_200 - C_020) - no3 * KS.rho * (no1 - omega1 * n1o2) * (KS.vx * KS.vx * Dxu - KS.vy * KS.vy * Dyv);
+		const dreal Eq34RHS = (no1 - omega1) * (C_200 - C_002) - no3 * KS.rho * (no1 - omega1 * n1o2) * (KS.vx * KS.vx * Dxu - KS.vz * KS.vz * Dzw);
+		const dreal Eq35RHS = k_000 * omega2 + (no1 - omega2) * (C_200 + C_020 + C_002)
+							- no3 * KS.rho * (no1 - omega2 / no2) * (KS.vx * KS.vx * Dxu + KS.vy * KS.vy * Dyv + KS.vz * KS.vz * Dzw);
 #else
 		const dreal Dxu = 0;
 		const dreal Dyv = 0;
@@ -258,13 +263,12 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal DxvDyu = 0;
 		const dreal DxwDzu = 0;
 		const dreal DywDzv = 0;
-#endif
-		// Eqs 33-35
-		const dreal Eq33RHS = (no1 - omega1) * (C_200 - C_020) - no3 * KS.rho * (no1 - omega1 * n1o2) * (KS.vx * KS.vx * Dxu - KS.vy * KS.vy * Dyv);
-		const dreal Eq34RHS = (no1 - omega1) * (C_200 - C_002) - no3 * KS.rho * (no1 - omega1 * n1o2) * (KS.vx * KS.vx * Dxu - KS.vz * KS.vz * Dzw);
-		const dreal Eq35RHS = k_000 * omega2 + (no1 - omega2) * (C_200 + C_020 + C_002)
-							- no3 * KS.rho * (no1 - omega2 / no2) * (KS.vx * KS.vx * Dxu + KS.vy * KS.vy * Dyv + KS.vz * KS.vz * Dzw);
 
+		// Eqs 33-35
+		const dreal Eq33RHS = (no1 - omega1) * (C_200 - C_020);
+		const dreal Eq34RHS = (no1 - omega1) * (C_200 - C_002);
+		const dreal Eq35RHS = k_000 * omega2;
+#endif
 		const dreal Cs_200 = n1o3 * (Eq33RHS + Eq34RHS + Eq35RHS);
 		const dreal Cs_020 = n1o3 * (-no2 * Eq33RHS + Eq34RHS + Eq35RHS);
 		const dreal Cs_002 = n1o3 * (Eq33RHS - no2 * Eq34RHS + Eq35RHS);
