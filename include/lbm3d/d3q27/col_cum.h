@@ -290,6 +290,26 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal Cs_201 = n1o2 * (Eq122 + Eq119);
 		// Eq 42
 		const dreal Cs_111 = (no1 - omega111) * C_111;
+
+		// Eqs 43-45
+		const dreal Eq43RHS =
+			n2o3 * (no1 / omega1 - n1o2) * omega6 * A * KS.rho * (Dxu - no2 * Dyv + Dzw) + (no1 - omega6) * (C_220 - no2 * C_202 + C_022);
+		const dreal Eq44RHS =
+			n2o3 * (no1 / omega1 - n1o2) * omega6 * A * KS.rho * (Dxu + Dyv - no2 * Dzw) + (no1 - omega6) * (C_220 + C_202 - no2 * C_022);
+		const dreal Eq45RHS = -n4o3 * (no1 / omega1 - n1o2) * omega7 * A * KS.rho * (Dxu + Dyv + Dzw) + (no1 - omega7) * (C_220 + C_202 + C_022);
+		// see rovnice2.mw
+		const dreal Cs_220 = n1o3 * (Eq43RHS + Eq44RHS + Eq45RHS);
+		const dreal Cs_202 = n1o3 * (-Eq43RHS + Eq45RHS);
+		const dreal Cs_022 = n1o3 * (-Eq44RHS + Eq45RHS);
+		// Eq 46-48
+		const dreal Cs_211 = -n1o3 * (no1 / omega1 - n1o2) * omega8 * B * KS.rho * DywDzv + (no1 - omega8) * C_211;
+		const dreal Cs_121 = -n1o3 * (no1 / omega1 - n1o2) * omega8 * B * KS.rho * DxwDzu + (no1 - omega8) * C_121;
+		const dreal Cs_112 = -n1o3 * (no1 / omega1 - n1o2) * omega8 * B * KS.rho * DxvDyu + (no1 - omega8) * C_112;
+		// Eqs 49-52
+		const dreal Cs_221 = (no1 - omega9) * C_221;
+		const dreal Cs_212 = (no1 - omega9) * C_212;
+		const dreal Cs_122 = (no1 - omega9) * C_122;
+		const dreal Cs_222 = (no1 - omega10) * C_222;
 #else
 		// Eqs 36-41:
 		//const dreal Cs_120 = (-C_102 - C_120) * omega3 * n1o2 + (C_102 - C_120) * omega4 * n1o2 + C_120;
@@ -340,29 +360,28 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 
 		// Eq 42
 		const dreal Cs_111 = (no1 - omega5) * C_111;
-#endif
 		// TODO: The following can be optimized further if USE_GEIER_CUM_2017 is not defined
 		// because then omega6..omega10 = no1
 		// and A = B = 0 ... all following Cs become 0
 		// Eqs 43-45
-		const dreal Eq43RHS =
-			n2o3 * (no1 / omega1 - n1o2) * omega6 * A * KS.rho * (Dxu - no2 * Dyv + Dzw) + (no1 - omega6) * (C_220 - no2 * C_202 + C_022);
-		const dreal Eq44RHS =
-			n2o3 * (no1 / omega1 - n1o2) * omega6 * A * KS.rho * (Dxu + Dyv - no2 * Dzw) + (no1 - omega6) * (C_220 + C_202 - no2 * C_022);
-		const dreal Eq45RHS = -n4o3 * (no1 / omega1 - n1o2) * omega7 * A * KS.rho * (Dxu + Dyv + Dzw) + (no1 - omega7) * (C_220 + C_202 + C_022);
+		const dreal Eq43RHS = 0;
+		const dreal Eq44RHS = 0;
+		const dreal Eq45RHS = 0;
 
-		const dreal Cs_220 = n1o3 * (Eq43RHS + Eq44RHS + Eq45RHS);
-		const dreal Cs_202 = n1o3 * (-Eq43RHS + Eq45RHS);
-		const dreal Cs_022 = n1o3 * (-Eq44RHS + Eq45RHS);
+		const dreal Cs_220 = 0;	 //n1o3 * (Eq43RHS + Eq44RHS + Eq45RHS);
+		const dreal Cs_202 = 0;	 //n1o3 * (-Eq43RHS + Eq45RHS);
+		const dreal Cs_022 = 0;	 //n1o3 * (-Eq44RHS + Eq45RHS);
 		// Eq 46-48
-		const dreal Cs_211 = -n1o3 * (no1 / omega1 - n1o2) * omega8 * B * KS.rho * DywDzv + (no1 - omega8) * C_211;
-		const dreal Cs_121 = -n1o3 * (no1 / omega1 - n1o2) * omega8 * B * KS.rho * DxwDzu + (no1 - omega8) * C_121;
-		const dreal Cs_112 = -n1o3 * (no1 / omega1 - n1o2) * omega8 * B * KS.rho * DxvDyu + (no1 - omega8) * C_112;
+		const dreal Cs_211 = 0;	 //-n1o3 * (no1 / omega1 - n1o2) * omega8 * B * KS.rho * DywDzv + (no1 - omega8) * C_211;
+		const dreal Cs_121 = 0;	 //-n1o3 * (no1 / omega1 - n1o2) * omega8 * B * KS.rho * DxwDzu + (no1 - omega8) * C_121;
+		const dreal Cs_112 = 0;	 //-n1o3 * (no1 / omega1 - n1o2) * omega8 * B * KS.rho * DxvDyu + (no1 - omega8) * C_112;
 		// Eqs 49-52
-		const dreal Cs_221 = (no1 - omega9) * C_221;
-		const dreal Cs_212 = (no1 - omega9) * C_212;
-		const dreal Cs_122 = (no1 - omega9) * C_122;
-		const dreal Cs_222 = (no1 - omega10) * C_222;
+		const dreal Cs_221 = 0;	 //(no1 - omega9) * C_221;
+		const dreal Cs_212 = 0;	 //(no1 - omega9) * C_212;
+		const dreal Cs_122 = 0;	 //(no1 - omega9) * C_122;
+		const dreal Cs_222 = 0;	 //(no1 - omega10) * C_222;
+
+#endif
 
 		// remark: collision step is the same as in well-CUM
 
