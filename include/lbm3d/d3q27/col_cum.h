@@ -337,6 +337,9 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		// Eq 42
 		const dreal Cs_111 = (no1 - omega5) * C_111;
 #endif
+		// TODO: The following can be optimized further if USE_GEIER_CUM_2017 is not defined
+		// because then omega6..omega10 = no1
+		// and A = B = 0 ... all following Cs become 0
 		// Eqs 43-45
 		const dreal Eq43RHS =
 			n2o3 * (no1 / omega1 - n1o2) * omega6 * A * KS.rho * (Dxu - no2 * Dyv + Dzw) + (no1 - omega6) * (C_220 - no2 * C_202 + C_022);
