@@ -288,12 +288,52 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal Cs_111 = (no1 - omega111) * C_111;
 #else
 		// Eqs 36-41:
-		const dreal Cs_120 = (-C_102 - C_120) * omega3 * n1o2 + (C_102 - C_120) * omega4 * n1o2 + C_120;
-		const dreal Cs_102 = (-C_102 - C_120) * omega3 * n1o2 + (-C_102 + C_120) * omega4 * n1o2 + C_102;
-		const dreal Cs_210 = (-C_012 - C_210) * omega3 * n1o2 + (C_012 - C_210) * omega4 * n1o2 + C_210;
-		const dreal Cs_012 = (-C_012 - C_210) * omega3 * n1o2 + (-C_012 + C_210) * omega4 * n1o2 + C_012;
-		const dreal Cs_021 = (-C_021 - C_201) * omega3 * n1o2 + (-C_021 + C_201) * omega4 * n1o2 + C_021;
-		const dreal Cs_201 = (-C_021 - C_201) * omega3 * n1o2 + (C_021 - C_201) * omega4 * n1o2 + C_201;
+		//const dreal Cs_120 = (-C_102 - C_120) * omega3 * n1o2 + (C_102 - C_120) * omega4 * n1o2 + C_120;
+		//const dreal Cs_102 = (-C_102 - C_120) * omega3 * n1o2 + (-C_102 + C_120) * omega4 * n1o2 + C_102;
+		//const dreal Cs_210 = (-C_012 - C_210) * omega3 * n1o2 + (C_012 - C_210) * omega4 * n1o2 + C_210;
+		//const dreal Cs_012 = (-C_012 - C_210) * omega3 * n1o2 + (-C_012 + C_210) * omega4 * n1o2 + C_012;
+		//const dreal Cs_021 = (-C_021 - C_201) * omega3 * n1o2 + (-C_021 + C_201) * omega4 * n1o2 + C_021;
+		//const dreal Cs_201 = (-C_021 - C_201) * omega3 * n1o2 + (C_021 - C_201) * omega4 * n1o2 + C_201;
+
+		// Substituting omega3 = omega4 = no1
+		//const dreal Cs_120 = (-C_102 - C_120) * no1 * n1o2 + ( C_102 - C_120) * no1 * n1o2 + C_120;
+		//const dreal Cs_102 = (-C_102 - C_120) * no1 * n1o2 + (-C_102 + C_120) * no1 * n1o2 + C_102;
+		//const dreal Cs_210 = (-C_012 - C_210) * no1 * n1o2 + ( C_012 - C_210) * no1 * n1o2 + C_210;
+		//const dreal Cs_012 = (-C_012 - C_210) * no1 * n1o2 + (-C_012 + C_210) * no1 * n1o2 + C_012;
+		//const dreal Cs_021 = (-C_021 - C_201) * no1 * n1o2 + (-C_021 + C_201) * no1 * n1o2 + C_021;
+		//const dreal Cs_201 = (-C_021 - C_201) * no1 * n1o2 + ( C_021 - C_201) * no1 * n1o2 + C_201;
+
+		// Simplifying the above
+		//const dreal Cs_120 = (-C_102 - C_120 + C_102 - C_120) * no1 * n1o2 + C_120;
+		//const dreal Cs_102 = (-C_102 - C_120 - C_102 + C_120) * no1 * n1o2 + C_102;
+		//const dreal Cs_210 = (-C_012 - C_210 + C_012 - C_210) * no1 * n1o2 + C_210;
+		//const dreal Cs_012 = (-C_012 - C_210 - C_012 + C_210) * no1 * n1o2 + C_012;
+		//const dreal Cs_021 = (-C_021 - C_201 - C_021 + C_201) * no1 * n1o2 + C_021;
+		//const dreal Cs_201 = (-C_021 - C_201 + C_021 - C_201) * no1 * n1o2 + C_201;
+
+		// Simplifying the above
+		//const dreal Cs_120 = -2.0* C_120 * no1 * n1o2 + C_120;
+		//const dreal Cs_102 = -2.0* C_102 * no1 * n1o2 + C_102;
+		//const dreal Cs_210 = -2.0* C_210 * no1 * n1o2 + C_210;
+		//const dreal Cs_012 = -2.0* C_012 * no1 * n1o2 + C_012;
+		//const dreal Cs_021 = -2.0* C_021 * no1 * n1o2 + C_021;
+		//const dreal Cs_201 = -2.0* C_201 * no1 * n1o2 + C_201;
+
+		// Simplifying the above
+		//const dreal Cs_120 = (1.0 -2.0 * no1 * n1o2) * C_120;
+		//const dreal Cs_102 = (1.0 -2.0 * no1 * n1o2) * C_102;
+		//const dreal Cs_210 = (1.0 -2.0 * no1 * n1o2) * C_210;
+		//const dreal Cs_012 = (1.0 -2.0 * no1 * n1o2) * C_012;
+		//const dreal Cs_021 = (1.0 -2.0 * no1 * n1o2) * C_021;
+		//const dreal Cs_201 = (1.0 -2.0 * no1 * n1o2) * C_201;
+		const dreal coeff = (1.0 - 2.0 * no1 * n1o2);
+		const dreal Cs_120 = coeff * C_120;
+		const dreal Cs_102 = coeff * C_102;
+		const dreal Cs_210 = coeff * C_210;
+		const dreal Cs_012 = coeff * C_012;
+		const dreal Cs_021 = coeff * C_021;
+		const dreal Cs_201 = coeff * C_201;
+
 		// Eq 42
 		const dreal Cs_111 = (no1 - omega5) * C_111;
 #endif
