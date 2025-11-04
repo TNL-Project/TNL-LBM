@@ -221,17 +221,17 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 			(no4 * omega1 * omega2 * (no9 * omega1 - no16) - no4 * omega1 * omega1 - no2 * omega2 * omega2 * (no2 + no9 * omega1 * (omega1 - no2)))
 			/ no3 / (omega1 - omega2) / (omega2 * (no2 + no3 * omega1) - no8 * omega1);
 #else
-		const dreal omega3 = no1;
-		const dreal omega4 = no1;
-		const dreal omega5 = no1;
-		const dreal omega6 = no1;
-		const dreal omega7 = no1;
-		const dreal omega8 = no1;
-		const dreal omega9 = no1;
-		const dreal omega10 = no1;
+		//const dreal omega3 = no1;
+		//const dreal omega4 = no1;
+		//const dreal omega5 = no1;
+		//const dreal omega6 = no1;
+		//const dreal omega7 = no1;
+		//const dreal omega8 = no1;
+		//const dreal omega9 = no1;
+		//const dreal omega10 = no1;
 		// extra parameters
-		const dreal A = 0;
-		const dreal B = 0;
+		//const dreal A = 0;
+		//const dreal B = 0;
 #endif
 
 		// actual collision step: note: ks = Cs for these indexes
@@ -256,13 +256,13 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal Eq35RHS = k_000 * omega2 + (no1 - omega2) * (C_200 + C_020 + C_002)
 							- no3 * KS.rho * (no1 - omega2 / no2) * (KS.vx * KS.vx * Dxu + KS.vy * KS.vy * Dyv + KS.vz * KS.vz * Dzw);
 #else
-		const dreal Dxu = 0;
-		const dreal Dyv = 0;
-		const dreal Dzw = 0;
+		//const dreal Dxu = 0;
+		//const dreal Dyv = 0;
+		//const dreal Dzw = 0;
 		// plus their combination: Eq 30 - 32
-		const dreal DxvDyu = 0;
-		const dreal DxwDzu = 0;
-		const dreal DywDzv = 0;
+		//const dreal DxvDyu = 0;
+		//const dreal DxwDzu = 0;
+		//const dreal DywDzv = 0;
 
 		// Eqs 33-35
 		const dreal Eq33RHS = (no1 - omega1) * (C_200 - C_020);
@@ -359,14 +359,14 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal Cs_201 = coeff * C_201;
 
 		// Eq 42
-		const dreal Cs_111 = (no1 - omega5) * C_111;
+		const dreal Cs_111 = 0;	 //(no1 - omega5) * C_111;
 		// TODO: The following can be optimized further if USE_GEIER_CUM_2017 is not defined
 		// because then omega6..omega10 = no1
 		// and A = B = 0 ... all following Cs become 0
 		// Eqs 43-45
-		const dreal Eq43RHS = 0;
-		const dreal Eq44RHS = 0;
-		const dreal Eq45RHS = 0;
+		//const dreal Eq43RHS = 0;
+		//const dreal Eq44RHS = 0;
+		//const dreal Eq45RHS = 0;
 
 		const dreal Cs_220 = 0;	 //n1o3 * (Eq43RHS + Eq44RHS + Eq45RHS);
 		const dreal Cs_202 = 0;	 //n1o3 * (-Eq43RHS + Eq45RHS);
