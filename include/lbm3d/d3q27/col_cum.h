@@ -46,7 +46,16 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 #define ks_201 Cs_201
 #define ks_120 Cs_120
 #define ks_210 Cs_210
+
 		// based on Geier 2017 https://doi.org/10.1016/j.jcp.2017.05.040
+
+		const dreal no2_KS_vz = no2 * KS.vz;
+		const dreal KS_vz_sqr = KS.vz * KS.vz;
+		const dreal no2_KS_vy = no2 * KS.vy;
+		const dreal KS_vy_sqr = KS.vy * KS.vy;
+		const dreal no2_KS_vx = no2 * KS.vx;
+		const dreal KS_vx_sqr = KS.vx * KS.vx;
+
 		// Eq 6
 		const dreal k_mm0 = (KS.f[mmp] + KS.f[mmm]) + KS.f[mmz];
 		const dreal k_mz0 = (KS.f[mzp] + KS.f[mzm]) + KS.f[mzz];
@@ -70,8 +79,8 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal k_pp1 = (KS.f[ppp] - KS.f[ppm]) - KS.vz * k_pp0;
 
 		//Eq 8
-		const dreal no2_KS_vz = no2 * KS.vz;
-		const dreal KS_vz_sqr = KS.vz * KS.vz;
+		//const dreal no2_KS_vz = no2 * KS.vz;
+		//const dreal KS_vz_sqr = KS.vz * KS.vz;
 		const dreal k_mm2 = (KS.f[mmp] + KS.f[mmm]) - no2_KS_vz * (KS.f[mmp] - KS.f[mmm]) + KS_vz_sqr * k_mm0;
 		const dreal k_mz2 = (KS.f[mzp] + KS.f[mzm]) - no2_KS_vz * (KS.f[mzp] - KS.f[mzm]) + KS_vz_sqr * k_mz0;
 		const dreal k_mp2 = (KS.f[mpp] + KS.f[mpm]) - no2_KS_vz * (KS.f[mpp] - KS.f[mpm]) + KS_vz_sqr * k_mp0;
@@ -105,8 +114,8 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal k_p12 = (k_pp2 - k_pm2) - KS.vy * k_p02;
 
 		//Eq 11
-		const dreal no2_KS_vy = no2 * KS.vy;
-		const dreal KS_vy_sqr = KS.vy * KS.vy;
+		//const dreal no2_KS_vy = no2 * KS.vy;
+		//const dreal KS_vy_sqr = KS.vy * KS.vy;
 		const dreal k_m20 = (k_mp0 + k_mm0) - no2_KS_vy * (k_mp0 - k_mm0) + KS_vy_sqr * k_m00;
 		const dreal k_z20 = (k_zp0 + k_zm0) - no2_KS_vy * (k_zp0 - k_zm0) + KS_vy_sqr * k_z00;
 		const dreal k_p20 = (k_pp0 + k_pm0) - no2_KS_vy * (k_pp0 - k_pm0) + KS_vy_sqr * k_p00;
@@ -140,8 +149,8 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal k_122 = (k_p22 - k_m22) - KS.vx * k_022;
 
 		//Eq 14
-		const dreal no2_KS_vx = no2 * KS.vx;
-		const dreal KS_vx_sqr = KS.vx * KS.vx;
+		//const dreal no2_KS_vx = no2 * KS.vx;
+		//const dreal KS_vx_sqr = KS.vx * KS.vx;
 		const dreal k_200 = (k_p00 + k_m00) - no2_KS_vx * (k_p00 - k_m00) + KS_vx_sqr * k_000;
 		const dreal k_201 = (k_p01 + k_m01) - no2_KS_vx * (k_p01 - k_m01) + KS_vx_sqr * k_001;
 		const dreal k_202 = (k_p02 + k_m02) - no2_KS_vx * (k_p02 - k_m02) + KS_vx_sqr * k_002;
