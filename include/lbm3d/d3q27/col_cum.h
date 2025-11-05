@@ -56,27 +56,27 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal no2_KS_vx = no2 * KS.vx;
 		const dreal KS_vx_sqr = KS.vx * KS.vx;
 
-		// Eq 6
-		const dreal k_mm0 = (KS.f[mmp] + KS.f[mmm]) + KS.f[mmz];
-		const dreal k_mz0 = (KS.f[mzp] + KS.f[mzm]) + KS.f[mzz];
-		const dreal k_mp0 = (KS.f[mpp] + KS.f[mpm]) + KS.f[mpz];
-		const dreal k_zm0 = (KS.f[zmp] + KS.f[zmm]) + KS.f[zmz];
-		const dreal k_zz0 = (KS.f[zzp] + KS.f[zzm]) + KS.f[zzz];
-		const dreal k_zp0 = (KS.f[zpp] + KS.f[zpm]) + KS.f[zpz];
-		const dreal k_pm0 = (KS.f[pmp] + KS.f[pmm]) + KS.f[pmz];
-		const dreal k_pz0 = (KS.f[pzp] + KS.f[pzm]) + KS.f[pzz];
-		const dreal k_pp0 = (KS.f[ppp] + KS.f[ppm]) + KS.f[ppz];
+		//Eq 6
+		const dreal k_mm0 = KS.f[mmp] + KS.f[mmm] + KS.f[mmz];
+		const dreal k_mz0 = KS.f[mzp] + KS.f[mzm] + KS.f[mzz];
+		const dreal k_mp0 = KS.f[mpp] + KS.f[mpm] + KS.f[mpz];
+		const dreal k_zm0 = KS.f[zmp] + KS.f[zmm] + KS.f[zmz];
+		const dreal k_zz0 = KS.f[zzp] + KS.f[zzm] + KS.f[zzz];
+		const dreal k_zp0 = KS.f[zpp] + KS.f[zpm] + KS.f[zpz];
+		const dreal k_pm0 = KS.f[pmp] + KS.f[pmm] + KS.f[pmz];
+		const dreal k_pz0 = KS.f[pzp] + KS.f[pzm] + KS.f[pzz];
+		const dreal k_pp0 = KS.f[ppp] + KS.f[ppm] + KS.f[ppz];
 
-		// Eq 7
-		const dreal k_mm1 = (KS.f[mmp] - KS.f[mmm]) - KS.vz * k_mm0;
-		const dreal k_mz1 = (KS.f[mzp] - KS.f[mzm]) - KS.vz * k_mz0;
-		const dreal k_mp1 = (KS.f[mpp] - KS.f[mpm]) - KS.vz * k_mp0;
-		const dreal k_zm1 = (KS.f[zmp] - KS.f[zmm]) - KS.vz * k_zm0;
-		const dreal k_zz1 = (KS.f[zzp] - KS.f[zzm]) - KS.vz * k_zz0;
-		const dreal k_zp1 = (KS.f[zpp] - KS.f[zpm]) - KS.vz * k_zp0;
-		const dreal k_pm1 = (KS.f[pmp] - KS.f[pmm]) - KS.vz * k_pm0;
-		const dreal k_pz1 = (KS.f[pzp] - KS.f[pzm]) - KS.vz * k_pz0;
-		const dreal k_pp1 = (KS.f[ppp] - KS.f[ppm]) - KS.vz * k_pp0;
+		//Eq 7
+		const dreal k_mm1 = KS.f[mmp] - KS.f[mmm] - KS.vz * k_mm0;
+		const dreal k_mz1 = KS.f[mzp] - KS.f[mzm] - KS.vz * k_mz0;
+		const dreal k_mp1 = KS.f[mpp] - KS.f[mpm] - KS.vz * k_mp0;
+		const dreal k_zm1 = KS.f[zmp] - KS.f[zmm] - KS.vz * k_zm0;
+		const dreal k_zz1 = KS.f[zzp] - KS.f[zzm] - KS.vz * k_zz0;
+		const dreal k_zp1 = KS.f[zpp] - KS.f[zpm] - KS.vz * k_zp0;
+		const dreal k_pm1 = KS.f[pmp] - KS.f[pmm] - KS.vz * k_pm0;
+		const dreal k_pz1 = KS.f[pzp] - KS.f[pzm] - KS.vz * k_pz0;
+		const dreal k_pp1 = KS.f[ppp] - KS.f[ppm] - KS.vz * k_pp0;
 
 		//Eq 8
 		//const dreal no2_KS_vz = no2 * KS.vz;
@@ -102,16 +102,16 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal k_z02 = (k_zp2 + k_zm2) + k_zz2;
 		const dreal k_p02 = (k_pp2 + k_pm2) + k_pz2;
 
-		// Eq 10
-		const dreal k_m10 = (k_mp0 - k_mm0) - KS.vy * k_m00;
-		const dreal k_z10 = (k_zp0 - k_zm0) - KS.vy * k_z00;
-		const dreal k_p10 = (k_pp0 - k_pm0) - KS.vy * k_p00;
-		const dreal k_m11 = (k_mp1 - k_mm1) - KS.vy * k_m01;
-		const dreal k_z11 = (k_zp1 - k_zm1) - KS.vy * k_z01;
-		const dreal k_p11 = (k_pp1 - k_pm1) - KS.vy * k_p01;
-		const dreal k_m12 = (k_mp2 - k_mm2) - KS.vy * k_m02;
-		const dreal k_z12 = (k_zp2 - k_zm2) - KS.vy * k_z02;
-		const dreal k_p12 = (k_pp2 - k_pm2) - KS.vy * k_p02;
+		//Eq 10
+		const dreal k_m10 = k_mp0 - k_mm0 - KS.vy * k_m00;
+		const dreal k_z10 = k_zp0 - k_zm0 - KS.vy * k_z00;
+		const dreal k_p10 = k_pp0 - k_pm0 - KS.vy * k_p00;
+		const dreal k_m11 = k_mp1 - k_mm1 - KS.vy * k_m01;
+		const dreal k_z11 = k_zp1 - k_zm1 - KS.vy * k_z01;
+		const dreal k_p11 = k_pp1 - k_pm1 - KS.vy * k_p01;
+		const dreal k_m12 = k_mp2 - k_mm2 - KS.vy * k_m02;
+		const dreal k_z12 = k_zp2 - k_zm2 - KS.vy * k_z02;
+		const dreal k_p12 = k_pp2 - k_pm2 - KS.vy * k_p02;
 
 		//Eq 11
 		//const dreal no2_KS_vy = no2 * KS.vy;
@@ -310,6 +310,38 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal Cs_212 = (no1 - omega9) * C_212;
 		const dreal Cs_122 = (no1 - omega9) * C_122;
 		const dreal Cs_222 = (no1 - omega10) * C_222;
+		// remark: collision step is the same as in well-CUM
+
+		// 3.4 Backward cumulant transformation
+		// gen2nowell.php BEGIN
+		//Eq. G2015(81)
+		const dreal ks_211 = Cs_211 + (ks_200 * ks_011 + no2 * ks_101 * ks_110) * KS_rho_inv;
+		const dreal ks_121 = Cs_121 + (ks_020 * ks_101 + no2 * ks_110 * ks_011) * KS_rho_inv;
+		const dreal ks_112 = Cs_112 + (ks_002 * ks_110 + no2 * ks_011 * ks_101) * KS_rho_inv;
+
+		//Eq. G2015(82)
+		const dreal ks_220 = Cs_220 + (ks_020 * ks_200 + no2 * ks_110 * ks_110) * KS_rho_inv;
+		const dreal ks_022 = Cs_022 + (ks_002 * ks_020 + no2 * ks_011 * ks_011) * KS_rho_inv;
+		const dreal ks_202 = Cs_202 + (ks_200 * ks_002 + no2 * ks_101 * ks_101) * KS_rho_inv;
+
+		//Eq. G2015(83)
+		const dreal ks_122 =
+			Cs_122 + (ks_020 * ks_102 + ks_002 * ks_120 + no4 * ks_011 * ks_111 + no2 * (ks_110 * ks_012 + ks_101 * ks_021)) * KS_rho_inv;
+		const dreal ks_212 =
+			Cs_212 + (ks_002 * ks_210 + ks_200 * ks_012 + no4 * ks_101 * ks_111 + no2 * (ks_011 * ks_201 + ks_110 * ks_102)) * KS_rho_inv;
+		const dreal ks_221 =
+			Cs_221 + (ks_200 * ks_021 + ks_020 * ks_201 + no4 * ks_110 * ks_111 + no2 * (ks_101 * ks_120 + ks_011 * ks_210)) * KS_rho_inv;
+		// gen2nowell.php END
+
+		// Eq. G2015(84)
+		const dreal ks_222 =
+			Cs_222
+			+ (no4 * ks_111 * ks_111 + ks_200 * ks_022 + ks_020 * ks_202 + ks_002 * ks_220
+			   + no4 * (ks_011 * ks_211 + ks_101 * ks_121 + ks_110 * ks_112) + no2 * (ks_120 * ks_102 + ks_210 * ks_012 + ks_201 * ks_021))
+				  * KS_rho_inv
+			- (no16 * ks_110 * ks_101 * ks_011 + no4 * (ks_101 * ks_101 * ks_020 + ks_011 * ks_011 * ks_200 + ks_110 * ks_110 * ks_002)
+			   + no2 * ks_200 * ks_020 * ks_002)
+				  * KS_rho_inv * KS_rho_inv;
 #else
 		// Eqs 36-41:
 		//const dreal Cs_120 = (-C_102 - C_120) * omega3 * n1o2 + (C_102 - C_120) * omega4 * n1o2 + C_120;
@@ -367,53 +399,47 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		//const dreal Eq43RHS = 0;
 		//const dreal Eq44RHS = 0;
 		//const dreal Eq45RHS = 0;
-
-		const dreal Cs_220 = 0;	 //n1o3 * (Eq43RHS + Eq44RHS + Eq45RHS);
-		const dreal Cs_202 = 0;	 //n1o3 * (-Eq43RHS + Eq45RHS);
-		const dreal Cs_022 = 0;	 //n1o3 * (-Eq44RHS + Eq45RHS);
+		//const dreal Cs_220 = 0;	 //n1o3 * (Eq43RHS + Eq44RHS + Eq45RHS);
+		//const dreal Cs_202 = 0;	 //n1o3 * (-Eq43RHS + Eq45RHS);
+		//const dreal Cs_022 = 0;	 //n1o3 * (-Eq44RHS + Eq45RHS);
 		// Eq 46-48
-		const dreal Cs_211 = 0;	 //-n1o3 * (no1 / omega1 - n1o2) * omega8 * B * KS.rho * DywDzv + (no1 - omega8) * C_211;
-		const dreal Cs_121 = 0;	 //-n1o3 * (no1 / omega1 - n1o2) * omega8 * B * KS.rho * DxwDzu + (no1 - omega8) * C_121;
-		const dreal Cs_112 = 0;	 //-n1o3 * (no1 / omega1 - n1o2) * omega8 * B * KS.rho * DxvDyu + (no1 - omega8) * C_112;
+		///const dreal Cs_211 = 0;	 //-n1o3 * (no1 / omega1 - n1o2) * omega8 * B * KS.rho * DywDzv + (no1 - omega8) * C_211;
+		//const dreal Cs_121 = 0;	 //-n1o3 * (no1 / omega1 - n1o2) * omega8 * B * KS.rho * DxwDzu + (no1 - omega8) * C_121;
+		//const dreal Cs_112 = 0;	 //-n1o3 * (no1 / omega1 - n1o2) * omega8 * B * KS.rho * DxvDyu + (no1 - omega8) * C_112;
 		// Eqs 49-52
-		const dreal Cs_221 = 0;	 //(no1 - omega9) * C_221;
-		const dreal Cs_212 = 0;	 //(no1 - omega9) * C_212;
-		const dreal Cs_122 = 0;	 //(no1 - omega9) * C_122;
-		const dreal Cs_222 = 0;	 //(no1 - omega10) * C_222;
-
-#endif
+		//const dreal Cs_221 = 0;	 //(no1 - omega9) * C_221;
+		//const dreal Cs_212 = 0;	 //(no1 - omega9) * C_212;
+		//const dreal Cs_122 = 0;	 //(no1 - omega9) * C_122;
+		//const dreal Cs_222 = 0;	 //(no1 - omega10) * C_222;
 
 		// remark: collision step is the same as in well-CUM
 
 		// 3.4 Backward cumulant transformation
-		// Eq. 81 from Geier 2015
-		const dreal ks_211 = Cs_211 + (ks_200 * ks_011 + no2 * ks_101 * ks_110) * KS_rho_inv;
-		const dreal ks_121 = Cs_121 + (ks_020 * ks_101 + no2 * ks_110 * ks_011) * KS_rho_inv;
-		const dreal ks_112 = Cs_112 + (ks_002 * ks_110 + no2 * ks_011 * ks_101) * KS_rho_inv;
+		//Eq 81 from Geier 2015
+		const dreal ks_211 = (ks_200 * ks_011 + no2 * ks_101 * ks_110) * KS_rho_inv;
+		const dreal ks_121 = (ks_020 * ks_101 + no2 * ks_110 * ks_011) * KS_rho_inv;
+		const dreal ks_112 = (ks_002 * ks_110 + no2 * ks_011 * ks_101) * KS_rho_inv;
 
-		// Eq. 82 from Geier 2015
-		const dreal ks_220 = Cs_220 + (ks_020 * ks_200 + no2 * ks_110 * ks_110) * KS_rho_inv;
-		const dreal ks_022 = Cs_022 + (ks_002 * ks_020 + no2 * ks_011 * ks_011) * KS_rho_inv;
-		const dreal ks_202 = Cs_202 + (ks_200 * ks_002 + no2 * ks_101 * ks_101) * KS_rho_inv;
+		//Eq 82 from Geier 2015
+		const dreal ks_220 = (ks_020 * ks_200 + no2 * ks_110 * ks_110) * KS_rho_inv;
+		const dreal ks_022 = (ks_002 * ks_020 + no2 * ks_011 * ks_011) * KS_rho_inv;
+		const dreal ks_202 = (ks_200 * ks_002 + no2 * ks_101 * ks_101) * KS_rho_inv;
 
-		// Eq. 83 from Geier 2015
-		const dreal ks_122 =
-			Cs_122 + (ks_020 * ks_102 + ks_002 * ks_120 + no4 * ks_011 * ks_111 + no2 * (ks_110 * ks_012 + ks_101 * ks_021)) * KS_rho_inv;
-		const dreal ks_212 =
-			Cs_212 + (ks_002 * ks_210 + ks_200 * ks_012 + no4 * ks_101 * ks_111 + no2 * (ks_011 * ks_201 + ks_110 * ks_102)) * KS_rho_inv;
-		const dreal ks_221 =
-			Cs_221 + (ks_200 * ks_021 + ks_020 * ks_201 + no4 * ks_110 * ks_111 + no2 * (ks_101 * ks_120 + ks_011 * ks_210)) * KS_rho_inv;
+		//Eq 83 from Geier 2015
+		const dreal ks_122 = (ks_020 * ks_102 + ks_002 * ks_120 + no4 * ks_011 * ks_111 + no2 * (ks_110 * ks_012 + ks_101 * ks_021)) * KS_rho_inv;
+		const dreal ks_212 = (ks_002 * ks_210 + ks_200 * ks_012 + no4 * ks_101 * ks_111 + no2 * (ks_011 * ks_201 + ks_110 * ks_102)) * KS_rho_inv;
+		const dreal ks_221 = (ks_200 * ks_021 + ks_020 * ks_201 + no4 * ks_110 * ks_111 + no2 * (ks_101 * ks_120 + ks_011 * ks_210)) * KS_rho_inv;
 
 		// Eq. 84 from Geier 2015
 		const dreal ks_222 =
-			Cs_222
-			+ (no4 * ks_111 * ks_111 + ks_200 * ks_022 + ks_020 * ks_202 + ks_002 * ks_220
-			   + no4 * (ks_011 * ks_211 + ks_101 * ks_121 + ks_110 * ks_112) + no2 * (ks_120 * ks_102 + ks_210 * ks_012 + ks_201 * ks_021))
-				  * KS_rho_inv
+			(no4 * ks_111 * ks_111 + ks_200 * ks_022 + ks_020 * ks_202 + ks_002 * ks_220 + no4 * (ks_011 * ks_211 + ks_101 * ks_121 + ks_110 * ks_112)
+			 + no2 * (ks_120 * ks_102 + ks_210 * ks_012 + ks_201 * ks_021))
+				* KS_rho_inv
 			- (no16 * ks_110 * ks_101 * ks_011 + no4 * (ks_101 * ks_101 * ks_020 + ks_011 * ks_011 * ks_200 + ks_110 * ks_110 * ks_002)
 			   + no2 * ks_200 * ks_020 * ks_002)
 				  * KS_rho_inv * KS_rho_inv;
 
+#endif
 		// backward central moment transformation
 		const dreal ks_000 = k_000;
 		// Geier 2017: forcing scheme
