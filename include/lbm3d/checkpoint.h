@@ -122,7 +122,7 @@ public:
 
 		if (currentMode == adios2::Mode::Write) {
 			// Define and output the variable
-			if (dataManager->getVariables(currentCheckpointName).count(name) == 0) {
+			if (! dataManager->isVariableDefined<T>(name, currentCheckpointName)) {
 				dataManager->defineData<T>(name, shape, start, count, currentCheckpointName);
 			}
 
@@ -157,7 +157,7 @@ public:
 
 		if (currentMode == adios2::Mode::Write) {
 			// Define and output the variable
-			if (dataManager->getVariables(currentCheckpointName).count(name) == 0) {
+			if (! dataManager->isVariableDefined<T>(name, currentCheckpointName)) {
 				dataManager->defineData<T>(name, shape, start, count, currentCheckpointName);
 			}
 

@@ -23,7 +23,7 @@ template <typename TRAITS>
 template <typename T>
 void UnstructuredPointsWriter<TRAITS>::write(std::string varName, T val)
 {
-	if (dataManager->getVariables(simType).count(varName) == 0) {
+	if (! dataManager->isVariableDefined<T>(varName, simType)) {
 		dataManager->defineData<T>(varName, simType);
 	}
 
@@ -36,7 +36,7 @@ void UnstructuredPointsWriter<TRAITS>::write(std::string varName, std::vector<T>
 {
 	recordVariable(varName, dim);
 
-	if (dataManager->getVariables(simType).count(varName) == 0) {
+	if (! dataManager->isVariableDefined<T>(varName, simType)) {
 		// TODO: make it distributed
 		adios2::Dims shape{static_cast<std::size_t>(num_points), std::size_t(dim)};
 		adios2::Dims start{static_cast<std::size_t>(0), static_cast<std::size_t>(0)};
