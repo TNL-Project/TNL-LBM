@@ -287,6 +287,101 @@ struct D3Q343_KernelStruct
 	REAL rho = 1.0, lbmViscosity = 1.0;
 };
 
+template <typename REAL>
+struct D3Q53_KernelStruct
+{
+	static constexpr int D = 3;
+	static constexpr int Q = 53;
+	static constexpr int Qhalf = (Q-1)/2;
+	static constexpr int NoDV = 3;
+	static constexpr int ONE_SIZE = 2*NoDV + 1;
+
+	__cuda_callable__ CONSTFUNC int flip_coord(int val){return ONE_SIZE-val-1;}
+	__cuda_callable__ CONSTFUNC int flip_id(int id){return Q - id - 1;}
+
+	__cuda_callable__ CONSTFUNC Coord id_to_dv(int id){
+		const int XS[Q] = {-3,-2,-2,-2,-2,-2,-2,-2,-2,-1,-1,-1,-1,-1,-1,-1,-1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,2,2,2,2,2,2,2,2,3};
+		const int YS[Q] = {0,-2,-2,-2,0,0,2,2,2,-1,-1,-1,0,0,0,1,1,1,-3,-2,-2,-1,-1,-1,0,0,0,0,0,1,1,1,2,2,3,-1,-1,-1,0,0,0,1,1,1,-2,-2,-2,0,0,2,2,2,0};
+		const int ZS[Q] = {0,-2,0,2,-2,2,-2,0,2,-1,0,1,-1,0,1,-1,0,1,0,-2,2,-1,0,1,-3,-1,0,1,3,-1,0,1,-2,2,0,-1,0,1,-1,0,1,-1,0,1,-2,0,2,-2,2,-2,0,2,0};
+		int x = XS[id];
+		int y = YS[id];
+		int z = ZS[id];
+		return {x,y,z};
+	}
+
+	__cuda_callable__ CONSTFUNC Coord id_to_coords(int id){
+		Coord c = id_to_dv(id);
+		return {c.x+NoDV,c.y+NoDV,c.z+NoDV};
+	}
+
+	__cuda_callable__ CONSTFUNC int dv_to_id(int cx, int cy, int cz){
+		if (cx == -3 && cy == 0 && cz == 0) return 0;
+		if (cx == -2 && cy == -2 && cz == -2) return 1;
+		if (cx == -2 && cy == -2 && cz == 0) return 2;
+		if (cx == -2 && cy == -2 && cz == 2) return 3;
+		if (cx == -2 && cy == 0 && cz == -2) return 4;
+		if (cx == -2 && cy == 0 && cz == 2) return 5;
+		if (cx == -2 && cy == 2 && cz == -2) return 6;
+		if (cx == -2 && cy == 2 && cz == 0) return 7;
+		if (cx == -2 && cy == 2 && cz == 2) return 8;
+		if (cx == -1 && cy == -1 && cz == -1) return 9;
+		if (cx == -1 && cy == -1 && cz == 0) return 10;
+		if (cx == -1 && cy == -1 && cz == 1) return 11;
+		if (cx == -1 && cy == 0 && cz == -1) return 12;
+		if (cx == -1 && cy == 0 && cz == 0) return 13;
+		if (cx == -1 && cy == 0 && cz == 1) return 14;
+		if (cx == -1 && cy == 1 && cz == -1) return 15;
+		if (cx == -1 && cy == 1 && cz == 0) return 16;
+		if (cx == -1 && cy == 1 && cz == 1) return 17;
+		if (cx == 0 && cy == -3 && cz == 0) return 18;
+		if (cx == 0 && cy == -2 && cz == -2) return 19;
+		if (cx == 0 && cy == -2 && cz == 2) return 20;
+		if (cx == 0 && cy == -1 && cz == -1) return 21;
+		if (cx == 0 && cy == -1 && cz == 0) return 22;
+		if (cx == 0 && cy == -1 && cz == 1) return 23;
+		if (cx == 0 && cy == 0 && cz == -3) return 24;
+		if (cx == 0 && cy == 0 && cz == -1) return 25;
+		if (cx == 0 && cy == 0 && cz == 0) return 26;
+		if (cx == 0 && cy == 0 && cz == 1) return 27;
+		if (cx == 0 && cy == 0 && cz == 3) return 28;
+		if (cx == 0 && cy == 1 && cz == -1) return 29;
+		if (cx == 0 && cy == 1 && cz == 0) return 30;
+		if (cx == 0 && cy == 1 && cz == 1) return 31;
+		if (cx == 0 && cy == 2 && cz == -2) return 32;
+		if (cx == 0 && cy == 2 && cz == 2) return 33;
+		if (cx == 0 && cy == 3 && cz == 0) return 34;
+		if (cx == 1 && cy == -1 && cz == -1) return 35;
+		if (cx == 1 && cy == -1 && cz == 0) return 36;
+		if (cx == 1 && cy == -1 && cz == 1) return 37;
+		if (cx == 1 && cy == 0 && cz == -1) return 38;
+		if (cx == 1 && cy == 0 && cz == 0) return 39;
+		if (cx == 1 && cy == 0 && cz == 1) return 40;
+		if (cx == 1 && cy == 1 && cz == -1) return 41;
+		if (cx == 1 && cy == 1 && cz == 0) return 42;
+		if (cx == 1 && cy == 1 && cz == 1) return 43;
+		if (cx == 2 && cy == -2 && cz == -2) return 44;
+		if (cx == 2 && cy == -2 && cz == 0) return 45;
+		if (cx == 2 && cy == -2 && cz == 2) return 46;
+		if (cx == 2 && cy == 0 && cz == -2) return 47;
+		if (cx == 2 && cy == 0 && cz == 2) return 48;
+		if (cx == 2 && cy == 2 && cz == -2) return 49;
+		if (cx == 2 && cy == 2 && cz == 0) return 50;
+		if (cx == 2 && cy == 2 && cz == 2) return 51;
+		if (cx == 3 && cy == 0 && cz == 0) return 52;
+
+	}
+	__cuda_callable__ CONSTFUNC int coords_to_id(int cx, int cy, int cz){
+		return dv_to_id(cx-NoDV,cy-NoDV,cz-NoDV);
+	}
+
+	using SG = StreamGrid<int, 3>;
+
+	REAL f[Q];
+	REAL fx = 0, fy = 0, fz = 0;
+	REAL vx = 0, vy = 0, vz = 0;
+	REAL rho = 1.0, lbmViscosity = 1.0;
+};
+
 template <
 	typename _TRAITS,
 	template <typename> class _KERNEL_STRUCT,

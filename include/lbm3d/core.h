@@ -39,6 +39,11 @@
 #include "d3q343/macro.h"
 #include "d3q343/bc.h"
 
+#include "d3q53/eq.h"
+#include "d3q53/col_srt.h"
+#include "d3q53/streaming_AB.h"
+#include "d3q53/macro.h"
+#include "d3q53/bc.h"
 
 #include "state.h"
 

@@ -4,6 +4,7 @@
 // As of now, enum and sync direction are specific for different models and need to be included before core!!!
 //#include "lbm3d/d3q27/defs.h"
 #include "lbm3d/d3q343/defs.h"
+//#include "lbm3d/d3q53/defs.h"
 #include "lbm3d/core.h"
 
 template <typename NSE>
@@ -201,6 +202,18 @@ void run(int RES)
 		D3Q343_STREAMING<TRAITS>,
 		D3Q343_BC_All,
 		D3Q343_MACRO_Default<TRAITS>>;
+
+	// D3Q53
+	//using COLL = D3Q53_SRT<TRAITS, D3Q53_EQ<TRAITS>>;
+	//using NSE_CONFIG = LBM_CONFIG<
+	//	TRAITS,
+	//	D3Q53_KernelStruct,
+	//	NSE_Data_ConstInflow<TRAITS>,
+	//	COLL,
+	//	typename COLL::EQ,
+	//	D3Q53_STREAMING<TRAITS>,
+	//	D3Q53_BC_All,
+	//	D3Q53_MACRO_Default<TRAITS>>;
 
 	sim<NSE_CONFIG>(RES);
 }
