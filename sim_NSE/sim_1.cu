@@ -2,8 +2,8 @@
 #include <utility>
 
 // As of now, enum and sync direction are specific for different models and need to be included before core!!!
-#include "lbm3d/d3q27/defs.h"
-//#include "lbm3d/d3q343/defs.h"
+//#include "lbm3d/d3q27/defs.h"
+#include "lbm3d/d3q343/defs.h"
 #include "lbm3d/core.h"
 
 template <typename NSE>
@@ -140,8 +140,8 @@ int sim(int RESOLUTION = 2)
 	const std::string state_id = fmt::format("sim_1_res{:02d}_np{:03d}", RESOLUTION, TNL::MPI::GetSize(MPI_COMM_WORLD));
 	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat);
 
-	if (! state.canCompute())
-		return 0;
+	//if (! state.canCompute())
+	//	return 0;
 
 	// problem parameters
 	state.lbm_inflow_vx = lat.phys2lbmVelocity(PHYS_VELOCITY);
@@ -180,7 +180,6 @@ void run(int RES)
 {
 	//	using COLL = D3Q27_CUM< TRAITS >;
 	//using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
-//
 	//using NSE_CONFIG = LBM_CONFIG<
 	//	TRAITS,
 	//	D3Q27_KernelStruct,
@@ -192,9 +191,7 @@ void run(int RES)
 	//	D3Q27_MACRO_Default<TRAITS>>;
 
 	// D3Q343
-	//	using COLL = D3Q27_CUM< TRAITS >;
 	using COLL = D3Q343_SRT<TRAITS, D3Q343_EQ<TRAITS>>;
-
 	using NSE_CONFIG = LBM_CONFIG<
 		TRAITS,
 		D3Q343_KernelStruct,
