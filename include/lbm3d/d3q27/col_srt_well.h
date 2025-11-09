@@ -3,8 +3,6 @@
 #include "common_well.h"
 #include "eq_well.h"
 
-// improved BRK (SRT) model by Geier 2017
-
 template <typename TRAITS, typename LBM_EQ = D3Q27_EQ_WELL<TRAITS>>
 struct D3Q27_SRT_WELL : D3Q27_COMMON_WELL<TRAITS, LBM_EQ>
 {
@@ -16,7 +14,6 @@ struct D3Q27_SRT_WELL : D3Q27_COMMON_WELL<TRAITS, LBM_EQ>
 	__cuda_callable__ static void collision(LBM_KS& KS)
 	{
 		const dreal tau = no3 * KS.lbmViscosity + n1o2;
-		// forcing: vzorce_bgk_force.mw
 		const dreal Smmm = (no3 * ((-KS.vx - no1) * KS.fx + (-KS.vy - no1) * KS.fy + (-KS.vz - no1) * KS.fz)) / KS.rho;
 		const dreal Szmm = (no3 * (-KS.vx * KS.fx + (-KS.vy - no1) * KS.fy + (-KS.vz - no1) * KS.fz)) / KS.rho;
 		const dreal Spmm = (no3 * ((-KS.vx + no1) * KS.fx + (-KS.vy - no1) * KS.fy + (-KS.vz - no1) * KS.fz)) / KS.rho;

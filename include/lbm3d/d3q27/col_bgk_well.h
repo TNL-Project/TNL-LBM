@@ -3,7 +3,8 @@
 #include "common_well.h"
 #include "eq_well.h"
 
-// improved BRK (SRT) model by Geier 2017
+// improved BGK (SRT) model by Geier 2015 https://doi.org/10.1016/j.camwa.2015.05.001
+// Appendix A, page 530 + Appendix J, page 544
 // well conditioned
 
 template <typename TRAITS, typename LBM_EQ = D3Q27_EQ_WELL<TRAITS>>
@@ -63,8 +64,6 @@ struct D3Q27_BGK_WELL : D3Q27_COMMON_WELL<TRAITS, LBM_EQ>
 		const dreal Zp = -n1o2 * (Zz + no1 + KS.vz);
 		const dreal Zm = Zp + KS.vz;
 #endif
-
-		// forcing: vzorce_bgk_force.mw
 		const dreal Smmm = (no3 * ((-KS.vx - no1) * KS.fx + (-KS.vy - no1) * KS.fy + (-KS.vz - no1) * KS.fz));
 		const dreal Szmm = (no3 * (-KS.vx * KS.fx + (-KS.vy - no1) * KS.fy + (-KS.vz - no1) * KS.fz));
 		const dreal Spmm = (no3 * ((-KS.vx + no1) * KS.fx + (-KS.vy - no1) * KS.fy + (-KS.vz - no1) * KS.fz));

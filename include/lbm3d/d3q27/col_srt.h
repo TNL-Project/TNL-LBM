@@ -3,9 +3,6 @@
 #include "common.h"
 #include "eq.h"
 
-// improved BRK (SRT) model by Geier 2017
-// for standard DF (no well-conditioned)
-
 template <typename TRAITS, typename LBM_EQ = D3Q27_EQ<TRAITS>>
 struct D3Q27_SRT : D3Q27_COMMON<TRAITS, LBM_EQ>
 {
@@ -21,7 +18,7 @@ struct D3Q27_SRT : D3Q27_COMMON<TRAITS, LBM_EQ>
 		// NOTE: rho for ADE can be 0 (but all fx,fy,fz are 0...)
 		const dreal iRho = no1 / (KS.rho == 0 ? no1 : KS.rho);
 
-		// forcing: vzorce_bgk_force.mw
+		// forcing
 		const dreal Smmm = (no3 * ((-KS.vx - no1) * KS.fx + (-KS.vy - no1) * KS.fy + (-KS.vz - no1) * KS.fz)) * iRho;
 		const dreal Szmm = (no3 * (-KS.vx * KS.fx + (-KS.vy - no1) * KS.fy + (-KS.vz - no1) * KS.fz)) * iRho;
 		const dreal Spmm = (no3 * ((-KS.vx + no1) * KS.fx + (-KS.vy - no1) * KS.fy + (-KS.vz - no1) * KS.fz)) * iRho;

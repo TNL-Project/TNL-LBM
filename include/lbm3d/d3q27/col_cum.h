@@ -46,9 +46,8 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 #define ks_201 Cs_201
 #define ks_120 Cs_120
 #define ks_210 Cs_210
-		// backward translation
-		// gen1nowell.php BEGIN
-		//Eq 6
+		// based on Geier 2017 https://doi.org/10.1016/j.jcp.2017.05.040
+		// Eq 6
 		const dreal k_mm0 = (KS.f[mmp] + KS.f[mmm]) + KS.f[mmz];
 		const dreal k_mz0 = (KS.f[mzp] + KS.f[mzm]) + KS.f[mzz];
 		const dreal k_mp0 = (KS.f[mpp] + KS.f[mpm]) + KS.f[mpz];
@@ -59,7 +58,7 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal k_pz0 = (KS.f[pzp] + KS.f[pzm]) + KS.f[pzz];
 		const dreal k_pp0 = (KS.f[ppp] + KS.f[ppm]) + KS.f[ppz];
 
-		//Eq 7
+		// Eq 7
 		const dreal k_mm1 = (KS.f[mmp] - KS.f[mmm]) - KS.vz * k_mm0;
 		const dreal k_mz1 = (KS.f[mzp] - KS.f[mzm]) - KS.vz * k_mz0;
 		const dreal k_mp1 = (KS.f[mpp] - KS.f[mpm]) - KS.vz * k_mp0;
@@ -70,7 +69,7 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal k_pz1 = (KS.f[pzp] - KS.f[pzm]) - KS.vz * k_pz0;
 		const dreal k_pp1 = (KS.f[ppp] - KS.f[ppm]) - KS.vz * k_pp0;
 
-		//Eq 8
+		// Eq 8
 		const dreal k_mm2 = (KS.f[mmp] + KS.f[mmm]) - no2 * KS.vz * (KS.f[mmp] - KS.f[mmm]) + KS.vz * KS.vz * k_mm0;
 		const dreal k_mz2 = (KS.f[mzp] + KS.f[mzm]) - no2 * KS.vz * (KS.f[mzp] - KS.f[mzm]) + KS.vz * KS.vz * k_mz0;
 		const dreal k_mp2 = (KS.f[mpp] + KS.f[mpm]) - no2 * KS.vz * (KS.f[mpp] - KS.f[mpm]) + KS.vz * KS.vz * k_mp0;
@@ -81,7 +80,7 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal k_pz2 = (KS.f[pzp] + KS.f[pzm]) - no2 * KS.vz * (KS.f[pzp] - KS.f[pzm]) + KS.vz * KS.vz * k_pz0;
 		const dreal k_pp2 = (KS.f[ppp] + KS.f[ppm]) - no2 * KS.vz * (KS.f[ppp] - KS.f[ppm]) + KS.vz * KS.vz * k_pp0;
 
-		//Eq 9
+		// Eq 9
 		const dreal k_m00 = (k_mp0 + k_mm0) + k_mz0;
 		const dreal k_z00 = (k_zp0 + k_zm0) + k_zz0;
 		const dreal k_p00 = (k_pp0 + k_pm0) + k_pz0;
@@ -92,7 +91,7 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal k_z02 = (k_zp2 + k_zm2) + k_zz2;
 		const dreal k_p02 = (k_pp2 + k_pm2) + k_pz2;
 
-		//Eq 10
+		// Eq 10
 		const dreal k_m10 = (k_mp0 - k_mm0) - KS.vy * k_m00;
 		const dreal k_z10 = (k_zp0 - k_zm0) - KS.vy * k_z00;
 		const dreal k_p10 = (k_pp0 - k_pm0) - KS.vy * k_p00;
@@ -103,7 +102,7 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal k_z12 = (k_zp2 - k_zm2) - KS.vy * k_z02;
 		const dreal k_p12 = (k_pp2 - k_pm2) - KS.vy * k_p02;
 
-		//Eq 11
+		// Eq 11
 		const dreal k_m20 = (k_mp0 + k_mm0) - no2 * KS.vy * (k_mp0 - k_mm0) + KS.vy * KS.vy * k_m00;
 		const dreal k_z20 = (k_zp0 + k_zm0) - no2 * KS.vy * (k_zp0 - k_zm0) + KS.vy * KS.vy * k_z00;
 		const dreal k_p20 = (k_pp0 + k_pm0) - no2 * KS.vy * (k_pp0 - k_pm0) + KS.vy * KS.vy * k_p00;
@@ -114,7 +113,7 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal k_z22 = (k_zp2 + k_zm2) - no2 * KS.vy * (k_zp2 - k_zm2) + KS.vy * KS.vy * k_z02;
 		const dreal k_p22 = (k_pp2 + k_pm2) - no2 * KS.vy * (k_pp2 - k_pm2) + KS.vy * KS.vy * k_p02;
 
-		//Eq 12
+		// Eq 12
 		const dreal k_000 = (k_p00 + k_m00) + k_z00;
 		const dreal k_001 = (k_p01 + k_m01) + k_z01;
 		const dreal k_002 = (k_p02 + k_m02) + k_z02;
@@ -125,7 +124,7 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal k_021 = (k_p21 + k_m21) + k_z21;
 		const dreal k_022 = (k_p22 + k_m22) + k_z22;
 
-		//Eq 13
+		// Eq 13
 		const dreal k_100 = (k_p00 - k_m00) - KS.vx * k_000;
 		const dreal k_101 = (k_p01 - k_m01) - KS.vx * k_001;
 		const dreal k_102 = (k_p02 - k_m02) - KS.vx * k_002;
@@ -136,7 +135,7 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal k_121 = (k_p21 - k_m21) - KS.vx * k_021;
 		const dreal k_122 = (k_p22 - k_m22) - KS.vx * k_022;
 
-		//Eq 14
+		// Eq 14
 		const dreal k_200 = (k_p00 + k_m00) - no2 * KS.vx * (k_p00 - k_m00) + KS.vx * KS.vx * k_000;
 		const dreal k_201 = (k_p01 + k_m01) - no2 * KS.vx * (k_p01 - k_m01) + KS.vx * KS.vx * k_001;
 		const dreal k_202 = (k_p02 + k_m02) - no2 * KS.vx * (k_p02 - k_m02) + KS.vx * KS.vx * k_002;
@@ -147,21 +146,22 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal k_221 = (k_p21 + k_m21) - no2 * KS.vx * (k_p21 - k_m21) + KS.vx * KS.vx * k_021;
 		const dreal k_222 = (k_p22 + k_m22) - no2 * KS.vx * (k_p22 - k_m22) + KS.vx * KS.vx * k_022;
 
-		//Eq G2015(51)
+		// Eq 51 from Geier 2015
 		const dreal C_211 = k_211 - (k_200 * k_011 + no2 * k_101 * k_110) / KS.rho;
 		const dreal C_121 = k_121 - (k_020 * k_101 + no2 * k_110 * k_011) / KS.rho;
 		const dreal C_112 = k_112 - (k_002 * k_110 + no2 * k_011 * k_101) / KS.rho;
 
-		//Eq G2015(52)
+		// Eq 52 from Geier 2015
 		const dreal C_220 = k_220 - (k_020 * k_200 + no2 * k_110 * k_110) / KS.rho;
 		const dreal C_022 = k_022 - (k_002 * k_020 + no2 * k_011 * k_011) / KS.rho;
 		const dreal C_202 = k_202 - (k_200 * k_002 + no2 * k_101 * k_101) / KS.rho;
 
-		//Eq G2015(53)
+		// Eq 53 from Geier 2015
 		const dreal C_122 = k_122 - (k_020 * k_102 + k_002 * k_120 + no4 * k_011 * k_111 + no2 * (k_110 * k_012 + k_101 * k_021)) / KS.rho;
 		const dreal C_212 = k_212 - (k_002 * k_210 + k_200 * k_012 + no4 * k_101 * k_111 + no2 * (k_011 * k_201 + k_110 * k_102)) / KS.rho;
 		const dreal C_221 = k_221 - (k_200 * k_021 + k_020 * k_201 + no4 * k_110 * k_111 + no2 * (k_101 * k_120 + k_011 * k_210)) / KS.rho;
-		//Eq G2015(54)
+
+		// Eq 54 from Geier 2015
 		const dreal C_222 = k_222
 						  - (no4 * k_111 * k_111 + k_200 * k_022 + k_020 * k_202 + k_002 * k_220
 							 + no4 * (k_011 * k_211 + k_101 * k_121 + k_110 * k_112) + no2 * (k_120 * k_102 + k_210 * k_012 + k_201 * k_021))
@@ -169,11 +169,10 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 						  + (no16 * k_110 * k_101 * k_011 + no4 * (k_101 * k_101 * k_020 + k_011 * k_011 * k_200 + k_110 * k_110 * k_002)
 							 + no2 * k_200 * k_020 * k_002)
 								/ KS.rho / KS.rho;
-		// gen1nowell.php END
 
-		// relaxation definition
+		// relaxation definitions
 		const dreal omega1 = no1 / (no3 * KS.lbmViscosity + n1o2);	// shear viscosity
-		const dreal omega2 = no1;  ///(no3*KS.lbmViscosity*no2 + n1o2); // bulkViscosity > Viscosity ... test: bulkViscosity = 2/3 shearViscosity
+		const dreal omega2 = no1;  //(no3*KS.lbmViscosity*no2 + n1o2); // bulkViscosity > Viscosity ... test: bulkViscosity = 2/3 shearViscosity
 #ifdef USE_GEIER_CUM_2017
 		const dreal lambda3 = (dreal) (0.01);  // Section 7 @ Geier 2017 http://dx.doi.org/10.1016/j.jcp.2017.05.040
 		const dreal lambda4 = (dreal) (0.01);
@@ -225,11 +224,10 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal Cs_011 = (no1 - omega1) * C_011;
 #ifdef USE_GEIER_CUM_ANTIALIAS
 		// derivatives of v: notation taken from Geier's paper 2017 part I: Eq 27-29
-		//			const dreal Dxu = - omega1/no2/KS.rho * (no2*C_200-C_020-C_002) - omega2/no2/KS.rho*(C_200+C_020+C_002-k_000);
+		// const dreal Dxu = - omega1/no2/KS.rho * (no2*C_200-C_020-C_002) - omega2/no2/KS.rho*(C_200+C_020+C_002-k_000);
 		const dreal Dxu =
 			-omega1 / no2 / KS.rho * (no2 * C_200 - C_020 - C_002)
-			- omega2 / no2 / KS.rho
-				  * (C_200 + C_020 + C_002 - (-no1 + KS.rho));	// PE 2019_01_18 poznamka: rho je v tom clanku rho^(2), tj. rho^(2) = 1-rho = 1-k_000
+			- omega2 / no2 / KS.rho * (C_200 + C_020 + C_002 - (-no1 + KS.rho));  // remark: rho <--> rho^(2), i.e. rho^(2) = 1-rho = 1-k_000
 		const dreal Dyv = Dxu + n3o2 * omega1 / KS.rho * (C_200 - C_020);
 		const dreal Dzw = Dxu + n3o2 * omega1 / KS.rho * (C_200 - C_002);
 		// plus their combination: Eq 30 - 32
@@ -250,14 +248,13 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal Eq34RHS = (no1 - omega1) * (C_200 - C_002) - no3 * KS.rho * (no1 - omega1 * n1o2) * (KS.vx * KS.vx * Dxu - KS.vz * KS.vz * Dzw);
 		const dreal Eq35RHS = k_000 * omega2 + (no1 - omega2) * (C_200 + C_020 + C_002)
 							- no3 * KS.rho * (no1 - omega2 / no2) * (KS.vx * KS.vx * Dxu + KS.vy * KS.vy * Dyv + KS.vz * KS.vz * Dzw);
-		// see rovnice2.mw
+
 		const dreal Cs_200 = n1o3 * (Eq33RHS + Eq34RHS + Eq35RHS);
 		const dreal Cs_020 = n1o3 * (-no2 * Eq33RHS + Eq34RHS + Eq35RHS);
 		const dreal Cs_002 = n1o3 * (Eq33RHS - no2 * Eq34RHS + Eq35RHS);
 
 #ifdef USE_GEIER_CUM_2017
 		// Limiter for omegas
-		// Eqs 36-41: see vzorce2b.mw
 		const dreal Eq117 = (no1 - omega120p102) * (C_120 + C_102);
 		const dreal Eq118 = (no1 - omega210p012) * (C_210 + C_012);
 		const dreal Eq119 = (no1 - omega201p021) * (C_201 + C_021);
@@ -274,7 +271,7 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		// Eq 42
 		const dreal Cs_111 = (no1 - omega111) * C_111;
 #else
-		// Eqs 36-41: see vzorce2.mw
+		// Eqs 36-41:
 		const dreal Cs_120 = (-C_102 - C_120) * omega3 * n1o2 + (C_102 - C_120) * omega4 * n1o2 + C_120;
 		const dreal Cs_102 = (-C_102 - C_120) * omega3 * n1o2 + (-C_102 + C_120) * omega4 * n1o2 + C_102;
 		const dreal Cs_210 = (-C_012 - C_210) * omega3 * n1o2 + (C_012 - C_210) * omega4 * n1o2 + C_210;
@@ -290,7 +287,7 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal Eq44RHS =
 			n2o3 * (no1 / omega1 - n1o2) * omega6 * A * KS.rho * (Dxu + Dyv - no2 * Dzw) + (no1 - omega6) * (C_220 + C_202 - no2 * C_022);
 		const dreal Eq45RHS = -n4o3 * (no1 / omega1 - n1o2) * omega7 * A * KS.rho * (Dxu + Dyv + Dzw) + (no1 - omega7) * (C_220 + C_202 + C_022);
-		// see rovnice2.mw
+
 		const dreal Cs_220 = n1o3 * (Eq43RHS + Eq44RHS + Eq45RHS);
 		const dreal Cs_202 = n1o3 * (-Eq43RHS + Eq45RHS);
 		const dreal Cs_022 = n1o3 * (-Eq44RHS + Eq45RHS);
@@ -307,27 +304,25 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		// remark: collision step is the same as in well-CUM
 
 		// 3.4 Backward cumulant transformation
-		// gen2nowell.php BEGIN
-		//Eq. G2015(81)
+		// Eq. 81 from Geier 2015
 		const dreal ks_211 = Cs_211 + (ks_200 * ks_011 + no2 * ks_101 * ks_110) / KS.rho;
 		const dreal ks_121 = Cs_121 + (ks_020 * ks_101 + no2 * ks_110 * ks_011) / KS.rho;
 		const dreal ks_112 = Cs_112 + (ks_002 * ks_110 + no2 * ks_011 * ks_101) / KS.rho;
 
-		//Eq. G2015(82)
+		// Eq. 82 from Geier 2015
 		const dreal ks_220 = Cs_220 + (ks_020 * ks_200 + no2 * ks_110 * ks_110) / KS.rho;
 		const dreal ks_022 = Cs_022 + (ks_002 * ks_020 + no2 * ks_011 * ks_011) / KS.rho;
 		const dreal ks_202 = Cs_202 + (ks_200 * ks_002 + no2 * ks_101 * ks_101) / KS.rho;
 
-		//Eq. G2015(83)
+		// Eq. 83 from Geier 2015
 		const dreal ks_122 =
 			Cs_122 + (ks_020 * ks_102 + ks_002 * ks_120 + no4 * ks_011 * ks_111 + no2 * (ks_110 * ks_012 + ks_101 * ks_021)) / KS.rho;
 		const dreal ks_212 =
 			Cs_212 + (ks_002 * ks_210 + ks_200 * ks_012 + no4 * ks_101 * ks_111 + no2 * (ks_011 * ks_201 + ks_110 * ks_102)) / KS.rho;
 		const dreal ks_221 =
 			Cs_221 + (ks_200 * ks_021 + ks_020 * ks_201 + no4 * ks_110 * ks_111 + no2 * (ks_101 * ks_120 + ks_011 * ks_210)) / KS.rho;
-		// gen2nowell.php END
 
-		// Eq. G2015(84)
+		// Eq. 84 from Geier 2015
 		const dreal ks_222 =
 			Cs_222
 			+ (no4 * ks_111 * ks_111 + ks_200 * ks_022 + ks_020 * ks_202 + ks_002 * ks_220
@@ -339,13 +334,12 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 
 		// backward central moment transformation
 		const dreal ks_000 = k_000;
-		// Geier 2017: forcing scheme ---> zde se musi dat (-1) pro forcing ... ale s nulovou silou a - zde to nefunguje ...
+		// Geier 2017: forcing scheme
 		const dreal ks_100 = -k_100;
 		const dreal ks_010 = -k_010;
 		const dreal ks_001 = -k_001;
 
-		// gen3nowell.php BEGIN
-		//Eq G2015(88)
+		// Eq 88 from Geier 2015
 		const dreal ks_z00 = ks_000 * (no1 - KS.vx * KS.vx) - no2 * KS.vx * ks_100 - ks_200;
 		const dreal ks_z01 = ks_001 * (no1 - KS.vx * KS.vx) - no2 * KS.vx * ks_101 - ks_201;
 		const dreal ks_z02 = ks_002 * (no1 - KS.vx * KS.vx) - no2 * KS.vx * ks_102 - ks_202;
@@ -356,7 +350,7 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal ks_z21 = ks_021 * (no1 - KS.vx * KS.vx) - no2 * KS.vx * ks_121 - ks_221;
 		const dreal ks_z22 = ks_022 * (no1 - KS.vx * KS.vx) - no2 * KS.vx * ks_122 - ks_222;
 
-		//Eq  G2015(89)
+		// Eq 89 from Geier 2015
 		const dreal ks_m00 = (ks_000 * (KS.vx * KS.vx - KS.vx) + ks_100 * (no2 * KS.vx - no1) + ks_200) * n1o2;
 		const dreal ks_m01 = (ks_001 * (KS.vx * KS.vx - KS.vx) + ks_101 * (no2 * KS.vx - no1) + ks_201) * n1o2;
 		const dreal ks_m02 = (ks_002 * (KS.vx * KS.vx - KS.vx) + ks_102 * (no2 * KS.vx - no1) + ks_202) * n1o2;
@@ -367,7 +361,7 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal ks_m21 = (ks_021 * (KS.vx * KS.vx - KS.vx) + ks_121 * (no2 * KS.vx - no1) + ks_221) * n1o2;
 		const dreal ks_m22 = (ks_022 * (KS.vx * KS.vx - KS.vx) + ks_122 * (no2 * KS.vx - no1) + ks_222) * n1o2;
 
-		//Eq  G2015(90)
+		// Eq 90 from Geier 2015
 		const dreal ks_p00 = (ks_000 * (KS.vx * KS.vx + KS.vx) + ks_100 * (no2 * KS.vx + no1) + ks_200) * n1o2;
 		const dreal ks_p01 = (ks_001 * (KS.vx * KS.vx + KS.vx) + ks_101 * (no2 * KS.vx + no1) + ks_201) * n1o2;
 		const dreal ks_p02 = (ks_002 * (KS.vx * KS.vx + KS.vx) + ks_102 * (no2 * KS.vx + no1) + ks_202) * n1o2;
@@ -378,7 +372,7 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal ks_p21 = (ks_021 * (KS.vx * KS.vx + KS.vx) + ks_121 * (no2 * KS.vx + no1) + ks_221) * n1o2;
 		const dreal ks_p22 = (ks_022 * (KS.vx * KS.vx + KS.vx) + ks_122 * (no2 * KS.vx + no1) + ks_222) * n1o2;
 
-		//Eq G2015(91)
+		// Eq 91 from Geier 2015
 		const dreal ks_mz0 = ks_m00 * (no1 - KS.vy * KS.vy) - no2 * KS.vy * ks_m10 - ks_m20;
 		const dreal ks_mz1 = ks_m01 * (no1 - KS.vy * KS.vy) - no2 * KS.vy * ks_m11 - ks_m21;
 		const dreal ks_mz2 = ks_m02 * (no1 - KS.vy * KS.vy) - no2 * KS.vy * ks_m12 - ks_m22;
@@ -389,7 +383,7 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal ks_pz1 = ks_p01 * (no1 - KS.vy * KS.vy) - no2 * KS.vy * ks_p11 - ks_p21;
 		const dreal ks_pz2 = ks_p02 * (no1 - KS.vy * KS.vy) - no2 * KS.vy * ks_p12 - ks_p22;
 
-		//Eq  G2015(92)
+		// Eq 92 from Geier 2015
 		const dreal ks_mm0 = (ks_m00 * (KS.vy * KS.vy - KS.vy) + ks_m10 * (no2 * KS.vy - no1) + ks_m20) * n1o2;
 		const dreal ks_mm1 = (ks_m01 * (KS.vy * KS.vy - KS.vy) + ks_m11 * (no2 * KS.vy - no1) + ks_m21) * n1o2;
 		const dreal ks_mm2 = (ks_m02 * (KS.vy * KS.vy - KS.vy) + ks_m12 * (no2 * KS.vy - no1) + ks_m22) * n1o2;
@@ -400,7 +394,7 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal ks_pm1 = (ks_p01 * (KS.vy * KS.vy - KS.vy) + ks_p11 * (no2 * KS.vy - no1) + ks_p21) * n1o2;
 		const dreal ks_pm2 = (ks_p02 * (KS.vy * KS.vy - KS.vy) + ks_p12 * (no2 * KS.vy - no1) + ks_p22) * n1o2;
 
-		//Eq G2015(93)
+		// Eq 93 from Geier 2015
 		const dreal ks_mp0 = (ks_m00 * (KS.vy * KS.vy + KS.vy) + ks_m10 * (no2 * KS.vy + no1) + ks_m20) * n1o2;
 		const dreal ks_mp1 = (ks_m01 * (KS.vy * KS.vy + KS.vy) + ks_m11 * (no2 * KS.vy + no1) + ks_m21) * n1o2;
 		const dreal ks_mp2 = (ks_m02 * (KS.vy * KS.vy + KS.vy) + ks_m12 * (no2 * KS.vy + no1) + ks_m22) * n1o2;
@@ -411,7 +405,7 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal ks_pp1 = (ks_p01 * (KS.vy * KS.vy + KS.vy) + ks_p11 * (no2 * KS.vy + no1) + ks_p21) * n1o2;
 		const dreal ks_pp2 = (ks_p02 * (KS.vy * KS.vy + KS.vy) + ks_p12 * (no2 * KS.vy + no1) + ks_p22) * n1o2;
 
-		//Eq G2015(94)
+		// Eq 94 from Geier 2015
 		KS.f[mmz] = ks_mm0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_mm1 - ks_mm2;
 		KS.f[mzz] = ks_mz0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_mz1 - ks_mz2;
 		KS.f[mpz] = ks_mp0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_mp1 - ks_mp2;
@@ -422,7 +416,7 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		KS.f[pzz] = ks_pz0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_pz1 - ks_pz2;
 		KS.f[ppz] = ks_pp0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_pp1 - ks_pp2;
 
-		//Eq  G2015(95)
+		// Eq 95 from Geier 2015
 		KS.f[mmm] = (ks_mm0 * (KS.vz * KS.vz - KS.vz) + ks_mm1 * (no2 * KS.vz - no1) + ks_mm2) * n1o2;
 		KS.f[mzm] = (ks_mz0 * (KS.vz * KS.vz - KS.vz) + ks_mz1 * (no2 * KS.vz - no1) + ks_mz2) * n1o2;
 		KS.f[mpm] = (ks_mp0 * (KS.vz * KS.vz - KS.vz) + ks_mp1 * (no2 * KS.vz - no1) + ks_mp2) * n1o2;
@@ -433,7 +427,7 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		KS.f[pzm] = (ks_pz0 * (KS.vz * KS.vz - KS.vz) + ks_pz1 * (no2 * KS.vz - no1) + ks_pz2) * n1o2;
 		KS.f[ppm] = (ks_pp0 * (KS.vz * KS.vz - KS.vz) + ks_pp1 * (no2 * KS.vz - no1) + ks_pp2) * n1o2;
 
-		//Eq  G2015(96)
+		// Eq 96 from Geier 2015
 		KS.f[mmp] = (ks_mm0 * (KS.vz * KS.vz + KS.vz) + ks_mm1 * (no2 * KS.vz + no1) + ks_mm2) * n1o2;
 		KS.f[mzp] = (ks_mz0 * (KS.vz * KS.vz + KS.vz) + ks_mz1 * (no2 * KS.vz + no1) + ks_mz2) * n1o2;
 		KS.f[mpp] = (ks_mp0 * (KS.vz * KS.vz + KS.vz) + ks_mp1 * (no2 * KS.vz + no1) + ks_mp2) * n1o2;
@@ -443,7 +437,6 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		KS.f[pmp] = (ks_pm0 * (KS.vz * KS.vz + KS.vz) + ks_pm1 * (no2 * KS.vz + no1) + ks_pm2) * n1o2;
 		KS.f[pzp] = (ks_pz0 * (KS.vz * KS.vz + KS.vz) + ks_pz1 * (no2 * KS.vz + no1) + ks_pz2) * n1o2;
 		KS.f[ppp] = (ks_pp0 * (KS.vz * KS.vz + KS.vz) + ks_pp1 * (no2 * KS.vz + no1) + ks_pp2) * n1o2;
-// gen3nowell.php END
 #undef C_000
 #undef C_011
 #undef C_010

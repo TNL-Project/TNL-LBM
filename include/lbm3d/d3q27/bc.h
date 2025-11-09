@@ -52,7 +52,7 @@ struct D3Q27_BC_All
 	__cuda_callable__ static void preCollision(DATA& SD, LBM_KS& KS, map_t mapgi, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
 		if (mapgi == GEO_NOTHING) {
-			// nema zadny vliv na vypocet, jen pro output
+			// this has no effect on computing; it only affects output
 			KS.rho = 1;
 			KS.vx = 0;
 			KS.vy = 0;
