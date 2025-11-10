@@ -142,9 +142,10 @@ struct StateLocal : State<NSE>
 		for (int x = nse.blocks.front().offset.x() + 1; x < nse.blocks.front().offset.x() + nse.blocks.front().local.x() - 1; x++) {
 		for (int y = nse.blocks.front().offset.y() + 1; y < nse.blocks.front().offset.y() + nse.blocks.front().local.y() - 1; y++) {
 		for (int z = nse.blocks.front().offset.z() + 1; z < nse.blocks.front().offset.z() + nse.blocks.front().local.z() - 1; z++) {
-			//if(nse.blocks.front().map(x, y, z) == BC::GEO_WALL){
+			// TODO: HOW TO GET MAP DATA
+			//if(nse.blocks.front().data.map(x, y, z) == BC::GEO_WALL){
 			//	// n = (-1,0,0)
-		 	//	if(nse.blocks.front().map(x-1, y, z) != BC::GEO_WALL){
+		 	//	if(nse.blocks.front().data.map(x-1, y, z) != BC::GEO_WALL){
 					double rho = (double)nse.blocks.front().hmacro(MACRO::e_rho,x-1,y,z);
 					double vy = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(MACRO::e_vy,x-1,y,z));
 					double vx = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(MACRO::e_vx,x-1,y,z));
@@ -152,12 +153,20 @@ struct StateLocal : State<NSE>
 					//C_drag += nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho-1)));
 					// -T_11
 					//local_drag += rho*normalDerivativeCoefficient*visc*vx/(delta_x/2);
-					local_drag += rho;
+					local_drag += vx;
 			//	}
 			//}
 		}}}
 
 		real drag = TNL::MPI::reduce(local_drag, MPI_SUM, MPI_COMM_WORLD);
+
+		if (nse.rank == 0)
+			spdlog::info(
+				"at t={:1.2f}s, iterations={:d} drag(notreally)={:e}",
+				nse.physTime(),
+				nse.iterations,
+				drag
+			);
   	}
 
 
