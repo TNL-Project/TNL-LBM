@@ -83,17 +83,16 @@ struct StateLocal : State<NSE>
 		const double Uoverline = (double)nse.lat.lbm2physVelocity(nse.lat.data.inflow_vx)*2./3.;
 		const double D = (double)0.1;
 		const double delta_x = (double)nse.lat.physDl;
-		const int NoDV = LBM_KS::NoDV
+		const int NoDV = NSE::LBM_KS::NoDV;
 		const double T0 = NoDV == 3  ? (double)0.6979533220196830882384091 : (double)1./3;
 
 		for (int x=NoDV; x<nse.lat.global.x()-NoDV; x++){
 		for (int y=NoDV; y<nse.lat.global.y()-NoDV; y++){
 		for (int z=NoDV; y<nse.lat.global.z()-NoDV; z++){
 			//int gi = POS(x, y, nse.lat.X, nse.lat.Y);
-			map_t mapgi = NSE_SD.map(x, y, z);
-			if(mapgi == BC::GEO_WALL){
+			if(nse.data.map(x, y, z) == BC::GEO_WALL){
 				// n = (-1,0,0)
-		 		if(NSE_SD.map(x-1, y, z) != BC::GEO_WALL){
+		 		if(nse.data.map(x-1, y, z) != BC::GEO_WALL){
 					double rho = (double)nse.data.macro(MACRO::e_rho,x-1,y,z);
 					double vy = (double)nse.lat.lbm2physVelocity(nse.data.macro(MACRO::e_vy,x-1,y,z));
 					double vx = (double)nse.lat.lbm2physVelocity(nse.data.macro(MACRO::e_vx,x-1,y,z));
@@ -133,12 +132,32 @@ struct StateLocal : State<NSE>
 
 	void probe1() override {
 		// testing log
-		spdlog::info(
-			"Reynolds = {:f} lbmvel {:f} physvel {:f}",
-			lbm_inflow_vx * ball_diameter / nse.lat.physDl / nse.lat.lbmViscosity(),
-			lbm_inflow_vx,
-			nse.lat.lbm2physVelocity(lbm_inflow_vx)
-		);
+		//spdlog::info(
+		//	"Reynolds = {:f} lbmvel {:f} physvel {:f}",
+		//	get_drag()
+		//);
+		real local_drag = 0;
+		//real local_la1sum=0;
+		//real local_la2sum=0;
+		for (int x = nse.blocks.front().offset.x() + 1; x < nse.blocks.front().offset.x() + nse.blocks.front().local.x() - 1; x++) {
+		for (int y = nse.blocks.front().offset.y() + 1; y < nse.blocks.front().offset.y() + nse.blocks.front().local.y() - 1; y++) {
+		for (int z = nse.blocks.front().offset.z() + 1; z < nse.blocks.front().offset.z() + nse.blocks.front().local.z() - 1; z++) {
+			//if(nse.blocks.front().map(x, y, z) == BC::GEO_WALL){
+			//	// n = (-1,0,0)
+		 	//	if(nse.blocks.front().map(x-1, y, z) != BC::GEO_WALL){
+					double rho = (double)nse.blocks.front().hmacro(MACRO::e_rho,x-1,y,z);
+					double vy = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(MACRO::e_vy,x-1,y,z));
+					double vx = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(MACRO::e_vx,x-1,y,z));
+					// pressure
+					//C_drag += nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho-1)));
+					// -T_11
+					//local_drag += rho*normalDerivativeCoefficient*visc*vx/(delta_x/2);
+					local_drag += rho;
+			//	}
+			//}
+		}}}
+
+		real drag = TNL::MPI::reduce(local_drag, MPI_SUM, MPI_COMM_WORLD);
   	}
 
 
@@ -183,19 +202,19 @@ int sim(int RESOLUTION = 2)
 	using lat_t = Lattice<3, real, idx>;
 
 	int block_size = 32;
-	real PHYS_LENGTH = 50.; // length in some units (NASA does not specify)
+	real PHYS_LENGTH = 10.; // length in some units (NASA does not specify)
 	real PHYS_HEIGHT = 5.;		  // domain height (physical)
 	real PHYS_DEPTH = 0.5;		  // domain depth (physical)
 	// TODO: solve the rounding of pixels to have it precise
 	int X = floor(PHYS_LENGTH * RESOLUTION * block_size);  // width in pixels
 	int Y = floor(PHYS_DEPTH  * RESOLUTION * block_size);  // height in pixels --- top and bottom walls NoDV px
 	int Z = floor(PHYS_HEIGHT * RESOLUTION * block_size); // depth in pixels --- top and bottom walls  NoDV px
-	real LBM_VISCOSITY = 0.0001;
-	real PHYS_VISCOSITY = 1.5e-2;
+	real LBM_VISCOSITY = 0.00001;
+	real PHYS_VISCOSITY = 1.5e-5;
 	real PHYS_VELOCITY = 1.0;
 	real PHYS_DL = PHYS_HEIGHT / ((real) Z - 6); // naive fullway bounce-back
 	real PHYS_DT = LBM_VISCOSITY / PHYS_VISCOSITY * PHYS_DL * PHYS_DL;	//PHYS_HEIGHT/(real)LBM_HEIGHT;
-	point_t PHYS_ORIGIN = {-25., -0.5, 0.};
+	point_t PHYS_ORIGIN = {-PHYS_LENGTH/2., -PHYS_DEPTH, 0.};
 
 	// initialize the lattice
 	lat_t lat;
@@ -211,7 +230,7 @@ int sim(int RESOLUTION = 2)
 	// problem parameters
 	state.lbm_inflow_vx = lat.phys2lbmVelocity(PHYS_VELOCITY);
 
-	state.nse.physFinalTime = 0;
+	state.nse.physFinalTime = 1;
 	state.cnt[PRINT].period = 0.001;
 
 	// add cuts
@@ -223,6 +242,8 @@ int sim(int RESOLUTION = 2)
 	state.cnt[VTK3D].period = 0.1;
 	state.cnt[VTK3DCUT].period = 0.1;
 	state.add3Dcut(X / 4, Y / 4, Z / 4, X / 2, Y / 2, Z / 2, 2, "box");
+
+	state.cnt[PROBE1].period = 0.001;
 
 	execute(state);
 
