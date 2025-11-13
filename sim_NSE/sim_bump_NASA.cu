@@ -16,6 +16,7 @@ struct StateLocal : State<NSE>
 
 	using State<NSE>::nse;
 	using State<NSE>::vtk_helper;
+	using State<NSE>::id;
 
 	using idx = typename TRAITS::idx;
 	using real = typename TRAITS::real;
@@ -198,16 +199,158 @@ struct StateLocal : State<NSE>
 		return 2*delta_x*delta_x*drag/(Uoverline*Uoverline)/D;
 	}
 
+	double get_lift(const double ndc = 2., const bool dynVisc = false){
+		// ndc ... normal derivative coefficient (2 for incompressible, 4/3 for compressible)
+		// dynVisc .. dynamic viscosity - whether to use \nu or \nu * rho  = \mu <- dynamic viscosity \mu
+		const double visc = (double)nse.lat.physViscosity;
+		//const double Uoverline = (double)nse.lat.lbm2physVelocity(nse.block.data.inflow_vx)*2./3.;
+		const double Uoverline = 2./3;
+		const double D = (double)0.1;
+		const double delta_x = (double)nse.lat.physDl;
+		//const int NoDV = NSE::LBM_KS::NoDV;
+		//const double T0 = NoDV == 3  ? (double)0.6979533220196830882384091 : (double)1./3;
+		const double T0 = 1./3;
+		real local_lift = 0;
+		for (int x = nse.blocks.front().offset.x() + 1; x < nse.blocks.front().offset.x() + nse.blocks.front().local.x() - 1; x++) {
+		for (int y = nse.blocks.front().offset.y() + 1; y < nse.blocks.front().offset.y() + nse.blocks.front().local.y() - 1; y++) {
+		for (int z = nse.blocks.front().offset.z() + 1; z < nse.blocks.front().offset.z() + nse.blocks.front().local.z() - 1; z++) {
+			if(nse.blocks.front().hmap(x, y, z) == BC::GEO_WALL && isObject(x, y, z)){
+				// N_1 = (1,0,0)
+		 		if(nse.blocks.front().hmap(x+1, y, z) != BC::GEO_WALL){
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x+1,y,z);
+					const double vx = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(MACRO::e_vx,x+1,y,z));
+					const double vy = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(MACRO::e_vy,x+1,y,z));
+					const double vz = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(MACRO::e_vz,x+1,y,z));
+					const double pressure = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
+					// +T_11
+					const double dvzdx = vz/(delta_x/2);
+					if(dynVisc){
+						local_lift += rho_lbm*ndc*visc*dvzdx;
+					}else{
+						local_lift += ndc*visc*dvzdx;
+					}
+				}
+				// N_2 = (-1,0,0)
+		 		if(nse.blocks.front().hmap(x-1, y, z) != BC::GEO_WALL){
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x-1,y,z);
+					const double vx = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(MACRO::e_vx,x-1,y,z));
+					const double vy = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(MACRO::e_vy,x-1,y,z));
+					const double vz = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(MACRO::e_vz,x-1,y,z));
+					const double pressure = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
+					// -T_11
+					const double dvzdx = vz/(delta_x/2);
+					if(dynVisc){
+						local_lift += rho_lbm*ndc*visc*dvzdx;
+					}else{
+						local_lift += ndc*visc*dvzdx;
+					}
+				}
+				// N_3 = (0,1,0)
+		 		if(nse.blocks.front().hmap(x, y+1, z) != BC::GEO_WALL){
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x,y+1,z);
+					const double vx = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(MACRO::e_vx,x,y+1,z));
+					const double vy = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(MACRO::e_vy,x,y+1,z));
+					const double vz = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(MACRO::e_vz,x,y+1,z));
+					const double pressure = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
+					// T_12
+					const double dvzdy = vz/(delta_x/2);
+					if(dynVisc){
+						local_lift += rho_lbm*ndc*visc*dvzdy;
+					}else{
+						local_lift += ndc*visc*dvzdy;
+					}
+				}
+				// N_4 = (0,-1,0)
+		 		if(nse.blocks.front().hmap(x, y-1, z) != BC::GEO_WALL){
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x,y-1,z);
+					const double vx = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(MACRO::e_vx,x,y-1,z));
+					const double vy = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(MACRO::e_vy,x,y-1,z));
+					const double vz = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(MACRO::e_vz,x,y-1,z));
+					const double pressure = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
+					// -T_12
+					const double dvzdy = vz/(delta_x/2);
+					if(dynVisc){
+						local_lift += rho_lbm*ndc*visc*dvzdy;
+					}else{
+						local_lift += ndc*visc*dvzdy;
+					}
+				}
+				// N_5 = (0,0,1)
+		 		if(nse.blocks.front().hmap(x, y, z+1) != BC::GEO_WALL){
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x,y,z+1);
+					const double vx = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(MACRO::e_vx,x,y,z+1));
+					const double vy = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(MACRO::e_vy,x,y,z+1));
+					const double vz = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(MACRO::e_vz,x,y,z+1));
+					const double pressure = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
+					// pressure
+					local_lift -= pressure;
+					// T_13
+					const double dvzdz = vz/(delta_x/2);
+					if(dynVisc){
+						local_lift += rho_lbm*ndc*visc*dvzdz;
+					}else{
+						local_lift += ndc*visc*dvzdz;
+					}
+				}
+				// N_6 = (0,0,-1)
+		 		if(nse.blocks.front().hmap(x, y, z-1) != BC::GEO_WALL){
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x,y,z);
+					const double vx = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(MACRO::e_vx,x,y,z-1));
+					const double vy = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(MACRO::e_vy,x,y,z-1));
+					const double vz = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(MACRO::e_vz,x,y,z-1));
+					const double pressure = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
+					// pressure
+					local_lift += pressure;
+					// -T_13
+					const double dvzdz = vz/(delta_x/2);
+					if(dynVisc){
+						local_lift += rho_lbm*ndc*visc*dvzdz;
+					}else{
+						local_lift += ndc*visc*dvzdz;
+					}
+				}
+			}
+		}}}
+
+		real drag = TNL::MPI::reduce(local_lift, MPI_SUM, MPI_COMM_WORLD);
+		return 2*delta_x*delta_x*drag/(Uoverline*Uoverline)/D;
+	}
+
+
+	bool firstrun = true;
+
+
 	void probe1() override {
 
-		real drag = get_drag();
-		if (nse.rank == 0)
+		real C_D = get_drag();
+		real C_L = get_lift();
+
+		if (nse.rank == 0){
+			// empty files
+			const char* iotype = (firstrun) ? "wt" : "at";
+			firstrun = false;
+			// output
+			FILE* f;
+			const std::string dir = fmt::format("results_{}/probes", id);
+			mkdir_p(dir.c_str(), 0755);
+
+			std::string str = fmt::format("{}/probe_cd", dir);
+			f = fopen(str.c_str(), iotype);
+			fprintf(f, "%e\t%e\n", nse.physTime(), C_D);
+			fclose(f);
+
+			str = fmt::format("{}/probe_cl", dir);
+			f = fopen(str.c_str(), iotype);
+			fprintf(f, "%e\t%e\n", nse.physTime(), C_L);
+			fclose(f);
 			spdlog::info(
-				"at t={:1.2f}s, iterations={:d} drag(maybe actually)={:e}",
+				"at t={:1.2f}s, iterations={:d} drag(maybe actually)={:e} lift(maybe actually)={:e}",
 				nse.physTime(),
 				nse.iterations,
-				drag
+				C_D,
+				C_L
 			);
+		}
   	}
 
 
