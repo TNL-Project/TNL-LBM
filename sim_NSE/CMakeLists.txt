@@ -7,6 +7,7 @@ set(TARGETS
         sim_IBM3
         sim_IBM4
         sim_bump_NASA
+        sim_schafer_turek
 )
 
 foreach(target IN ITEMS ${TARGETS})
