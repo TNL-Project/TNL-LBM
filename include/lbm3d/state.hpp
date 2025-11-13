@@ -1174,7 +1174,7 @@ void State<NSE>::AfterSimUpdate()
 				auto value = data.dmacro[MACRO::e_rho * data.XYZ + i];
 				return value != value;
 			};
-			bool result = TNL::Algorithms::reduce<TNL::Devices::GPU>(idx(0), data.XYZ, check_nan, TNL::LogicalOr{});
+			bool result = TNL::Algorithms::reduce<DeviceType>(idx(0), data.XYZ, check_nan, TNL::LogicalOr{});
 			if (result) {
 				spdlog::error("NaN detected on rank {} block {}", block.rank, block.id);
 				nan_detected = true;
