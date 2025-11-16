@@ -20,6 +20,8 @@ struct D3Q27_BC_All
 		GEO_WALL,	// compulsory
 		GEO_INFLOW,
 		GEO_INFLOW_LEFT,
+		GEO_INFLOW_BB_LEFT,
+		GEO_INFLOW_EQ_LEFT,
 		GEO_OUTFLOW_EQ,
 		GEO_OUTFLOW_RIGHT,
 		GEO_OUTFLOW_RIGHT_INTERP,
@@ -126,6 +128,50 @@ struct D3Q27_BC_All
 					KS.f[pmm] = (dreal) 0.25 * ((m022 + m011) + (-m021 - m012)) - (KS.f[mmm] + KS.f[zmm]);
 					break;
 				}
+			case GEO_INFLOW_BB_LEFT:
+				SD.inflow(KS, x, y, z);
+				// KS.rho = TNL::Backend::ldg(SD.macro(CONFIG::MACRO::e_rho,xp,y,z));
+				/* KS.f[pzz] = KS.f[mzz] - no2 * n2o27  * KS.rho * no3 * ( - KS.vx );
+				KS.f[ppz] = KS.f[mmz] - no2 * n1o54  * KS.rho * no3 * ( - KS.vx - KS.vy );
+				KS.f[pmz] = KS.f[mpz] - no2 * n1o54  * KS.rho * no3 * ( - KS.vx + KS.vy );
+				KS.f[pzp] = KS.f[mzm] - no2 * n1o54  * KS.rho * no3 * ( - KS.vx         - KS.vz );
+				KS.f[pzm] = KS.f[mzp] - no2 * n1o54  * KS.rho * no3 * ( - KS.vx         + KS.vz );
+				KS.f[ppp] = KS.f[mmm] - no2 * n1o216 * KS.rho * no3 * ( - KS.vx - KS.vy - KS.vz );
+				KS.f[ppm] = KS.f[mmp] - no2 * n1o216 * KS.rho * no3 * ( - KS.vx - KS.vy + KS.vz );
+				KS.f[pmp] = KS.f[mpm] - no2 * n1o216 * KS.rho * no3 * ( - KS.vx + KS.vy - KS.vz );
+				KS.f[pmm] = KS.f[mpp] - no2 * n1o216 * KS.rho * no3 * ( - KS.vx + KS.vy + KS.vz ); */
+				KS.f[pzz] = TNL::Backend::ldg(SD.df(df_cur, mzz, x, y, z)) - no2 * n2o27 * KS.rho * no3 * (-KS.vx);
+				KS.f[ppz] = TNL::Backend::ldg(SD.df(df_cur, mmz, x, y, z)) - no2 * n1o54 * KS.rho * no3 * (-KS.vx - KS.vy);
+				KS.f[pmz] = TNL::Backend::ldg(SD.df(df_cur, mpz, x, y, z)) - no2 * n1o54 * KS.rho * no3 * (-KS.vx + KS.vy);
+				KS.f[pzp] = TNL::Backend::ldg(SD.df(df_cur, mzm, x, y, z)) - no2 * n1o54 * KS.rho * no3 * (-KS.vx - KS.vz);
+				KS.f[pzm] = TNL::Backend::ldg(SD.df(df_cur, mzp, x, y, z)) - no2 * n1o54 * KS.rho * no3 * (-KS.vx + KS.vz);
+				KS.f[ppp] = TNL::Backend::ldg(SD.df(df_cur, mmm, x, y, z)) - no2 * n1o216 * KS.rho * no3 * (-KS.vx - KS.vy - KS.vz);
+				KS.f[ppm] = TNL::Backend::ldg(SD.df(df_cur, mmp, x, y, z)) - no2 * n1o216 * KS.rho * no3 * (-KS.vx - KS.vy + KS.vz);
+				KS.f[pmp] = TNL::Backend::ldg(SD.df(df_cur, mpm, x, y, z)) - no2 * n1o216 * KS.rho * no3 * (-KS.vx + KS.vy - KS.vz);
+				KS.f[pmm] = TNL::Backend::ldg(SD.df(df_cur, mpp, x, y, z)) - no2 * n1o216 * KS.rho * no3 * (-KS.vx + KS.vy + KS.vz);
+				COLL::computeDensityAndVelocity(KS);
+				// SD.inflow(KS,x,y,z);
+				break;
+			case GEO_INFLOW_EQ_LEFT:
+				SD.inflow(KS, x, y, z);
+				// clang-format off
+				KS.rho = (dreal)1.0/(1-KS.vx) * (
+					(
+						KS.f[zzz] + (
+							+ ((KS.f[zpp] + KS.f[zmm]) + (KS.f[zpm] + KS.f[zmp]))
+							+ ((KS.f[zpz] + KS.f[zmz]) + (KS.f[zzp] + KS.f[zzm]))
+						)
+					)
+					+ 2*(
+						KS.f[mzz] + (
+							+ ((KS.f[mpp] + KS.f[mmm]) + (KS.f[mpm] + KS.f[mmp]))
+							+ ((KS.f[mpz] + KS.f[mmz]) + (KS.f[mzp] + KS.f[mzm]))
+						)
+					)
+				);
+				// clang-format on
+				COLL::setEquilibrium(KS);
+				break;
 			case GEO_OUTFLOW_EQ:
 				COLL::computeDensityAndVelocity(KS);
 				KS.rho = 1;
@@ -244,7 +290,8 @@ struct D3Q27_BC_All
 	{
 		// by default, collision is done on non-BC sites only
 		// additionally, BCs which include the collision step should be specified here
-		return isFluid(mapgi) || isPeriodic(mapgi) || mapgi == GEO_OUTFLOW_RIGHT || mapgi == GEO_OUTFLOW_RIGHT_INTERP || mapgi == GEO_INFLOW_LEFT;
+		return isFluid(mapgi) || isPeriodic(mapgi) || mapgi == GEO_OUTFLOW_RIGHT || mapgi == GEO_OUTFLOW_RIGHT_INTERP || mapgi == GEO_INFLOW_LEFT
+			|| mapgi == GEO_INFLOW_BB_LEFT;
 	}
 
 	template <typename LBM_KS>
