@@ -93,6 +93,47 @@ struct NSE_Data_ConstInflow : NSE_Data<TRAITS>
 	}
 };
 
+template <typename TRAITS>
+struct NSE_Data_InflowProfile : NSE_Data<TRAITS>
+{
+	using idx = typename TRAITS::idx;
+	using dreal = typename TRAITS::dreal;
+
+	// arrays for inflow velocity profile
+	dreal* inflow_vx = nullptr;
+	dreal* inflow_vy = nullptr;
+	dreal* inflow_vz = nullptr;
+
+	CUDA_HOSTDEV dreal vel_x(idx y, idx z)
+	{
+		if (inflow_vx == nullptr)
+			return 0;
+		return inflow_vx[this->Y() * z + y];
+	}
+
+	CUDA_HOSTDEV dreal vel_y(idx y, idx z)
+	{
+		if (inflow_vy == nullptr)
+			return 0;
+		return inflow_vy[this->Y() * z + y];
+	}
+
+	CUDA_HOSTDEV dreal vel_z(idx y, idx z)
+	{
+		if (inflow_vz == nullptr)
+			return 0;
+		return inflow_vz[this->Y() * z + y];
+	}
+
+	template <typename LBM_KS>
+	CUDA_HOSTDEV void inflow(LBM_KS& KS, idx x, idx y, idx z)
+	{
+		KS.vx = vel_x(y, z);
+		KS.vy = vel_y(y, z);
+		KS.vz = vel_z(y, z);
+	}
+};
+
 // base type for all ADE_Data_* types
 template <typename TRAITS>
 struct ADE_Data : LBM_Data<TRAITS>
