@@ -233,7 +233,7 @@ void run(int RES)
 	using NSE_CONFIG = LBM_CONFIG<
 		TRAITS,
 		D3Q27_KernelStruct,
-		NSE_Data_NoInflow<TRAITS>,
+		NSE_Data_ConstInflow<TRAITS>,
 		NSE_COLL,
 		typename NSE_COLL::EQ,
 		D3Q27_STREAMING<TRAITS>,

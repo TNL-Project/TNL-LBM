@@ -93,22 +93,6 @@ struct NSE_Data_ConstInflow : NSE_Data<TRAITS>
 	}
 };
 
-template <typename TRAITS>
-struct NSE_Data_NoInflow : NSE_Data<TRAITS>
-{
-	using idx = typename TRAITS::idx;
-	using dreal = typename TRAITS::dreal;
-
-	template <typename LBM_KS>
-	CUDA_HOSTDEV void inflow(LBM_KS& KS, idx x, idx y, idx z)
-	{
-		KS.rho = 1;
-		KS.vx = 0;
-		KS.vy = 0;
-		KS.vz = 0;
-	}
-};
-
 // base type for all ADE_Data_* types
 template <typename TRAITS>
 struct ADE_Data : LBM_Data<TRAITS>
