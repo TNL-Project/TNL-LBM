@@ -70,9 +70,9 @@ struct StateLocal : State<NSE>
 		const float y = nse.lat.lbm2physY(iy);
 		const float z = nse.lat.lbm2physZ(iz);
 		const float cx = 0.2;
-		const float cy = 0.2;
+		const float cz = 0.2;
 		const float R = 0.05;
-		if(pow(x-cx,2)+pow(y-cy,2)<pow(R,2)){
+		if(pow(x-cx,2)+pow(z-cz,2)<pow(R,2)){
 			return true;
 		}
 		return false;
@@ -206,11 +206,11 @@ struct StateLocal : State<NSE>
 		const double H = 0.1; // height of bump, 0.05 in origin
 		const double L = 0.1; // length of bump
 		const double W = 0.41; // width of bump
-		const double Uoverline = 2./3; // average inflow velocity
+		const double Uoverline = 0.2; // average inflow velocity
 		// DIFFERENT AXIS ORIENTATION
 		real C_D = 2.*integrate_stress_tensor_general([this](int ix,int iy,int iz){ return this->isObject(ix, iy, iz);},0)/(Uoverline*Uoverline)/(H*W);
-		real C_S = 2.*integrate_stress_tensor_general([this](int ix,int iy,int iz){ return this->isObject(ix, iy, iz);},2)/(Uoverline*Uoverline)/(L*H);
-		real C_L = 2.*integrate_stress_tensor_general([this](int ix,int iy,int iz){ return this->isObject(ix, iy, iz);},1)/(Uoverline*Uoverline)/(L*W);
+		real C_S = 2.*integrate_stress_tensor_general([this](int ix,int iy,int iz){ return this->isObject(ix, iy, iz);},1)/(Uoverline*Uoverline)/(L*H);
+		real C_L = 2.*integrate_stress_tensor_general([this](int ix,int iy,int iz){ return this->isObject(ix, iy, iz);},2)/(Uoverline*Uoverline)/(L*W);
 
 		if (nse.rank == 0){
 			// empty files
@@ -348,7 +348,7 @@ int sim(int RESOLUTION = 2)
 	int X = floor(PHYS_LENGTH * RESOLUTION * block_size);  // width in pixels
 	int Y = floor(PHYS_DEPTH  * RESOLUTION * block_size);  // height in pixels --- top and bottom walls NoDV px
 	int Z = floor(PHYS_HEIGHT * RESOLUTION * block_size); // depth in pixels --- top and bottom walls  NoDV px
-	real LBM_VISCOSITY = 0.01;
+	real LBM_VISCOSITY = 0.001;
 	real PHYS_VISCOSITY = 0.001;
 	real PHYS_VELOCITY = 0.3;
 	real PHYS_DL = PHYS_HEIGHT / ((real) Z - 6); // naive fullway bounce-back
