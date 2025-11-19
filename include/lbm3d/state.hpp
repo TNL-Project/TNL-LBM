@@ -773,11 +773,25 @@ template <typename NSE>
 void State<NSE>::loadState()
 {
 	const std::string filename = fmt::format("results_{}/checkpoint.bp", id);
-	spdlog::info("Loading data from checkpoint in {}", filename);
-	checkpoint.start(filename, adios2::Mode::Read);
-	checkpointState(adios2::Mode::Read);
-	checkpointStateLocal(adios2::Mode::Read);
-	checkpoint.finalize();
+	if (checkState()){
+        spdlog::info("Loading data from checkpoint in {}", filename);
+		checkpoint.start(filename, adios2::Mode::Read);
+		checkpointState(adios2::Mode::Read);
+		checkpointStateLocal(adios2::Mode::Read);
+		checkpoint.finalize();
+    }
+}
+
+template <typename NSE>
+bool State<NSE>::checkState()
+{
+	const std::string filename = fmt::format("results_{}/checkpoint.bp", id);
+	if (FILE *file = fopen(filename.c_str(), "r")) {
+        fclose(file);
+        return true;
+    } else {
+		return false;
+	}
 }
 
 template <typename NSE>

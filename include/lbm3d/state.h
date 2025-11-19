@@ -261,6 +261,7 @@ struct State
 	// called periodically through cnt[SAVESTATE]
 	void saveState();
 	void loadState();
+	bool checkState();
 
 	// timers for walltime, GLUPS and ETA calculations
 	TNL::Timer timer_total;
