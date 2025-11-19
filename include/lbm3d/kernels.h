@@ -6,7 +6,7 @@ template <typename NSE>
 __cuda_callable__ void kernelInitIndices(
 	typename NSE::DATA SD,
 	typename NSE::TRAITS::map_t map,
-	short int nproc,
+	typename NSE::TRAITS::bool3d distributed,
 	typename NSE::TRAITS::idx x,
 	typename NSE::TRAITS::idx y,
 	typename NSE::TRAITS::idx z,
@@ -19,13 +19,12 @@ __cuda_callable__ void kernelInitIndices(
 )
 {
 	if (NSE::BC::isPeriodic(map)) {
-		xp = (nproc == 1 && x == SD.X() - 1) ? 0 : (x + 1);
-		xm = (nproc == 1 && x == 0) ? (SD.X() - 1) : (x - 1);
-		// TODO: use nproc_y and nproc_z
-		yp = (nproc == 1 && y == SD.Y() - 1) ? 0 : (y + 1);
-		ym = (nproc == 1 && y == 0) ? (SD.Y() - 1) : (y - 1);
-		zp = (nproc == 1 && z == SD.Z() - 1) ? 0 : (z + 1);
-		zm = (nproc == 1 && z == 0) ? (SD.Z() - 1) : (z - 1);
+		xp = (! distributed.x() && x == SD.X() - 1) ? 0 : (x + 1);
+		xm = (! distributed.x() && x == 0) ? (SD.X() - 1) : (x - 1);
+		yp = (! distributed.y() && y == SD.Y() - 1) ? 0 : (y + 1);
+		ym = (! distributed.y() && y == 0) ? (SD.Y() - 1) : (y - 1);
+		zp = (! distributed.z() && z == SD.Z() - 1) ? 0 : (z + 1);
+		zm = (! distributed.z() && z == 0) ? (SD.Z() - 1) : (z - 1);
 	}
 	else {
 #ifdef AA_PATTERN
@@ -59,10 +58,16 @@ __cuda_callable__ void kernelInitIndices(
 
 template <typename NSE>
 #ifdef USE_CUDA
-__global__ void cudaLBMKernel(typename NSE::DATA SD, short int nproc, typename NSE::TRAITS::idx3d offset, typename NSE::TRAITS::idx3d end)
+__global__ void
+cudaLBMKernel(typename NSE::DATA SD, typename NSE::TRAITS::idx3d offset, typename NSE::TRAITS::idx3d end, typename NSE::TRAITS::bool3d distributed)
 #else
-CUDA_HOSTDEV void
-LBMKernel(typename NSE::DATA SD, typename NSE::TRAITS::idx x, typename NSE::TRAITS::idx y, typename NSE::TRAITS::idx z, short int nproc)
+CUDA_HOSTDEV void LBMKernel(
+	typename NSE::DATA SD,
+	typename NSE::TRAITS::idx x,
+	typename NSE::TRAITS::idx y,
+	typename NSE::TRAITS::idx z,
+	typename NSE::TRAITS::bool3d distributed
+)
 #endif
 {
 	using dreal = typename NSE::TRAITS::dreal;
@@ -81,7 +86,7 @@ LBMKernel(typename NSE::DATA SD, typename NSE::TRAITS::idx x, typename NSE::TRAI
 	map_t gi_map = SD.map(x, y, z);
 
 	idx xp, xm, yp, ym, zp, zm;
-	kernelInitIndices<NSE>(SD, gi_map, nproc, x, y, z, xp, xm, yp, ym, zp, zm);
+	kernelInitIndices<NSE>(SD, gi_map, distributed, x, y, z, xp, xm, yp, ym, zp, zm);
 
 	typename NSE::template KernelStruct<dreal> KS;
 
@@ -102,7 +107,11 @@ LBMKernel(typename NSE::DATA SD, typename NSE::TRAITS::idx x, typename NSE::TRAI
 template <typename NSE, typename ADE>
 #ifdef USE_CUDA
 __global__ void cudaLBMKernel(
-	typename NSE::DATA NSE_SD, typename ADE::DATA ADE_SD, short int nproc, typename NSE::TRAITS::idx3d offset, typename NSE::TRAITS::idx3d end
+	typename NSE::DATA NSE_SD,
+	typename ADE::DATA ADE_SD,
+	typename NSE::TRAITS::idx3d offset,
+	typename NSE::TRAITS::idx3d end,
+	typename NSE::TRAITS::bool3d distributed
 )
 #else
 CUDA_HOSTDEV void LBMKernel(
@@ -111,7 +120,7 @@ CUDA_HOSTDEV void LBMKernel(
 	typename NSE::TRAITS::idx x,
 	typename NSE::TRAITS::idx y,
 	typename NSE::TRAITS::idx z,
-	short int nproc
+	typename NSE::TRAITS::bool3d distributed
 )
 #endif
 {
@@ -132,7 +141,7 @@ CUDA_HOSTDEV void LBMKernel(
 	const map_t ADE_mapgi = ADE_SD.map(x, y, z);
 
 	idx xp, xm, yp, ym, zp, zm;
-	kernelInitIndices<NSE>(NSE_SD, NSE_mapgi, nproc, x, y, z, xp, xm, yp, ym, zp, zm);
+	kernelInitIndices<NSE>(NSE_SD, NSE_mapgi, distributed, x, y, z, xp, xm, yp, ym, zp, zm);
 
 	// NSE part
 	typename NSE::template KernelStruct<dreal> NSE_KS;
@@ -177,10 +186,14 @@ CUDA_HOSTDEV void LBMKernel(
 
 template <typename NSE>
 #ifdef USE_CUDA
-__global__ void cudaLBMComputeVelocitiesStarAndZeroForce(typename NSE::DATA SD, short int nproc)
+__global__ void cudaLBMComputeVelocitiesStarAndZeroForce(typename NSE::DATA SD, typename NSE::TRAITS::bool3d distributed)
 #else
 void LBMComputeVelocitiesStarAndZeroForce(
-	typename NSE::DATA SD, typename NSE::TRAITS::idx x, typename NSE::TRAITS::idx y, typename NSE::TRAITS::idx z, short int nproc
+	typename NSE::DATA SD,
+	typename NSE::TRAITS::idx x,
+	typename NSE::TRAITS::idx y,
+	typename NSE::TRAITS::idx z,
+	typename NSE::TRAITS::bool3d distributed
 )
 #endif
 {
@@ -205,7 +218,7 @@ void LBMComputeVelocitiesStarAndZeroForce(
 	NSE::MACRO::copyQuantities(SD, KS, x, y, z);
 
 	idx xp, xm, yp, ym, zp, zm;
-	kernelInitIndices<NSE>(SD, gi_map, nproc, x, y, z, xp, xm, yp, ym, zp, zm);
+	kernelInitIndices<NSE>(SD, gi_map, distributed, x, y, z, xp, xm, yp, ym, zp, zm);
 
 	NSE::MACRO::zeroForcesInKS(KS);
 

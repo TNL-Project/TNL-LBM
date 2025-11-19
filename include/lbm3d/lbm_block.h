@@ -15,6 +15,7 @@ struct LBM_BLOCK
 	using map_t = typename TRAITS::map_t;
 	using point_t = typename TRAITS::point_t;
 	using idx3d = typename TRAITS::idx3d;
+	using bool3d = typename TRAITS::bool3d;
 	using lat_t = Lattice<3, real, idx>;
 
 	using hmap_array_t = typename CONFIG::hmap_array_t;
@@ -135,6 +136,12 @@ struct LBM_BLOCK
 	int df_overlap_Z()
 	{
 		return data.indexer.template getOverlap<2>();
+	}
+
+	// returns a tuple of bools indicating if the lattice is distributed along each dimension
+	bool3d is_distributed() const
+	{
+		return TNL::notEqualTo(local, global);
 	}
 
 #ifdef HAVE_MPI

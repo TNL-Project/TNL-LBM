@@ -999,13 +999,13 @@ void State<NSE>::SimUpdate()
 			TNL::Backend::LaunchConfiguration launch_config;
 			launch_config.blockSize = block.computeData.at(direction).blockSize;
 			launch_config.gridSize = block.computeData.at(direction).gridSize;
-			TNL::Backend::launchKernelAsync(cudaLBMComputeVelocitiesStarAndZeroForce<NSE>, launch_config, block.data, nse.total_blocks);
+			TNL::Backend::launchKernelAsync(cudaLBMComputeVelocitiesStarAndZeroForce<NSE>, launch_config, block.data, block.is_distributed());
 #else
 	#pragma omp parallel for schedule(static) collapse(2)
 			for (idx x = 0; x < block.local.x(); x++)
 				for (idx z = 0; z < block.local.z(); z++)
 					for (idx y = 0; y < block.local.y(); y++)
-						LBMComputeVelocitiesStarAndZeroForce<NSE>(block.data, nse.total_blocks, x, y, z);
+						LBMComputeVelocitiesStarAndZeroForce<NSE>(block.data, x, y, z, block.is_distributed());
 #endif
 		}
 		// synchronize the null-stream after all grids
@@ -1036,7 +1036,7 @@ void State<NSE>::SimUpdate()
 			TNL::Backend::LaunchConfiguration launch_config;
 			launch_config.blockSize = block.computeData.at(direction).blockSize;
 			launch_config.gridSize = block.computeData.at(direction).gridSize;
-			TNL::Backend::launchKernelAsync(cudaLBMKernel<NSE>, launch_config, block.data, nse.total_blocks, idx3d{0, 0, 0}, block.local);
+			TNL::Backend::launchKernelAsync(cudaLBMKernel<NSE>, launch_config, block.data, idx3d{0, 0, 0}, block.local, block.is_distributed());
 		}
 		// synchronize the null-stream after all grids
 		TNL::Backend::streamSynchronize(0);
@@ -1067,7 +1067,7 @@ void State<NSE>::SimUpdate()
 					launch_config.stream = block.computeData.at(direction).stream;
 					const idx3d offset = block.computeData.at(direction).offset;
 					const idx3d size = block.computeData.at(direction).size;
-					TNL::Backend::launchKernelAsync(cudaLBMKernel<NSE>, launch_config, block.data, nse.total_blocks, offset, offset + size);
+					TNL::Backend::launchKernelAsync(cudaLBMKernel<NSE>, launch_config, block.data, offset, offset + size, block.is_distributed());
 				}
 		}
 
@@ -1080,7 +1080,7 @@ void State<NSE>::SimUpdate()
 			launch_config.stream = block.computeData.at(direction).stream;
 			const idx3d offset = block.computeData.at(direction).offset;
 			const idx3d size = block.computeData.at(direction).size;
-			TNL::Backend::launchKernelAsync(cudaLBMKernel<NSE>, launch_config, block.data, nse.total_blocks, offset, offset + size);
+			TNL::Backend::launchKernelAsync(cudaLBMKernel<NSE>, launch_config, block.data, offset, offset + size, block.is_distributed());
 		}
 
 		// wait for the computations on boundaries to finish
@@ -1117,7 +1117,7 @@ void State<NSE>::SimUpdate()
 		for (idx x = 0; x < block.local.x(); x++)
 			for (idx z = 0; z < block.local.z(); z++)
 				for (idx y = 0; y < block.local.y(); y++) {
-					LBMKernel<NSE>(block.data, x, y, z, nse.total_blocks);
+					LBMKernel<NSE>(block.data, x, y, z, block.is_distributed());
 				}
 	}
 	timer_compute.stop();
