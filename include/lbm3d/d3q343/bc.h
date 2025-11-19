@@ -102,6 +102,45 @@ struct D3Q343_BC_All
 					TNL::swap(KS.f[id], KS.f[KS.flip_id(id)]);
 				}
 				break;
+			case GEO_SYM_LEFT:
+			case GEO_SYM_RIGHT:
+				#ifdef __CUDA_ARCH__
+				#pragma unroll
+				#endif
+				for(int id = 0; id < LBM_KS::Qhalf; id++){
+					Coord c = KS.id_to_coords(id);
+					c.x = -c.x;
+					const int flipped_id = KS.coords_to_id(c.x,c.y,c.z);
+					TNL::swap(KS.f[flipped_id], KS.f[id]);
+				}
+				COLL::computeDensityAndVelocity(KS);
+				break;
+			case GEO_SYM_FRONT:
+			case GEO_SYM_BACK:
+				#ifdef __CUDA_ARCH__
+				#pragma unroll
+				#endif
+				for(int id = 0; id < LBM_KS::Qhalf; id++){
+					Coord c = KS.id_to_coords(id);
+					c.y = -c.y;
+					const int flipped_id = KS.coords_to_id(c.x,c.y,c.z);
+					TNL::swap(KS.f[flipped_id], KS.f[id]);
+				}
+				COLL::computeDensityAndVelocity(KS);
+				break;
+			case GEO_SYM_TOP:
+			case GEO_SYM_BOTTOM:
+				#ifdef __CUDA_ARCH__
+				#pragma unroll
+				#endif
+				for(int id = 0; id < LBM_KS::Qhalf; id++){
+					Coord c = KS.id_to_coords(id);
+					c.z = -c.z;
+					const int flipped_id = KS.coords_to_id(c.x,c.y,c.z);
+					TNL::swap(KS.f[flipped_id], KS.f[id]);
+				}
+				COLL::computeDensityAndVelocity(KS);
+				break;
 			default:
 				COLL::computeDensityAndVelocity(KS);
 				break;
