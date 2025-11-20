@@ -779,6 +779,7 @@ void State<NSE>::loadState()
 		checkpointState(adios2::Mode::Read);
 		checkpointStateLocal(adios2::Mode::Read);
 		checkpoint.finalize();
+		startedAtCheckpoint();
     }
 }
 

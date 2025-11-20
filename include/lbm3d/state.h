@@ -134,6 +134,8 @@ struct State
 	virtual void statReset() {}
 	virtual void stat2Reset() {}
 
+	virtual void startedAtCheckpoint() {}
+
 	// vtk export
 	template <typename real1, typename real2>
 	bool vtk_helper(const char* iid, real1 ivalue, int idofs, char* id, real2& value, int& dofs)  /// simplifies data output routine

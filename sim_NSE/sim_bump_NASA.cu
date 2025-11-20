@@ -305,6 +305,13 @@ struct StateLocal : State<NSE>
 		dragprofile();
   	}
 
+	void startedAtCheckpoint() override {
+		firstrun = false;
+		firstrunProfile = false;
+		// TODO: known mistake that probes have to run at least one during first walltime run!!!, otherwise doesnt overwrite
+		// FIX: just delete simulation files before starting new simulation
+	}
+
 
 	bool outputData(const BLOCK& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) override
 	{
@@ -379,7 +386,7 @@ int sim(int RESOLUTION = 2)
 	// problem parameters
 	state.lbm_inflow_vx = lat.phys2lbmVelocity(PHYS_VELOCITY);
 
-	state.nse.physFinalTime = 10;
+	state.nse.physFinalTime = 100;
 	state.cnt[PRINT].period = 0.1;
 
 	// add cuts
