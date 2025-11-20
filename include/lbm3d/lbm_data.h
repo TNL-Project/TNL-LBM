@@ -1,6 +1,7 @@
 #pragma once
 
 #include "defs.h"
+#include "state.h"
 
 // only a base type - common for all D3Q* models, cannot be used directly
 template <typename TRAITS>
@@ -90,6 +91,45 @@ struct NSE_Data_ConstInflow : NSE_Data<TRAITS>
 		KS.vx = inflow_vx;
 		KS.vy = inflow_vy;
 		KS.vz = inflow_vz;
+	}
+};
+#define PI 3.1415926
+template <typename TRAITS>
+struct NSE_Data_Parabolic : NSE_Data<TRAITS>
+{
+	using idx = typename TRAITS::idx;
+	using dreal = typename TRAITS::dreal;
+
+	dreal inflow_vx = 0;
+	dreal inflow_vy = 0;
+	dreal inflow_vz = 0;
+	// TODO: define this in simulation initialization
+	dreal a = 0; // size of channel
+    dreal inflow_g=0;
+    dreal physDl = 1;
+	dreal physY = 1.;
+	dreal physViscosity = 1.;
+    dreal InitPoint [3];
+
+	template <typename LBM_KS>
+	CUDA_HOSTDEV void inflow(LBM_KS& KS, idx x, idx y, idx z)
+	{
+		KS.vx = inflow_vx;
+		KS.vy = inflow_vy;
+		KS.vz = inflow_vz;
+	}
+
+	CUDA_HOSTDEV void sum_to_order(dreal a, dreal x, dreal y, int order){
+		dreal sum = 0;
+		for(int m = 0;m<order;m++){
+		for(int n = 0;n<order;n++){
+			sum += coefficient_of_sum(a, x, y, m, n);
+		}}
+		return -4*a*a/pow(PI,4)*sum;
+	}
+
+	CUDA_HOSTDEV void coefficient_of_sum(dreal a, dreal x, dreal y, int m, int n){
+		return sin(1.*m/a*PI)*sin(1.*n/a*PI)/m/n/(m*m+n*n);
 	}
 };
 
