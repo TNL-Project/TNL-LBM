@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<adios-config>
+
+    <io name="Output">
+		<engine type="plugin">
+			<!-- general plugin engine parameters -->
+			<parameter key="PluginName" value="fides"/>
+			<parameter key="PluginLibrary" value="ParaViewADIOSInSituEngine"/>
+			<!-- ParaViewFides engine parameters -->
+			<parameter key="DataModel" value="catalyst/plugin/lbm-fides.json"/>
+			<parameter key="Script" value="catalyst/plugin/lbm-pipeline.py"/>
+		</engine>
+    </io>
+
+</adios-config>
