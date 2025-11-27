@@ -17,19 +17,28 @@ public:
 		defaultIO = adios->DeclareIO("Output");
 	}
 
-	void initEngine(const std::string& name, adios2::Mode mode = adios2::Mode::Write)
+	// Prepare IO object without opening engine 
+	void prepareIO(const std::string& ioName)
 	{
-		auto io_it = ios_.find(name);
+		if (ios_.find(ioName) != ios_.end()) {
+			return; // Already prepared
+		}
+		adios2::IO io_handle = adios->DeclareIO(fmt::format("IO_{}", ioName));
+		if (! io_handle.InConfigFile()) {
+			io_handle.SetEngine(defaultIO.EngineType());
+			io_handle.SetParameters(defaultIO.Parameters());
+		}
+		ios_.emplace(ioName, io_handle);
+		spdlog::info("Prepared IO for '{}' (variables can be defined now)", ioName);
+	}
+
+	// Open engine after variables are defined
+	void openEngine(const std::string& ioName, adios2::Mode mode = adios2::Mode::Write)
+	{
+		auto io_it = ios_.find(ioName);
 		if (io_it == ios_.end()) {
-			adios2::IO io_handle = adios->DeclareIO(fmt::format("IO_{}", name));
-
-			if (! io_handle.InConfigFile()) {
-				io_handle.SetEngine(defaultIO.EngineType());
-				io_handle.SetParameters(defaultIO.Parameters());
-				spdlog::warn("{}", defaultIO.EngineType());
-			}
-
-			io_it = ios_.emplace(name, io_handle).first;
+			prepareIO(ioName);
+			io_it = ios_.find(ioName);
 		}
 
 		adios2::IO& io_ref = io_it->second;
@@ -39,65 +48,67 @@ public:
 			mode = adios2::Mode::Write;
 		}
 
-		if (engines_.count(name) > 0) {
-			if (current_mode_[name] == mode) {
-				spdlog::trace("Engine '{}' already initialized with requested mode.", name);
-				engine_ = &engines_[name];
+		// Check if engine already exists and is open
+		auto eng_it = engines_.find(ioName);
+		if (eng_it != engines_.end() && eng_it->second) {
+			if (current_mode_[ioName] == mode) {
+				engine_ = &eng_it->second;
 				return;
 			}
-
-			engines_[name].Close();
-			engines_.erase(name);
+			eng_it->second.Close();
+			engines_.erase(ioName);
 		}
 
-		if (engines_.count(name) == 0) {
-			std::string filename = name;
-
-			if (is_bp_engine) {
-				filename += ".bp";
-			}
-
-			engines_[name] = io_ref.Open(filename, mode);
-			current_mode_[name] = mode;
-			spdlog::trace("Initialized engine '{}' with mode {}", filename, magic_enum::enum_name(mode));
+		std::string filename = ioName;
+		if (is_bp_engine) {
+			filename += ".bp";
 		}
 
-		engine_ = &engines_[name];
+		spdlog::info("Opening engine '{}' (after variable definitions)", ioName);
+		engines_[ioName] = io_ref.Open(filename, mode);
+		current_mode_[ioName] = mode;
+		engine_ = &engines_[ioName];
+	}
+
+	void initEngine(const std::string& ioName, adios2::Mode mode = adios2::Mode::Write)
+	{
+		prepareIO(ioName);
+		openEngine(ioName, mode);
 	}
 
 	//this function is not necessary right now
 	void ChangeEnginesToAppend()
 	{
-		for (auto& [name, engine] : engines_) {
-			if (engine && current_mode_[name] == adios2::Mode::Write) {
-				initEngine(name, adios2::Mode::Append);
+		for (auto& [ioName, engine] : engines_) {
+			if (engine && current_mode_[ioName] == adios2::Mode::Write) {
+				initEngine(ioName, adios2::Mode::Append);
 			}
 		}
 	}
 
-	adios2::Engine& getEngine(const std::string& name)
+	adios2::Engine& getEngine(const std::string& ioName)
 	{
-		if (! engines_[name]) {
+		if (! engines_[ioName]) {
 			throw std::runtime_error("Engine not initialized for this simulation type");
 		}
-		return engines_[name];
+		return engines_[ioName];
 	}
 
-	adios2::Mode getEngineMode(const std::string& name)
+	adios2::Mode getEngineMode(const std::string& ioName)
 	{
-		if (! engines_[name]) {
+		if (! engines_[ioName]) {
 			throw std::runtime_error("Engine not initialized for this simulation type");
 		}
-		return current_mode_[name];
+		return current_mode_[ioName];
 	}
 
 	// Explicitly close a specific engine
-	void closeEngine(const std::string& name)
+	void closeEngine(const std::string& ioName)
 	{
-		if (engines_.count(name) > 0) {
-			engines_[name].Close();
-			engines_.erase(name);
-			spdlog::debug("Closed engine for {}", name);
+		if (engines_.count(ioName) > 0) {
+			engines_[ioName].Close();
+			engines_.erase(ioName);
+			spdlog::debug("Closed engine for {}", ioName);
 		}
 	}
 
@@ -122,14 +133,15 @@ public:
 	DataManager& operator=(DataManager&&) noexcept = default;
 
 	template <typename T>
-	void defineData(const std::string& name, const adios2::Dims& shape, const adios2::Dims& start, const adios2::Dims& count, const std::string& type)
+	void
+	defineData(const std::string& name, const adios2::Dims& shape, const adios2::Dims& start, const adios2::Dims& count, const std::string& ioName)
 	{
 		// Check if variable already exists in IO object
-		auto var = ios_[type].InquireVariable<T>(name);
+		auto var = ios_[ioName].InquireVariable<T>(name);
 
 		if (! var) {
 			// If not, define a new variable
-			var = ios_[type].DefineVariable<T>(name, shape, start, count);
+			var = ios_[ioName].DefineVariable<T>(name, shape, start, count);
 			spdlog::debug("Defined new variable {}", name);
 		}
 		else {
@@ -141,150 +153,150 @@ public:
 	}
 
 	template <typename T>
-	void defineData(const std::string& name, const std::string& type)
+	void defineData(const std::string& name, const std::string& ioName)
 	{
 		// Check if variable already exists in IO object
-		auto var = ios_[type].InquireVariable<T>(name);
+		auto var = ios_[ioName].InquireVariable<T>(name);
 
 		if (! var) {
 			// If not, define a new variable
-			var = ios_[type].DefineVariable<T>(name);
+			var = ios_[ioName].DefineVariable<T>(name);
 			spdlog::debug("Defined new variable {}", name);
 		}
 	}
 
 	template <typename T>
-	void defineAttribute(const std::string& name, const T& data, const std::string& type)
+	void defineAttribute(const std::string& name, const T& data, const std::string& ioName)
 	{
 		// Allow modification of attributes
-		ios_[type].DefineAttribute<T>(name, data, "", "/", true);
+		ios_[ioName].DefineAttribute<T>(name, data, "", "/", true);
 	}
 
 	template <typename T>
-	void defineAttribute(const std::string& name, const T* data, size_t size, const std::string& type)
+	void defineAttribute(const std::string& name, const T* data, size_t size, const std::string& ioName)
 	{
 		// Allow modification of attributes
-		ios_[type].DefineAttribute<T>(name, data, size, "", "/", true);
+		ios_[ioName].DefineAttribute<T>(name, data, size, "", "/", true);
 	}
 
 	template <typename T>
-	void outputData(const std::string& name, const T& data, const std::string& type)
+	void outputData(const std::string& varName, const T& data, const std::string& ioName)
 	{
-		if (! engines_[type]) {
-			throw std::runtime_error("Engine not initialized for this simulation type");
+		if (! engines_[ioName]) {
+			return;
 		}
 
-		if (current_mode_[type] != adios2::Mode::Write && current_mode_[type] != adios2::Mode::Append) {
+		if (current_mode_[ioName] != adios2::Mode::Write && current_mode_[ioName] != adios2::Mode::Append) {
 			throw std::runtime_error("Engine not in write mode");
 		}
 
-		adios2::Variable<T> var = ios_[type].InquireVariable<T>(name);
+		adios2::Variable<T> var = ios_[ioName].InquireVariable<T>(varName);
 		if (var) {
-			engines_[type].Put(var, data);
-			engines_[type].PerformPuts();
+			engines_[ioName].Put(var, data);
+			// engines_[ioName].PerformPuts();
 		}
 		else {
-			throw std::runtime_error(fmt::format("Variable \"{}\" not found", name));
+			throw std::runtime_error(fmt::format("Variable \"{}\" not found", varName));
 		}
 	}
 
 	template <typename T>
-	void outputData(const std::string& name, const T* data, const std::string& type)
+	void outputData(const std::string& varName, const T* data, const std::string& ioName)
 	{
-		if (! engines_[type]) {
-			throw std::runtime_error("Engine not initialized for this simulation type");
+		if (! engines_[ioName]) {
+			return;
 		}
 
-		if (current_mode_[type] != adios2::Mode::Write && current_mode_[type] != adios2::Mode::Append) {
+		if (current_mode_[ioName] != adios2::Mode::Write && current_mode_[ioName] != adios2::Mode::Append) {
 			throw std::runtime_error("Engine not in write mode");
 		}
 
-		adios2::Variable<T> var = ios_[type].InquireVariable<T>(name);
+		adios2::Variable<T> var = ios_[ioName].InquireVariable<T>(varName);
 		if (var) {
-			engines_[type].Put(var, data);
-			engines_[type].PerformPuts();
+			engines_[ioName].Put(var, data);
+			// engines_[ioName].PerformPuts();
 		}
 		else {
-			throw std::runtime_error(fmt::format("Variable \"{}\" not found", name));
+			throw std::runtime_error(fmt::format("Variable \"{}\" not found", varName));
 		}
 	}
 
 	// Methods for reading
 	template <typename T>
-	T readAttribute(const std::string& name, const std::string& type)
+	T readAttribute(const std::string& attrName, const std::string& ioName)
 	{
-		if (! engines_[type]) {
+		if (! engines_[ioName]) {
 			throw std::runtime_error("Engine not initialized for this simulation type");
 		}
 
-		if (current_mode_[type] != adios2::Mode::Read) {
+		if (current_mode_[ioName] != adios2::Mode::Read) {
 			throw std::runtime_error("Engine not in read mode");
 		}
 
-		auto attr = ios_[type].InquireAttribute<T>(name);
+		auto attr = ios_[ioName].InquireAttribute<T>(attrName);
 		if (! attr) {
-			throw std::runtime_error(fmt::format("Attribute \"{}\" not found", name));
+			throw std::runtime_error(fmt::format("Attribute \"{}\" not found", attrName));
 		}
 
 		return attr.Data()[0];
 	}
 
 	template <typename T>
-	std::vector<T> readAttributeArray(const std::string& name, const std::string& type)
+	std::vector<T> readAttributeArray(const std::string& attrName, const std::string& ioName)
 	{
-		if (! engines_[type]) {
+		if (! engines_[ioName]) {
 			throw std::runtime_error("Engine not initialized for this simulation type");
 		}
 
-		if (current_mode_[type] != adios2::Mode::Read) {
+		if (current_mode_[ioName] != adios2::Mode::Read) {
 			throw std::runtime_error("Engine not in read mode");
 		}
 
-		auto attr = ios_[type].InquireAttribute<T>(name);
+		auto attr = ios_[ioName].InquireAttribute<T>(attrName);
 		if (! attr) {
-			throw std::runtime_error(fmt::format("Attribute \"{}\" not found", name));
+			throw std::runtime_error(fmt::format("Attribute \"{}\" not found", attrName));
 		}
 
 		return std::vector<T>(attr.Data(), attr.Data() + attr.Size());
 	}
 
 	template <typename T>
-	void readVariable(const std::string& name, T* data, const std::string& type)
+	void readVariable(const std::string& varName, T* data, const std::string& ioName)
 	{
-		if (! engines_[type]) {
+		if (! engines_[ioName]) {
 			throw std::runtime_error("Engine not initialized for this simulation type");
 		}
 
-		if (current_mode_[type] != adios2::Mode::Read) {
+		if (current_mode_[ioName] != adios2::Mode::Read) {
 			throw std::runtime_error("Engine not in read mode");
 		}
 
-		adios2::Variable<T> var = ios_.at(type).InquireVariable<T>(name);
+		adios2::Variable<T> var = ios_.at(ioName).InquireVariable<T>(varName);
 		if (! var) {
-			throw std::runtime_error(fmt::format("Variable \"{}\" not found", name));
+			throw std::runtime_error(fmt::format("Variable \"{}\" not found", varName));
 		}
 
-		engines_[type].Get(var, data);
-		engines_[type].PerformGets();
+		engines_[ioName].Get(var, data);
+		engines_[ioName].PerformGets();
 	}
 
-	void beginStep(const std::string& type)
+	void beginStep(const std::string& ioName)
 	{
-		if (! engines_[type]) {
-			throw std::runtime_error("Engine not initialized for this simulation type");
+		if (! engines_[ioName]) {
+			return;
 		}
-		engine_ = &engines_[type];
+		engine_ = &engines_[ioName];
 		engine_->BeginStep();
 	}
 
-	void performPutsAndStep(const std::string& type)
+	void performPutsAndStep(const std::string& ioName)
 	{
-		if (! engines_[type]) {
-			throw std::runtime_error("Engine not initialized for this simulation type");
+		if (! engines_[ioName]) {
+			return;
 		}
-		engine_ = &engines_[type];
+		engine_ = &engines_[ioName];
 
-		if (current_mode_[type] == adios2::Mode::Write || current_mode_[type] == adios2::Mode::Append) {
+		if (current_mode_[ioName] == adios2::Mode::Write || current_mode_[ioName] == adios2::Mode::Append) {
 			engine_->PerformPuts();
 		}
 		else {
@@ -295,9 +307,9 @@ public:
 	}
 
 	template <typename T>
-	bool isVariableDefined(const std::string& name, const std::string& type)
+	bool isVariableDefined(const std::string& varName, const std::string& ioName)
 	{
-		adios2::Variable<T> var = ios_.at(type).InquireVariable<T>(name);
+		adios2::Variable<T> var = ios_.at(ioName).InquireVariable<T>(varName);
 		return static_cast<bool>(var);
 	}
 

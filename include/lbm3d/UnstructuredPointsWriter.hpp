@@ -44,7 +44,10 @@ void UnstructuredPointsWriter<TRAITS>::write(std::string varName, std::vector<T>
 		dataManager->defineData<T>(varName, shape, start, count, simType);
 	}
 
-	dataManager->outputData<T>(varName, val.data(), simType);
+	// keep internal copy of the data until EndStep()
+	auto& buffer = this->template newBuffer<T>(val.size());
+	buffer.assign(val.begin(), val.end());
+	dataManager->outputData<T>(varName, buffer.data(), simType);
 }
 
 template <typename TRAITS>

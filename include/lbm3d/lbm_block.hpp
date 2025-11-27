@@ -535,7 +535,7 @@ void LBM_BLOCK<CONFIG>::allocateDeviceData()
 	dmap.allocate();
 	#endif
 
-	for (auto & df : dfs) {
+	for (auto& df : dfs) {
 		df.setSizes(0, global.x(), global.y(), global.z());
 	#ifdef HAVE_MPI
 		if (local.x() != global.x())
@@ -759,8 +759,8 @@ template <typename CONFIG>
 template <typename Output>
 void LBM_BLOCK<CONFIG>::writeVTK_3D(lat_t lat, Output&& outputData, const std::string& filename, real time, int cycle, DataManager& dataManager) const
 {
-	std::vector<int> tempIData;
-	std::vector<float> tempFData;
+	std::vector<int> tempIData; // use buffer
+	std::vector<float> tempFData; // same
 	const point_t origin = lat.lbm2physPoint(0, 0, 0);
 	UniformDataWriter<TRAITS> writer(global, local, offset, origin, lat.physDl, dataManager, filename);
 
@@ -768,6 +768,7 @@ void LBM_BLOCK<CONFIG>::writeVTK_3D(lat_t lat, Output&& outputData, const std::s
 		for (idx y = offset.y(); y < offset.y() + local.y(); y++)
 			for (idx x = offset.x(); x < offset.x() + local.x(); x++)
 				tempIData.push_back(hmap(x, y, z));
+
 	writer.write("wall", tempIData, 1);
 	tempIData.clear();
 

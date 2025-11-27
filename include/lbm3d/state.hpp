@@ -397,25 +397,73 @@ void State<NSE>::write1Dcut_Z(idx x, idx y, const std::string& fname)
 template <typename NSE>
 void State<NSE>::writeVTKs_3D()
 {
-	if (cnt[VTK3D].count == 0)
-		dataManager.initEngine(fmt::format("results_{}/output_3D", id));
-	else
-		dataManager.initEngine(fmt::format("results_{}/output_3D", id), adios2::Mode::Append);
+	const std::string fname = fmt::format("results_{}/output_3D", id);
+	create_parent_directories(fname.c_str());
 
+	auto outputData = [this](const BLOCK_NSE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) mutable
+	{
+		return this->outputData(block, index, dof, desc, x, y, z, value, dofs);
+	};
+
+	dataManager.prepareIO(fname);
+	if (cnt[VTK3D].count == 0) {
+		predefineVTK3D(fname, nse.blocks.front());
+	}
+	// Safe to call repeatedly
+	dataManager.openEngine(fname);
+	
 	TNL::Timer timer;
 	for (const auto& block : nse.blocks) {
-		const std::string fname = fmt::format("results_{}/output_3D", id);
-		create_parent_directories(fname.c_str());
-		auto outputData = [this](const BLOCK_NSE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) mutable
-		{
-			return this->outputData(block, index, dof, desc, x, y, z, value, dofs);
-		};
 		timer.start();
 		block.writeVTK_3D(nse.lat, outputData, fname, nse.physTime(), cnt[VTK3D].count, dataManager);
 		timer.stop();
 		spdlog::info("write3D saved in: {:.2f} seconds", timer.getRealTime());
 		timer.reset();
 		spdlog::info("[vtk {} written, time {:f}, cycle {:d}] ", fname, nse.physTime(), cnt[VTK3D].count);
+	}
+}
+
+template <typename NSE>
+void State<NSE>::predefineVTK3D(const std::string& ioName, const BLOCK_NSE& block)
+{
+	const adios2::Dims shape{
+		static_cast<std::size_t>(block.global.z()),
+		static_cast<std::size_t>(block.global.y()),
+		static_cast<std::size_t>(block.global.x())
+	};
+	const adios2::Dims start{
+		static_cast<std::size_t>(block.offset.z()),
+		static_cast<std::size_t>(block.offset.y()),
+		static_cast<std::size_t>(block.offset.x())
+	};
+	const adios2::Dims count{
+		static_cast<std::size_t>(block.local.z()),
+		static_cast<std::size_t>(block.local.y()),
+		static_cast<std::size_t>(block.local.x())
+	};
+
+	dataManager.defineData<int>("wall", shape, start, count, ioName);
+	spdlog::info("Defined variable 'wall' with shape [{},{},{}]", shape[0], shape[1], shape[2]);
+
+	dataManager.defineData<real>("TIME", ioName);
+	spdlog::info("Defined variable 'TIME'");
+
+	char desc[500];
+	real value;
+	int dofs;
+	int index = 0;
+	while (outputData(block, index++, 0, desc, block.offset.x(), block.offset.y(), block.offset.z(), value, dofs)) {
+		const std::string varName(desc);
+		if (dofs == 1) {
+			dataManager.defineData<float>(varName, shape, start, count, ioName);
+			spdlog::info("Defined variable '{}' (scalar)", varName);
+		}
+		else {
+			dataManager.defineData<float>(varName + "X", shape, start, count, ioName);
+			dataManager.defineData<float>(varName + "Y", shape, start, count, ioName);
+			dataManager.defineData<float>(varName + "Z", shape, start, count, ioName);
+			spdlog::info("Defined variable '{}' (vector: X,Y,Z)", varName);
+		}
 	}
 }
 

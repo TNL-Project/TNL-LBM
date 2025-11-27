@@ -4,9 +4,10 @@
 #include <string>
 
 #include "DataManager.h"
+#include "DataWriter.h"
 
 template <typename TRAITS>
-class UniformDataWriter
+class UniformDataWriter : public DataWriter<TRAITS>
 {
 private:
 	using idx = typename TRAITS::idx;

@@ -160,6 +160,8 @@ struct State
 
 	virtual void writeVTKs_3D();
 
+	void predefineVTK3D(const std::string& ioName, const BLOCK_NSE& block);
+	
 	// 3D cuts
 	virtual void writeVTKs_3Dcut();
 	template <typename... ARGS>
