@@ -147,28 +147,29 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal k_222 = (k_p22 + k_m22) - no2 * KS.vx * (k_p22 - k_m22) + KS.vx * KS.vx * k_022;
 
 		// Eq 51 from Geier 2015
-		const dreal C_211 = k_211 - (k_200 * k_011 + no2 * k_101 * k_110) / KS.rho;
-		const dreal C_121 = k_121 - (k_020 * k_101 + no2 * k_110 * k_011) / KS.rho;
-		const dreal C_112 = k_112 - (k_002 * k_110 + no2 * k_011 * k_101) / KS.rho;
+		const dreal rho_inv = dreal(1.0) / KS.rho;
+		const dreal C_211 = k_211 - (k_200 * k_011 + no2 * k_101 * k_110) * rho_inv;
+		const dreal C_121 = k_121 - (k_020 * k_101 + no2 * k_110 * k_011) * rho_inv;
+		const dreal C_112 = k_112 - (k_002 * k_110 + no2 * k_011 * k_101) * rho_inv;
 
 		// Eq 52 from Geier 2015
-		const dreal C_220 = k_220 - (k_020 * k_200 + no2 * k_110 * k_110) / KS.rho;
-		const dreal C_022 = k_022 - (k_002 * k_020 + no2 * k_011 * k_011) / KS.rho;
-		const dreal C_202 = k_202 - (k_200 * k_002 + no2 * k_101 * k_101) / KS.rho;
+		const dreal C_220 = k_220 - (k_020 * k_200 + no2 * k_110 * k_110) * rho_inv;
+		const dreal C_022 = k_022 - (k_002 * k_020 + no2 * k_011 * k_011) * rho_inv;
+		const dreal C_202 = k_202 - (k_200 * k_002 + no2 * k_101 * k_101) * rho_inv;
 
 		// Eq 53 from Geier 2015
-		const dreal C_122 = k_122 - (k_020 * k_102 + k_002 * k_120 + no4 * k_011 * k_111 + no2 * (k_110 * k_012 + k_101 * k_021)) / KS.rho;
-		const dreal C_212 = k_212 - (k_002 * k_210 + k_200 * k_012 + no4 * k_101 * k_111 + no2 * (k_011 * k_201 + k_110 * k_102)) / KS.rho;
-		const dreal C_221 = k_221 - (k_200 * k_021 + k_020 * k_201 + no4 * k_110 * k_111 + no2 * (k_101 * k_120 + k_011 * k_210)) / KS.rho;
+		const dreal C_122 = k_122 - (k_020 * k_102 + k_002 * k_120 + no4 * k_011 * k_111 + no2 * (k_110 * k_012 + k_101 * k_021)) * rho_inv;
+		const dreal C_212 = k_212 - (k_002 * k_210 + k_200 * k_012 + no4 * k_101 * k_111 + no2 * (k_011 * k_201 + k_110 * k_102)) * rho_inv;
+		const dreal C_221 = k_221 - (k_200 * k_021 + k_020 * k_201 + no4 * k_110 * k_111 + no2 * (k_101 * k_120 + k_011 * k_210)) * rho_inv;
 
 		// Eq 54 from Geier 2015
 		const dreal C_222 = k_222
 						  - (no4 * k_111 * k_111 + k_200 * k_022 + k_020 * k_202 + k_002 * k_220
 							 + no4 * (k_011 * k_211 + k_101 * k_121 + k_110 * k_112) + no2 * (k_120 * k_102 + k_210 * k_012 + k_201 * k_021))
-								/ KS.rho
+								* rho_inv
 						  + (no16 * k_110 * k_101 * k_011 + no4 * (k_101 * k_101 * k_020 + k_011 * k_011 * k_200 + k_110 * k_110 * k_002)
 							 + no2 * k_200 * k_020 * k_002)
-								/ KS.rho / KS.rho;
+								* rho_inv * rho_inv;
 
 		// relaxation definitions
 		const dreal omega1 = no1 / (no3 * KS.lbmViscosity + n1o2);	// shear viscosity
@@ -226,14 +227,14 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		// derivatives of v: notation taken from Geier's paper 2017 part I: Eq 27-29
 		// const dreal Dxu = - omega1/no2/KS.rho * (no2*C_200-C_020-C_002) - omega2/no2/KS.rho*(C_200+C_020+C_002-k_000);
 		const dreal Dxu =
-			-omega1 / no2 / KS.rho * (no2 * C_200 - C_020 - C_002)
-			- omega2 / no2 / KS.rho * (C_200 + C_020 + C_002 - (-no1 + KS.rho));  // remark: rho <--> rho^(2), i.e. rho^(2) = 1-rho = 1-k_000
-		const dreal Dyv = Dxu + n3o2 * omega1 / KS.rho * (C_200 - C_020);
-		const dreal Dzw = Dxu + n3o2 * omega1 / KS.rho * (C_200 - C_002);
+			-omega1 / no2 * rho_inv * (no2 * C_200 - C_020 - C_002)
+			- omega2 / no2 * rho_inv * (C_200 + C_020 + C_002 - (-no1 + KS.rho));  // remark: rho <--> rho^(2), i.e. rho^(2) = 1-rho = 1-k_000
+		const dreal Dyv = Dxu + n3o2 * omega1 * rho_inv * (C_200 - C_020);
+		const dreal Dzw = Dxu + n3o2 * omega1 * rho_inv * (C_200 - C_002);
 		// plus their combination: Eq 30 - 32
-		const dreal DxvDyu = -no3 * omega1 / KS.rho * C_110;
-		const dreal DxwDzu = -no3 * omega1 / KS.rho * C_101;
-		const dreal DywDzv = -no3 * omega1 / KS.rho * C_011;
+		const dreal DxvDyu = -no3 * omega1 * rho_inv * C_110;
+		const dreal DxwDzu = -no3 * omega1 * rho_inv * C_101;
+		const dreal DywDzv = -no3 * omega1 * rho_inv * C_011;
 #else
 		const dreal Dxu = 0;
 		const dreal Dyv = 0;
@@ -305,32 +306,32 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 
 		// 3.4 Backward cumulant transformation
 		// Eq. 81 from Geier 2015
-		const dreal ks_211 = Cs_211 + (ks_200 * ks_011 + no2 * ks_101 * ks_110) / KS.rho;
-		const dreal ks_121 = Cs_121 + (ks_020 * ks_101 + no2 * ks_110 * ks_011) / KS.rho;
-		const dreal ks_112 = Cs_112 + (ks_002 * ks_110 + no2 * ks_011 * ks_101) / KS.rho;
+		const dreal ks_211 = Cs_211 + (ks_200 * ks_011 + no2 * ks_101 * ks_110) * rho_inv;
+		const dreal ks_121 = Cs_121 + (ks_020 * ks_101 + no2 * ks_110 * ks_011) * rho_inv;
+		const dreal ks_112 = Cs_112 + (ks_002 * ks_110 + no2 * ks_011 * ks_101) * rho_inv;
 
 		// Eq. 82 from Geier 2015
-		const dreal ks_220 = Cs_220 + (ks_020 * ks_200 + no2 * ks_110 * ks_110) / KS.rho;
-		const dreal ks_022 = Cs_022 + (ks_002 * ks_020 + no2 * ks_011 * ks_011) / KS.rho;
-		const dreal ks_202 = Cs_202 + (ks_200 * ks_002 + no2 * ks_101 * ks_101) / KS.rho;
+		const dreal ks_220 = Cs_220 + (ks_020 * ks_200 + no2 * ks_110 * ks_110) * rho_inv;
+		const dreal ks_022 = Cs_022 + (ks_002 * ks_020 + no2 * ks_011 * ks_011) * rho_inv;
+		const dreal ks_202 = Cs_202 + (ks_200 * ks_002 + no2 * ks_101 * ks_101) * rho_inv;
 
 		// Eq. 83 from Geier 2015
 		const dreal ks_122 =
-			Cs_122 + (ks_020 * ks_102 + ks_002 * ks_120 + no4 * ks_011 * ks_111 + no2 * (ks_110 * ks_012 + ks_101 * ks_021)) / KS.rho;
+			Cs_122 + (ks_020 * ks_102 + ks_002 * ks_120 + no4 * ks_011 * ks_111 + no2 * (ks_110 * ks_012 + ks_101 * ks_021)) * rho_inv;
 		const dreal ks_212 =
-			Cs_212 + (ks_002 * ks_210 + ks_200 * ks_012 + no4 * ks_101 * ks_111 + no2 * (ks_011 * ks_201 + ks_110 * ks_102)) / KS.rho;
+			Cs_212 + (ks_002 * ks_210 + ks_200 * ks_012 + no4 * ks_101 * ks_111 + no2 * (ks_011 * ks_201 + ks_110 * ks_102)) * rho_inv;
 		const dreal ks_221 =
-			Cs_221 + (ks_200 * ks_021 + ks_020 * ks_201 + no4 * ks_110 * ks_111 + no2 * (ks_101 * ks_120 + ks_011 * ks_210)) / KS.rho;
+			Cs_221 + (ks_200 * ks_021 + ks_020 * ks_201 + no4 * ks_110 * ks_111 + no2 * (ks_101 * ks_120 + ks_011 * ks_210)) * rho_inv;
 
 		// Eq. 84 from Geier 2015
 		const dreal ks_222 =
 			Cs_222
 			+ (no4 * ks_111 * ks_111 + ks_200 * ks_022 + ks_020 * ks_202 + ks_002 * ks_220
 			   + no4 * (ks_011 * ks_211 + ks_101 * ks_121 + ks_110 * ks_112) + no2 * (ks_120 * ks_102 + ks_210 * ks_012 + ks_201 * ks_021))
-				  / KS.rho
+				  * rho_inv
 			- (no16 * ks_110 * ks_101 * ks_011 + no4 * (ks_101 * ks_101 * ks_020 + ks_011 * ks_011 * ks_200 + ks_110 * ks_110 * ks_002)
 			   + no2 * ks_200 * ks_020 * ks_002)
-				  / KS.rho / KS.rho;
+				  * rho_inv * rho_inv;
 
 		// backward central moment transformation
 		const dreal ks_000 = k_000;
