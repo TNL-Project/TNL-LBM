@@ -25,12 +25,14 @@ struct StateLocal : State<NSE>
 	using lat_t = Lattice<3, real, idx>;
 
 	real lbm_inflow_vx = 0;
+	real inflow_g = 0;
+	bool NoDV = 1;
 
 	void setupBoundaries() override
 	{
-		nse.setBoundaryX(0, BC::GEO_INFLOW);						  // left
-		nse.setBoundaryX(1, BC::GEO_INFLOW);						  // left
-		nse.setBoundaryX(2, BC::GEO_INFLOW);						  // left
+		nse.setBoundaryX(0, BC::GEO_INFLOW_LEFT_PRESSURE);						  // left
+		nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT_PRESSURE);						  // left
+		nse.setBoundaryX(2, BC::GEO_INFLOW_LEFT_PRESSURE);						  // left
 		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT);  // right
 		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT);  // right
 		nse.setBoundaryX(nse.lat.global.x() - 3, BC::GEO_OUTFLOW_RIGHT);  // right
@@ -88,8 +90,7 @@ struct StateLocal : State<NSE>
 		const double visc = (double)nse.lat.physViscosity;
 		const double delta_x = (double)nse.lat.physDl;
 		// get LBM reference temperature (it is speed of sound)
-		//const double T0 = NoDV == 3  ? (double)0.6979533220196830882384091 : (double)1./3;
-		const double T0 = 1./3;
+		const double T0 = NSE::LBM_KS::NoDV == 3  ? (double)0.6979533220196830882384091 : (double)1./3;
 		real local_drag = 0;
 		// precalculate which macro to use and in which direction to add pressure
 		const int dirMacro = (dir==0) ? MACRO::e_vx : (dir==1) ? MACRO::e_vy : MACRO::e_vz;
@@ -179,7 +180,7 @@ struct StateLocal : State<NSE>
 				}
 				// N_6 = (0,0,-1)
 		 		if(nse.blocks.front().hmap(x, y, z-1) == BC::GEO_FLUID){
-					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x,y,z);
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x,y,z-1);
 					const double v = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(dirMacro,x,y,z-1));
 					const double pressure = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
 					// pressure
@@ -203,9 +204,9 @@ struct StateLocal : State<NSE>
 	bool firstrun = true;
 
 	void dragshiftlift() {
-		const double H = 0.1; // height of bump, 0.05 in origin
-		const double L = 0.1; // length of bump
-		const double W = 0.41; // width of bump
+		const double H = 0.1; // height of cylinder
+		const double L = 0.1; // length of cylinder
+		const double W = 0.41; // width of cylinder
 		const double Uoverline = 0.2; // average inflow velocity
 		// DIFFERENT AXIS ORIENTATION
 		real C_D = 2.*integrate_stress_tensor_general([this](int ix,int iy,int iz){ return this->isObject(ix, iy, iz);},0)/(Uoverline*Uoverline)/(H*W);
@@ -308,11 +309,11 @@ struct StateLocal : State<NSE>
 		if (index == k++) {
 			switch (dof) {
 				case 0:
-					return vtk_helper("velocity", block.hmacro(MACRO::e_vx, x, y, z), 3, desc, value, dofs);
+					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vx, x, y, z)), 3, desc, value, dofs);
 				case 1:
-					return vtk_helper("velocity", block.hmacro(MACRO::e_vy, x, y, z), 3, desc, value, dofs);
+					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vy, x, y, z)), 3, desc, value, dofs);
 				case 2:
-					return vtk_helper("velocity", block.hmacro(MACRO::e_vz, x, y, z), 3, desc, value, dofs);
+					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vz, x, y, z)), 3, desc, value, dofs);
 			}
 		}
 		return false;
@@ -324,6 +325,12 @@ struct StateLocal : State<NSE>
 			block.data.inflow_vx = lbm_inflow_vx;
 			block.data.inflow_vy = 0;
 			block.data.inflow_vz = 0;
+			//block.data.InitPoint = nse.lat.physOrigin;
+			block.data.inflow_g = inflow_g;
+			//block.data.physDl = nse.lat.physDl;
+			if(NSE::LBM_KS::NoDV == 3){
+				block.data.no1oT0 = 1./0.6979533220196830882384091; // FOR D2Q49
+			}
 		}
 	}
 
@@ -341,7 +348,7 @@ int sim(int RESOLUTION = 2)
 	using lat_t = Lattice<3, real, idx>;
 
 	int block_size = 32;
-	real PHYS_LENGTH = 2.2; // length in some units (NASA does not specify)
+	real PHYS_LENGTH = 2.2; // domain length
 	real PHYS_HEIGHT = 0.41;		  // domain height (physical)
 	real PHYS_DEPTH = 0.41;		  // domain depth (physical)
 	// TODO: solve the rounding of pixels to have it precise
@@ -353,7 +360,10 @@ int sim(int RESOLUTION = 2)
 	real PHYS_VELOCITY = 0.3;
 	real PHYS_DL = PHYS_HEIGHT / ((real) Z - 6); // naive fullway bounce-back
 	real PHYS_DT = LBM_VISCOSITY / PHYS_VISCOSITY * PHYS_DL * PHYS_DL;	//PHYS_HEIGHT/(real)LBM_HEIGHT;
-	point_t PHYS_ORIGIN = {0, 0, 0.};
+	point_t PHYS_ORIGIN = {0., -5./2*PHYS_DL, -5./2*PHYS_DL};
+
+	real g = PHYS_VISCOSITY*PHYS_VELOCITY/(PHYS_HEIGHT*PHYS_HEIGHT*0.25*0.5);
+	//g = 1/2.2;
 
 	// initialize the lattice
 	lat_t lat;
@@ -368,10 +378,13 @@ int sim(int RESOLUTION = 2)
 
 	// problem parameters
 	state.lbm_inflow_vx = lat.phys2lbmVelocity(PHYS_VELOCITY);
+	state.inflow_g = lat.phys2lbmForce(g);
 
 	state.nse.physFinalTime = 20;
 	state.cnt[PRINT].period = 1;
 
+	state.loadState();
+	state.wallTime = 100;
 	// add cuts
 	state.cnt[VTK2D].period = 1;
 	state.add2Dcut_X(X / 2, "cutsX/cut_X");
@@ -397,7 +410,7 @@ void run(int RES)
 	using NSE_CONFIG = LBM_CONFIG<
 		TRAITS,
 		D3Q27_KernelStruct,
-		NSE_Data_ConstInflow<TRAITS>,
+		NSE_Data_ConstInflow_PressureGradient<TRAITS>,
 		COLL,
 		typename COLL::EQ,
 		D3Q27_STREAMING<TRAITS>,

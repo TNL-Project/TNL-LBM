@@ -27,11 +27,15 @@ struct StateLocal : State<NSE>
 
 	real lbm_inflow_vx = 0;
 
+	// Refernce values for drag and lift
+	double H,L,W; // bump dimensions
+	double
+
 	void setupBoundaries() override
 	{
-		nse.setBoundaryX(0, BC::GEO_INFLOW);						  // left
-		nse.setBoundaryX(1, BC::GEO_INFLOW);						  // left
-		nse.setBoundaryX(2, BC::GEO_INFLOW);						  // left
+		nse.setBoundaryX(0, BC::GEO_INFLOW_LEFT_PRESSURE);						  // left
+		nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT_PRESSURE);						  // left
+		nse.setBoundaryX(2, BC::GEO_INFLOW_LEFT_PRESSURE);						  // left
 		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT);  // right
 		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT);  // right
 		nse.setBoundaryX(nse.lat.global.x() - 3, BC::GEO_OUTFLOW_RIGHT);  // right
@@ -94,8 +98,7 @@ struct StateLocal : State<NSE>
 		const double visc = (double)nse.lat.physViscosity;
 		const double delta_x = (double)nse.lat.physDl;
 		// get LBM reference temperature (it is speed of sound)
-		//const double T0 = NoDV == 3  ? (double)0.6979533220196830882384091 : (double)1./3;
-		const double T0 = 1./3;
+		const double T0 = NSE::LBM_KS::NoDV == 3  ? (double)0.6979533220196830882384091 : (double)1./3;
 		real local_drag = 0;
 		// precalculate which macro to use and in which direction to add pressure
 		const int dirMacro = (dir==0) ? MACRO::e_vx : (dir==1) ? MACRO::e_vy : MACRO::e_vz;
@@ -185,7 +188,7 @@ struct StateLocal : State<NSE>
 				}
 				// N_6 = (0,0,-1)
 		 		if(nse.blocks.front().hmap(x, y, z-1) == BC::GEO_FLUID){
-					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x,y,z);
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x,y,z-1);
 					const double v = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(dirMacro,x,y,z-1));
 					const double pressure = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
 					// pressure
@@ -363,7 +366,7 @@ int sim(int RESOLUTION = 2)
 	int Z = floor(PHYS_HEIGHT * RESOLUTION * block_size); // depth in pixels --- top and bottom walls  NoDV px
 	real LBM_VISCOSITY = 0.001;
 	real PHYS_VISCOSITY = 1.5e-3;
-	real PHYS_VELOCITY = 1.0;
+	real PHYS_VELOCITY = 10.0;
 	real PHYS_DL = PHYS_HEIGHT / ((real) Z - 6); // naive fullway bounce-back
 	real PHYS_DT = LBM_VISCOSITY / PHYS_VISCOSITY * PHYS_DL * PHYS_DL;	//PHYS_HEIGHT/(real)LBM_HEIGHT;
 	point_t PHYS_ORIGIN = {-PHYS_LENGTH/2., -PHYS_DEPTH, 0.};
@@ -381,7 +384,7 @@ int sim(int RESOLUTION = 2)
 
 	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat);
 	state.loadState();
-	state.wallTime = 10;
+	state.wallTime = 100;
 
 	// problem parameters
 	state.lbm_inflow_vx = lat.phys2lbmVelocity(PHYS_VELOCITY);
