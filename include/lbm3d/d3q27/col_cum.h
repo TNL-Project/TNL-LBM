@@ -46,39 +46,50 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 #define ks_201 Cs_201
 #define ks_120 Cs_120
 #define ks_210 Cs_210
+
+		dreal* f = KS.f;
+		const dreal& rho = KS.rho;
+		const dreal rho_inv = dreal(1.0) / rho;
+		const dreal& vx = KS.vx;
+		const dreal& vy = KS.vy;
+		const dreal& vz = KS.vz;
+		const dreal vx_sqr = vx * vx;
+		const dreal vy_sqr = vy * vy;
+		const dreal vz_sqr = vz * vz;
+
 		// based on Geier 2017 https://doi.org/10.1016/j.jcp.2017.05.040
 		// Eq 6
-		const dreal k_mm0 = (KS.f[mmp] + KS.f[mmm]) + KS.f[mmz];
-		const dreal k_mz0 = (KS.f[mzp] + KS.f[mzm]) + KS.f[mzz];
-		const dreal k_mp0 = (KS.f[mpp] + KS.f[mpm]) + KS.f[mpz];
-		const dreal k_zm0 = (KS.f[zmp] + KS.f[zmm]) + KS.f[zmz];
-		const dreal k_zz0 = (KS.f[zzp] + KS.f[zzm]) + KS.f[zzz];
-		const dreal k_zp0 = (KS.f[zpp] + KS.f[zpm]) + KS.f[zpz];
-		const dreal k_pm0 = (KS.f[pmp] + KS.f[pmm]) + KS.f[pmz];
-		const dreal k_pz0 = (KS.f[pzp] + KS.f[pzm]) + KS.f[pzz];
-		const dreal k_pp0 = (KS.f[ppp] + KS.f[ppm]) + KS.f[ppz];
+		const dreal k_mm0 = (f[mmp] + f[mmm]) + f[mmz];
+		const dreal k_mz0 = (f[mzp] + f[mzm]) + f[mzz];
+		const dreal k_mp0 = (f[mpp] + f[mpm]) + f[mpz];
+		const dreal k_zm0 = (f[zmp] + f[zmm]) + f[zmz];
+		const dreal k_zz0 = (f[zzp] + f[zzm]) + f[zzz];
+		const dreal k_zp0 = (f[zpp] + f[zpm]) + f[zpz];
+		const dreal k_pm0 = (f[pmp] + f[pmm]) + f[pmz];
+		const dreal k_pz0 = (f[pzp] + f[pzm]) + f[pzz];
+		const dreal k_pp0 = (f[ppp] + f[ppm]) + f[ppz];
 
 		// Eq 7
-		const dreal k_mm1 = (KS.f[mmp] - KS.f[mmm]) - KS.vz * k_mm0;
-		const dreal k_mz1 = (KS.f[mzp] - KS.f[mzm]) - KS.vz * k_mz0;
-		const dreal k_mp1 = (KS.f[mpp] - KS.f[mpm]) - KS.vz * k_mp0;
-		const dreal k_zm1 = (KS.f[zmp] - KS.f[zmm]) - KS.vz * k_zm0;
-		const dreal k_zz1 = (KS.f[zzp] - KS.f[zzm]) - KS.vz * k_zz0;
-		const dreal k_zp1 = (KS.f[zpp] - KS.f[zpm]) - KS.vz * k_zp0;
-		const dreal k_pm1 = (KS.f[pmp] - KS.f[pmm]) - KS.vz * k_pm0;
-		const dreal k_pz1 = (KS.f[pzp] - KS.f[pzm]) - KS.vz * k_pz0;
-		const dreal k_pp1 = (KS.f[ppp] - KS.f[ppm]) - KS.vz * k_pp0;
+		const dreal k_mm1 = (f[mmp] - f[mmm]) - vz * k_mm0;
+		const dreal k_mz1 = (f[mzp] - f[mzm]) - vz * k_mz0;
+		const dreal k_mp1 = (f[mpp] - f[mpm]) - vz * k_mp0;
+		const dreal k_zm1 = (f[zmp] - f[zmm]) - vz * k_zm0;
+		const dreal k_zz1 = (f[zzp] - f[zzm]) - vz * k_zz0;
+		const dreal k_zp1 = (f[zpp] - f[zpm]) - vz * k_zp0;
+		const dreal k_pm1 = (f[pmp] - f[pmm]) - vz * k_pm0;
+		const dreal k_pz1 = (f[pzp] - f[pzm]) - vz * k_pz0;
+		const dreal k_pp1 = (f[ppp] - f[ppm]) - vz * k_pp0;
 
 		// Eq 8
-		const dreal k_mm2 = (KS.f[mmp] + KS.f[mmm]) - no2 * KS.vz * (KS.f[mmp] - KS.f[mmm]) + KS.vz * KS.vz * k_mm0;
-		const dreal k_mz2 = (KS.f[mzp] + KS.f[mzm]) - no2 * KS.vz * (KS.f[mzp] - KS.f[mzm]) + KS.vz * KS.vz * k_mz0;
-		const dreal k_mp2 = (KS.f[mpp] + KS.f[mpm]) - no2 * KS.vz * (KS.f[mpp] - KS.f[mpm]) + KS.vz * KS.vz * k_mp0;
-		const dreal k_zm2 = (KS.f[zmp] + KS.f[zmm]) - no2 * KS.vz * (KS.f[zmp] - KS.f[zmm]) + KS.vz * KS.vz * k_zm0;
-		const dreal k_zz2 = (KS.f[zzp] + KS.f[zzm]) - no2 * KS.vz * (KS.f[zzp] - KS.f[zzm]) + KS.vz * KS.vz * k_zz0;
-		const dreal k_zp2 = (KS.f[zpp] + KS.f[zpm]) - no2 * KS.vz * (KS.f[zpp] - KS.f[zpm]) + KS.vz * KS.vz * k_zp0;
-		const dreal k_pm2 = (KS.f[pmp] + KS.f[pmm]) - no2 * KS.vz * (KS.f[pmp] - KS.f[pmm]) + KS.vz * KS.vz * k_pm0;
-		const dreal k_pz2 = (KS.f[pzp] + KS.f[pzm]) - no2 * KS.vz * (KS.f[pzp] - KS.f[pzm]) + KS.vz * KS.vz * k_pz0;
-		const dreal k_pp2 = (KS.f[ppp] + KS.f[ppm]) - no2 * KS.vz * (KS.f[ppp] - KS.f[ppm]) + KS.vz * KS.vz * k_pp0;
+		const dreal k_mm2 = (f[mmp] + f[mmm]) - no2 * vz * (f[mmp] - f[mmm]) + vz_sqr * k_mm0;
+		const dreal k_mz2 = (f[mzp] + f[mzm]) - no2 * vz * (f[mzp] - f[mzm]) + vz_sqr * k_mz0;
+		const dreal k_mp2 = (f[mpp] + f[mpm]) - no2 * vz * (f[mpp] - f[mpm]) + vz_sqr * k_mp0;
+		const dreal k_zm2 = (f[zmp] + f[zmm]) - no2 * vz * (f[zmp] - f[zmm]) + vz_sqr * k_zm0;
+		const dreal k_zz2 = (f[zzp] + f[zzm]) - no2 * vz * (f[zzp] - f[zzm]) + vz_sqr * k_zz0;
+		const dreal k_zp2 = (f[zpp] + f[zpm]) - no2 * vz * (f[zpp] - f[zpm]) + vz_sqr * k_zp0;
+		const dreal k_pm2 = (f[pmp] + f[pmm]) - no2 * vz * (f[pmp] - f[pmm]) + vz_sqr * k_pm0;
+		const dreal k_pz2 = (f[pzp] + f[pzm]) - no2 * vz * (f[pzp] - f[pzm]) + vz_sqr * k_pz0;
+		const dreal k_pp2 = (f[ppp] + f[ppm]) - no2 * vz * (f[ppp] - f[ppm]) + vz_sqr * k_pp0;
 
 		// Eq 9
 		const dreal k_m00 = (k_mp0 + k_mm0) + k_mz0;
@@ -92,26 +103,26 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal k_p02 = (k_pp2 + k_pm2) + k_pz2;
 
 		// Eq 10
-		const dreal k_m10 = (k_mp0 - k_mm0) - KS.vy * k_m00;
-		const dreal k_z10 = (k_zp0 - k_zm0) - KS.vy * k_z00;
-		const dreal k_p10 = (k_pp0 - k_pm0) - KS.vy * k_p00;
-		const dreal k_m11 = (k_mp1 - k_mm1) - KS.vy * k_m01;
-		const dreal k_z11 = (k_zp1 - k_zm1) - KS.vy * k_z01;
-		const dreal k_p11 = (k_pp1 - k_pm1) - KS.vy * k_p01;
-		const dreal k_m12 = (k_mp2 - k_mm2) - KS.vy * k_m02;
-		const dreal k_z12 = (k_zp2 - k_zm2) - KS.vy * k_z02;
-		const dreal k_p12 = (k_pp2 - k_pm2) - KS.vy * k_p02;
+		const dreal k_m10 = (k_mp0 - k_mm0) - vy * k_m00;
+		const dreal k_z10 = (k_zp0 - k_zm0) - vy * k_z00;
+		const dreal k_p10 = (k_pp0 - k_pm0) - vy * k_p00;
+		const dreal k_m11 = (k_mp1 - k_mm1) - vy * k_m01;
+		const dreal k_z11 = (k_zp1 - k_zm1) - vy * k_z01;
+		const dreal k_p11 = (k_pp1 - k_pm1) - vy * k_p01;
+		const dreal k_m12 = (k_mp2 - k_mm2) - vy * k_m02;
+		const dreal k_z12 = (k_zp2 - k_zm2) - vy * k_z02;
+		const dreal k_p12 = (k_pp2 - k_pm2) - vy * k_p02;
 
 		// Eq 11
-		const dreal k_m20 = (k_mp0 + k_mm0) - no2 * KS.vy * (k_mp0 - k_mm0) + KS.vy * KS.vy * k_m00;
-		const dreal k_z20 = (k_zp0 + k_zm0) - no2 * KS.vy * (k_zp0 - k_zm0) + KS.vy * KS.vy * k_z00;
-		const dreal k_p20 = (k_pp0 + k_pm0) - no2 * KS.vy * (k_pp0 - k_pm0) + KS.vy * KS.vy * k_p00;
-		const dreal k_m21 = (k_mp1 + k_mm1) - no2 * KS.vy * (k_mp1 - k_mm1) + KS.vy * KS.vy * k_m01;
-		const dreal k_z21 = (k_zp1 + k_zm1) - no2 * KS.vy * (k_zp1 - k_zm1) + KS.vy * KS.vy * k_z01;
-		const dreal k_p21 = (k_pp1 + k_pm1) - no2 * KS.vy * (k_pp1 - k_pm1) + KS.vy * KS.vy * k_p01;
-		const dreal k_m22 = (k_mp2 + k_mm2) - no2 * KS.vy * (k_mp2 - k_mm2) + KS.vy * KS.vy * k_m02;
-		const dreal k_z22 = (k_zp2 + k_zm2) - no2 * KS.vy * (k_zp2 - k_zm2) + KS.vy * KS.vy * k_z02;
-		const dreal k_p22 = (k_pp2 + k_pm2) - no2 * KS.vy * (k_pp2 - k_pm2) + KS.vy * KS.vy * k_p02;
+		const dreal k_m20 = (k_mp0 + k_mm0) - no2 * vy * (k_mp0 - k_mm0) + vy_sqr * k_m00;
+		const dreal k_z20 = (k_zp0 + k_zm0) - no2 * vy * (k_zp0 - k_zm0) + vy_sqr * k_z00;
+		const dreal k_p20 = (k_pp0 + k_pm0) - no2 * vy * (k_pp0 - k_pm0) + vy_sqr * k_p00;
+		const dreal k_m21 = (k_mp1 + k_mm1) - no2 * vy * (k_mp1 - k_mm1) + vy_sqr * k_m01;
+		const dreal k_z21 = (k_zp1 + k_zm1) - no2 * vy * (k_zp1 - k_zm1) + vy_sqr * k_z01;
+		const dreal k_p21 = (k_pp1 + k_pm1) - no2 * vy * (k_pp1 - k_pm1) + vy_sqr * k_p01;
+		const dreal k_m22 = (k_mp2 + k_mm2) - no2 * vy * (k_mp2 - k_mm2) + vy_sqr * k_m02;
+		const dreal k_z22 = (k_zp2 + k_zm2) - no2 * vy * (k_zp2 - k_zm2) + vy_sqr * k_z02;
+		const dreal k_p22 = (k_pp2 + k_pm2) - no2 * vy * (k_pp2 - k_pm2) + vy_sqr * k_p02;
 
 		// Eq 12
 		const dreal k_000 = (k_p00 + k_m00) + k_z00;
@@ -125,29 +136,28 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal k_022 = (k_p22 + k_m22) + k_z22;
 
 		// Eq 13
-		const dreal k_100 = (k_p00 - k_m00) - KS.vx * k_000;
-		const dreal k_101 = (k_p01 - k_m01) - KS.vx * k_001;
-		const dreal k_102 = (k_p02 - k_m02) - KS.vx * k_002;
-		const dreal k_110 = (k_p10 - k_m10) - KS.vx * k_010;
-		const dreal k_111 = (k_p11 - k_m11) - KS.vx * k_011;
-		const dreal k_112 = (k_p12 - k_m12) - KS.vx * k_012;
-		const dreal k_120 = (k_p20 - k_m20) - KS.vx * k_020;
-		const dreal k_121 = (k_p21 - k_m21) - KS.vx * k_021;
-		const dreal k_122 = (k_p22 - k_m22) - KS.vx * k_022;
+		const dreal k_100 = (k_p00 - k_m00) - vx * k_000;
+		const dreal k_101 = (k_p01 - k_m01) - vx * k_001;
+		const dreal k_102 = (k_p02 - k_m02) - vx * k_002;
+		const dreal k_110 = (k_p10 - k_m10) - vx * k_010;
+		const dreal k_111 = (k_p11 - k_m11) - vx * k_011;
+		const dreal k_112 = (k_p12 - k_m12) - vx * k_012;
+		const dreal k_120 = (k_p20 - k_m20) - vx * k_020;
+		const dreal k_121 = (k_p21 - k_m21) - vx * k_021;
+		const dreal k_122 = (k_p22 - k_m22) - vx * k_022;
 
 		// Eq 14
-		const dreal k_200 = (k_p00 + k_m00) - no2 * KS.vx * (k_p00 - k_m00) + KS.vx * KS.vx * k_000;
-		const dreal k_201 = (k_p01 + k_m01) - no2 * KS.vx * (k_p01 - k_m01) + KS.vx * KS.vx * k_001;
-		const dreal k_202 = (k_p02 + k_m02) - no2 * KS.vx * (k_p02 - k_m02) + KS.vx * KS.vx * k_002;
-		const dreal k_210 = (k_p10 + k_m10) - no2 * KS.vx * (k_p10 - k_m10) + KS.vx * KS.vx * k_010;
-		const dreal k_211 = (k_p11 + k_m11) - no2 * KS.vx * (k_p11 - k_m11) + KS.vx * KS.vx * k_011;
-		const dreal k_212 = (k_p12 + k_m12) - no2 * KS.vx * (k_p12 - k_m12) + KS.vx * KS.vx * k_012;
-		const dreal k_220 = (k_p20 + k_m20) - no2 * KS.vx * (k_p20 - k_m20) + KS.vx * KS.vx * k_020;
-		const dreal k_221 = (k_p21 + k_m21) - no2 * KS.vx * (k_p21 - k_m21) + KS.vx * KS.vx * k_021;
-		const dreal k_222 = (k_p22 + k_m22) - no2 * KS.vx * (k_p22 - k_m22) + KS.vx * KS.vx * k_022;
+		const dreal k_200 = (k_p00 + k_m00) - no2 * vx * (k_p00 - k_m00) + vx_sqr * k_000;
+		const dreal k_201 = (k_p01 + k_m01) - no2 * vx * (k_p01 - k_m01) + vx_sqr * k_001;
+		const dreal k_202 = (k_p02 + k_m02) - no2 * vx * (k_p02 - k_m02) + vx_sqr * k_002;
+		const dreal k_210 = (k_p10 + k_m10) - no2 * vx * (k_p10 - k_m10) + vx_sqr * k_010;
+		const dreal k_211 = (k_p11 + k_m11) - no2 * vx * (k_p11 - k_m11) + vx_sqr * k_011;
+		const dreal k_212 = (k_p12 + k_m12) - no2 * vx * (k_p12 - k_m12) + vx_sqr * k_012;
+		const dreal k_220 = (k_p20 + k_m20) - no2 * vx * (k_p20 - k_m20) + vx_sqr * k_020;
+		const dreal k_221 = (k_p21 + k_m21) - no2 * vx * (k_p21 - k_m21) + vx_sqr * k_021;
+		const dreal k_222 = (k_p22 + k_m22) - no2 * vx * (k_p22 - k_m22) + vx_sqr * k_022;
 
 		// Eq 51 from Geier 2015
-		const dreal rho_inv = dreal(1.0) / KS.rho;
 		const dreal C_211 = k_211 - (k_200 * k_011 + no2 * k_101 * k_110) * rho_inv;
 		const dreal C_121 = k_121 - (k_020 * k_101 + no2 * k_110 * k_011) * rho_inv;
 		const dreal C_112 = k_112 - (k_002 * k_110 + no2 * k_011 * k_101) * rho_inv;
@@ -180,20 +190,20 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal lambda5 = (dreal) (0.01);
 		const dreal omega3 = no8 * (omega1 - no2) * (omega2 * (no3 * omega1 - no1) - no5 * omega1)
 						   / (no8 * (no5 - no2 * omega1) * omega1 + omega2 * (no8 + omega1 * (no9 * omega1 - no26)));
-		const dreal omega120p102 = omega3 + (no1 - omega3) * fabs(C_120 + C_102) / (KS.rho * lambda3 + fabs(C_120 + C_102));  // limiter
-		const dreal omega210p012 = omega3 + (no1 - omega3) * fabs(C_210 + C_012) / (KS.rho * lambda3 + fabs(C_210 + C_012));  // limiter
-		const dreal omega201p021 = omega3 + (no1 - omega3) * fabs(C_201 + C_021) / (KS.rho * lambda3 + fabs(C_201 + C_021));  // limiter
+		const dreal omega120p102 = omega3 + (no1 - omega3) * fabs(C_120 + C_102) / (rho * lambda3 + fabs(C_120 + C_102));  // limiter
+		const dreal omega210p012 = omega3 + (no1 - omega3) * fabs(C_210 + C_012) / (rho * lambda3 + fabs(C_210 + C_012));  // limiter
+		const dreal omega201p021 = omega3 + (no1 - omega3) * fabs(C_201 + C_021) / (rho * lambda3 + fabs(C_201 + C_021));  // limiter
 		const dreal omega4 = no8 * (omega1 - no2) * (omega1 + omega2 * (no3 * omega1 - no7))
 						   / (omega2 * (no56 - no42 * omega1 + no9 * omega1 * omega1) - no8 * omega1);
-		const dreal omega120m102 = omega4 + (no1 - omega4) * fabs(C_120 - C_102) / (KS.rho * lambda4 + fabs(C_120 - C_102));  // limiter
-		const dreal omega210m012 = omega4 + (no1 - omega4) * fabs(C_210 - C_012) / (KS.rho * lambda4 + fabs(C_210 - C_012));  // limiter
-		const dreal omega201m021 = omega4 + (no1 - omega4) * fabs(C_201 - C_021) / (KS.rho * lambda4 + fabs(C_201 - C_021));  // limiter
+		const dreal omega120m102 = omega4 + (no1 - omega4) * fabs(C_120 - C_102) / (rho * lambda4 + fabs(C_120 - C_102));  // limiter
+		const dreal omega210m012 = omega4 + (no1 - omega4) * fabs(C_210 - C_012) / (rho * lambda4 + fabs(C_210 - C_012));  // limiter
+		const dreal omega201m021 = omega4 + (no1 - omega4) * fabs(C_201 - C_021) / (rho * lambda4 + fabs(C_201 - C_021));  // limiter
 		const dreal omega5 =
 			no24 * (omega1 - no2)
 			* (no4 * omega1 * omega1 + omega1 * omega2 * (no18 - no13 * omega1) + omega2 * omega2 * (no2 + omega1 * (no6 * omega1 - no11)))
 			/ (no16 * omega1 * omega1 * (omega1 - no6) - no2 * omega1 * omega2 * (no216 + no5 * omega1 * (no9 * omega1 - no46))
 			   + omega2 * omega2 * (omega1 * (no3 * omega1 - no10) * (no15 * omega1 - no28) - no48));
-		const dreal omega111 = omega5 + (no1 - omega5) * fabs(C_111) / (KS.rho * lambda5 + fabs(C_111));  // limiter
+		const dreal omega111 = omega5 + (no1 - omega5) * fabs(C_111) / (rho * lambda5 + fabs(C_111));  // limiter
 		const dreal omega6 = no1;
 		const dreal omega7 = no1;
 		const dreal omega8 = no1;
@@ -213,10 +223,10 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal Cs_011 = (no1 - omega1) * C_011;
 #ifdef USE_GEIER_CUM_ANTIALIAS
 		// derivatives of v: notation taken from Geier's paper 2017 part I: Eq 27-29
-		// const dreal Dxu = - omega1/no2/KS.rho * (no2*C_200-C_020-C_002) - omega2/no2/KS.rho*(C_200+C_020+C_002-k_000);
+		// const dreal Dxu = - omega1/no2/rho * (no2*C_200-C_020-C_002) - omega2/no2/rho*(C_200+C_020+C_002-k_000);
 		const dreal Dxu =
 			-omega1 / no2 * rho_inv * (no2 * C_200 - C_020 - C_002)
-			- omega2 / no2 * rho_inv * (C_200 + C_020 + C_002 - (-no1 + KS.rho));  // remark: rho <--> rho^(2), i.e. rho^(2) = 1-rho = 1-k_000
+			- omega2 / no2 * rho_inv * (C_200 + C_020 + C_002 - (-no1 + rho));	// remark: rho <--> rho^(2), i.e. rho^(2) = 1-rho = 1-k_000
 		const dreal Dyv = Dxu + n3o2 * omega1 * rho_inv * (C_200 - C_020);
 		const dreal Dzw = Dxu + n3o2 * omega1 * rho_inv * (C_200 - C_002);
 		// plus their combination: Eq 30 - 32
@@ -233,10 +243,10 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal DywDzv = 0;
 #endif
 		// Eqs 33-35
-		const dreal Eq33RHS = (no1 - omega1) * (C_200 - C_020) - no3 * KS.rho * (no1 - omega1 * n1o2) * (KS.vx * KS.vx * Dxu - KS.vy * KS.vy * Dyv);
-		const dreal Eq34RHS = (no1 - omega1) * (C_200 - C_002) - no3 * KS.rho * (no1 - omega1 * n1o2) * (KS.vx * KS.vx * Dxu - KS.vz * KS.vz * Dzw);
+		const dreal Eq33RHS = (no1 - omega1) * (C_200 - C_020) - no3 * rho * (no1 - omega1 * n1o2) * (vx_sqr * Dxu - vy_sqr * Dyv);
+		const dreal Eq34RHS = (no1 - omega1) * (C_200 - C_002) - no3 * rho * (no1 - omega1 * n1o2) * (vx_sqr * Dxu - vz_sqr * Dzw);
 		const dreal Eq35RHS = k_000 * omega2 + (no1 - omega2) * (C_200 + C_020 + C_002)
-							- no3 * KS.rho * (no1 - omega2 / no2) * (KS.vx * KS.vx * Dxu + KS.vy * KS.vy * Dyv + KS.vz * KS.vz * Dzw);
+							- no3 * rho * (no1 - omega2 / no2) * (vx_sqr * Dxu + vy_sqr * Dyv + vz_sqr * Dzw);
 
 		const dreal Cs_200 = n1o3 * (Eq33RHS + Eq34RHS + Eq35RHS);
 		const dreal Cs_020 = n1o3 * (-no2 * Eq33RHS + Eq34RHS + Eq35RHS);
@@ -262,18 +272,18 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 
 		// Eqs 43-45
 		const dreal Eq43RHS =
-			n2o3 * (no1 / omega1 - n1o2) * omega6 * A * KS.rho * (Dxu - no2 * Dyv + Dzw) + (no1 - omega6) * (C_220 - no2 * C_202 + C_022);
+			n2o3 * (no1 / omega1 - n1o2) * omega6 * A * rho * (Dxu - no2 * Dyv + Dzw) + (no1 - omega6) * (C_220 - no2 * C_202 + C_022);
 		const dreal Eq44RHS =
-			n2o3 * (no1 / omega1 - n1o2) * omega6 * A * KS.rho * (Dxu + Dyv - no2 * Dzw) + (no1 - omega6) * (C_220 + C_202 - no2 * C_022);
-		const dreal Eq45RHS = -n4o3 * (no1 / omega1 - n1o2) * omega7 * A * KS.rho * (Dxu + Dyv + Dzw) + (no1 - omega7) * (C_220 + C_202 + C_022);
+			n2o3 * (no1 / omega1 - n1o2) * omega6 * A * rho * (Dxu + Dyv - no2 * Dzw) + (no1 - omega6) * (C_220 + C_202 - no2 * C_022);
+		const dreal Eq45RHS = -n4o3 * (no1 / omega1 - n1o2) * omega7 * A * rho * (Dxu + Dyv + Dzw) + (no1 - omega7) * (C_220 + C_202 + C_022);
 
 		const dreal Cs_220 = n1o3 * (Eq43RHS + Eq44RHS + Eq45RHS);
 		const dreal Cs_202 = n1o3 * (-Eq43RHS + Eq45RHS);
 		const dreal Cs_022 = n1o3 * (-Eq44RHS + Eq45RHS);
 		// Eq 46-48
-		const dreal Cs_211 = -n1o3 * (no1 / omega1 - n1o2) * omega8 * B * KS.rho * DywDzv + (no1 - omega8) * C_211;
-		const dreal Cs_121 = -n1o3 * (no1 / omega1 - n1o2) * omega8 * B * KS.rho * DxwDzu + (no1 - omega8) * C_121;
-		const dreal Cs_112 = -n1o3 * (no1 / omega1 - n1o2) * omega8 * B * KS.rho * DxvDyu + (no1 - omega8) * C_112;
+		const dreal Cs_211 = -n1o3 * (no1 / omega1 - n1o2) * omega8 * B * rho * DywDzv + (no1 - omega8) * C_211;
+		const dreal Cs_121 = -n1o3 * (no1 / omega1 - n1o2) * omega8 * B * rho * DxwDzu + (no1 - omega8) * C_121;
+		const dreal Cs_112 = -n1o3 * (no1 / omega1 - n1o2) * omega8 * B * rho * DxvDyu + (no1 - omega8) * C_112;
 		// Eqs 49-52
 		const dreal Cs_221 = (no1 - omega9) * C_221;
 		const dreal Cs_212 = (no1 - omega9) * C_212;
@@ -357,103 +367,103 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal ks_001 = -k_001;
 
 		// Eq 88 from Geier 2015
-		const dreal ks_z00 = ks_000 * (no1 - KS.vx * KS.vx) - no2 * KS.vx * ks_100 - ks_200;
-		const dreal ks_z01 = ks_001 * (no1 - KS.vx * KS.vx) - no2 * KS.vx * ks_101 - ks_201;
-		const dreal ks_z02 = ks_002 * (no1 - KS.vx * KS.vx) - no2 * KS.vx * ks_102 - ks_202;
-		const dreal ks_z10 = ks_010 * (no1 - KS.vx * KS.vx) - no2 * KS.vx * ks_110 - ks_210;
-		const dreal ks_z11 = ks_011 * (no1 - KS.vx * KS.vx) - no2 * KS.vx * ks_111 - ks_211;
-		const dreal ks_z12 = ks_012 * (no1 - KS.vx * KS.vx) - no2 * KS.vx * ks_112 - ks_212;
-		const dreal ks_z20 = ks_020 * (no1 - KS.vx * KS.vx) - no2 * KS.vx * ks_120 - ks_220;
-		const dreal ks_z21 = ks_021 * (no1 - KS.vx * KS.vx) - no2 * KS.vx * ks_121 - ks_221;
-		const dreal ks_z22 = ks_022 * (no1 - KS.vx * KS.vx) - no2 * KS.vx * ks_122 - ks_222;
+		const dreal ks_z00 = ks_000 * (no1 - vx_sqr) - no2 * vx * ks_100 - ks_200;
+		const dreal ks_z01 = ks_001 * (no1 - vx_sqr) - no2 * vx * ks_101 - ks_201;
+		const dreal ks_z02 = ks_002 * (no1 - vx_sqr) - no2 * vx * ks_102 - ks_202;
+		const dreal ks_z10 = ks_010 * (no1 - vx_sqr) - no2 * vx * ks_110 - ks_210;
+		const dreal ks_z11 = ks_011 * (no1 - vx_sqr) - no2 * vx * ks_111 - ks_211;
+		const dreal ks_z12 = ks_012 * (no1 - vx_sqr) - no2 * vx * ks_112 - ks_212;
+		const dreal ks_z20 = ks_020 * (no1 - vx_sqr) - no2 * vx * ks_120 - ks_220;
+		const dreal ks_z21 = ks_021 * (no1 - vx_sqr) - no2 * vx * ks_121 - ks_221;
+		const dreal ks_z22 = ks_022 * (no1 - vx_sqr) - no2 * vx * ks_122 - ks_222;
 
 		// Eq 89 from Geier 2015
-		const dreal ks_m00 = (ks_000 * (KS.vx * KS.vx - KS.vx) + ks_100 * (no2 * KS.vx - no1) + ks_200) * n1o2;
-		const dreal ks_m01 = (ks_001 * (KS.vx * KS.vx - KS.vx) + ks_101 * (no2 * KS.vx - no1) + ks_201) * n1o2;
-		const dreal ks_m02 = (ks_002 * (KS.vx * KS.vx - KS.vx) + ks_102 * (no2 * KS.vx - no1) + ks_202) * n1o2;
-		const dreal ks_m10 = (ks_010 * (KS.vx * KS.vx - KS.vx) + ks_110 * (no2 * KS.vx - no1) + ks_210) * n1o2;
-		const dreal ks_m11 = (ks_011 * (KS.vx * KS.vx - KS.vx) + ks_111 * (no2 * KS.vx - no1) + ks_211) * n1o2;
-		const dreal ks_m12 = (ks_012 * (KS.vx * KS.vx - KS.vx) + ks_112 * (no2 * KS.vx - no1) + ks_212) * n1o2;
-		const dreal ks_m20 = (ks_020 * (KS.vx * KS.vx - KS.vx) + ks_120 * (no2 * KS.vx - no1) + ks_220) * n1o2;
-		const dreal ks_m21 = (ks_021 * (KS.vx * KS.vx - KS.vx) + ks_121 * (no2 * KS.vx - no1) + ks_221) * n1o2;
-		const dreal ks_m22 = (ks_022 * (KS.vx * KS.vx - KS.vx) + ks_122 * (no2 * KS.vx - no1) + ks_222) * n1o2;
+		const dreal ks_m00 = (ks_000 * (vx_sqr - vx) + ks_100 * (no2 * vx - no1) + ks_200) * n1o2;
+		const dreal ks_m01 = (ks_001 * (vx_sqr - vx) + ks_101 * (no2 * vx - no1) + ks_201) * n1o2;
+		const dreal ks_m02 = (ks_002 * (vx_sqr - vx) + ks_102 * (no2 * vx - no1) + ks_202) * n1o2;
+		const dreal ks_m10 = (ks_010 * (vx_sqr - vx) + ks_110 * (no2 * vx - no1) + ks_210) * n1o2;
+		const dreal ks_m11 = (ks_011 * (vx_sqr - vx) + ks_111 * (no2 * vx - no1) + ks_211) * n1o2;
+		const dreal ks_m12 = (ks_012 * (vx_sqr - vx) + ks_112 * (no2 * vx - no1) + ks_212) * n1o2;
+		const dreal ks_m20 = (ks_020 * (vx_sqr - vx) + ks_120 * (no2 * vx - no1) + ks_220) * n1o2;
+		const dreal ks_m21 = (ks_021 * (vx_sqr - vx) + ks_121 * (no2 * vx - no1) + ks_221) * n1o2;
+		const dreal ks_m22 = (ks_022 * (vx_sqr - vx) + ks_122 * (no2 * vx - no1) + ks_222) * n1o2;
 
 		// Eq 90 from Geier 2015
-		const dreal ks_p00 = (ks_000 * (KS.vx * KS.vx + KS.vx) + ks_100 * (no2 * KS.vx + no1) + ks_200) * n1o2;
-		const dreal ks_p01 = (ks_001 * (KS.vx * KS.vx + KS.vx) + ks_101 * (no2 * KS.vx + no1) + ks_201) * n1o2;
-		const dreal ks_p02 = (ks_002 * (KS.vx * KS.vx + KS.vx) + ks_102 * (no2 * KS.vx + no1) + ks_202) * n1o2;
-		const dreal ks_p10 = (ks_010 * (KS.vx * KS.vx + KS.vx) + ks_110 * (no2 * KS.vx + no1) + ks_210) * n1o2;
-		const dreal ks_p11 = (ks_011 * (KS.vx * KS.vx + KS.vx) + ks_111 * (no2 * KS.vx + no1) + ks_211) * n1o2;
-		const dreal ks_p12 = (ks_012 * (KS.vx * KS.vx + KS.vx) + ks_112 * (no2 * KS.vx + no1) + ks_212) * n1o2;
-		const dreal ks_p20 = (ks_020 * (KS.vx * KS.vx + KS.vx) + ks_120 * (no2 * KS.vx + no1) + ks_220) * n1o2;
-		const dreal ks_p21 = (ks_021 * (KS.vx * KS.vx + KS.vx) + ks_121 * (no2 * KS.vx + no1) + ks_221) * n1o2;
-		const dreal ks_p22 = (ks_022 * (KS.vx * KS.vx + KS.vx) + ks_122 * (no2 * KS.vx + no1) + ks_222) * n1o2;
+		const dreal ks_p00 = (ks_000 * (vx_sqr + vx) + ks_100 * (no2 * vx + no1) + ks_200) * n1o2;
+		const dreal ks_p01 = (ks_001 * (vx_sqr + vx) + ks_101 * (no2 * vx + no1) + ks_201) * n1o2;
+		const dreal ks_p02 = (ks_002 * (vx_sqr + vx) + ks_102 * (no2 * vx + no1) + ks_202) * n1o2;
+		const dreal ks_p10 = (ks_010 * (vx_sqr + vx) + ks_110 * (no2 * vx + no1) + ks_210) * n1o2;
+		const dreal ks_p11 = (ks_011 * (vx_sqr + vx) + ks_111 * (no2 * vx + no1) + ks_211) * n1o2;
+		const dreal ks_p12 = (ks_012 * (vx_sqr + vx) + ks_112 * (no2 * vx + no1) + ks_212) * n1o2;
+		const dreal ks_p20 = (ks_020 * (vx_sqr + vx) + ks_120 * (no2 * vx + no1) + ks_220) * n1o2;
+		const dreal ks_p21 = (ks_021 * (vx_sqr + vx) + ks_121 * (no2 * vx + no1) + ks_221) * n1o2;
+		const dreal ks_p22 = (ks_022 * (vx_sqr + vx) + ks_122 * (no2 * vx + no1) + ks_222) * n1o2;
 
 		// Eq 91 from Geier 2015
-		const dreal ks_mz0 = ks_m00 * (no1 - KS.vy * KS.vy) - no2 * KS.vy * ks_m10 - ks_m20;
-		const dreal ks_mz1 = ks_m01 * (no1 - KS.vy * KS.vy) - no2 * KS.vy * ks_m11 - ks_m21;
-		const dreal ks_mz2 = ks_m02 * (no1 - KS.vy * KS.vy) - no2 * KS.vy * ks_m12 - ks_m22;
-		const dreal ks_zz0 = ks_z00 * (no1 - KS.vy * KS.vy) - no2 * KS.vy * ks_z10 - ks_z20;
-		const dreal ks_zz1 = ks_z01 * (no1 - KS.vy * KS.vy) - no2 * KS.vy * ks_z11 - ks_z21;
-		const dreal ks_zz2 = ks_z02 * (no1 - KS.vy * KS.vy) - no2 * KS.vy * ks_z12 - ks_z22;
-		const dreal ks_pz0 = ks_p00 * (no1 - KS.vy * KS.vy) - no2 * KS.vy * ks_p10 - ks_p20;
-		const dreal ks_pz1 = ks_p01 * (no1 - KS.vy * KS.vy) - no2 * KS.vy * ks_p11 - ks_p21;
-		const dreal ks_pz2 = ks_p02 * (no1 - KS.vy * KS.vy) - no2 * KS.vy * ks_p12 - ks_p22;
+		const dreal ks_mz0 = ks_m00 * (no1 - vy_sqr) - no2 * vy * ks_m10 - ks_m20;
+		const dreal ks_mz1 = ks_m01 * (no1 - vy_sqr) - no2 * vy * ks_m11 - ks_m21;
+		const dreal ks_mz2 = ks_m02 * (no1 - vy_sqr) - no2 * vy * ks_m12 - ks_m22;
+		const dreal ks_zz0 = ks_z00 * (no1 - vy_sqr) - no2 * vy * ks_z10 - ks_z20;
+		const dreal ks_zz1 = ks_z01 * (no1 - vy_sqr) - no2 * vy * ks_z11 - ks_z21;
+		const dreal ks_zz2 = ks_z02 * (no1 - vy_sqr) - no2 * vy * ks_z12 - ks_z22;
+		const dreal ks_pz0 = ks_p00 * (no1 - vy_sqr) - no2 * vy * ks_p10 - ks_p20;
+		const dreal ks_pz1 = ks_p01 * (no1 - vy_sqr) - no2 * vy * ks_p11 - ks_p21;
+		const dreal ks_pz2 = ks_p02 * (no1 - vy_sqr) - no2 * vy * ks_p12 - ks_p22;
 
 		// Eq 92 from Geier 2015
-		const dreal ks_mm0 = (ks_m00 * (KS.vy * KS.vy - KS.vy) + ks_m10 * (no2 * KS.vy - no1) + ks_m20) * n1o2;
-		const dreal ks_mm1 = (ks_m01 * (KS.vy * KS.vy - KS.vy) + ks_m11 * (no2 * KS.vy - no1) + ks_m21) * n1o2;
-		const dreal ks_mm2 = (ks_m02 * (KS.vy * KS.vy - KS.vy) + ks_m12 * (no2 * KS.vy - no1) + ks_m22) * n1o2;
-		const dreal ks_zm0 = (ks_z00 * (KS.vy * KS.vy - KS.vy) + ks_z10 * (no2 * KS.vy - no1) + ks_z20) * n1o2;
-		const dreal ks_zm1 = (ks_z01 * (KS.vy * KS.vy - KS.vy) + ks_z11 * (no2 * KS.vy - no1) + ks_z21) * n1o2;
-		const dreal ks_zm2 = (ks_z02 * (KS.vy * KS.vy - KS.vy) + ks_z12 * (no2 * KS.vy - no1) + ks_z22) * n1o2;
-		const dreal ks_pm0 = (ks_p00 * (KS.vy * KS.vy - KS.vy) + ks_p10 * (no2 * KS.vy - no1) + ks_p20) * n1o2;
-		const dreal ks_pm1 = (ks_p01 * (KS.vy * KS.vy - KS.vy) + ks_p11 * (no2 * KS.vy - no1) + ks_p21) * n1o2;
-		const dreal ks_pm2 = (ks_p02 * (KS.vy * KS.vy - KS.vy) + ks_p12 * (no2 * KS.vy - no1) + ks_p22) * n1o2;
+		const dreal ks_mm0 = (ks_m00 * (vy_sqr - vy) + ks_m10 * (no2 * vy - no1) + ks_m20) * n1o2;
+		const dreal ks_mm1 = (ks_m01 * (vy_sqr - vy) + ks_m11 * (no2 * vy - no1) + ks_m21) * n1o2;
+		const dreal ks_mm2 = (ks_m02 * (vy_sqr - vy) + ks_m12 * (no2 * vy - no1) + ks_m22) * n1o2;
+		const dreal ks_zm0 = (ks_z00 * (vy_sqr - vy) + ks_z10 * (no2 * vy - no1) + ks_z20) * n1o2;
+		const dreal ks_zm1 = (ks_z01 * (vy_sqr - vy) + ks_z11 * (no2 * vy - no1) + ks_z21) * n1o2;
+		const dreal ks_zm2 = (ks_z02 * (vy_sqr - vy) + ks_z12 * (no2 * vy - no1) + ks_z22) * n1o2;
+		const dreal ks_pm0 = (ks_p00 * (vy_sqr - vy) + ks_p10 * (no2 * vy - no1) + ks_p20) * n1o2;
+		const dreal ks_pm1 = (ks_p01 * (vy_sqr - vy) + ks_p11 * (no2 * vy - no1) + ks_p21) * n1o2;
+		const dreal ks_pm2 = (ks_p02 * (vy_sqr - vy) + ks_p12 * (no2 * vy - no1) + ks_p22) * n1o2;
 
 		// Eq 93 from Geier 2015
-		const dreal ks_mp0 = (ks_m00 * (KS.vy * KS.vy + KS.vy) + ks_m10 * (no2 * KS.vy + no1) + ks_m20) * n1o2;
-		const dreal ks_mp1 = (ks_m01 * (KS.vy * KS.vy + KS.vy) + ks_m11 * (no2 * KS.vy + no1) + ks_m21) * n1o2;
-		const dreal ks_mp2 = (ks_m02 * (KS.vy * KS.vy + KS.vy) + ks_m12 * (no2 * KS.vy + no1) + ks_m22) * n1o2;
-		const dreal ks_zp0 = (ks_z00 * (KS.vy * KS.vy + KS.vy) + ks_z10 * (no2 * KS.vy + no1) + ks_z20) * n1o2;
-		const dreal ks_zp1 = (ks_z01 * (KS.vy * KS.vy + KS.vy) + ks_z11 * (no2 * KS.vy + no1) + ks_z21) * n1o2;
-		const dreal ks_zp2 = (ks_z02 * (KS.vy * KS.vy + KS.vy) + ks_z12 * (no2 * KS.vy + no1) + ks_z22) * n1o2;
-		const dreal ks_pp0 = (ks_p00 * (KS.vy * KS.vy + KS.vy) + ks_p10 * (no2 * KS.vy + no1) + ks_p20) * n1o2;
-		const dreal ks_pp1 = (ks_p01 * (KS.vy * KS.vy + KS.vy) + ks_p11 * (no2 * KS.vy + no1) + ks_p21) * n1o2;
-		const dreal ks_pp2 = (ks_p02 * (KS.vy * KS.vy + KS.vy) + ks_p12 * (no2 * KS.vy + no1) + ks_p22) * n1o2;
+		const dreal ks_mp0 = (ks_m00 * (vy_sqr + vy) + ks_m10 * (no2 * vy + no1) + ks_m20) * n1o2;
+		const dreal ks_mp1 = (ks_m01 * (vy_sqr + vy) + ks_m11 * (no2 * vy + no1) + ks_m21) * n1o2;
+		const dreal ks_mp2 = (ks_m02 * (vy_sqr + vy) + ks_m12 * (no2 * vy + no1) + ks_m22) * n1o2;
+		const dreal ks_zp0 = (ks_z00 * (vy_sqr + vy) + ks_z10 * (no2 * vy + no1) + ks_z20) * n1o2;
+		const dreal ks_zp1 = (ks_z01 * (vy_sqr + vy) + ks_z11 * (no2 * vy + no1) + ks_z21) * n1o2;
+		const dreal ks_zp2 = (ks_z02 * (vy_sqr + vy) + ks_z12 * (no2 * vy + no1) + ks_z22) * n1o2;
+		const dreal ks_pp0 = (ks_p00 * (vy_sqr + vy) + ks_p10 * (no2 * vy + no1) + ks_p20) * n1o2;
+		const dreal ks_pp1 = (ks_p01 * (vy_sqr + vy) + ks_p11 * (no2 * vy + no1) + ks_p21) * n1o2;
+		const dreal ks_pp2 = (ks_p02 * (vy_sqr + vy) + ks_p12 * (no2 * vy + no1) + ks_p22) * n1o2;
 
 		// Eq 94 from Geier 2015
-		KS.f[mmz] = ks_mm0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_mm1 - ks_mm2;
-		KS.f[mzz] = ks_mz0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_mz1 - ks_mz2;
-		KS.f[mpz] = ks_mp0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_mp1 - ks_mp2;
-		KS.f[zmz] = ks_zm0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_zm1 - ks_zm2;
-		KS.f[zzz] = ks_zz0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_zz1 - ks_zz2;
-		KS.f[zpz] = ks_zp0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_zp1 - ks_zp2;
-		KS.f[pmz] = ks_pm0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_pm1 - ks_pm2;
-		KS.f[pzz] = ks_pz0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_pz1 - ks_pz2;
-		KS.f[ppz] = ks_pp0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_pp1 - ks_pp2;
+		f[mmz] = ks_mm0 * (no1 - vz_sqr) - no2 * vz * ks_mm1 - ks_mm2;
+		f[mzz] = ks_mz0 * (no1 - vz_sqr) - no2 * vz * ks_mz1 - ks_mz2;
+		f[mpz] = ks_mp0 * (no1 - vz_sqr) - no2 * vz * ks_mp1 - ks_mp2;
+		f[zmz] = ks_zm0 * (no1 - vz_sqr) - no2 * vz * ks_zm1 - ks_zm2;
+		f[zzz] = ks_zz0 * (no1 - vz_sqr) - no2 * vz * ks_zz1 - ks_zz2;
+		f[zpz] = ks_zp0 * (no1 - vz_sqr) - no2 * vz * ks_zp1 - ks_zp2;
+		f[pmz] = ks_pm0 * (no1 - vz_sqr) - no2 * vz * ks_pm1 - ks_pm2;
+		f[pzz] = ks_pz0 * (no1 - vz_sqr) - no2 * vz * ks_pz1 - ks_pz2;
+		f[ppz] = ks_pp0 * (no1 - vz_sqr) - no2 * vz * ks_pp1 - ks_pp2;
 
 		// Eq 95 from Geier 2015
-		KS.f[mmm] = (ks_mm0 * (KS.vz * KS.vz - KS.vz) + ks_mm1 * (no2 * KS.vz - no1) + ks_mm2) * n1o2;
-		KS.f[mzm] = (ks_mz0 * (KS.vz * KS.vz - KS.vz) + ks_mz1 * (no2 * KS.vz - no1) + ks_mz2) * n1o2;
-		KS.f[mpm] = (ks_mp0 * (KS.vz * KS.vz - KS.vz) + ks_mp1 * (no2 * KS.vz - no1) + ks_mp2) * n1o2;
-		KS.f[zmm] = (ks_zm0 * (KS.vz * KS.vz - KS.vz) + ks_zm1 * (no2 * KS.vz - no1) + ks_zm2) * n1o2;
-		KS.f[zzm] = (ks_zz0 * (KS.vz * KS.vz - KS.vz) + ks_zz1 * (no2 * KS.vz - no1) + ks_zz2) * n1o2;
-		KS.f[zpm] = (ks_zp0 * (KS.vz * KS.vz - KS.vz) + ks_zp1 * (no2 * KS.vz - no1) + ks_zp2) * n1o2;
-		KS.f[pmm] = (ks_pm0 * (KS.vz * KS.vz - KS.vz) + ks_pm1 * (no2 * KS.vz - no1) + ks_pm2) * n1o2;
-		KS.f[pzm] = (ks_pz0 * (KS.vz * KS.vz - KS.vz) + ks_pz1 * (no2 * KS.vz - no1) + ks_pz2) * n1o2;
-		KS.f[ppm] = (ks_pp0 * (KS.vz * KS.vz - KS.vz) + ks_pp1 * (no2 * KS.vz - no1) + ks_pp2) * n1o2;
+		f[mmm] = (ks_mm0 * (vz_sqr - vz) + ks_mm1 * (no2 * vz - no1) + ks_mm2) * n1o2;
+		f[mzm] = (ks_mz0 * (vz_sqr - vz) + ks_mz1 * (no2 * vz - no1) + ks_mz2) * n1o2;
+		f[mpm] = (ks_mp0 * (vz_sqr - vz) + ks_mp1 * (no2 * vz - no1) + ks_mp2) * n1o2;
+		f[zmm] = (ks_zm0 * (vz_sqr - vz) + ks_zm1 * (no2 * vz - no1) + ks_zm2) * n1o2;
+		f[zzm] = (ks_zz0 * (vz_sqr - vz) + ks_zz1 * (no2 * vz - no1) + ks_zz2) * n1o2;
+		f[zpm] = (ks_zp0 * (vz_sqr - vz) + ks_zp1 * (no2 * vz - no1) + ks_zp2) * n1o2;
+		f[pmm] = (ks_pm0 * (vz_sqr - vz) + ks_pm1 * (no2 * vz - no1) + ks_pm2) * n1o2;
+		f[pzm] = (ks_pz0 * (vz_sqr - vz) + ks_pz1 * (no2 * vz - no1) + ks_pz2) * n1o2;
+		f[ppm] = (ks_pp0 * (vz_sqr - vz) + ks_pp1 * (no2 * vz - no1) + ks_pp2) * n1o2;
 
 		// Eq 96 from Geier 2015
-		KS.f[mmp] = (ks_mm0 * (KS.vz * KS.vz + KS.vz) + ks_mm1 * (no2 * KS.vz + no1) + ks_mm2) * n1o2;
-		KS.f[mzp] = (ks_mz0 * (KS.vz * KS.vz + KS.vz) + ks_mz1 * (no2 * KS.vz + no1) + ks_mz2) * n1o2;
-		KS.f[mpp] = (ks_mp0 * (KS.vz * KS.vz + KS.vz) + ks_mp1 * (no2 * KS.vz + no1) + ks_mp2) * n1o2;
-		KS.f[zmp] = (ks_zm0 * (KS.vz * KS.vz + KS.vz) + ks_zm1 * (no2 * KS.vz + no1) + ks_zm2) * n1o2;
-		KS.f[zzp] = (ks_zz0 * (KS.vz * KS.vz + KS.vz) + ks_zz1 * (no2 * KS.vz + no1) + ks_zz2) * n1o2;
-		KS.f[zpp] = (ks_zp0 * (KS.vz * KS.vz + KS.vz) + ks_zp1 * (no2 * KS.vz + no1) + ks_zp2) * n1o2;
-		KS.f[pmp] = (ks_pm0 * (KS.vz * KS.vz + KS.vz) + ks_pm1 * (no2 * KS.vz + no1) + ks_pm2) * n1o2;
-		KS.f[pzp] = (ks_pz0 * (KS.vz * KS.vz + KS.vz) + ks_pz1 * (no2 * KS.vz + no1) + ks_pz2) * n1o2;
-		KS.f[ppp] = (ks_pp0 * (KS.vz * KS.vz + KS.vz) + ks_pp1 * (no2 * KS.vz + no1) + ks_pp2) * n1o2;
+		f[mmp] = (ks_mm0 * (vz_sqr + vz) + ks_mm1 * (no2 * vz + no1) + ks_mm2) * n1o2;
+		f[mzp] = (ks_mz0 * (vz_sqr + vz) + ks_mz1 * (no2 * vz + no1) + ks_mz2) * n1o2;
+		f[mpp] = (ks_mp0 * (vz_sqr + vz) + ks_mp1 * (no2 * vz + no1) + ks_mp2) * n1o2;
+		f[zmp] = (ks_zm0 * (vz_sqr + vz) + ks_zm1 * (no2 * vz + no1) + ks_zm2) * n1o2;
+		f[zzp] = (ks_zz0 * (vz_sqr + vz) + ks_zz1 * (no2 * vz + no1) + ks_zz2) * n1o2;
+		f[zpp] = (ks_zp0 * (vz_sqr + vz) + ks_zp1 * (no2 * vz + no1) + ks_zp2) * n1o2;
+		f[pmp] = (ks_pm0 * (vz_sqr + vz) + ks_pm1 * (no2 * vz + no1) + ks_pm2) * n1o2;
+		f[pzp] = (ks_pz0 * (vz_sqr + vz) + ks_pz1 * (no2 * vz + no1) + ks_pz2) * n1o2;
+		f[ppp] = (ks_pp0 * (vz_sqr + vz) + ks_pp1 * (no2 * vz + no1) + ks_pp2) * n1o2;
 #undef C_000
 #undef C_011
 #undef C_010
