@@ -205,18 +205,6 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal B =
 			(no4 * omega1 * omega2 * (no9 * omega1 - no16) - no4 * omega1 * omega1 - no2 * omega2 * omega2 * (no2 + no9 * omega1 * (omega1 - no2)))
 			/ no3 / (omega1 - omega2) / (omega2 * (no2 + no3 * omega1) - no8 * omega1);
-#else
-		const dreal omega3 = no1;
-		const dreal omega4 = no1;
-		const dreal omega5 = no1;
-		const dreal omega6 = no1;
-		const dreal omega7 = no1;
-		const dreal omega8 = no1;
-		const dreal omega9 = no1;
-		const dreal omega10 = no1;
-		// extra parameters
-		const dreal A = 0;
-		const dreal B = 0;
 #endif
 
 		// actual collision step: note: ks = Cs for these indexes
@@ -271,17 +259,7 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal Cs_201 = n1o2 * (Eq122 + Eq119);
 		// Eq 42
 		const dreal Cs_111 = (no1 - omega111) * C_111;
-#else
-		// Eqs 36-41:
-		const dreal Cs_120 = (-C_102 - C_120) * omega3 * n1o2 + (C_102 - C_120) * omega4 * n1o2 + C_120;
-		const dreal Cs_102 = (-C_102 - C_120) * omega3 * n1o2 + (-C_102 + C_120) * omega4 * n1o2 + C_102;
-		const dreal Cs_210 = (-C_012 - C_210) * omega3 * n1o2 + (C_012 - C_210) * omega4 * n1o2 + C_210;
-		const dreal Cs_012 = (-C_012 - C_210) * omega3 * n1o2 + (-C_012 + C_210) * omega4 * n1o2 + C_012;
-		const dreal Cs_021 = (-C_021 - C_201) * omega3 * n1o2 + (-C_021 + C_201) * omega4 * n1o2 + C_021;
-		const dreal Cs_201 = (-C_021 - C_201) * omega3 * n1o2 + (C_021 - C_201) * omega4 * n1o2 + C_201;
-		// Eq 42
-		const dreal Cs_111 = (no1 - omega5) * C_111;
-#endif
+
 		// Eqs 43-45
 		const dreal Eq43RHS =
 			n2o3 * (no1 / omega1 - n1o2) * omega6 * A * KS.rho * (Dxu - no2 * Dyv + Dzw) + (no1 - omega6) * (C_220 - no2 * C_202 + C_022);
@@ -332,6 +310,44 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 			- (no16 * ks_110 * ks_101 * ks_011 + no4 * (ks_101 * ks_101 * ks_020 + ks_011 * ks_011 * ks_200 + ks_110 * ks_110 * ks_002)
 			   + no2 * ks_200 * ks_020 * ks_002)
 				  * rho_inv * rho_inv;
+
+#else
+		// Eqs 36-41:
+		const dreal Cs_120 = 0;
+		const dreal Cs_102 = 0;
+		const dreal Cs_210 = 0;
+		const dreal Cs_012 = 0;
+		const dreal Cs_021 = 0;
+		const dreal Cs_201 = 0;
+		// Eq 42
+		const dreal Cs_111 = 0;
+
+		// remark: collision step is the same as in well-CUM
+
+		// 3.4 Backward cumulant transformation
+		// Eq. 81 from Geier 2015
+
+		const dreal ks_211 = (ks_200 * ks_011 + no2 * ks_101 * ks_110) * rho_inv;
+		const dreal ks_121 = (ks_020 * ks_101 + no2 * ks_110 * ks_011) * rho_inv;
+		const dreal ks_112 = (ks_002 * ks_110 + no2 * ks_011 * ks_101) * rho_inv;
+
+		// Eq. 82 from Geier 2015
+		const dreal ks_220 = (ks_020 * ks_200 + no2 * ks_110 * ks_110) * rho_inv;
+		const dreal ks_022 = (ks_002 * ks_020 + no2 * ks_011 * ks_011) * rho_inv;
+		const dreal ks_202 = (ks_200 * ks_002 + no2 * ks_101 * ks_101) * rho_inv;
+
+		// Eq. 83 from Geier 2015
+		const dreal ks_122 = 0;
+		const dreal ks_212 = 0;
+		const dreal ks_221 = 0;
+
+		// Eq. 84 from Geier 2015
+		const dreal ks_222 =
+			(ks_200 * ks_022 + ks_020 * ks_202 + ks_002 * ks_220 + no4 * (ks_011 * ks_211 + ks_101 * ks_121 + ks_110 * ks_112)) * rho_inv
+			- (no16 * ks_110 * ks_101 * ks_011 + no4 * (ks_101 * ks_101 * ks_020 + ks_011 * ks_011 * ks_200 + ks_110 * ks_110 * ks_002)
+			   + no2 * ks_200 * ks_020 * ks_002)
+				  * rho_inv * rho_inv;
+#endif
 
 		// backward central moment transformation
 		const dreal ks_000 = k_000;
