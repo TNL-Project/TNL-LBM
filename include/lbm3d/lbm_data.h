@@ -182,19 +182,47 @@ struct NSE_Data_Parabolic_yconst : NSE_Data<TRAITS>
 	using dreal = typename TRAITS::dreal;
 	using point_t = typename TRAITS::point_t;
 
-	dreal inflow_vx=0;
-	dreal inflow_vy=0;
-	dreal inflow_vz=0;
-	dreal inflowH = 0.41;
-    dreal inflow_g=0;
-    dreal physDl = 1;
-    point_t InitPoint;
+	dreal inflow_vx = 0;
+	dreal inflow_vy = 0;
+	dreal inflow_vz = 0;
+	dreal inflow_z  = 0;
+    dreal inflow_g  = 0;
+    point_t InitPoint; // non-dimesional initial point
+	dreal no1oT0 = 3;
 
 	template <typename LBM_KS>
-	CUDA_HOSTDEV void inflow(LBM_KS KS, idx x, idx y, idx z)
+	CUDA_HOSTDEV void inflow(LBM_KS& KS, idx x, idx y, idx z)
 	{
-		KS.rho +=  3.*inflow_g;
-		KS.vx  =   1;//4*inflow_vx/(inflowH*inflowH)*(inflowH*inflowH*0.25-((z*physDl + InitPoint[3])-0.5*inflowH)*((z*physDl + InitPoint[3])-0.5*inflowH));
+		KS.rho +=  no1oT0*inflow_g;
+		KS.vx  =   4*inflow_vx*(inflow_z*inflow_z*0.25-((z + InitPoint[3])-0.5*inflow_z)*((z + InitPoint[3])-0.5*inflow_z))/(inflow_z*inflow_z);
+		KS.vy  =   0.;
+		KS.vz  =   0.;
+	}
+};
+
+template < typename TRAITS>
+struct NSE_Data_DoubleParabolic : NSE_Data<TRAITS>
+{
+	using idx = typename TRAITS::idx;
+	using dreal = typename TRAITS::dreal;
+	using point_t = typename TRAITS::point_t;
+
+	dreal inflow_vx = 0;
+	dreal inflow_vy = 0;
+	dreal inflow_vz = 0;
+	dreal inflow_y  = 0;
+	dreal inflow_z  = 0;
+    dreal inflow_g  = 0;
+    point_t InitPoint; // non-dimesional initial point
+	dreal no1oT0 = 3;
+
+	template <typename LBM_KS>
+	CUDA_HOSTDEV void inflow(LBM_KS& KS, idx x, idx y, idx z)
+	{
+		KS.rho +=  no1oT0*inflow_g;
+		KS.vx  =   16*inflow_vx*
+			(inflow_z*inflow_z*0.25-((z + InitPoint[3])-0.5*inflow_z)*((z + InitPoint[3])-0.5*inflow_z))/(inflow_z*inflow_z)*
+			(inflow_y*inflow_y*0.25-((y + InitPoint[2])-0.5*inflow_y)*((y + InitPoint[2])-0.5*inflow_y))/(inflow_y*inflow_y);
 		KS.vy  =   0.;
 		KS.vz  =   0.;
 	}

@@ -325,9 +325,10 @@ struct StateLocal : State<NSE>
 			block.data.inflow_vx = lbm_inflow_vx;
 			block.data.inflow_vy = 0;
 			block.data.inflow_vz = 0;
-			//block.data.InitPoint = nse.lat.physOrigin;
+			block.data.InitPoint = nse.lat.phys2lbmPoint(nse.lat.physOrigin);
 			block.data.inflow_g = inflow_g;
-			//block.data.physDl = nse.lat.physDl;
+			block.data.inflow_y = nse.lat.global.y();
+			block.data.inflow_z = nse.lat.global.z();
 			if(NSE::LBM_KS::NoDV == 3){
 				block.data.no1oT0 = 1./0.6979533220196830882384091; // FOR D2Q49
 			}
@@ -384,7 +385,7 @@ int sim(int RESOLUTION = 2)
 	state.cnt[PRINT].period = 1;
 
 	state.loadState();
-	state.wallTime = 100;
+	state.wallTime = 10000;
 	// add cuts
 	state.cnt[VTK2D].period = 1;
 	state.add2Dcut_X(X / 2, "cutsX/cut_X");
@@ -396,6 +397,24 @@ int sim(int RESOLUTION = 2)
 	state.add3Dcut(X / 4, Y / 4, Z / 4, X / 2, Y / 2, Z / 2, 2, "box");
 
 	state.cnt[PROBE1].period = 0.1;
+
+	state.updateKernelData();
+	state.updateKernelVelocities();
+	typename NSE::LBM_KS KS;
+
+	// Debug output of the inflow
+	//const std::string inflow_profile_output = fmt::format("{}/velocities.csv",state_id);
+	//FILE *fp = fopen(inflow_profile_output.c_str(), "w");
+	FILE *fp = fopen("velocities.csv", "w");
+	fprintf(fp, "y,z,vx\n");
+	for (int y = 0; y < Y; y++) {
+	    for (int z = 0; z < Z; z++) {
+	        state.nse.blocks[0].data.inflow(KS, 0, y, z);
+	        fprintf(fp, "%d,%d,%e\n", y, z, KS.vx);
+	    }
+	}
+	fclose(fp);
+
 
 	execute(state);
 
@@ -410,7 +429,8 @@ void run(int RES)
 	using NSE_CONFIG = LBM_CONFIG<
 		TRAITS,
 		D3Q27_KernelStruct,
-		NSE_Data_ConstInflow_PressureGradient<TRAITS>,
+		//NSE_Data_Parabolic_yconst<TRAITS>,
+		NSE_Data_DoubleParabolic<TRAITS>,
 		COLL,
 		typename COLL::EQ,
 		D3Q27_STREAMING<TRAITS>,
@@ -422,7 +442,7 @@ void run(int RES)
 	//using NSE_CONFIG = LBM_CONFIG<
 	//	TRAITS,
 	//	D3Q343_KernelStruct,
-	//	NSE_Data_ConstInflow<TRAITS>,
+	//	NSE_Data_Parabolic_yconst<TRAITS>,
 	//	COLL,
 	//	typename COLL::EQ,
 	//	D3Q343_STREAMING<TRAITS>,
