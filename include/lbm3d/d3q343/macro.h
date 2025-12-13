@@ -26,7 +26,7 @@ struct D3Q343_MACRO_Base
 	static const bool use_syncMacro = false;
 
 	// maximum width of overlaps for the macro arrays
-	static constexpr int overlap_width = 1;
+	static constexpr int overlap_width = 3;
 
 	// compulsory method -- called from cudaLBMComputeVelocitiesStarAndZeroForce kernel
 	template <typename LBM_KS>

@@ -33,7 +33,8 @@ struct D3Q343_BC_All
 		GEO_SYM_LEFT,
 		GEO_SYM_RIGHT,
 		GEO_SYM_BACK,
-		GEO_SYM_FRONT
+		GEO_SYM_FRONT,
+		GEO_INFLOW_LEFT_PRESSURE
 	};
 
 	__cuda_callable__ static bool isPeriodic(map_t mapgi)
@@ -143,6 +144,18 @@ struct D3Q343_BC_All
 				break;
 			default:
 				COLL::computeDensityAndVelocity(KS);
+				break;
+			case GEO_INFLOW_LEFT_PRESSURE:
+				for(int i = 0; i < LBM_KS::ONE_SIZE; i++){
+					streamGrid.x(i)++;
+				}
+            	STREAMING::streaming(SD,KS,streamGrid);
+				for(int i = 0; i < LBM_KS::ONE_SIZE; i++){
+					streamGrid.x(i)--;
+				}
+				COLL::computeDensityAndVelocity(KS);
+				SD.inflow(KS, x, y, z);
+				COLL::setEquilibrium(KS);
 				break;
 		}
 	}

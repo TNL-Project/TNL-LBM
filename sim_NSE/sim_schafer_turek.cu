@@ -2,8 +2,8 @@
 #include <utility>
 
 // As of now, enum and sync direction are specific for different models and need to be included before core!!!
-#include "lbm3d/d3q27/defs.h"
-//#include "lbm3d/d3q343/defs.h"
+//#include "lbm3d/d3q27/defs.h"
+#include "lbm3d/d3q343/defs.h"
 #include "lbm3d/core.h"
 
 template <typename NSE>
@@ -364,7 +364,6 @@ int sim(int RESOLUTION = 2)
 	point_t PHYS_ORIGIN = {0., -5./2*PHYS_DL, -5./2*PHYS_DL};
 
 	real g = PHYS_VISCOSITY*PHYS_VELOCITY/(PHYS_HEIGHT*PHYS_HEIGHT*0.25*0.5);
-	//g = 1/2.2;
 
 	// initialize the lattice
 	lat_t lat;
@@ -421,33 +420,33 @@ int sim(int RESOLUTION = 2)
 	return 0;
 }
 
-template <typename TRAITS = TraitsSP>
+template <typename TRAITS = TraitsDP>
 void run(int RES)
 {
 	// D3Q27
-	using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
+	//using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
+	//using NSE_CONFIG = LBM_CONFIG<
+	//	TRAITS,
+	//	D3Q27_KernelStruct,
+	//	//NSE_Data_Parabolic_yconst<TRAITS>,
+	//	NSE_Data_DoubleParabolic<TRAITS>,
+	//	COLL,
+	//	typename COLL::EQ,
+	//	D3Q27_STREAMING<TRAITS>,
+	//	D3Q27_BC_All,
+	//	D3Q27_MACRO_Default<TRAITS>>;
+
+	// D3Q343
+	using COLL = D3Q343_ELBM<TRAITS, D3Q343_EQ<TRAITS>>;
 	using NSE_CONFIG = LBM_CONFIG<
 		TRAITS,
-		D3Q27_KernelStruct,
-		//NSE_Data_Parabolic_yconst<TRAITS>,
+		D3Q343_KernelStruct,
 		NSE_Data_DoubleParabolic<TRAITS>,
 		COLL,
 		typename COLL::EQ,
-		D3Q27_STREAMING<TRAITS>,
-		D3Q27_BC_All,
-		D3Q27_MACRO_Default<TRAITS>>;
-
-	// D3Q343
-	//using COLL = D3Q343_SRT<TRAITS, D3Q343_EQ<TRAITS>>;
-	//using NSE_CONFIG = LBM_CONFIG<
-	//	TRAITS,
-	//	D3Q343_KernelStruct,
-	//	NSE_Data_Parabolic_yconst<TRAITS>,
-	//	COLL,
-	//	typename COLL::EQ,
-	//	D3Q343_STREAMING<TRAITS>,
-	//	D3Q343_BC_All,
-	//	D3Q343_MACRO_Default<TRAITS>>;
+		D3Q343_STREAMING<TRAITS>,
+		D3Q343_BC_All,
+		D3Q343_MACRO_Default<TRAITS>>;
 
 	sim<NSE_CONFIG>(RES);
 }

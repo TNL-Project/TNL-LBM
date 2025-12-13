@@ -285,6 +285,9 @@ struct D3Q343_KernelStruct
 	REAL fx = 0, fy = 0, fz = 0;
 	REAL vx = 0, vy = 0, vz = 0;
 	REAL rho = 1.0, lbmViscosity = 1.0;
+	// ELBM Lagrange multipliers
+	REAL A = 1.0, B1 = 1.0 , B2 = 1.0, B3 = 1.0;
+	REAL alpha = 2.0;
 };
 
 template <typename REAL>

@@ -127,12 +127,8 @@ struct NSE_Data_Analytical_Solution : NSE_Data<TRAITS>
 	dreal inflow_vx = 0;
 	dreal inflow_vy = 0;
 	dreal inflow_vz = 0;
-	// TODO: define this in simulation initialization
 	dreal a = 0; // size of channel
     dreal inflow_g=0;
-    dreal physDl = 1;
-	dreal physY = 1.;
-	dreal physViscosity = 1.;
     dreal InitPoint [3];
 
 	template <typename LBM_KS>
