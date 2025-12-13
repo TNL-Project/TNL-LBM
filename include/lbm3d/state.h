@@ -1,18 +1,23 @@
 #pragma once
 
+#include <cstdint>
+#include <stdexcept>
 #include <vector>
 #include <string>
 
 #include <sys/stat.h>
 #include <sys/wait.h>
 
+#include <TNL/Containers/StaticVector.h>
 #include <TNL/Timer.h>
-#include <fmt/core.h>
 #include <adios2.h>
+#include <fmt/core.h>
+#include <spdlog/spdlog.h>
 
 #include "../lbm_common/logging.h"
 #include "../lbm_common/fileutils.h"
 #include "lbm.h"
+#include "lbm_block.h"
 #include "checkpoint.h"
 
 // ibm: lagrangian filament/surface

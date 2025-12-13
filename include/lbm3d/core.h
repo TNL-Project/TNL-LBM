@@ -1,5 +1,9 @@
 #pragma once
 
+#include <spdlog/spdlog.h>
+
+#include <TNL/MPI/Utils.h>
+
 // default
 #include "lbm_data.h"  // LBM_Data is a general template (for any Q)
 #include "d3q27/macro.h"

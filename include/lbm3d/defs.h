@@ -1,5 +1,22 @@
 #pragma once
 
+#include <cstdint>
+#include <utility>
+
+#include <TNL/Backend/Stream.h>
+#include <TNL/Backend/Types.h>
+#include <TNL/Containers/BlockPartitioning.h>
+#include <TNL/Containers/DistributedNDArray.h>
+#include <TNL/Containers/DistributedNDArraySyncDirections.h>
+#include <TNL/Containers/DistributedNDArraySynchronizer.h>
+#include <TNL/Containers/NDArray.h>
+#include <TNL/Containers/StaticVector.h>
+#include <TNL/Containers/ndarray/SizesHolder.h>
+#include <TNL/Devices/Cuda.h>
+#include <TNL/Devices/Host.h>
+#include <TNL/MPI.h>
+#include <TNL/MPI/ScopedInitializer.h>
+
 #if ! defined(AB_PATTERN) && ! defined(AA_PATTERN)
 	// TODO: update multidimensional MPI synchronization for AA pattern
 	// (for the even time step which is similar to a "push scheme", we need to
@@ -8,19 +25,6 @@
 	#define AB_PATTERN
 #endif
 
-#include <cstdio>
-#include <cstdlib>
-
-#include <utility>
-
-#include <TNL/Containers/StaticVector.h>
-#include <TNL/Containers/NDArray.h>
-#include <TNL/Containers/DistributedNDArray.h>
-#include <TNL/Containers/DistributedNDArraySynchronizer.h>
-#include <TNL/Containers/BlockPartitioning.h>
-#include <TNL/MPI.h>
-#include <TNL/Backend/Stream.h>
-#include <TNL/Backend/Types.h>
 #if ! defined(__CUDACC__) && ! defined(__HIP__)
 using TNL::dim3;
 #endif
