@@ -87,6 +87,12 @@ struct D3Q343_BC_All
 				break;
 			case GEO_OUTFLOW_RIGHT:
 				COLL::computeDensityAndVelocity(KS);
+				#ifdef __CUDA_ARCH__
+				#pragma unroll
+				#endif
+				for(int id = 0; id < LBM_KS::Qhalf; id++){
+					KS.f[id] /= KS.rho;
+				}
 				KS.rho = 1;
 				break;
 			case GEO_WALL:
