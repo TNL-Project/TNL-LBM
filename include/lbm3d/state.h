@@ -160,8 +160,12 @@ struct State
 
 	virtual void writeVTKs_3D();
 
+	void
+	predefineVTK(const std::string& ioName, const BLOCK_NSE& block, const adios2::Dims& shape, const adios2::Dims& start, const adios2::Dims& count);
 	void predefineVTK3D(const std::string& ioName, const BLOCK_NSE& block);
-	
+	void predefineVTK2D(const std::string& ioName, const BLOCK_NSE& block, int cutType);
+	void predefineVTK3Dcut(const std::string& ioName, const BLOCK_NSE& block, const T_PROBE3DCUT& probe);
+
 	// 3D cuts
 	virtual void writeVTKs_3Dcut();
 	template <typename... ARGS>

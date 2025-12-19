@@ -411,7 +411,7 @@ void State<NSE>::writeVTKs_3D()
 	}
 	// Safe to call repeatedly
 	dataManager.openEngine(fname);
-	
+
 	TNL::Timer timer;
 	for (const auto& block : nse.blocks) {
 		timer.start();
@@ -424,24 +424,10 @@ void State<NSE>::writeVTKs_3D()
 }
 
 template <typename NSE>
-void State<NSE>::predefineVTK3D(const std::string& ioName, const BLOCK_NSE& block)
+void State<NSE>::predefineVTK(
+	const std::string& ioName, const BLOCK_NSE& block, const adios2::Dims& shape, const adios2::Dims& start, const adios2::Dims& count
+)
 {
-	const adios2::Dims shape{
-		static_cast<std::size_t>(block.global.z()),
-		static_cast<std::size_t>(block.global.y()),
-		static_cast<std::size_t>(block.global.x())
-	};
-	const adios2::Dims start{
-		static_cast<std::size_t>(block.offset.z()),
-		static_cast<std::size_t>(block.offset.y()),
-		static_cast<std::size_t>(block.offset.x())
-	};
-	const adios2::Dims count{
-		static_cast<std::size_t>(block.local.z()),
-		static_cast<std::size_t>(block.local.y()),
-		static_cast<std::size_t>(block.local.x())
-	};
-
 	dataManager.defineData<int>("wall", shape, start, count, ioName);
 	spdlog::info("Defined variable 'wall' with shape [{},{},{}]", shape[0], shape[1], shape[2]);
 
@@ -465,6 +451,103 @@ void State<NSE>::predefineVTK3D(const std::string& ioName, const BLOCK_NSE& bloc
 			spdlog::info("Defined variable '{}' (vector: X,Y,Z)", varName);
 		}
 	}
+}
+
+template <typename NSE>
+void State<NSE>::predefineVTK3D(const std::string& ioName, const BLOCK_NSE& block)
+{
+	const adios2::Dims shape{
+		static_cast<std::size_t>(block.global.z()), static_cast<std::size_t>(block.global.y()), static_cast<std::size_t>(block.global.x())
+	};
+	const adios2::Dims start{
+		static_cast<std::size_t>(block.offset.z()), static_cast<std::size_t>(block.offset.y()), static_cast<std::size_t>(block.offset.x())
+	};
+	const adios2::Dims count{
+		static_cast<std::size_t>(block.local.z()), static_cast<std::size_t>(block.local.y()), static_cast<std::size_t>(block.local.x())
+	};
+
+	predefineVTK(ioName, block, shape, start, count);
+}
+
+template <typename NSE>
+void State<NSE>::predefineVTK2D(const std::string& ioName, const BLOCK_NSE& block, int cutType)
+{
+	adios2::Dims shape;
+	adios2::Dims start;
+	adios2::Dims count;
+
+	// NOTE: ADIOS2 dims are in {Z, Y, X} order for ImageData writer
+	switch (cutType) {
+		case 0:	 // X cut (Y-Z plane)
+			shape = {static_cast<std::size_t>(block.global.z()), static_cast<std::size_t>(block.global.y()), static_cast<std::size_t>(1)};
+			start = {static_cast<std::size_t>(block.offset.z()), static_cast<std::size_t>(block.offset.y()), static_cast<std::size_t>(0)};
+			count = {static_cast<std::size_t>(block.local.z()), static_cast<std::size_t>(block.local.y()), static_cast<std::size_t>(1)};
+			break;
+		case 1:	 // Y cut (X-Z plane)
+			shape = {static_cast<std::size_t>(block.global.z()), static_cast<std::size_t>(1), static_cast<std::size_t>(block.global.x())};
+			start = {static_cast<std::size_t>(block.offset.z()), static_cast<std::size_t>(0), static_cast<std::size_t>(block.offset.x())};
+			count = {static_cast<std::size_t>(block.local.z()), static_cast<std::size_t>(1), static_cast<std::size_t>(block.local.x())};
+			break;
+		case 2:	 // Z cut (X-Y plane)
+			shape = {static_cast<std::size_t>(1), static_cast<std::size_t>(block.global.y()), static_cast<std::size_t>(block.global.x())};
+			start = {static_cast<std::size_t>(0), static_cast<std::size_t>(block.offset.y()), static_cast<std::size_t>(block.offset.x())};
+			count = {static_cast<std::size_t>(1), static_cast<std::size_t>(block.local.y()), static_cast<std::size_t>(block.local.x())};
+			break;
+		default:
+			throw std::invalid_argument("predefineVTK2D: invalid cutType");
+	}
+
+	predefineVTK(ioName, block, shape, start, count);
+}
+
+template <typename NSE>
+void State<NSE>::predefineVTK3Dcut(const std::string& ioName, const BLOCK_NSE& block, const T_PROBE3DCUT& probe)
+{
+	// Mirrors the domain intersection logic in LBM_BLOCK::writeVTK_3Dcut()
+	const idx ox = probe.ox;
+	const idx oy = probe.oy;
+	const idx oz = probe.oz;
+	const idx gx = probe.lx;
+	const idx gy = probe.ly;
+	const idx gz = probe.lz;
+	const idx step = probe.step;
+
+	const bool overlapT =
+		! (ox + gx <= block.offset.x() || block.offset.x() + block.local.x() <= ox || oy + gy <= block.offset.y()
+		   || block.offset.y() + block.local.y() <= oy || oz + gz <= block.offset.z() || block.offset.z() + block.local.z() <= oz);
+	if (! overlapT) {
+		// No data from this rank/block for this cut
+		return;
+	}
+
+	// intersection of the local domain with the box
+	idx lx = TNL::min(ox + gx, block.offset.x() + block.local.x()) - TNL::max(ox, block.offset.x());
+	idx ly = TNL::min(oy + gy, block.offset.y() + block.local.y()) - TNL::max(oy, block.offset.y());
+	idx lz = TNL::min(oz + gz, block.offset.z() + block.local.z()) - TNL::max(oz, block.offset.z());
+
+	idx oX = TNL::max(0, block.offset.x() - ox);
+	idx oY = TNL::max(0, block.offset.y() - oy);
+	idx oZ = TNL::max(0, block.offset.z() - oz);
+
+	// box dimensions (round-up integer division)
+	idx lX = lx / step + (lx % step != 0);
+	idx lY = ly / step + (ly % step != 0);
+	idx lZ = lz / step + (lz % step != 0);
+
+	idx gX = gx / step + (gx % step != 0);
+	idx gY = gy / step + (gy % step != 0);
+	idx gZ = gz / step + (gz % step != 0);
+
+	oX = oX / step + (oX % step != 0);
+	oY = oY / step + (oY % step != 0);
+	oZ = oZ / step + (oZ % step != 0);
+
+	// NOTE: ADIOS2 dims are in {Z, Y, X} order for ImageData writer
+	const adios2::Dims shape{static_cast<std::size_t>(gZ), static_cast<std::size_t>(gY), static_cast<std::size_t>(gX)};
+	const adios2::Dims start{static_cast<std::size_t>(oZ), static_cast<std::size_t>(oY), static_cast<std::size_t>(oX)};
+	const adios2::Dims count{static_cast<std::size_t>(lZ), static_cast<std::size_t>(lY), static_cast<std::size_t>(lX)};
+
+	predefineVTK(ioName, block, shape, start, count);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -501,13 +584,18 @@ void State<NSE>::writeVTKs_3Dcut()
 		return;
 	// browse all 3D vtk cuts
 	for (auto& probevec : probe3Dvec) {
+		const std::string fname = fmt::format("results_{}/output_3Dcut_{}", id, probevec.name);
+		create_parent_directories(fname.c_str());
+
+		dataManager.prepareIO(fname);
+		if (probevec.cycle == 0) {
+			predefineVTK3Dcut(fname, nse.blocks.front(), probevec);
+		}
+		// Match previous behavior: reopen as Append after the first cycle
+		const auto mode = (probevec.cycle == 0) ? adios2::Mode::Write : adios2::Mode::Append;
+		dataManager.openEngine(fname, mode);
+
 		for (const auto& block : nse.blocks) {
-			const std::string fname = fmt::format("results_{}/output_3Dcut_{}", id, probevec.name);
-			create_parent_directories(fname.c_str());
-			if (probevec.cycle == 0)
-				dataManager.initEngine(fname);
-			else
-				dataManager.initEngine(fname, adios2::Mode::Append);
 			auto outputData = [this](const BLOCK_NSE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) mutable
 			{
 				return this->outputData(block, index, dof, desc, x, y, z, value, dofs);
@@ -602,14 +690,18 @@ void State<NSE>::writeVTKs_2D()
 
 	// browse all 2D vtk cuts
 	for (auto& probevec : probe2Dvec) {
-		for (const auto& block : nse.blocks) {
-			const std::string fname = fmt::format("results_{}/output_2D_{}", id, probevec.name);
-			create_parent_directories(fname.c_str());
-			if (probevec.cycle == 0)
-				dataManager.initEngine(fname);
-			else
-				dataManager.initEngine(fname, adios2::Mode::Append);
+		const std::string fname = fmt::format("results_{}/output_2D_{}", id, probevec.name);
+		create_parent_directories(fname.c_str());
 
+		dataManager.prepareIO(fname);
+		if (probevec.cycle == 0) {
+			predefineVTK2D(fname, nse.blocks.front(), probevec.type);
+		}
+		// Match previous behavior: reopen as Append after the first cycle
+		const auto mode = (probevec.cycle == 0) ? adios2::Mode::Write : adios2::Mode::Append;
+		dataManager.openEngine(fname, mode);
+
+		for (const auto& block : nse.blocks) {
 			auto outputData = [this](const BLOCK_NSE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) mutable
 			{
 				return this->outputData(block, index, dof, desc, x, y, z, value, dofs);
