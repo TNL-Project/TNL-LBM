@@ -46,7 +46,8 @@ void UnstructuredPointsWriter<TRAITS>::write(std::string varName, std::vector<T>
 
 	// keep internal copy of the data until EndStep()
 	auto& buffer = this->template newBuffer<T>(val.size());
-	buffer.assign(val.begin(), val.end());
+	// Avoid extra copy: move data into internal buffer (val stays usable as an empty preallocated buffer)
+	buffer.swap(val);
 	dataManager->outputData<T>(varName, buffer.data(), simType);
 }
 

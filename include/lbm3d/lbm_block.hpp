@@ -759,8 +759,11 @@ template <typename CONFIG>
 template <typename Output>
 void LBM_BLOCK<CONFIG>::writeVTK_3D(lat_t lat, Output&& outputData, const std::string& filename, real time, int cycle, DataManager& dataManager) const
 {
-	std::vector<int> tempIData; // use buffer
-	std::vector<float> tempFData; // same
+	std::vector<int> tempIData;
+	std::vector<float> tempFData;
+	const std::size_t nCells = static_cast<std::size_t>(local.x()) * static_cast<std::size_t>(local.y()) * static_cast<std::size_t>(local.z());
+	tempIData.reserve(nCells);
+	tempFData.reserve(nCells);
 	const point_t origin = lat.lbm2physPoint(0, 0, 0);
 	UniformDataWriter<TRAITS> writer(global, local, offset, origin, lat.physDl, dataManager, filename);
 
@@ -860,6 +863,9 @@ void LBM_BLOCK<CONFIG>::writeVTK_3Dcut(
 
 	std::vector<int> tempIData;
 	std::vector<float> tempFData;
+	const std::size_t nCells = static_cast<std::size_t>(lX) * static_cast<std::size_t>(lY) * static_cast<std::size_t>(lZ);
+	tempIData.reserve(nCells);
+	tempFData.reserve(nCells);
 	const point_t origin = lat.lbm2physPoint(ox, oy, oz);
 	UniformDataWriter<TRAITS> writer({gX, gY, gZ}, {lX, lY, lZ}, {oX, oY, oZ}, origin, lat.physDl * step, dataManager, filename);
 
@@ -925,6 +931,9 @@ void LBM_BLOCK<CONFIG>::writeVTK_2DcutX(
 
 	std::vector<int> tempIData;
 	std::vector<float> tempFData;
+	const std::size_t nCells = static_cast<std::size_t>(local.y()) * static_cast<std::size_t>(local.z());
+	tempIData.reserve(nCells);
+	tempFData.reserve(nCells);
 	const point_t origin = lat.lbm2physPoint(XPOS, 0, 0);
 	UniformDataWriter<TRAITS> writer(
 		{1, global.y(), global.z()}, {1, local.y(), local.z()}, {0, offset.y(), offset.z()}, origin, lat.physDl, dataManager, filename
@@ -987,6 +996,9 @@ void LBM_BLOCK<CONFIG>::writeVTK_2DcutY(
 
 	std::vector<int> tempIData;
 	std::vector<float> tempFData;
+	const std::size_t nCells = static_cast<std::size_t>(local.x()) * static_cast<std::size_t>(local.z());
+	tempIData.reserve(nCells);
+	tempFData.reserve(nCells);
 	const point_t origin = lat.lbm2physPoint(0, YPOS, 0);
 	UniformDataWriter<TRAITS> writer(
 		{global.x(), 1, global.z()}, {local.x(), 1, local.z()}, {offset.x(), 0, offset.z()}, origin, lat.physDl, dataManager, filename
@@ -1049,6 +1061,9 @@ void LBM_BLOCK<CONFIG>::writeVTK_2DcutZ(
 
 	std::vector<int> tempIData;
 	std::vector<float> tempFData;
+	const std::size_t nCells = static_cast<std::size_t>(local.x()) * static_cast<std::size_t>(local.y());
+	tempIData.reserve(nCells);
+	tempFData.reserve(nCells);
 	const point_t origin = lat.lbm2physPoint(0, 0, ZPOS);
 	UniformDataWriter<TRAITS> writer(
 		{global.x(), global.y(), 1}, {local.x(), local.y(), 1}, {offset.x(), offset.y(), 0}, origin, lat.physDl, dataManager, filename
