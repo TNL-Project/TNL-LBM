@@ -17,16 +17,35 @@ public:
 		defaultIO = adios->DeclareIO("Output");
 	}
 
-	// Prepare IO object without opening engine 
+	bool isPluginEngine() const
+	{
+		return defaultIO.EngineType() == "plugin";
+	}
+
+	void setPluginDataModelPath(std::string path)
+	{
+		pluginDataModelPath_ = std::move(path);
+	}
+
+	const std::string& getPluginDataModelPath() const
+	{
+		return pluginDataModelPath_;
+	}
+
+	// Prepare IO object without opening engine
 	void prepareIO(const std::string& ioName)
 	{
 		if (ios_.find(ioName) != ios_.end()) {
-			return; // Already prepared
+			return;	 // Already prepared
 		}
 		adios2::IO io_handle = adios->DeclareIO(fmt::format("IO_{}", ioName));
 		if (! io_handle.InConfigFile()) {
 			io_handle.SetEngine(defaultIO.EngineType());
-			io_handle.SetParameters(defaultIO.Parameters());
+			auto params = defaultIO.Parameters();
+			if (defaultIO.EngineType() == "plugin" && ! pluginDataModelPath_.empty()) {
+				params["DataModel"] = pluginDataModelPath_;
+			}
+			io_handle.SetParameters(params);
 		}
 		ios_.emplace(ioName, io_handle);
 		spdlog::info("Prepared IO for '{}' (variables can be defined now)", ioName);
@@ -320,4 +339,5 @@ private:
 	std::map<std::string, adios2::Engine> engines_;
 	std::map<std::string, adios2::Mode> current_mode_;	// Track if in read or write mode
 	adios2::Engine* engine_ = nullptr;
+	std::string pluginDataModelPath_;
 };

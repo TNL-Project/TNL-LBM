@@ -122,6 +122,9 @@ struct State
 
 	LBM<NSE> nse;
 
+	// Generated once on demand from discovered output variables (Fides JSON for Catalyst)
+	bool fidesJsonGenerated = false;
+
 	std::vector<T_PROBE3DCUT> probe3Dvec;
 	std::vector<T_PROBE2DCUT> probe2Dvec;
 	std::vector<T_PROBE1DCUT> probe1Dvec;
@@ -165,6 +168,8 @@ struct State
 	void predefineVTK3D(const std::string& ioName, const BLOCK_NSE& block);
 	void predefineVTK2D(const std::string& ioName, const BLOCK_NSE& block, int cutType);
 	void predefineVTK3Dcut(const std::string& ioName, const BLOCK_NSE& block, const T_PROBE3DCUT& probe);
+
+	void ensureFidesJsonModel(const std::string& dimsVariable, const std::vector<std::string>& fields);
 
 	// 3D cuts
 	virtual void writeVTKs_3Dcut();
@@ -320,6 +325,10 @@ struct State
 		// to log files opened by another instance)
 		if (have_lock)
 			init_logging(id, communicator);
+
+		if (dataManager.isPluginEngine()) {
+			dataManager.setPluginDataModelPath(fmt::format("results_{}/lbm-fides.json", id));
+		}
 
 		bool local_estimate = estimateMemoryDemands();
 		bool global_result = TNL::MPI::reduce(local_estimate, MPI_LAND, communicator);

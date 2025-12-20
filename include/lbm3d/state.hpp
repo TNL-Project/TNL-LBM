@@ -1,5 +1,9 @@
 #pragma once
 
+#include <fstream>
+#include <iomanip>
+
+#include <nlohmann/json.hpp>
 #include <png.h>
 #include <TNL/Timer.h>
 
@@ -9,6 +13,80 @@
 
 #include "../lbm_common/fileutils.h"
 #include "../lbm_common/png_tool.h"
+
+template <typename NSE>
+void State<NSE>::ensureFidesJsonModel(const std::string& dimsVariable, const std::vector<std::string>& fields)
+{
+	// Only needed for the Catalyst plugin engine.
+	if (! dataManager.isPluginEngine()) {
+		return;
+	}
+
+	if (fidesJsonGenerated) {
+		return;
+	}
+
+	// Generate once per run
+	fidesJsonGenerated = true;
+
+	// Write the generated json model next to the simulation outputs.
+	const std::string jsonPath =
+		! dataManager.getPluginDataModelPath().empty() ? dataManager.getPluginDataModelPath() : fmt::format("results_{}/lbm-fides.json", id);
+	if (nse.rank == 0) {
+		using json = nlohmann::json;
+
+		// Make sure parent directories exist
+		create_parent_directories(jsonPath.c_str());
+
+		
+		const std::string dimVar = dimsVariable.empty() ? std::string("wall") : dimsVariable;
+
+		json model;
+		model["data_sources"] = json::array({json{{"name", "source"}, {"filename_mode", "input"}}});
+		model["step_information"] = json{{"data_source", "source"}, {"variable", "TIME"}};
+
+		const auto origin = nse.lat.lbm2physPoint(0, 0, 0);
+		const double dl = static_cast<double>(nse.lat.physDl);
+
+		model["coordinate_system"] = json{
+			{"array",
+			 json{
+				 {"array_type", "uniform_point_coordinates"},
+				 {"dimensions", json{{"source", "variable_dimensions"}, {"data_source", "source"}, {"variable", dimVar}}},
+				 {"origin", json{{"source", "array"}, {"values", json::array({origin.x(), origin.y(), origin.z()})}}},
+				 {"spacing", json{{"source", "array"}, {"values", json::array({dl, dl, dl})}}},
+			 }},
+		};
+
+		model["cell_set"] = json{
+			{"cell_set_type", "structured"},
+			{"dimensions", json{{"source", "variable_dimensions"}, {"data_source", "source"}, {"variable", dimVar}}},
+		};
+
+		json fieldsArr = json::array();
+		for (const auto& f : fields) {
+			fieldsArr.push_back(
+				json{
+					{"name", f},
+					{"association", "points"},
+					{"array", json{{"array_type", "basic"}, {"data_source", "source"}, {"variable", f}}},
+				}
+			);
+		}
+		model["fields"] = std::move(fieldsArr);
+
+		json root;
+		root["LBM-Cartesian-grid"] = std::move(model);
+
+		std::ofstream out(jsonPath);
+		if (! out) {
+			throw std::runtime_error("Failed to open Fides JSON file for writing: " + jsonPath);
+		}
+		out << std::setw(2) << root << std::endl;
+	}
+
+	TNL::MPI::Barrier();
+}
 
 template <typename NSE>
 void State<NSE>::flagCreate(const char* flagname)
@@ -428,6 +506,12 @@ void State<NSE>::predefineVTK(
 	const std::string& ioName, const BLOCK_NSE& block, const adios2::Dims& shape, const adios2::Dims& start, const adios2::Dims& count
 )
 {
+	// Build a field list for auto-generation of the Fides JSON data model.
+	std::vector<std::string> fidesFields;
+	fidesFields.reserve(16);
+	fidesFields.emplace_back("wall");
+	std::string dimsVariable;
+
 	dataManager.defineData<int>("wall", shape, start, count, ioName);
 	spdlog::info("Defined variable 'wall' with shape [{},{},{}]", shape[0], shape[1], shape[2]);
 
@@ -443,14 +527,29 @@ void State<NSE>::predefineVTK(
 		if (dofs == 1) {
 			dataManager.defineData<float>(varName, shape, start, count, ioName);
 			spdlog::info("Defined variable '{}' (scalar)", varName);
+
+			fidesFields.push_back(varName);
+			if (dimsVariable.empty() || varName == "lbm_density") {
+				dimsVariable = varName;
+			}
 		}
 		else {
 			dataManager.defineData<float>(varName + "X", shape, start, count, ioName);
 			dataManager.defineData<float>(varName + "Y", shape, start, count, ioName);
 			dataManager.defineData<float>(varName + "Z", shape, start, count, ioName);
 			spdlog::info("Defined variable '{}' (vector: X,Y,Z)", varName);
+
+			fidesFields.push_back(varName + "X");
+			fidesFields.push_back(varName + "Y");
+			fidesFields.push_back(varName + "Z");
+			if (dimsVariable.empty()) {
+				// Fallback: use any scalar component as the dimension variable
+				dimsVariable = varName + "X";
+			}
 		}
 	}
+
+	ensureFidesJsonModel(dimsVariable, fidesFields);
 }
 
 template <typename NSE>
