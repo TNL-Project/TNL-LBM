@@ -214,7 +214,7 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 					  / (omega1 - omega2) / (omega2 * (no2 + no3 * omega1) - no8 * omega1);
 		const dreal B =
 			(no4 * omega1 * omega2 * (no9 * omega1 - no16) - no4 * omega1 * omega1 - no2 * omega2 * omega2 * (no2 + no9 * omega1 * (omega1 - no2)))
-			/ no3 / (omega1 - omega2) / (omega2 * (no2 + no3 * omega1) - no8 * omega1);
+			* n1o3 / (omega1 - omega2) / (omega2 * (no2 + no3 * omega1) - no8 * omega1);
 #endif
 
 		// actual collision step: note: ks = Cs for these indexes
@@ -225,8 +225,8 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		// derivatives of v: notation taken from Geier's paper 2017 part I: Eq 27-29
 		// const dreal Dxu = - omega1/no2/rho * (no2*C_200-C_020-C_002) - omega2/no2/rho*(C_200+C_020+C_002-k_000);
 		const dreal Dxu =
-			-omega1 / no2 * rho_inv * (no2 * C_200 - C_020 - C_002)
-			- omega2 / no2 * rho_inv * (C_200 + C_020 + C_002 - (-no1 + rho));	// remark: rho <--> rho^(2), i.e. rho^(2) = 1-rho = 1-k_000
+			-omega1 * n1o2 * rho_inv * (no2 * C_200 - C_020 - C_002)
+			- omega2 * n1o2 * rho_inv * (C_200 + C_020 + C_002 - (-no1 + rho));	 // remark: rho <--> rho^(2), i.e. rho^(2) = 1-rho = 1-k_000
 		const dreal Dyv = Dxu + n3o2 * omega1 * rho_inv * (C_200 - C_020);
 		const dreal Dzw = Dxu + n3o2 * omega1 * rho_inv * (C_200 - C_002);
 		// plus their combination: Eq 30 - 32
@@ -246,7 +246,7 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal Eq33RHS = (no1 - omega1) * (C_200 - C_020) - no3 * rho * (no1 - omega1 * n1o2) * (vx_sqr * Dxu - vy_sqr * Dyv);
 		const dreal Eq34RHS = (no1 - omega1) * (C_200 - C_002) - no3 * rho * (no1 - omega1 * n1o2) * (vx_sqr * Dxu - vz_sqr * Dzw);
 		const dreal Eq35RHS = k_000 * omega2 + (no1 - omega2) * (C_200 + C_020 + C_002)
-							- no3 * rho * (no1 - omega2 / no2) * (vx_sqr * Dxu + vy_sqr * Dyv + vz_sqr * Dzw);
+							- no3 * rho * (no1 - omega2 * n1o2) * (vx_sqr * Dxu + vy_sqr * Dyv + vz_sqr * Dzw);
 
 		const dreal Cs_200 = n1o3 * (Eq33RHS + Eq34RHS + Eq35RHS);
 		const dreal Cs_020 = n1o3 * (-no2 * Eq33RHS + Eq34RHS + Eq35RHS);
