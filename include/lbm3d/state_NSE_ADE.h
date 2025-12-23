@@ -154,11 +154,13 @@ struct State_NSE_ADE : State<NSE>
 		// call hook method (used e.g. for extra kernels in the non-Newtonian model)
 		this->computeBeforeLBMKernel();
 
-#ifdef AA_PATTERN
+#ifdef HAVE_MPI
+	#ifdef AA_PATTERN
 		uint8_t output_df = df_cur;
-#endif
-#ifdef AB_PATTERN
+	#endif
+	#ifdef AB_PATTERN
 		uint8_t output_df = df_out;
+	#endif
 #endif
 
 		if (nse.blocks.size() != ade.blocks.size())
