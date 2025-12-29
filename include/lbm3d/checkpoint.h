@@ -3,6 +3,12 @@
 #include <adios2.h>
 #include <fmt/core.h>
 
+template <typename LBM_BLOCK, typename Array>
+void checkpoint_global_array(adios2::IO io, adios2::Engine engine, adios2::Mode mode, std::string name, LBM_BLOCK& block, Array& array);
+
+template <typename Array>
+void checkpoint_local_array(adios2::IO io, adios2::Engine engine, adios2::Mode mode, std::string name, int rank, Array& array);
+
 class CheckpointManager
 {
 private:
