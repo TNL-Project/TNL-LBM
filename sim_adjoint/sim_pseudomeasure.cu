@@ -38,7 +38,7 @@ struct StateLocal : State<NSE>
 	: State<NSE>(id, communicator, lat)
 	{}
 
-	virtual void setupBoundaries()
+	void setupBoundaries() override
 	{
 		nse.setBoundaryX(0, BC::GEO_INFLOW_BB_LEFT);  // left
 
@@ -49,7 +49,7 @@ struct StateLocal : State<NSE>
 		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_WALL);	 // front
 	}
 
-	virtual bool outputData(const BLOCK& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs)
+	bool outputData(const BLOCK& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) override
 	{
 		int k = 0;
 		if (index == k++)
@@ -67,7 +67,7 @@ struct StateLocal : State<NSE>
 		return false;
 	}
 
-	virtual void computeAfterLBMKernel()
+	void computeAfterLBMKernel() override
 	{
 		if (! steady) {
 			nse.copyMacroToHost();	//! important - macro is stored on device
@@ -76,7 +76,7 @@ struct StateLocal : State<NSE>
 		}
 	}
 
-	virtual bool estimateMemoryDemands()
+	bool estimateMemoryDemands() override
 	{
 		if (! steady) {
 			// calculate storage for macroscopic quantities (same as in the original estimateMemoryDemands function)

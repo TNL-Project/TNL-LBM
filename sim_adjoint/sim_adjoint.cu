@@ -41,7 +41,7 @@ struct StateLocal : State<NSE>
 	: State<NSE>(id, communicator, lat)
 	{}
 
-	virtual void setupBoundaries()
+	void setupBoundaries() override
 	{
 		nse.setBoundaryX(0, BC::GEO_INFLOW_BB_LEFT);  // left
 
@@ -52,7 +52,7 @@ struct StateLocal : State<NSE>
 		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_WALL);	 // front
 	}
 
-	virtual bool outputData(const BLOCK& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs)
+	bool outputData(const BLOCK& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) override
 	{
 		int k = 0;
 		if (index == k++)
@@ -70,7 +70,7 @@ struct StateLocal : State<NSE>
 		return false;
 	}
 
-	virtual void computeAfterLBMKernel()
+	void computeAfterLBMKernel() override
 	{
 		if (! steady) {
 			nse.copyMacroToHost();	//! important - macro is stored on device
@@ -109,7 +109,7 @@ struct StateLocalAdjoint : State<NSE>
 	: State<NSE>(id, communicator, lat)
 	{}
 
-	virtual void setupBoundaries()
+	void setupBoundaries() override
 	{
 		// define where the measured data lies - first!
 		int cx = floor(hide * nse.lat.global.x());	// domain where measured data are
@@ -127,7 +127,7 @@ struct StateLocalAdjoint : State<NSE>
 		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_ADJOINT_WALL);	 // front
 	}
 
-	virtual bool outputData(const BLOCK& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs)
+	bool outputData(const BLOCK& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) override
 	{
 		int k = 0;
 		if (index == k++)
@@ -157,7 +157,7 @@ struct StateLocalAdjoint : State<NSE>
 		return false;
 	}
 
-	virtual void reset()
+	void reset() override
 	{
 		// first load data from primary and measured
 		const std::string fname_p = fmt::format("{}/adjoint_data_res{:02d}/macro_primary.bp", DIRECTORY, resolution);
@@ -181,7 +181,7 @@ struct StateLocalAdjoint : State<NSE>
 		nse.copyMacroToHost();
 	}
 
-	virtual void computeAfterLBMKernel()
+	void computeAfterLBMKernel() override
 	{
 		if (! steady) {
 			const std::string fname_p = fmt::format("{}/adjoint_data_res{:02d}/macro_primary.bp", DIRECTORY, resolution);
@@ -224,7 +224,7 @@ struct StateLocalAdjoint : State<NSE>
 		}
 	}
 
-	virtual bool estimateMemoryDemands()
+	bool estimateMemoryDemands() override
 	{
 		if (! steady) {
 			// calculate storage for macroscopic quantities (same as in the original estimateMemoryDemands function)
