@@ -75,7 +75,7 @@ struct counter
 	}
 };
 
-enum : std::uint8_t
+enum Actions : std::uint8_t
 {
 	STAT_RESET,
 	STAT2_RESET,
@@ -132,7 +132,7 @@ struct State
 	void writeVTK_Points(const char* name, real time, int cycle, const typename Lagrange3D::HLPVECTOR& hLL_lat);
 
 	// how often to probe/print/write/stat
-	T_COUNTER cnt[MAX_COUNTER];
+	std::array<T_COUNTER, MAX_COUNTER> cnt;
 	virtual void probe1() {}
 	virtual void probe2() {}
 	virtual void probe3() {}
