@@ -1167,12 +1167,12 @@ void State<NSE>::AfterSimUpdate()
 
 	// check for NaN values, abusing the period of other actions
 	bool nan_detected = false;
-	if (nse.iterations > 1 && write_info && MACRO::e_rho < MACRO::N) {
+	if (nse.iterations > 1 && write_info && NSE::MACRO::e_rho < NSE::MACRO::N) {
 		for (auto& block : nse.blocks) {
 			auto data = block.data;
 			auto check_nan = [=] __cuda_callable__(idx i) -> bool
 			{
-				auto value = data.dmacro[MACRO::e_rho * data.XYZ + i];
+				auto value = data.dmacro[NSE::MACRO::e_rho * data.XYZ + i];
 				return value != value;
 			};
 			bool result = TNL::Algorithms::reduce<DeviceType>(idx(0), data.XYZ, check_nan, TNL::LogicalOr{});

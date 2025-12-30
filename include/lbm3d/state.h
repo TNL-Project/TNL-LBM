@@ -95,7 +95,6 @@ template <typename NSE>
 struct State
 {
 	using TRAITS = typename NSE::TRAITS;
-	using MACRO = typename NSE::MACRO;
 	using BLOCK_NSE = LBM_BLOCK<NSE>;
 	using Lagrange3D = ::Lagrange3D<LBM<NSE>>;
 
