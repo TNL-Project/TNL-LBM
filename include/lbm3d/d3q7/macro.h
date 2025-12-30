@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include <TNL/Backend/Macros.h>
 
 template <typename TRAITS>
@@ -8,7 +10,7 @@ struct D3Q7_MACRO_Default
 	using dreal = typename TRAITS::dreal;
 	using idx = typename TRAITS::idx;
 
-	enum
+	enum QuantityNames : std::uint8_t
 	{
 		e_phi,
 		N

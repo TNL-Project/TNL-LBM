@@ -15,7 +15,7 @@ struct MacroLocal : D3Q27_MACRO_Base<TRAITS>
 	using dreal = typename TRAITS::dreal;
 	using idx = typename TRAITS::idx;
 
-	enum
+	enum QuantityNames : std::uint8_t
 	{
 		e_fx,
 		e_fy,

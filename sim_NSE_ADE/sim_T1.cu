@@ -253,7 +253,18 @@ struct D3Q27_MACRO_QCriterion : D3Q27_MACRO_Base< TRAITS >
 	using dreal = typename TRAITS::dreal;
 	using idx = typename TRAITS::idx;
 
-	enum { e_rho, e_vx, e_vy, e_vz, e_fx, e_fy, e_fz, e_qcrit, N};
+	enum QuantityNames : std::uint8_t
+	{
+		e_rho,
+		e_vx,
+		e_vy,
+		e_vz,
+		e_fx,
+		e_fy,
+		e_fz,
+		e_qcrit,
+		N
+	};
 
 	template < typename LBM_DATA, typename LBM_KS >
 	CUDA_HOSTDEV static void outputMacro(LBM_DATA &SD, LBM_KS &KS, idx x, idx y, idx z)

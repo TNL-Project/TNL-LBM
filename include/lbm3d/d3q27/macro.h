@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include <TNL/Backend/Macros.h>
 
 // empty Macro containing required forcing quantities for IBM (see lbm.h -> hfx() etc.)
@@ -10,7 +12,7 @@ struct D3Q27_MACRO_Base
 	using idx = typename TRAITS::idx;
 
 	// all quantities after `N` are ignored
-	enum
+	enum QuantityNames : std::uint8_t
 	{
 		N,
 		e_rho,
@@ -52,7 +54,7 @@ struct D3Q27_MACRO_Default : D3Q27_MACRO_Base<TRAITS>
 	using dreal = typename TRAITS::dreal;
 	using idx = typename TRAITS::idx;
 
-	enum
+	enum QuantityNames : std::uint8_t
 	{
 		e_rho,
 		e_vx,
@@ -86,7 +88,7 @@ struct D3Q27_MACRO_Mean : D3Q27_MACRO_Base<TRAITS>
 	using dreal = typename TRAITS::dreal;
 	using idx = typename TRAITS::idx;
 
-	enum
+	enum QuantityNames : std::uint8_t
 	{
 		e_rho,
 		e_vx,
@@ -195,7 +197,7 @@ struct D3Q27_MACRO_Adjoint : D3Q27_MACRO_Base<TRAITS>
 	using dreal = typename TRAITS::dreal;
 	using idx = typename TRAITS::idx;
 
-	enum
+	enum QuantityNames : std::uint8_t
 	{
 		// NOTE: primary macros must be first
 		e_rho,
