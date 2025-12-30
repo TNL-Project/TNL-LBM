@@ -31,13 +31,13 @@ void LBM_BLOCK<CONFIG>::setLatticeDecomposition(
 #ifdef HAVE_MPI
 	// set communication pattern for all synchronizers
 	map_sync.setSynchronizationPattern(pattern);
-	for (int i = 0; i < CONFIG::Q + MACRO::N; i++)
+	for (int i = 0; i < CONFIG::Q + CONFIG::MACRO::N; i++)
 		dreal_sync[i].setSynchronizationPattern(pattern);
 
 	// set neighbors for all synchronizers
 	for (auto [direction, rank] : neighborRanks) {
 		map_sync.setNeighbor(direction, rank);
-		for (int i = 0; i < CONFIG::Q + MACRO::N; i++)
+		for (int i = 0; i < CONFIG::Q + CONFIG::MACRO::N; i++)
 			dreal_sync[i].setNeighbor(direction, rank);
 	}
 
@@ -75,7 +75,7 @@ void LBM_BLOCK<CONFIG>::setLatticeDecomposition(
 	}
 
 	// set tags
-	for (int i = 0; i < CONFIG::Q + MACRO::N; i++) {
+	for (int i = 0; i < CONFIG::Q + CONFIG::MACRO::N; i++) {
 		for (auto [direction, neighbor_id] : neighborIDs) {
 			if (! isPrimaryDirection(direction) ^ isPrimaryDirection(opposite(direction)))
 				throw std::logic_error("Bug in isPrimaryDirection!!!");
@@ -114,7 +114,7 @@ void LBM_BLOCK<CONFIG>::setLatticeDecomposition(
 		computeData.at(direction).stream = TNL::Backend::Stream::create(TNL::Backend::StreamNonBlocking, priority_high);
 	#ifdef HAVE_MPI
 		// set the stream to the synchronizer
-		for (int i = 0; i < CONFIG::Q + MACRO::N; i++)
+		for (int i = 0; i < CONFIG::Q + CONFIG::MACRO::N; i++)
 			dreal_sync[i].setCudaStream(direction, computeData.at(direction).stream);
 	#endif
 	}

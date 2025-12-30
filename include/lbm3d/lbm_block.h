@@ -6,7 +6,6 @@
 template <typename CONFIG>
 struct LBM_BLOCK
 {
-	using MACRO = typename CONFIG::MACRO;
 	using TRAITS = typename CONFIG::TRAITS;
 
 	using idx = typename TRAITS::idx;
@@ -80,7 +79,7 @@ struct LBM_BLOCK
 
 #ifdef HAVE_MPI
 	// synchronizers for dfs, macro and map
-	TNL::Containers::DistributedNDArraySynchronizer<typename dreal_array_t::ViewType> dreal_sync[CONFIG::Q + MACRO::N];
+	TNL::Containers::DistributedNDArraySynchronizer<typename dreal_array_t::ViewType> dreal_sync[CONFIG::Q + CONFIG::MACRO::N];
 	TNL::Containers::DistributedNDArraySynchronizer<dmap_array_t> map_sync;
 #endif
 
@@ -123,7 +122,7 @@ struct LBM_BLOCK
 	static constexpr int overlap_width = 0;
 #endif
 	// maximum width of overlaps for the macro arrays
-	static constexpr int macro_overlap_width = MACRO::overlap_width;
+	static constexpr int macro_overlap_width = CONFIG::MACRO::overlap_width;
 
 	int df_overlap_X()
 	{
