@@ -628,7 +628,7 @@ void LBM_BLOCK<CONFIG>::allocateDiffusionCoefficientArrays()
 template <typename CONFIG>
 void LBM_BLOCK<CONFIG>::allocatePhiTransferDirectionArrays()
 {
-	using hbool_array_t = typename CONFIG::hbool_array_t;
+	using hbool_array_t = typename TRAITS::hbool_array_t;
 	hbool_array_t TransferFS;
 	hbool_array_t TransferSF;
 	hbool_array_t TransferSW;
