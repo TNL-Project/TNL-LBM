@@ -1,0 +1,49 @@
+# Configuration for ruff
+# https://docs.astral.sh/ruff/settings/
+[tool.ruff]
+target-version = "py312"
+builtins = ["_"]
+
+[tool.ruff.lint]
+select = [
+    "ANN",   # flake8-annotations
+    "ASYNC", # flake8-async
+    "C90",   # mccabe
+    "DTZ",   # flake8-datetimez
+    "E",     # pycodestyle errors
+    "EXE",   # flake8-executable
+    "F",     # Pyflakes
+    "FA",    # flake8-future-annotations
+    "FLY",   # flynt
+    "G",     # flake8-logging-format
+    "I",     # isort
+    "ICN",   # flake8-import-conventions
+    "ISC",   # flake8-implicit-str-concat
+    "LOG",   # flake8-logging
+    "PIE",   # flake8-pie
+    "PLC",   # Pylint conventions
+    "PLE",   # Pylint errors
+    "PLW",   # Pylint warnings
+    "RSE",   # flake8-raise
+    "RUF",   # Ruff-specific rules
+    "SLOT",  # flake8-slot
+    "T10",   # flake8-debugger
+    "UP",    # pyupgrade
+    "W",     # pycodestyle warnings
+    "YTT",   # flake8-2020
+]
+
+# Configuration for mypy / basedmypy
+# https://kotlinisland.github.io/basedmypy/config_file.html
+# https://kotlinisland.github.io/basedmypy/config_file.html#example-pyproject-toml
+[tool.mypy]
+python_version = "3.12"
+exclude = ["build", ".venv", "results_*"]
+mypy_path = ["build/pytnl_lbm"]
+
+# Configuration for pyright
+# https://github.com/microsoft/pyright/blob/main/docs/configuration.md
+[tool.pyright]
+pythonVersion = "3.12"
+exclude = ["build", ".venv", "results_*"]
+extraPaths = ["build/pytnl_lbm"]
