@@ -174,6 +174,22 @@ FetchContent_Declare(TNL
 set(TNL_EXPORT_INTERFACE_TARGETS ON)  # needed for adding to the interface target
 FetchContent_MakeAvailable(TNL)
 
+FetchContent_Declare(nanobind
+    GIT_REPOSITORY https://github.com/wjakob/nanobind.git
+    GIT_TAG v2.10.2
+    SYSTEM
+    FIND_PACKAGE_ARGS
+)
+FetchContent_MakeAvailable(nanobind)
+
+FetchContent_Declare(PyTNL
+    GIT_REPOSITORY https://gitlab.com/tnl-project/pytnl.git
+    GIT_TAG 0.0.10
+    SYSTEM
+)
+set(PyTNL_EXPORT_INTERFACE_TARGETS ON)  # needed for adding to the interface target
+FetchContent_MakeAvailable(PyTNL)
+
 find_package(PNG REQUIRED)
 find_package(OpenMP COMPONENTS CXX)
 find_package(MPI COMPONENTS CXX)
@@ -220,3 +236,4 @@ add_subdirectory(include)
 add_subdirectory(sim_adjoint)
 add_subdirectory(sim_NSE)
 add_subdirectory(sim_NSE_ADE)
+add_subdirectory(pytnl_lbm)
