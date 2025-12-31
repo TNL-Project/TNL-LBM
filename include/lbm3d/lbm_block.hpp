@@ -402,12 +402,10 @@ void LBM_BLOCK<CONFIG>::copyDFsToDevice()
 
 template <typename CONFIG>
 template <typename Array>
-void LBM_BLOCK<CONFIG>::startDrealArraySynchronization(Array& array, int sync_offset)
+void LBM_BLOCK<CONFIG>::startDrealArraySynchronization(Array& array, int sync_offset, bool is_df)
 {
 	static_assert(Array::getDimension() == 4, "4D array expected");
-	constexpr int N = Array::SizesHolderType::template getStaticSize<0>();
-	static_assert(N > 0, "the first dimension must be static");
-	constexpr bool is_df = std::is_same<typename Array::ConstViewType, typename dlat_array_t::ConstViewType>::value;
+	const int N = array.template getSize<0>();
 
 	// empty view, but with correct sizes
 	typename dreal_array_t::LocalViewType localView(nullptr, data.indexer);
@@ -448,13 +446,13 @@ void LBM_BLOCK<CONFIG>::synchronizeDFsDevice_start(uint8_t dftype)
 {
 	auto df = dfs[0].getView();
 	df.bind(data.dfs[dftype]);
-	startDrealArraySynchronization(df, 0);
+	startDrealArraySynchronization(df, 0, true);
 }
 
 template <typename CONFIG>
 void LBM_BLOCK<CONFIG>::synchronizeMacroDevice_start()
 {
-	startDrealArraySynchronization(dmacro, CONFIG::Q);
+	startDrealArraySynchronization(dmacro, CONFIG::Q, false);
 }
 
 template <typename CONFIG>
@@ -469,19 +467,19 @@ void LBM_BLOCK<CONFIG>::synchronizeMapDevice_start()
 template <typename CONFIG>
 void LBM_BLOCK<CONFIG>::allocateHostData()
 {
-	for (uint8_t dfty = 0; dfty < DFMAX; dfty++) {
-		hfs[dfty].setSizes(0, global.x(), global.y(), global.z());
+	for (auto& hf : hfs) {
+		hf.setSizes(CONFIG::Q, global.x(), global.y(), global.z());
 #ifdef HAVE_MPI
 		if (local.x() != global.x())
-			hfs[dfty].getOverlaps().template setSize<1>(overlap_width);
+			hf.getOverlaps().template setSize<1>(overlap_width);
 		if (local.y() != global.y())
-			hfs[dfty].getOverlaps().template setSize<2>(overlap_width);
+			hf.getOverlaps().template setSize<2>(overlap_width);
 		if (local.z() != global.z())
-			hfs[dfty].getOverlaps().template setSize<3>(overlap_width);
-		hfs[dfty].template setDistribution<1>(offset.x(), offset.x() + local.x(), communicator);
-		hfs[dfty].template setDistribution<2>(offset.y(), offset.y() + local.y(), communicator);
-		hfs[dfty].template setDistribution<3>(offset.z(), offset.z() + local.z(), communicator);
-		hfs[dfty].allocate();
+			hf.getOverlaps().template setSize<3>(overlap_width);
+		hf.template setDistribution<1>(offset.x(), offset.x() + local.x(), communicator);
+		hf.template setDistribution<2>(offset.y(), offset.y() + local.y(), communicator);
+		hf.template setDistribution<3>(offset.z(), offset.z() + local.z(), communicator);
+		hf.allocate();
 #endif
 	}
 
@@ -499,7 +497,7 @@ void LBM_BLOCK<CONFIG>::allocateHostData()
 	hmap.allocate();
 #endif
 
-	hmacro.setSizes(0, global.x(), global.y(), global.z());
+	hmacro.setSizes(CONFIG::MACRO::N, global.x(), global.y(), global.z());
 #ifdef HAVE_MPI
 	if (local.x() != global.x())
 		hmacro.getOverlaps().template setSize<1>(macro_overlap_width);
@@ -535,7 +533,7 @@ void LBM_BLOCK<CONFIG>::allocateDeviceData()
 	#endif
 
 	for (auto& df : dfs) {
-		df.setSizes(0, global.x(), global.y(), global.z());
+		df.setSizes(CONFIG::Q, global.x(), global.y(), global.z());
 	#ifdef HAVE_MPI
 		if (local.x() != global.x())
 			df.getOverlaps().template setSize<1>(overlap_width);
@@ -550,7 +548,7 @@ void LBM_BLOCK<CONFIG>::allocateDeviceData()
 	#endif
 	}
 
-	dmacro.setSizes(0, global.x(), global.y(), global.z());
+	dmacro.setSizes(CONFIG::MACRO::N, global.x(), global.y(), global.z());
 	#ifdef HAVE_MPI
 	if (local.x() != global.x())
 		dmacro.getOverlaps().template setSize<1>(macro_overlap_width);
@@ -623,8 +621,8 @@ void LBM_BLOCK<CONFIG>::allocatePhiTransferDirectionArrays()
 	TransferSF.setValue(false);
 	TransferSW.setValue(false);
 
-	hphiTransferDirection.setSizes(0, global.x(), global.y(), global.z());
-	dphiTransferDirection.setSizes(0, global.x(), global.y(), global.z());
+	hphiTransferDirection.setSizes(CONFIG::Q, global.x(), global.y(), global.z());
+	dphiTransferDirection.setSizes(CONFIG::Q, global.x(), global.y(), global.z());
 #ifdef HAVE_MPI
 	hphiTransferDirection.template setDistribution<1>(offset.x(), offset.x() + local.x(), communicator);
 	hphiTransferDirection.allocate();
