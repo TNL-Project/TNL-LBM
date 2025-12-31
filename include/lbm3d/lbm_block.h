@@ -146,7 +146,7 @@ struct LBM_BLOCK
 #ifdef HAVE_MPI
 	// synchronization methods
 	template <typename Array>
-	void startDrealArraySynchronization(Array& array, int sync_offset);
+	void startDrealArraySynchronization(Array& array, int sync_offset, bool is_df);
 	void synchronizeDFsDevice_start(uint8_t dftype);
 	void synchronizeMacroDevice_start();
 	void synchronizeMapDevice_start();

@@ -37,7 +37,7 @@ void loadPrimaryAndMeasuredMacro(State& state, const std::string& fname_primary,
 	using MACRO = typename State::MACRO;
 	static_assert(MACRO::N > 0);
 	using dreal = typename State::TRAITS::dreal;
-	using local_array4d_view = typename State::TRAITS::template array4d<MACRO::N / 2, dreal, TNL::Devices::Host>::ViewType;
+	using local_array4d_view = typename State::TRAITS::template array4d<dreal, TNL::Devices::Host>::ViewType;
 #ifdef HAVE_MPI
 	using array4d_view = TNL::Containers::DistributedNDArrayView<local_array4d_view>;
 #else
@@ -58,7 +58,8 @@ void loadPrimaryAndMeasuredMacro(State& state, const std::string& fname_primary,
 #else
 		auto hmacro = block.hmacro.getView();
 #endif
-		SizesHolder sizes;	// first dimension is static: N/2
+		SizesHolder sizes;
+		sizes.template setSize<0>(MACRO::N / 2);
 		sizes.template setSize<1>(hmacro.template getSize<1>());
 		sizes.template setSize<2>(hmacro.template getSize<2>());
 		sizes.template setSize<3>(hmacro.template getSize<3>());
@@ -84,7 +85,8 @@ void loadPrimaryAndMeasuredMacro(State& state, const std::string& fname_primary,
 #else
 		auto hmacro = block.hmacro.getView();
 #endif
-		SizesHolder sizes;	// first dimension is static: N/2
+		SizesHolder sizes;
+		sizes.template setSize<0>(MACRO::N / 2);
 		sizes.template setSize<1>(hmacro.template getSize<1>());
 		sizes.template setSize<2>(hmacro.template getSize<2>());
 		sizes.template setSize<3>(hmacro.template getSize<3>());
