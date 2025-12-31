@@ -47,19 +47,16 @@ struct LBM_Data
 		return dmap[indexer.getStorageIndex(x, y, z)];
 	}
 
-	CUDA_HOSTDEV idx Fxyz(int q, idx x, idx y, idx z)
-	{
-		return q * XYZ + indexer.getStorageIndex(x, y, z);
-	}
-
 	CUDA_HOSTDEV dreal& df(uint8_t type, int q, idx x, idx y, idx z)
 	{
-		return dfs[type][Fxyz(q, x, y, z)];
+		const idx index = q * XYZ + indexer.getStorageIndex(x, y, z);
+		return dfs[type][index];
 	}
 
 	CUDA_HOSTDEV dreal& macro(int id, idx x, idx y, idx z)
 	{
-		return dmacro[Fxyz(id, x, y, z)];
+		const idx index = id * XYZ + indexer.getStorageIndex(x, y, z);
+		return dmacro[index];
 	}
 };
 
@@ -235,13 +232,16 @@ struct ADE_Data : LBM_Data<TRAITS>
 	{
 		if (diffusion_coefficient_ptr == nullptr)
 			return this->lbmViscosity;
-		else
-			return diffusion_coefficient_ptr[LBM_Data<TRAITS>::indexer.getStorageIndex(x, y, z)];
+		else {
+			const idx index = this->indexer.getStorageIndex(x, y, z);
+			return diffusion_coefficient_ptr[index];
+		}
 	}
 
 	CUDA_HOSTDEV bool& phiTransferDirection(int q, idx x, idx y, idx z)
 	{
-		return phi_transfer_direction_ptr[LBM_Data<TRAITS>::Fxyz(q, x, y, z)];
+		const idx index = q * this->XYZ + this->indexer.getStorageIndex(x, y, z);
+		return phi_transfer_direction_ptr[index];
 	}
 };
 
