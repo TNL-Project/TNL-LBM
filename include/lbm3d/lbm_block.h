@@ -28,6 +28,7 @@ struct LBM_BLOCK
 	using hreal_array_t = typename CONFIG::hreal_array_t;
 	using hboollat_array_t = typename CONFIG::hboollat_array_t;
 	using dboollat_array_t = typename CONFIG::dboollat_array_t;
+	using dreal_view_t = typename dreal_array_t::ViewType;
 
 	// KernelData contains only the necessary data for the CUDA kernel. these are copied just before the kernel is called
 	typename CONFIG::DATA data;
@@ -79,7 +80,8 @@ struct LBM_BLOCK
 
 #ifdef HAVE_MPI
 	// synchronizers for dfs, macro and map
-	TNL::Containers::DistributedNDArraySynchronizer<typename dreal_array_t::ViewType> dreal_sync[CONFIG::Q + CONFIG::MACRO::N];
+	TNL::Containers::DistributedNDArraySynchronizer<dreal_view_t> df_sync[CONFIG::Q];
+	TNL::Containers::DistributedNDArraySynchronizer<dreal_view_t> macro_sync[CONFIG::MACRO::N];
 	TNL::Containers::DistributedNDArraySynchronizer<dmap_array_t> map_sync;
 #endif
 
@@ -145,8 +147,8 @@ struct LBM_BLOCK
 
 #ifdef HAVE_MPI
 	// synchronization methods
-	template <typename Array>
-	void startDrealArraySynchronization(Array& array, int sync_offset, bool is_df);
+	template <typename Array, typename view_t, typename XYZIndexer>
+	void start4DArraySynchronization(Array& array, TNL::Containers::DistributedNDArraySynchronizer<view_t>* sync, XYZIndexer indexer, bool is_df);
 	void synchronizeDFsDevice_start(uint8_t dftype);
 	void synchronizeMacroDevice_start();
 	void synchronizeMapDevice_start();
