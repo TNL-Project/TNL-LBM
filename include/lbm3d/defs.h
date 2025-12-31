@@ -108,10 +108,10 @@ struct Traits
 		Device,
 		idx,
 		xyz_overlaps>;
-	template <std::size_t N, typename Value, typename Device>
+	template <typename Value, typename Device>
 	using array4d = TNL::Containers::NDArray<
 		Value,
-		TNL::Containers::SizesHolder<idx, N, 0, 0, 0>,	// N, x, y, z
+		TNL::Containers::SizesHolder<idx, 0, 0, 0, 0>,	// id, x, y, z
 		d4_permutation,
 		Device,
 		idx,
@@ -262,13 +262,13 @@ struct LBM_CONFIG
 	using __hreal_array_t = typename TRAITS::template array3d<typename TRAITS::dreal, TNL::Devices::Host>;
 	using __dreal_array_t = typename TRAITS::template array3d<typename TRAITS::dreal, DeviceType>;
 
-	using __hlat_array_t = typename TRAITS::template array4d<Q, typename TRAITS::dreal, TNL::Devices::Host>;
-	using __dlat_array_t = typename TRAITS::template array4d<Q, typename TRAITS::dreal, DeviceType>;
-	using __hboollat_array_t = typename TRAITS::template array4d<Q, bool, TNL::Devices::Host>;
-	using __dboollat_array_t = typename TRAITS::template array4d<Q, bool, DeviceType>;
+	using __hlat_array_t = typename TRAITS::template array4d<typename TRAITS::dreal, TNL::Devices::Host>;
+	using __dlat_array_t = typename TRAITS::template array4d<typename TRAITS::dreal, DeviceType>;
+	using __hboollat_array_t = typename TRAITS::template array4d<bool, TNL::Devices::Host>;
+	using __dboollat_array_t = typename TRAITS::template array4d<bool, DeviceType>;
 
-	using __hmacro_array_t = typename TRAITS::template array4d<MACRO::N, typename TRAITS::dreal, TNL::Devices::Host>;
-	using __dmacro_array_t = typename TRAITS::template array4d<MACRO::N, typename TRAITS::dreal, DeviceType>;
+	using __hmacro_array_t = typename TRAITS::template array4d<typename TRAITS::dreal, TNL::Devices::Host>;
+	using __dmacro_array_t = typename TRAITS::template array4d<typename TRAITS::dreal, DeviceType>;
 
 #ifdef HAVE_MPI
 	using hmap_array_t = TNL::Containers::DistributedNDArray<__hmap_array_t>;
