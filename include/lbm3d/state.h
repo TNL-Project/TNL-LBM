@@ -145,14 +145,6 @@ struct State
 	virtual void stat2Reset() {}
 
 	// vtk export
-	template <typename real1, typename real2>
-	bool vtk_helper(const char* iid, real1 ivalue, int idofs, char* id, real2& value, int& dofs)  /// simplifies data output routine
-	{
-		sprintf(id, "%s", iid);
-		dofs = idofs;
-		value = ivalue;
-		return true;
-	}
 	virtual void writeVTKs_2D();
 	template <typename... ARGS>
 	void add2Dcut_X(idx x, const char* fmt, ARGS... args);
@@ -191,7 +183,7 @@ struct State
 	void write1Dcut_Y(idx x, idx z, const std::string& fname);
 	void write1Dcut_Z(idx x, idx y, const std::string& fname);
 
-	virtual bool outputData(const BLOCK_NSE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs)
+	virtual bool outputData(const BLOCK_NSE& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc)
 	{
 		return false;
 	}

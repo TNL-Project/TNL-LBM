@@ -13,11 +13,11 @@ struct State_NSE_ADE : State<NSE>
 	using State<NSE>::dataManager;
 	using State<NSE>::nse;
 	using State<NSE>::cnt;
-	using State<NSE>::vtk_helper;
 
 	using idx = typename TRAITS::idx;
 	using idx3d = typename TRAITS::idx3d;
 	using real = typename TRAITS::real;
+	using dreal = typename TRAITS::dreal;
 	using lat_t = Lattice<3, real, idx>;
 
 	LBM<ADE> ade;
@@ -334,9 +334,9 @@ struct State_NSE_ADE : State<NSE>
 		for (const auto& block : nse.blocks) {
 			const std::string fname = fmt::format("results_{}/output_NSE_3D", id);
 			create_parent_directories(fname.c_str());
-			auto outputData = [this](const BLOCK_NSE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) mutable
+			auto outputData = [this](const BLOCK_NSE& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc) mutable
 			{
-				return this->outputData(block, index, dof, desc, x, y, z, value, dofs);
+				return this->outputData(block, index, dof, x, y, z, desc);
 			};
 			block.writeVTK_3D(nse.lat, outputData, fname, nse.physTime(), cnt[VTK3D].count, dataManager);
 			spdlog::info("[vtk {} written, time {:f}, cycle {:d}] ", fname, nse.physTime(), cnt[VTK3D].count);
@@ -346,9 +346,9 @@ struct State_NSE_ADE : State<NSE>
 		for (const auto& block : ade.blocks) {
 			const std::string fname = fmt::format("results_{}/output_ADE_3D", id);
 			create_parent_directories(fname.c_str());
-			auto outputData = [this](const BLOCK_ADE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) mutable
+			auto outputData = [this](const BLOCK_ADE& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc) mutable
 			{
-				return this->outputData(block, index, dof, desc, x, y, z, value, dofs);
+				return this->outputData(block, index, dof, x, y, z, desc);
 			};
 			block.writeVTK_3D(ade.lat, outputData, fname, nse.physTime(), cnt[VTK3D].count, dataManager);
 			spdlog::info("[vtk {} written, time {:f}, cycle {:d}] ", fname, nse.physTime(), cnt[VTK3D].count);
@@ -367,9 +367,9 @@ struct State_NSE_ADE : State<NSE>
 				const std::string fname = fmt::format("results_{}/output_NSE_3Dcut_{}", id, probevec.name);
 				// create parent directories
 				create_file(fname.c_str());
-				auto outputData = [this](const BLOCK_NSE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) mutable
+				auto outputData = [this](const BLOCK_NSE& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc) mutable
 				{
-					return this->outputData(block, index, dof, desc, x, y, z, value, dofs);
+					return this->outputData(block, index, dof, x, y, z, desc);
 				};
 				block.writeVTK_3Dcut(
 					nse.lat,
@@ -394,9 +394,9 @@ struct State_NSE_ADE : State<NSE>
 				const std::string fname = fmt::format("results_{}/output_ADE_3Dcut_{}", id, probevec.name);
 				// create parent directories
 				create_file(fname.c_str());
-				auto outputData = [this](const BLOCK_ADE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) mutable
+				auto outputData = [this](const BLOCK_ADE& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc) mutable
 				{
-					return this->outputData(block, index, dof, desc, x, y, z, value, dofs);
+					return this->outputData(block, index, dof, x, y, z, desc);
 				};
 				block.writeVTK_3Dcut(
 					ade.lat,
@@ -431,9 +431,9 @@ struct State_NSE_ADE : State<NSE>
 				const std::string fname = fmt::format("results_{}/output_NSE_2D_{}", id, probevec.name);
 				// create parent directories
 				create_file(fname.c_str());
-				auto outputData = [this](const BLOCK_NSE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) mutable
+				auto outputData = [this](const BLOCK_NSE& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc) mutable
 				{
-					return this->outputData(block, index, dof, desc, x, y, z, value, dofs);
+					return this->outputData(block, index, dof, x, y, z, desc);
 				};
 				switch (probevec.type) {
 					case 0:
@@ -454,9 +454,9 @@ struct State_NSE_ADE : State<NSE>
 				const std::string fname = fmt::format("results_{}/output_ADE_2D_{}", id, probevec.name);
 				// create parent directories
 				create_file(fname.c_str());
-				auto outputData = [this](const BLOCK_ADE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) mutable
+				auto outputData = [this](const BLOCK_ADE& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc) mutable
 				{
-					return this->outputData(block, index, dof, desc, x, y, z, value, dofs);
+					return this->outputData(block, index, dof, x, y, z, desc);
 				};
 				switch (probevec.type) {
 					case 0:
@@ -475,11 +475,11 @@ struct State_NSE_ADE : State<NSE>
 		}
 	}
 
-	bool outputData(const BLOCK_NSE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) override
+	bool outputData(const BLOCK_NSE& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc) override
 	{
 		return false;
 	}
-	virtual bool outputData(const BLOCK_ADE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs)
+	virtual bool outputData(const BLOCK_ADE& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc)
 	{
 		return false;
 	}

@@ -4,6 +4,23 @@
 #include "lattice.h"
 #include "DataManager.h"
 
+// Descriptor used in the outputData functions
+template <typename real>
+struct OutputDataDescriptor
+{
+	std::string quantity;  // name of the quantity
+	real value;			   // value to be written
+	int dofs = 1;		   // 1 for scalar, 3 for vector
+
+	bool set(const std::string& iquantity, real ivalue, int idofs)
+	{
+		quantity = iquantity;
+		value = ivalue;
+		dofs = idofs;
+		return true;
+	}
+};
+
 template <typename CONFIG>
 struct LBM_BLOCK
 {

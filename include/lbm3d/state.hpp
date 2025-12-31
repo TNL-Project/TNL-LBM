@@ -38,7 +38,6 @@ void State<NSE>::ensureFidesJsonModel(const std::string& dimsVariable, const std
 		// Make sure parent directories exist
 		create_parent_directories(jsonPath.c_str());
 
-
 		const std::string dimVar = dimsVariable.empty() ? std::string("wall") : dimsVariable;
 
 		json model;
@@ -332,22 +331,21 @@ void State<NSE>::write1Dcut(point_t from, point_t to, const std::string& fname)
 	if ((i[0] == f[0] && i[1] == f[1]) || (i[1] == f[1] && i[2] == f[2]) || (i[0] == f[0] && i[2] == f[2]))
 		ds = 1.0 / dist;
 
-	char idd[500];
-	real value;
-	int dofs;
 	fprintf(fout, "#time %f s\n", nse.physTime());
 	fprintf(fout, "#1:rel_pos");
 
-	int count = 2, index = 0;
-	while (outputData(
-		nse.blocks.front(), index++, 0, idd, nse.blocks.front().offset.x(), nse.blocks.front().offset.y(), nse.blocks.front().offset.z(), value, dofs
-	))
+	OutputDataDescriptor<dreal> desc;
+	int count = 2;
+	int index = 0;
+	while (
+		outputData(nse.blocks.front(), index++, 0, nse.blocks.front().offset.x(), nse.blocks.front().offset.y(), nse.blocks.front().offset.z(), desc)
+	)
 	{
-		if (dofs == 1)
-			fprintf(fout, "\t%d:%s", count++, idd);
+		if (desc.dofs == 1)
+			fprintf(fout, "\t%d:%s", count++, desc.quantity.c_str());
 		else
-			for (int i = 0; i < dofs; i++)
-				fprintf(fout, "\t%d:%s[%d]", count++, idd, i);
+			for (int i = 0; i < desc.dofs; i++)
+				fprintf(fout, "\t%d:%s[%d]", count++, desc.quantity.c_str(), i);
 	}
 	fprintf(fout, "\n");
 
@@ -358,10 +356,10 @@ void State<NSE>::write1Dcut(point_t from, point_t to, const std::string& fname)
 				continue;
 			fprintf(fout, "%e", (s * dist - 0.5) * nse.lat.physDl);
 			index = 0;
-			while (outputData(block, index++, 0, idd, block.offset.x(), block.offset.y(), block.offset.z(), value, dofs)) {
-				for (int dof = 0; dof < dofs; dof++) {
-					outputData(block, index - 1, dof, idd, (idx) p.x(), (idx) p.y(), (idx) p.z(), value, dofs);
-					fprintf(fout, "\t%e", value);
+			while (outputData(block, index++, 0, block.offset.x(), block.offset.y(), block.offset.z(), desc)) {
+				for (int dof = 0; dof < desc.dofs; dof++) {
+					outputData(block, index - 1, dof, (idx) p.x(), (idx) p.y(), (idx) p.z(), desc);
+					fprintf(fout, "\t%e", desc.value);
 				}
 			}
 			fprintf(fout, "\n");
@@ -375,21 +373,21 @@ void State<NSE>::write1Dcut_X(idx y, idx z, const std::string& fname)
 {
 	FILE* fout = fopen(fname.c_str(), "wt");  // append information
 	// probe vertical profile at x_m
-	char idd[500];
-	real value;
-	int dofs;
 	fprintf(fout, "#time %f s\n", nse.physTime());
 	fprintf(fout, "#1:x");
-	int count = 2, index = 0;
-	while (outputData(
-		nse.blocks.front(), index++, 0, idd, nse.blocks.front().offset.x(), nse.blocks.front().offset.y(), nse.blocks.front().offset.z(), value, dofs
-	))
+
+	OutputDataDescriptor<dreal> desc;
+	int count = 2;
+	int index = 0;
+	while (
+		outputData(nse.blocks.front(), index++, 0, nse.blocks.front().offset.x(), nse.blocks.front().offset.y(), nse.blocks.front().offset.z(), desc)
+	)
 	{
-		if (dofs == 1)
-			fprintf(fout, "\t%d:%s", count++, idd);
+		if (desc.dofs == 1)
+			fprintf(fout, "\t%d:%s", count++, desc.quantity.c_str());
 		else
-			for (idx i = 0; i < dofs; i++)
-				fprintf(fout, "\t%d:%s[%d]", count++, idd, (int) i);
+			for (idx i = 0; i < desc.dofs; i++)
+				fprintf(fout, "\t%d:%s[%d]", count++, desc.quantity.c_str(), (int) i);
 	}
 	fprintf(fout, "\n");
 
@@ -397,10 +395,10 @@ void State<NSE>::write1Dcut_X(idx y, idx z, const std::string& fname)
 		for (idx i = block.offset.x(); i < block.offset.x() + block.local.x(); i++) {
 			fprintf(fout, "%e", nse.lat.lbm2physX(i));
 			index = 0;
-			while (outputData(block, index++, 0, idd, block.offset.x(), block.offset.y(), block.offset.z(), value, dofs)) {
-				for (int dof = 0; dof < dofs; dof++) {
-					outputData(block, index - 1, dof, idd, i, y, z, value, dofs);
-					fprintf(fout, "\t%e", value);
+			while (outputData(block, index++, 0, block.offset.x(), block.offset.y(), block.offset.z(), desc)) {
+				for (int dof = 0; dof < desc.dofs; dof++) {
+					outputData(block, index - 1, dof, i, y, z, desc);
+					fprintf(fout, "\t%e", desc.value);
 				}
 			}
 			fprintf(fout, "\n");
@@ -413,21 +411,21 @@ void State<NSE>::write1Dcut_Y(idx x, idx z, const std::string& fname)
 {
 	FILE* fout = fopen(fname.c_str(), "wt");  // append information
 	// probe vertical profile at x_m
-	char idd[500];
-	real value;
-	int dofs;
 	fprintf(fout, "#time %f s\n", nse.physTime());
 	fprintf(fout, "#1:y");
-	int count = 2, index = 0;
-	while (outputData(
-		nse.blocks.front(), index++, 0, idd, nse.blocks.front().offset.x(), nse.blocks.front().offset.y(), nse.blocks.front().offset.z(), value, dofs
-	))
+
+	OutputDataDescriptor<dreal> desc;
+	int count = 2;
+	int index = 0;
+	while (
+		outputData(nse.blocks.front(), index++, 0, nse.blocks.front().offset.x(), nse.blocks.front().offset.y(), nse.blocks.front().offset.z(), desc)
+	)
 	{
-		if (dofs == 1)
-			fprintf(fout, "\t%d:%s", count++, idd);
+		if (desc.dofs == 1)
+			fprintf(fout, "\t%d:%s", count++, desc.quantity.c_str());
 		else
-			for (idx i = 0; i < dofs; i++)
-				fprintf(fout, "\t%d:%s[%d]", count++, idd, (int) i);
+			for (idx i = 0; i < desc.dofs; i++)
+				fprintf(fout, "\t%d:%s[%d]", count++, desc.quantity.c_str(), (int) i);
 	}
 	fprintf(fout, "\n");
 
@@ -435,10 +433,10 @@ void State<NSE>::write1Dcut_Y(idx x, idx z, const std::string& fname)
 		for (idx i = block.offset.y(); i < block.offset.y() + block.local.y(); i++) {
 			fprintf(fout, "%e", nse.lat.lbm2physY(i));
 			int index = 0;
-			while (outputData(block, index++, 0, idd, block.offset.x(), block.offset.y(), block.offset.z(), value, dofs)) {
-				for (int dof = 0; dof < dofs; dof++) {
-					outputData(block, index - 1, dof, idd, x, i, z, value, dofs);
-					fprintf(fout, "\t%e", value);
+			while (outputData(block, index++, 0, block.offset.x(), block.offset.y(), block.offset.z(), desc)) {
+				for (int dof = 0; dof < desc.dofs; dof++) {
+					outputData(block, index - 1, dof, x, i, z, desc);
+					fprintf(fout, "\t%e", desc.value);
 				}
 			}
 			fprintf(fout, "\n");
@@ -451,21 +449,21 @@ void State<NSE>::write1Dcut_Z(idx x, idx y, const std::string& fname)
 {
 	FILE* fout = fopen(fname.c_str(), "wt");  // append information
 	// probe vertical profile at x_m
-	char idd[500];
-	real value;
-	int dofs;
 	fprintf(fout, "#time %f s\n", nse.physTime());
 	fprintf(fout, "#1:z");
-	int count = 2, index = 0;
-	while (outputData(
-		nse.blocks.front(), index++, 0, idd, nse.blocks.front().offset.x(), nse.blocks.front().offset.y(), nse.blocks.front().offset.z(), value, dofs
-	))
+
+	OutputDataDescriptor<dreal> desc;
+	int count = 2;
+	int index = 0;
+	while (
+		outputData(nse.blocks.front(), index++, 0, nse.blocks.front().offset.x(), nse.blocks.front().offset.y(), nse.blocks.front().offset.z(), desc)
+	)
 	{
-		if (dofs == 1)
-			fprintf(fout, "\t%d:%s", count++, idd);
+		if (desc.dofs == 1)
+			fprintf(fout, "\t%d:%s", count++, desc.quantity.c_str());
 		else
-			for (idx i = 0; i < dofs; i++)
-				fprintf(fout, "\t%d:%s[%d]", count++, idd, (int) i);
+			for (idx i = 0; i < desc.dofs; i++)
+				fprintf(fout, "\t%d:%s[%d]", count++, desc.quantity.c_str(), (int) i);
 	}
 	fprintf(fout, "\n");
 
@@ -473,10 +471,10 @@ void State<NSE>::write1Dcut_Z(idx x, idx y, const std::string& fname)
 		for (idx i = block.offset.z(); i < block.offset.z() + block.local.z(); i++) {
 			fprintf(fout, "%e", nse.lat.lbm2physZ(i));
 			index = 0;
-			while (outputData(block, index++, 0, idd, block.offset.x(), block.offset.y(), block.offset.z(), value, dofs)) {
-				for (int dof = 0; dof < dofs; dof++) {
-					outputData(block, index - 1, dof, idd, x, y, i, value, dofs);
-					fprintf(fout, "\t%e", value);
+			while (outputData(block, index++, 0, block.offset.x(), block.offset.y(), block.offset.z(), desc)) {
+				for (int dof = 0; dof < desc.dofs; dof++) {
+					outputData(block, index - 1, dof, x, y, i, desc);
+					fprintf(fout, "\t%e", desc.value);
 				}
 			}
 			fprintf(fout, "\n");
@@ -498,9 +496,9 @@ void State<NSE>::writeVTKs_3D()
 	const std::string fname = fmt::format("results_{}/output_3D", id);
 	create_parent_directories(fname.c_str());
 
-	auto outputData = [this](const BLOCK_NSE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) mutable
+	auto outputData = [this](const BLOCK_NSE& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc) mutable
 	{
-		return this->outputData(block, index, dof, desc, x, y, z, value, dofs);
+		return this->outputData(block, index, dof, x, y, z, desc);
 	};
 
 	dataManager.prepareIO(fname);
@@ -539,13 +537,11 @@ void State<NSE>::predefineVTK(
 	dataManager.defineData<real>("TIME", ioName);
 	spdlog::info("Defined variable 'TIME'");
 
-	char desc[500];
-	real value;
-	int dofs;
+	OutputDataDescriptor<dreal> desc;
 	int index = 0;
-	while (outputData(block, index++, 0, desc, block.offset.x(), block.offset.y(), block.offset.z(), value, dofs)) {
-		const std::string varName(desc);
-		if (dofs == 1) {
+	while (outputData(block, index++, 0, block.offset.x(), block.offset.y(), block.offset.z(), desc)) {
+		const std::string& varName = desc.quantity;
+		if (desc.dofs == 1) {
 			dataManager.defineData<float>(varName, shape, start, count, ioName);
 			spdlog::info("Defined variable '{}' (scalar)", varName);
 
@@ -702,6 +698,12 @@ void State<NSE>::writeVTKs_3Dcut()
 {
 	if (probe3Dvec.size() <= 0)
 		return;
+
+	auto outputData = [this](const BLOCK_NSE& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc) mutable
+	{
+		return this->outputData(block, index, dof, x, y, z, desc);
+	};
+
 	// browse all 3D vtk cuts
 	for (auto& probevec : probe3Dvec) {
 		const std::string fname = fmt::format("results_{}/output_3Dcut_{}", id, probevec.name);
@@ -716,10 +718,6 @@ void State<NSE>::writeVTKs_3Dcut()
 		dataManager.openEngine(fname, mode);
 
 		for (const auto& block : nse.blocks) {
-			auto outputData = [this](const BLOCK_NSE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) mutable
-			{
-				return this->outputData(block, index, dof, desc, x, y, z, value, dofs);
-			};
 			block.writeVTK_3Dcut(
 				nse.lat,
 				outputData,
@@ -808,6 +806,11 @@ void State<NSE>::writeVTKs_2D()
 	if (probe2Dvec.size() <= 0)
 		return;
 
+	auto outputData = [this](const BLOCK_NSE& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc) mutable
+	{
+		return this->outputData(block, index, dof, x, y, z, desc);
+	};
+
 	// browse all 2D vtk cuts
 	for (auto& probevec : probe2Dvec) {
 		const std::string fname = fmt::format("results_{}/output_2D_{}", id, probevec.name);
@@ -822,10 +825,6 @@ void State<NSE>::writeVTKs_2D()
 		dataManager.openEngine(fname, mode);
 
 		for (const auto& block : nse.blocks) {
-			auto outputData = [this](const BLOCK_NSE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) mutable
-			{
-				return this->outputData(block, index, dof, desc, x, y, z, value, dofs);
-			};
 			switch (probevec.type) {
 				case 0:
 					block.writeVTK_2DcutX(nse.lat, outputData, fname, nse.physTime(), probevec.cycle, probevec.position, dataManager);

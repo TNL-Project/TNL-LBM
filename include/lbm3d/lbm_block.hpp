@@ -775,37 +775,31 @@ void LBM_BLOCK<CONFIG>::writeVTK_3D(lat_t lat, Output&& outputData, const std::s
 	writer.write("wall", tempIData, 1);
 	tempIData.clear();
 
-	char idd[500];
-	real value;
-	int dofs;
+	OutputDataDescriptor<typename hmacro_array_t::ValueType> desc;
 	int index = 0;
-	while (outputData(*this, index++, 0, idd, offset.x(), offset.y(), offset.z(), value, dofs)) {
-		std::string IDD(idd);
-		for (int dof = 0; dof < dofs; dof++) {
+	while (outputData(*this, index++, 0, offset.x(), offset.y(), offset.z(), desc)) {
+		for (int dof = 0; dof < desc.dofs; dof++) {
 			for (idx z = offset.z(); z < offset.z() + local.z(); z++)
 				for (idx y = offset.y(); y < offset.y() + local.y(); y++)
 					for (idx x = offset.x(); x < offset.x() + local.x(); x++) {
-						outputData(*this, index - 1, dof, idd, x, y, z, value, dofs);
-						tempFData.push_back(value);
+						outputData(*this, index - 1, dof, x, y, z, desc);
+						tempFData.push_back(desc.value);
 					}
 			// FIXME: the VTX reader does not support vector fields on ImageData
 			// https://github.com/ornladios/ADIOS2/discussions/4117
-			switch (dof) {
-				case 0:
-					if (dofs > 1) {
-						writer.write(IDD + "X", tempFData, dofs);
-					}
-					else {
-						writer.write(IDD, tempFData, dofs);
-					}
-					break;
-				case 1:
-					writer.write(IDD + "Y", tempFData, dofs);
-					break;
-				case 2:
-					writer.write(IDD + "Z", tempFData, dofs);
-					break;
-			}
+			if (desc.dofs > 1)
+				switch (dof) {
+					case 0:
+						desc.quantity += "X";
+						break;
+					case 1:
+						desc.quantity += "Y";
+						break;
+					case 2:
+						desc.quantity += "Z";
+						break;
+				}
+			writer.write(desc.quantity, tempFData, desc.dofs);
 			tempFData.clear();
 		}
 	}
@@ -880,37 +874,31 @@ void LBM_BLOCK<CONFIG>::writeVTK_3Dcut(
 	writer.write("wall", tempIData, 1);
 	tempIData.clear();
 
-	char idd[500];
-	real value;
-	int dofs;
+	OutputDataDescriptor<typename hmacro_array_t::ValueType> desc;
 	int index = 0;
-	while (outputData(*this, index++, 0, idd, ox, oy, oz, value, dofs)) {
-		std::string IDD(idd);
-		for (int dof = 0; dof < dofs; dof++) {
+	while (outputData(*this, index++, 0, ox, oy, oz, desc)) {
+		for (int dof = 0; dof < desc.dofs; dof++) {
 			for (idx z = oz; z < oz + lz; z += step)
 				for (idx y = oy; y < oy + ly; y += step)
 					for (idx x = ox; x < ox + lx; x += step) {
-						outputData(*this, index - 1, dof, idd, x, y, z, value, dofs);
-						tempFData.push_back(value);
+						outputData(*this, index - 1, dof, x, y, z, desc);
+						tempFData.push_back(desc.value);
 					}
 			// FIXME: the VTX reader does not support vector fields on ImageData
 			// https://github.com/ornladios/ADIOS2/discussions/4117
-			switch (dof) {
-				case 0:
-					if (dofs > 1) {
-						writer.write(IDD + "X", tempFData, dofs);
-					}
-					else {
-						writer.write(IDD, tempFData, dofs);
-					}
-					break;
-				case 1:
-					writer.write(IDD + "Y", tempFData, dofs);
-					break;
-				case 2:
-					writer.write(IDD + "Z", tempFData, dofs);
-					break;
-			}
+			if (desc.dofs > 1)
+				switch (dof) {
+					case 0:
+						desc.quantity += "X";
+						break;
+					case 1:
+						desc.quantity += "Y";
+						break;
+					case 2:
+						desc.quantity += "Z";
+						break;
+				}
+			writer.write(desc.quantity, tempFData, desc.dofs);
 			tempFData.clear();
 		}
 	}
@@ -946,36 +934,30 @@ void LBM_BLOCK<CONFIG>::writeVTK_2DcutX(
 	writer.write("wall", tempIData, 1);
 	tempIData.clear();
 
+	OutputDataDescriptor<typename hmacro_array_t::ValueType> desc;
 	int index = 0;
-	char idd[500];
-	real value;
-	int dofs;
-	while (outputData(*this, index++, 0, idd, offset.x(), offset.y(), offset.z(), value, dofs)) {
-		std::string IDD(idd);
-		for (int dof = 0; dof < dofs; dof++) {
+	while (outputData(*this, index++, 0, offset.x(), offset.y(), offset.z(), desc)) {
+		for (int dof = 0; dof < desc.dofs; dof++) {
 			for (idx z = offset.z(); z < offset.z() + local.z(); z++)
 				for (idx y = offset.y(); y < offset.y() + local.y(); y++) {
-					outputData(*this, index - 1, dof, idd, x, y, z, value, dofs);
-					tempFData.push_back(value);
+					outputData(*this, index - 1, dof, x, y, z, desc);
+					tempFData.push_back(desc.value);
 				}
 			// FIXME: the VTX reader does not support vector fields on ImageData
 			// https://github.com/ornladios/ADIOS2/discussions/4117
-			switch (dof) {
-				case 0:
-					if (dofs > 1) {
-						writer.write(IDD + "X", tempFData, dofs);
-					}
-					else {
-						writer.write(IDD, tempFData, dofs);
-					}
-					break;
-				case 1:
-					writer.write(IDD + "Y", tempFData, dofs);
-					break;
-				case 2:
-					writer.write(IDD + "Z", tempFData, dofs);
-					break;
-			}
+			if (desc.dofs > 1)
+				switch (dof) {
+					case 0:
+						desc.quantity += "X";
+						break;
+					case 1:
+						desc.quantity += "Y";
+						break;
+					case 2:
+						desc.quantity += "Z";
+						break;
+				}
+			writer.write(desc.quantity, tempFData, desc.dofs);
 			tempFData.clear();
 		}
 	}
@@ -1011,36 +993,30 @@ void LBM_BLOCK<CONFIG>::writeVTK_2DcutY(
 	writer.write("wall", tempIData, 1);
 	tempIData.clear();
 
+	OutputDataDescriptor<typename hmacro_array_t::ValueType> desc;
 	int index = 0;
-	char idd[500];
-	real value;
-	int dofs;
-	while (outputData(*this, index++, 0, idd, offset.x(), offset.y(), offset.z(), value, dofs)) {
-		std::string IDD(idd);
-		for (int dof = 0; dof < dofs; dof++) {
+	while (outputData(*this, index++, 0, offset.x(), offset.y(), offset.z(), desc)) {
+		for (int dof = 0; dof < desc.dofs; dof++) {
 			for (idx z = offset.z(); z < offset.z() + local.z(); z++)
 				for (idx x = offset.x(); x < offset.x() + local.x(); x++) {
-					outputData(*this, index - 1, dof, idd, x, y, z, value, dofs);
-					tempFData.push_back(value);
+					outputData(*this, index - 1, dof, x, y, z, desc);
+					tempFData.push_back(desc.value);
 				}
 			// FIXME: the VTX reader does not support vector fields on ImageData
 			// https://github.com/ornladios/ADIOS2/discussions/4117
-			switch (dof) {
-				case 0:
-					if (dofs > 1) {
-						writer.write(IDD + "X", tempFData, dofs);
-					}
-					else {
-						writer.write(IDD, tempFData, dofs);
-					}
-					break;
-				case 1:
-					writer.write(IDD + "Y", tempFData, dofs);
-					break;
-				case 2:
-					writer.write(IDD + "Z", tempFData, dofs);
-					break;
-			}
+			if (desc.dofs > 1)
+				switch (dof) {
+					case 0:
+						desc.quantity += "X";
+						break;
+					case 1:
+						desc.quantity += "Y";
+						break;
+					case 2:
+						desc.quantity += "Z";
+						break;
+				}
+			writer.write(desc.quantity, tempFData, desc.dofs);
 			tempFData.clear();
 		}
 	}
@@ -1076,36 +1052,30 @@ void LBM_BLOCK<CONFIG>::writeVTK_2DcutZ(
 	writer.write("wall", tempIData, 1);
 	tempIData.clear();
 
+	OutputDataDescriptor<typename hmacro_array_t::ValueType> desc;
 	int index = 0;
-	char idd[500];
-	real value;
-	int dofs;
-	while (outputData(*this, index++, 0, idd, offset.x(), offset.y(), offset.z(), value, dofs)) {
-		std::string IDD(idd);
-		for (int dof = 0; dof < dofs; dof++) {
+	while (outputData(*this, index++, 0, offset.x(), offset.y(), offset.z(), desc)) {
+		for (int dof = 0; dof < desc.dofs; dof++) {
 			for (idx y = offset.y(); y < offset.y() + local.y(); y++)
 				for (idx x = offset.x(); x < offset.x() + local.x(); x++) {
-					outputData(*this, index - 1, dof, idd, x, y, z, value, dofs);
-					tempFData.push_back(value);
+					outputData(*this, index - 1, dof, x, y, z, desc);
+					tempFData.push_back(desc.value);
 				}
 			// FIXME: the VTX reader does not support vector fields on ImageData
 			// https://github.com/ornladios/ADIOS2/discussions/4117
-			switch (dof) {
-				case 0:
-					if (dofs > 1) {
-						writer.write(IDD + "X", tempFData, dofs);
-					}
-					else {
-						writer.write(IDD, tempFData, dofs);
-					}
-					break;
-				case 1:
-					writer.write(IDD + "Y", tempFData, dofs);
-					break;
-				case 2:
-					writer.write(IDD + "Z", tempFData, dofs);
-					break;
-			}
+			if (desc.dofs > 1)
+				switch (dof) {
+					case 0:
+						desc.quantity += "X";
+						break;
+					case 1:
+						desc.quantity += "Y";
+						break;
+					case 2:
+						desc.quantity += "Z";
+						break;
+				}
+			writer.write(desc.quantity, tempFData, desc.dofs);
 			tempFData.clear();
 		}
 	}

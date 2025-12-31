@@ -98,7 +98,6 @@ struct StateLocal : State<NSE>
 	using BLOCK = LBM_BLOCK<NSE>;
 
 	using State<NSE>::nse;
-	using State<NSE>::vtk_helper;
 
 	using idx = typename TRAITS::idx;
 	using idx3d = typename TRAITS::idx3d;
@@ -172,19 +171,19 @@ struct StateLocal : State<NSE>
 		nse.copyDFsToHost();
 	}
 
-	bool outputData(const BLOCK& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) override
+	bool outputData(const BLOCK& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc) override
 	{
 		int k = 0;
 		if (index == k++)
-			return vtk_helper("lbm_density", block.hmacro(MACRO::e_rho, x, y, z), 1, desc, value, dofs);
+			return desc.set("lbm_density", block.hmacro(MACRO::e_rho, x, y, z), 1);
 		if (index == k++) {
 			switch (dof) {
 				case 0:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vx, x, y, z)), 3, desc, value, dofs);
+					return desc.set("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vx, x, y, z)), 3);
 				case 1:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vy, x, y, z)), 3, desc, value, dofs);
+					return desc.set("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vy, x, y, z)), 3);
 				case 2:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vz, x, y, z)), 3, desc, value, dofs);
+					return desc.set("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vz, x, y, z)), 3);
 			}
 		}
 		return false;

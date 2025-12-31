@@ -26,7 +26,6 @@ struct StateLocal : State<NSE>
 	using BLOCK = LBM_BLOCK<NSE>;
 
 	using State<NSE>::nse;
-	using State<NSE>::vtk_helper;
 
 	using idx = typename TRAITS::idx;
 	using real = typename TRAITS::real;
@@ -52,19 +51,19 @@ struct StateLocal : State<NSE>
 		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_WALL);	 // front
 	}
 
-	bool outputData(const BLOCK& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) override
+	bool outputData(const BLOCK& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc) override
 	{
 		int k = 0;
 		if (index == k++)
-			return vtk_helper("lbm_density", block.hmacro(MACRO::e_rho, x, y, z), 1, desc, value, dofs);
+			return desc.set("lbm_density", block.hmacro(MACRO::e_rho, x, y, z), 1);
 		if (index == k++) {
 			switch (dof) {
 				case 0:
-					return vtk_helper("velocity", block.hmacro(MACRO::e_vx, x, y, z), 3, desc, value, dofs);
+					return desc.set("velocity", block.hmacro(MACRO::e_vx, x, y, z), 3);
 				case 1:
-					return vtk_helper("velocity", block.hmacro(MACRO::e_vy, x, y, z), 3, desc, value, dofs);
+					return desc.set("velocity", block.hmacro(MACRO::e_vy, x, y, z), 3);
 				case 2:
-					return vtk_helper("velocity", block.hmacro(MACRO::e_vz, x, y, z), 3, desc, value, dofs);
+					return desc.set("velocity", block.hmacro(MACRO::e_vz, x, y, z), 3);
 			}
 		}
 		return false;
@@ -89,7 +88,6 @@ struct StateLocalAdjoint : State<NSE>
 	using BLOCK = LBM_BLOCK<NSE>;
 
 	using State<NSE>::nse;
-	using State<NSE>::vtk_helper;
 
 	using idx = typename TRAITS::idx;
 	using real = typename TRAITS::real;
@@ -127,31 +125,31 @@ struct StateLocalAdjoint : State<NSE>
 		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_ADJOINT_WALL);	 // front
 	}
 
-	bool outputData(const BLOCK& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) override
+	bool outputData(const BLOCK& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc) override
 	{
 		int k = 0;
 		if (index == k++)
-			return vtk_helper("lbm_density", block.hmacro(MACRO::e_rho, x, y, z), 1, desc, value, dofs);
+			return desc.set("lbm_density", block.hmacro(MACRO::e_rho, x, y, z), 1);
 		if (index == k++) {
 			switch (dof) {
 				case 0:
-					return vtk_helper("velocity", block.hmacro(MACRO::e_vx, x, y, z), 3, desc, value, dofs);
+					return desc.set("velocity", block.hmacro(MACRO::e_vx, x, y, z), 3);
 				case 1:
-					return vtk_helper("velocity", block.hmacro(MACRO::e_vy, x, y, z), 3, desc, value, dofs);
+					return desc.set("velocity", block.hmacro(MACRO::e_vy, x, y, z), 3);
 				case 2:
-					return vtk_helper("velocity", block.hmacro(MACRO::e_vz, x, y, z), 3, desc, value, dofs);
+					return desc.set("velocity", block.hmacro(MACRO::e_vz, x, y, z), 3);
 			}
 		}
 		if (index == k++)
-			return vtk_helper("lbm_density_m", block.hmacro(MACRO::e_rho_m, x, y, z), 1, desc, value, dofs);
+			return desc.set("lbm_density_m", block.hmacro(MACRO::e_rho_m, x, y, z), 1);
 		if (index == k++) {
 			switch (dof) {
 				case 0:
-					return vtk_helper("velocity_m", block.hmacro(MACRO::e_vx_m, x, y, z), 3, desc, value, dofs);
+					return desc.set("velocity_m", block.hmacro(MACRO::e_vx_m, x, y, z), 3);
 				case 1:
-					return vtk_helper("velocity_m", block.hmacro(MACRO::e_vy_m, x, y, z), 3, desc, value, dofs);
+					return desc.set("velocity_m", block.hmacro(MACRO::e_vy_m, x, y, z), 3);
 				case 2:
-					return vtk_helper("velocity_m", block.hmacro(MACRO::e_vz_m, x, y, z), 3, desc, value, dofs);
+					return desc.set("velocity_m", block.hmacro(MACRO::e_vz_m, x, y, z), 3);
 			}
 		}
 		return false;

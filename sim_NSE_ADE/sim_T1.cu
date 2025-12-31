@@ -295,8 +295,6 @@ struct StateLocal : State_NSE_ADE<NSE, ADE>
 
 	using State<NSE>::nse;
 	using State_NSE_ADE<NSE, ADE>::ade;
-	using State<NSE>::cnt;
-	using State<NSE>::vtk_helper;
 
 	using idx = typename TRAITS::idx;
 	using real = typename TRAITS::real;
@@ -425,31 +423,31 @@ struct StateLocal : State_NSE_ADE<NSE, ADE>
 	}
 #endif
 
-	bool outputData(const BLOCK_NSE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) override
+	bool outputData(const BLOCK_NSE& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc) override
 	{
 		int k = 0;
 		if (index == k++)
-			return vtk_helper("lbm_density", block.hmacro(NSE::MACRO::e_rho, x, y, z), 1, desc, value, dofs);
+			return desc.set("lbm_density", block.hmacro(NSE::MACRO::e_rho, x, y, z), 1);
 		if (index == k++) {
 			switch (dof) {
 				case 0:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(NSE::MACRO::e_vx, x, y, z)), 3, desc, value, dofs);
+					return desc.set("velocity", nse.lat.lbm2physVelocity(block.hmacro(NSE::MACRO::e_vx, x, y, z)), 3);
 				case 1:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(NSE::MACRO::e_vy, x, y, z)), 3, desc, value, dofs);
+					return desc.set("velocity", nse.lat.lbm2physVelocity(block.hmacro(NSE::MACRO::e_vy, x, y, z)), 3);
 				case 2:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(NSE::MACRO::e_vz, x, y, z)), 3, desc, value, dofs);
+					return desc.set("velocity", nse.lat.lbm2physVelocity(block.hmacro(NSE::MACRO::e_vz, x, y, z)), 3);
 			}
 		}
-		//if (index==k++) return vtk_helper("lbm_qcriterion", block.hmacro(NSE::MACRO::e_qcrit,x,y,z), 1, desc, value, dofs);
+		//if (index==k++) return desc.set("lbm_qcriterion", block.hmacro(NSE::MACRO::e_qcrit,x,y,z), 1);
 		return false;
 	}
 
-	bool outputData(const BLOCK_ADE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) override
+	bool outputData(const BLOCK_ADE& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc) override
 	{
 		int k = 0;
 		if (index == k++)
-			return vtk_helper("lbm_phi", block.hmacro(ADE::MACRO::e_phi, x, y, z), 1, desc, value, dofs);
-		//if (index==k++) return vtk_helper("lbm_phigradmag2", block.hmacro(ADE::MACRO::e_phigradmag2,x,y,z), 1, desc, value, dofs);
+			return desc.set("lbm_phi", block.hmacro(ADE::MACRO::e_phi, x, y, z), 1);
+		//if (index==k++) return desc.set("lbm_phigradmag2", block.hmacro(ADE::MACRO::e_phigradmag2,x,y,z), 1);
 		return false;
 	}
 

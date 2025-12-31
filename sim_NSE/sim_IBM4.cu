@@ -64,7 +64,6 @@ struct StateLocal : State<NSE>
 
 	using State<NSE>::nse;
 	using State<NSE>::ibm;
-	using State<NSE>::vtk_helper;
 	using State<NSE>::id;
 
 	using idx = typename TRAITS::idx;
@@ -80,54 +79,54 @@ struct StateLocal : State<NSE>
 	dreal ball_amplitude = 0;
 	dreal ball_period = 1;
 
-	bool outputData(const BLOCK& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) override
+	bool outputData(const BLOCK& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc) override
 	{
 		int k = 0;
 		if (index == k++) {
 			switch (dof) {
 				case 0:
-					return vtk_helper("lbm_velocity", block.hmacro(MACRO::e_vx, x, y, z), 3, desc, value, dofs);
+					return desc.set("lbm_velocity", block.hmacro(MACRO::e_vx, x, y, z), 3);
 				case 1:
-					return vtk_helper("lbm_velocity", block.hmacro(MACRO::e_vy, x, y, z), 3, desc, value, dofs);
+					return desc.set("lbm_velocity", block.hmacro(MACRO::e_vy, x, y, z), 3);
 				case 2:
-					return vtk_helper("lbm_velocity", block.hmacro(MACRO::e_vz, x, y, z), 3, desc, value, dofs);
+					return desc.set("lbm_velocity", block.hmacro(MACRO::e_vz, x, y, z), 3);
 			}
 		}
 		if (index == k++) {
 			switch (dof) {
 				case 0:
-					return vtk_helper("lbm_force", block.hmacro(MACRO::e_fx, x, y, z), 3, desc, value, dofs);
+					return desc.set("lbm_force", block.hmacro(MACRO::e_fx, x, y, z), 3);
 				case 1:
-					return vtk_helper("lbm_force", block.hmacro(MACRO::e_fy, x, y, z), 3, desc, value, dofs);
+					return desc.set("lbm_force", block.hmacro(MACRO::e_fy, x, y, z), 3);
 				case 2:
-					return vtk_helper("lbm_force", block.hmacro(MACRO::e_fz, x, y, z), 3, desc, value, dofs);
+					return desc.set("lbm_force", block.hmacro(MACRO::e_fz, x, y, z), 3);
 			}
 		}
 		if (index == k++)
-			return vtk_helper("lbm_density", block.hmacro(MACRO::e_rho, x, y, z), 1, desc, value, dofs);
+			return desc.set("lbm_density", block.hmacro(MACRO::e_rho, x, y, z), 1);
 		if (index == k++)
-			return vtk_helper("lbm_density_fluctuation", block.hmacro(MACRO::e_rho, x, y, z) - 1.0, 1, desc, value, dofs);
+			return desc.set("lbm_density_fluctuation", block.hmacro(MACRO::e_rho, x, y, z) - 1.0, 1);
 		if (index == k++) {
 			switch (dof) {
 				case 0:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vx, x, y, z)), 3, desc, value, dofs);
+					return desc.set("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vx, x, y, z)), 3);
 				case 1:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vy, x, y, z)), 3, desc, value, dofs);
+					return desc.set("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vy, x, y, z)), 3);
 				case 2:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vz, x, y, z)), 3, desc, value, dofs);
+					return desc.set("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vz, x, y, z)), 3);
 			}
 		}
 		if (index == k++) {
 			switch (dof) {
 				case 0:
-					return vtk_helper("force", nse.lat.lbm2physForce(block.hmacro(MACRO::e_fx, x, y, z)), 3, desc, value, dofs);
+					return desc.set("force", nse.lat.lbm2physForce(block.hmacro(MACRO::e_fx, x, y, z)), 3);
 				case 1:
-					return vtk_helper("force", nse.lat.lbm2physForce(block.hmacro(MACRO::e_fy, x, y, z)), 3, desc, value, dofs);
+					return desc.set("force", nse.lat.lbm2physForce(block.hmacro(MACRO::e_fy, x, y, z)), 3);
 				case 2:
-					return vtk_helper("force", nse.lat.lbm2physForce(block.hmacro(MACRO::e_fz, x, y, z)), 3, desc, value, dofs);
+					return desc.set("force", nse.lat.lbm2physForce(block.hmacro(MACRO::e_fz, x, y, z)), 3);
 			}
 		}
-		//if (index==k++) return vtk_helper("density", block.hmacro(MACRO::e_rho,x,y,z)*nse.physFluidDensity, 1, desc, value, dofs);
+		//if (index==k++) return desc.set("density", block.hmacro(MACRO::e_rho,x,y,z)*nse.physFluidDensity, 1);
 		return false;
 	}
 
