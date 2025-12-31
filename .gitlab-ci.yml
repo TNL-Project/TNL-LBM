@@ -13,6 +13,8 @@ default:
       else
             CUDA_ARCH=native;
       fi
+    # extra dependencies for python bindings
+    - pacman -Suy --needed --noconfirm python-mpi4py
 
 # automatically initialize git submodules
 # https://docs.gitlab.com/ee/ci/git_submodules.html
