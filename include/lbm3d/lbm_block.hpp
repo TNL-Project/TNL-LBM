@@ -30,14 +30,18 @@ void LBM_BLOCK<CONFIG>::setLatticeDecomposition(
 #ifdef HAVE_MPI
 	// set communication pattern for all synchronizers
 	map_sync.setSynchronizationPattern(pattern);
-	for (int i = 0; i < CONFIG::Q + CONFIG::MACRO::N; i++)
-		dreal_sync[i].setSynchronizationPattern(pattern);
+	for (int i = 0; i < CONFIG::Q; i++)
+		df_sync[i].setSynchronizationPattern(pattern);
+	for (int i = 0; i < CONFIG::MACRO::N; i++)
+		macro_sync[i].setSynchronizationPattern(pattern);
 
 	// set neighbors for all synchronizers
 	for (auto [direction, rank] : neighborRanks) {
 		map_sync.setNeighbor(direction, rank);
-		for (int i = 0; i < CONFIG::Q + CONFIG::MACRO::N; i++)
-			dreal_sync[i].setNeighbor(direction, rank);
+		for (int i = 0; i < CONFIG::Q; i++)
+			df_sync[i].setNeighbor(direction, rank);
+		for (int i = 0; i < CONFIG::MACRO::N; i++)
+			macro_sync[i].setNeighbor(direction, rank);
 	}
 
 	auto isPrimaryDirection = [](TNL::Containers::SyncDirection direction) -> bool
@@ -74,23 +78,42 @@ void LBM_BLOCK<CONFIG>::setLatticeDecomposition(
 	}
 
 	// set tags
-	for (int i = 0; i < CONFIG::Q + CONFIG::MACRO::N; i++) {
-		for (auto [direction, neighbor_id] : neighborIDs) {
-			if (! isPrimaryDirection(direction) ^ isPrimaryDirection(opposite(direction)))
-				throw std::logic_error("Bug in isPrimaryDirection!!!");
-			if (neighbor_id < 0)
-				dreal_sync[i].setTags(direction, -1, -1);
-			else {
+	for (auto [direction, neighbor_id] : neighborIDs) {
+		if (! isPrimaryDirection(direction) ^ isPrimaryDirection(opposite(direction)))
+			throw std::logic_error("Bug in isPrimaryDirection!!!");
+		if (neighbor_id < 0) {
+			for (int i = 0; i < CONFIG::Q; i++)
+				df_sync[i].setTags(direction, -1, -1);
+			for (int i = 0; i < CONFIG::MACRO::N; i++)
+				macro_sync[i].setTags(direction, -1, -1);
+		}
+		else {
+			for (int i = 0; i < CONFIG::Q; i++) {
 				const int offset0 = (2 * i + 0) * blocks_per_rank * nproc;
 				const int offset1 = (2 * i + 1) * blocks_per_rank * nproc;
-				if (isPrimaryDirection(direction))
-					dreal_sync[i].setTags(direction, offset1 + neighbor_id, offset0 + this->id);
-				else
-					dreal_sync[i].setTags(direction, offset0 + neighbor_id, offset1 + this->id);
+				if (isPrimaryDirection(direction)) {
+					df_sync[i].setTags(direction, offset1 + neighbor_id, offset0 + this->id);
+				}
+				else {
+					df_sync[i].setTags(direction, offset0 + neighbor_id, offset1 + this->id);
+				}
 			}
-			// disable DistributedNDArraySynchronizer initializing explicit -1 tags based on the tag_offset
-			dreal_sync[i].setTagOffset(-1);
+			for (int i = 0; i < CONFIG::MACRO::N; i++) {
+				const int offset0 = (2 * (i + CONFIG::Q) + 0) * blocks_per_rank * nproc;
+				const int offset1 = (2 * (i + CONFIG::Q) + 1) * blocks_per_rank * nproc;
+				if (isPrimaryDirection(direction)) {
+					macro_sync[i].setTags(direction, offset1 + neighbor_id, offset0 + this->id);
+				}
+				else {
+					macro_sync[i].setTags(direction, offset0 + neighbor_id, offset1 + this->id);
+				}
+			}
 		}
+		// disable DistributedNDArraySynchronizer initializing explicit -1 tags based on the tag_offset
+		for (int i = 0; i < CONFIG::Q; i++)
+			df_sync[i].setTagOffset(-1);
+		for (int i = 0; i < CONFIG::MACRO::N; i++)
+			macro_sync[i].setTagOffset(-1);
 	}
 #endif
 
@@ -113,8 +136,10 @@ void LBM_BLOCK<CONFIG>::setLatticeDecomposition(
 		computeData.at(direction).stream = TNL::Backend::Stream::create(TNL::Backend::StreamNonBlocking, priority_high);
 	#ifdef HAVE_MPI
 		// set the stream to the synchronizer
-		for (int i = 0; i < CONFIG::Q + CONFIG::MACRO::N; i++)
-			dreal_sync[i].setCudaStream(direction, computeData.at(direction).stream);
+		for (int i = 0; i < CONFIG::Q; i++)
+			df_sync[i].setCudaStream(direction, computeData.at(direction).stream);
+		for (int i = 0; i < CONFIG::MACRO::N; i++)
+			macro_sync[i].setCudaStream(direction, computeData.at(direction).stream);
 	#endif
 	}
 #endif
@@ -401,24 +426,27 @@ void LBM_BLOCK<CONFIG>::copyDFsToDevice()
 #ifdef HAVE_MPI
 
 template <typename CONFIG>
-template <typename Array>
-void LBM_BLOCK<CONFIG>::startDrealArraySynchronization(Array& array, int sync_offset, bool is_df)
+template <typename Array, typename view_t, typename XYZIndexer>
+void LBM_BLOCK<CONFIG>::start4DArraySynchronization(
+	Array& array, TNL::Containers::DistributedNDArraySynchronizer<view_t>* sync, XYZIndexer indexer, bool is_df
+)
 {
 	static_assert(Array::getDimension() == 4, "4D array expected");
 	const int N = array.template getSize<0>();
 
 	// empty view, but with correct sizes
-	typename dreal_array_t::LocalViewType localView(nullptr, data.indexer);
-	typename dreal_array_t::ViewType view(localView, dmap.getSizes(), dmap.getLocalBegins(), dmap.getLocalEnds(), dmap.getCommunicator());
+	using local_view_t = typename view_t::LocalViewType;
+	local_view_t localView(nullptr, indexer);
+	view_t view(localView, dmap.getSizes(), dmap.getLocalBegins(), dmap.getLocalEnds(), dmap.getCommunicator());
 
 	for (int i = 0; i < N; i++) {
 		// rebind just the data pointer
-		view.bind(array.getData() + i * data.indexer.getStorageSize());
+		view.bind(array.getData() + i * data.XYZ);
 		// determine sync direction
 		TNL::Containers::SyncDirection sync_direction = (is_df) ? df_sync_directions[i] : TNL::Containers::SyncDirection::All;
 	#ifdef AA_PATTERN
 		// reset shift of the lattice sites
-		dreal_sync[i + sync_offset].setBufferOffsets(0);
+		sync[i].setBufferOffsets(0);
 		if (is_df) {
 			if (data.even_iter) {
 				// lattice sites for synchronization are not shifted, but DFs have opposite directions
@@ -427,7 +455,7 @@ void LBM_BLOCK<CONFIG>::startDrealArraySynchronization(Array& array, int sync_of
 			else {
 				// DFs have canonical directions, but lattice sites for synchronization are shifted
 				// (values to be synchronized were written to the neighboring sites)
-				dreal_sync[i + sync_offset].setBufferOffsets(1);
+				sync[i].setBufferOffsets(1);
 			}
 		}
 	#endif
@@ -435,9 +463,9 @@ void LBM_BLOCK<CONFIG>::startDrealArraySynchronization(Array& array, int sync_of
 		// NOTE: we don't use synchronize with policy because we need pipelining
 		// NOTE: we could use only synchronize with policy=deferred, because threadpool and async require MPI_THREAD_MULTIPLE which is slow
 		// stage 0: set inputs, allocate buffers
-		dreal_sync[i + sync_offset].stage_0(view, sync_direction);
+		sync[i].stage_0(view, sync_direction);
 		// stage 1: fill send buffers
-		dreal_sync[i + sync_offset].stage_1();
+		sync[i].stage_1();
 	}
 }
 
@@ -446,13 +474,13 @@ void LBM_BLOCK<CONFIG>::synchronizeDFsDevice_start(uint8_t dftype)
 {
 	auto df = dfs[0].getView();
 	df.bind(data.dfs[dftype]);
-	startDrealArraySynchronization(df, 0, true);
+	start4DArraySynchronization(df, df_sync, data.indexer, true);
 }
 
 template <typename CONFIG>
 void LBM_BLOCK<CONFIG>::synchronizeMacroDevice_start()
 {
-	startDrealArraySynchronization(dmacro, CONFIG::Q, false);
+	start4DArraySynchronization(dmacro, macro_sync, data.indexer, false);
 }
 
 template <typename CONFIG>
