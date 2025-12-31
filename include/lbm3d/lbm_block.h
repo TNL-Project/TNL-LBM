@@ -17,17 +17,17 @@ struct LBM_BLOCK
 	using bool3d = typename TRAITS::bool3d;
 	using lat_t = Lattice<3, real, idx>;
 
-	using hmap_array_t = typename CONFIG::hmap_array_t;
-	using dmap_array_t = typename CONFIG::dmap_array_t;
-	using hlat_array_t = typename CONFIG::hlat_array_t;
-	using dlat_array_t = typename CONFIG::dlat_array_t;
-	using dlat_view_t = typename CONFIG::dlat_view_t;
-	using hmacro_array_t = typename CONFIG::hmacro_array_t;
-	using dmacro_array_t = typename CONFIG::dmacro_array_t;
-	using dreal_array_t = typename CONFIG::dreal_array_t;
-	using hreal_array_t = typename CONFIG::hreal_array_t;
-	using hboollat_array_t = typename CONFIG::hboollat_array_t;
-	using dboollat_array_t = typename CONFIG::dboollat_array_t;
+	using hmap_array_t = typename TRAITS::hmap_array_t;
+	using dmap_array_t = typename TRAITS::dmap_array_t;
+	using hlat_array_t = typename TRAITS::hlat_array_t;
+	using dlat_array_t = typename TRAITS::dlat_array_t;
+	using dlat_view_t = typename TRAITS::dlat_view_t;
+	using hmacro_array_t = typename TRAITS::hmacro_array_t;
+	using dmacro_array_t = typename TRAITS::dmacro_array_t;
+	using dreal_array_t = typename TRAITS::dreal_array_t;
+	using hreal_array_t = typename TRAITS::hreal_array_t;
+	using hboollat_array_t = typename TRAITS::hboollat_array_t;
+	using dboollat_array_t = typename TRAITS::dboollat_array_t;
 	using dreal_view_t = typename dreal_array_t::ViewType;
 
 	// KernelData contains only the necessary data for the CUDA kernel. these are copied just before the kernel is called

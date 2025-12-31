@@ -118,6 +118,59 @@ struct Traits
 		d4_overlaps>;
 
 	using lattice_indexer_t = typename array3d<dreal, DeviceType>::IndexerType;
+
+	using __hmap_array_t = array3d<map_t, TNL::Devices::Host>;
+	using __dmap_array_t = array3d<map_t, DeviceType>;
+	using __hbool_array_t = array3d<bool, TNL::Devices::Host>;
+	using __dbool_array_t = array3d<bool, DeviceType>;
+	using __hreal_array_t = array3d<dreal, TNL::Devices::Host>;
+	using __dreal_array_t = array3d<dreal, DeviceType>;
+
+	using __hlat_array_t = array4d<dreal, TNL::Devices::Host>;
+	using __dlat_array_t = array4d<dreal, DeviceType>;
+	using __hboollat_array_t = array4d<bool, TNL::Devices::Host>;
+	using __dboollat_array_t = array4d<bool, DeviceType>;
+
+	using __hmacro_array_t = array4d<dreal, TNL::Devices::Host>;
+	using __dmacro_array_t = array4d<dreal, DeviceType>;
+
+#ifdef HAVE_MPI
+	using hmap_array_t = TNL::Containers::DistributedNDArray<__hmap_array_t>;
+	using dmap_array_t = TNL::Containers::DistributedNDArray<__dmap_array_t>;
+	using hbool_array_t = TNL::Containers::DistributedNDArray<__hbool_array_t>;
+	using dbool_array_t = TNL::Containers::DistributedNDArray<__dbool_array_t>;
+	using dreal_array_t = TNL::Containers::DistributedNDArray<__dreal_array_t>;
+	using hreal_array_t = TNL::Containers::DistributedNDArray<__hreal_array_t>;
+
+	using hlat_array_t = TNL::Containers::DistributedNDArray<__hlat_array_t>;
+	using dlat_array_t = TNL::Containers::DistributedNDArray<__dlat_array_t>;
+	using hboollat_array_t = TNL::Containers::DistributedNDArray<__hboollat_array_t>;
+	using dboollat_array_t = TNL::Containers::DistributedNDArray<__dboollat_array_t>;
+
+	using hmacro_array_t = TNL::Containers::DistributedNDArray<__hmacro_array_t>;
+	using dmacro_array_t = TNL::Containers::DistributedNDArray<__dmacro_array_t>;
+#else
+	using hmap_array_t = __hmap_array_t;
+	using dmap_array_t = __dmap_array_t;
+	using hbool_array_t = __hbool_array_t;
+	using dbool_array_t = __dbool_array_t;
+	using dreal_array_t = __dreal_array_t;
+	using hreal_array_t = __hreal_array_t;
+
+	using hlat_array_t = __hlat_array_t;
+	using dlat_array_t = __dlat_array_t;
+	using hboollat_array_t = __hboollat_array_t;
+	using dboollat_array_t = __dboollat_array_t;
+
+	using hmacro_array_t = __hmacro_array_t;
+	using dmacro_array_t = __dmacro_array_t;
+#endif
+
+	using hmap_view_t = typename hmap_array_t::ViewType;
+	using dmap_view_t = typename dmap_array_t::ViewType;
+
+	using hlat_view_t = typename hlat_array_t::ViewType;
+	using dlat_view_t = typename dlat_array_t::ViewType;
 };
 
 using TraitsSP = Traits<float>;	 //_dreal is float only
@@ -254,59 +307,6 @@ struct LBM_CONFIG
 	using MACRO = _MACRO;
 
 	static constexpr int Q = KernelStruct<typename TRAITS::dreal>::Q;
-
-	using __hmap_array_t = typename TRAITS::template array3d<typename TRAITS::map_t, TNL::Devices::Host>;
-	using __dmap_array_t = typename TRAITS::template array3d<typename TRAITS::map_t, DeviceType>;
-	using __hbool_array_t = typename TRAITS::template array3d<bool, TNL::Devices::Host>;
-	using __dbool_array_t = typename TRAITS::template array3d<bool, DeviceType>;
-	using __hreal_array_t = typename TRAITS::template array3d<typename TRAITS::dreal, TNL::Devices::Host>;
-	using __dreal_array_t = typename TRAITS::template array3d<typename TRAITS::dreal, DeviceType>;
-
-	using __hlat_array_t = typename TRAITS::template array4d<typename TRAITS::dreal, TNL::Devices::Host>;
-	using __dlat_array_t = typename TRAITS::template array4d<typename TRAITS::dreal, DeviceType>;
-	using __hboollat_array_t = typename TRAITS::template array4d<bool, TNL::Devices::Host>;
-	using __dboollat_array_t = typename TRAITS::template array4d<bool, DeviceType>;
-
-	using __hmacro_array_t = typename TRAITS::template array4d<typename TRAITS::dreal, TNL::Devices::Host>;
-	using __dmacro_array_t = typename TRAITS::template array4d<typename TRAITS::dreal, DeviceType>;
-
-#ifdef HAVE_MPI
-	using hmap_array_t = TNL::Containers::DistributedNDArray<__hmap_array_t>;
-	using dmap_array_t = TNL::Containers::DistributedNDArray<__dmap_array_t>;
-	using hbool_array_t = TNL::Containers::DistributedNDArray<__hbool_array_t>;
-	using dbool_array_t = TNL::Containers::DistributedNDArray<__dbool_array_t>;
-	using dreal_array_t = TNL::Containers::DistributedNDArray<__dreal_array_t>;
-	using hreal_array_t = TNL::Containers::DistributedNDArray<__hreal_array_t>;
-
-	using hlat_array_t = TNL::Containers::DistributedNDArray<__hlat_array_t>;
-	using dlat_array_t = TNL::Containers::DistributedNDArray<__dlat_array_t>;
-	using hboollat_array_t = TNL::Containers::DistributedNDArray<__hboollat_array_t>;
-	using dboollat_array_t = TNL::Containers::DistributedNDArray<__dboollat_array_t>;
-
-	using hmacro_array_t = TNL::Containers::DistributedNDArray<__hmacro_array_t>;
-	using dmacro_array_t = TNL::Containers::DistributedNDArray<__dmacro_array_t>;
-#else
-	using hmap_array_t = __hmap_array_t;
-	using dmap_array_t = __dmap_array_t;
-	using hbool_array_t = __hbool_array_t;
-	using dbool_array_t = __dbool_array_t;
-	using dreal_array_t = __dreal_array_t;
-	using hreal_array_t = __hreal_array_t;
-
-	using hlat_array_t = __hlat_array_t;
-	using dlat_array_t = __dlat_array_t;
-	using hboollat_array_t = __hboollat_array_t;
-	using dboollat_array_t = __dboollat_array_t;
-
-	using hmacro_array_t = __hmacro_array_t;
-	using dmacro_array_t = __dmacro_array_t;
-#endif
-
-	using hmap_view_t = typename hmap_array_t::ViewType;
-	using dmap_view_t = typename dmap_array_t::ViewType;
-
-	using hlat_view_t = typename hlat_array_t::ViewType;
-	using dlat_view_t = typename dlat_array_t::ViewType;
 };
 
 //#define USE_HIGH_PRECISION_RHO // use num value ordering to compute rho inlbm_common.h .. slow!!!
