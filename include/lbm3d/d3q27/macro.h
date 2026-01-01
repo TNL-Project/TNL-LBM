@@ -24,6 +24,10 @@ struct D3Q27_MACRO_Base
 		e_fz
 	};
 
+	// specifies if macroscopic quantities are computed in the kernel in each iteration
+	static const bool compute_in_each_iteration = false;
+
+	// specifies if the dmacro array is synchronized with MPI in each iteration
 	static const bool use_syncMacro = false;
 
 	// maximum width of overlaps for the macro arrays
@@ -105,6 +109,9 @@ struct D3Q27_MACRO_Mean : D3Q27_MACRO_Base<TRAITS>
 		e_vm2_yz,
 		N
 	};
+
+	// specifies if macroscopic quantities are computed in the kernel in each iteration
+	static const bool compute_in_each_iteration = true;
 
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void outputMacro(LBM_DATA& SD, LBM_KS& KS, idx x, idx y, idx z)
@@ -213,6 +220,9 @@ struct D3Q27_MACRO_Adjoint : D3Q27_MACRO_Base<TRAITS>
 		// NOTE: if anything more is added, the loadPrimaryAndMeasuredMacro function must be generalized!!!
 		//gx, gy, gz,
 	};
+
+	// specifies if macroscopic quantities are computed in the kernel in each iteration
+	static const bool compute_in_each_iteration = true;
 
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void outputMacro(LBM_DATA& SD, LBM_KS& KS, idx x, idx y, idx z)

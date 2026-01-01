@@ -1344,6 +1344,18 @@ void State<NSE>::SimUpdate()
 	// call hook method (used e.g. for extra kernels in the non-Newtonian model)
 	computeBeforeLBMKernel();
 
+	// technically this should happen after the LBM kernel, but we need to
+	// check actions beforehand
+	nse.iterations++;
+
+	// determine if macroscopic quantities computed in the LBM kernel will be
+	// written in the dmacro array
+	bool compute_macro = NSE::MACRO::compute_in_each_iteration || NSE::MACRO::use_syncMacro;
+	for (int c = 0; c < MAX_COUNTER; c++)
+		if (c != PRINT && c != SAVESTATE)
+			if (cnt[c].action(nse.physTime()))
+				compute_macro = true;
+
 #ifdef HAVE_MPI
 	#ifdef AA_PATTERN
 	uint8_t output_df = df_cur;
@@ -1363,7 +1375,9 @@ void State<NSE>::SimUpdate()
 			TNL::Backend::LaunchConfiguration launch_config;
 			launch_config.blockSize = block.computeData.at(direction).blockSize;
 			launch_config.gridSize = block.computeData.at(direction).gridSize;
-			TNL::Backend::launchKernelAsync(cudaLBMKernel<NSE>, launch_config, block.data, idx3d{0, 0, 0}, block.local, block.is_distributed());
+			TNL::Backend::launchKernelAsync(
+				cudaLBMKernel<NSE>, launch_config, block.data, idx3d{0, 0, 0}, block.local, block.is_distributed(), compute_macro
+			);
 		}
 		// synchronize the null-stream after all grids
 		TNL::Backend::streamSynchronize(0);
@@ -1394,7 +1408,9 @@ void State<NSE>::SimUpdate()
 					launch_config.stream = block.computeData.at(direction).stream;
 					const idx3d offset = block.computeData.at(direction).offset;
 					const idx3d size = block.computeData.at(direction).size;
-					TNL::Backend::launchKernelAsync(cudaLBMKernel<NSE>, launch_config, block.data, offset, offset + size, block.is_distributed());
+					TNL::Backend::launchKernelAsync(
+						cudaLBMKernel<NSE>, launch_config, block.data, offset, offset + size, block.is_distributed(), compute_macro
+					);
 				}
 		}
 
@@ -1407,7 +1423,9 @@ void State<NSE>::SimUpdate()
 			launch_config.stream = block.computeData.at(direction).stream;
 			const idx3d offset = block.computeData.at(direction).offset;
 			const idx3d size = block.computeData.at(direction).size;
-			TNL::Backend::launchKernelAsync(cudaLBMKernel<NSE>, launch_config, block.data, offset, offset + size, block.is_distributed());
+			TNL::Backend::launchKernelAsync(
+				cudaLBMKernel<NSE>, launch_config, block.data, offset, offset + size, block.is_distributed(), compute_macro
+			);
 		}
 
 		// wait for the computations on boundaries to finish
@@ -1444,7 +1462,7 @@ void State<NSE>::SimUpdate()
 		for (idx x = 0; x < block.local.x(); x++)
 			for (idx z = 0; z < block.local.z(); z++)
 				for (idx y = 0; y < block.local.y(); y++) {
-					LBMKernel<NSE>(block.data, x, y, z, block.is_distributed());
+					LBMKernel<NSE>(block.data, x, y, z, block.is_distributed(), compute_macro);
 				}
 	}
 	timer_compute.stop();
@@ -1458,18 +1476,6 @@ void State<NSE>::SimUpdate()
 	#endif
 #endif
 
-	nse.iterations++;
-
-	bool doit = false;
-	for (int c = 0; c < MAX_COUNTER; c++)
-		if (c != PRINT && c != SAVESTATE)
-			if (cnt[c].action(nse.physTime()))
-				doit = true;
-	if (doit) {
-		// common copy
-		nse.copyMacroToHost();
-	}
-
 	timer_SimUpdate.stop();
 }
 
@@ -1477,6 +1483,15 @@ template <typename NSE>
 void State<NSE>::AfterSimUpdate()
 {
 	timer_AfterSimUpdate.start();
+
+	bool copy_macro = false;
+	for (int c = 0; c < MAX_COUNTER; c++)
+		if (c != PRINT && c != SAVESTATE)
+			if (cnt[c].action(nse.physTime()))
+				copy_macro = true;
+	if (copy_macro) {
+		nse.copyMacroToHost();
+	}
 
 	// call hook method (used e.g. for the coupled LBM-MHFEM solver)
 	computeAfterLBMKernel();
@@ -1493,7 +1508,7 @@ void State<NSE>::AfterSimUpdate()
 
 	// check for NaN values, abusing the period of other actions
 	bool nan_detected = false;
-	if (nse.iterations > 1 && write_info && NSE::MACRO::e_rho < NSE::MACRO::N) {
+	if (nse.iterations > 1 && copy_macro && NSE::MACRO::e_rho < NSE::MACRO::N) {
 		for (auto& block : nse.blocks) {
 			auto data = block.data;
 			auto check_nan = [=] __cuda_callable__(idx i) -> bool

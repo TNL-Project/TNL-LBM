@@ -158,6 +158,20 @@ struct State_NSE_ADE : State<NSE>
 		// call hook method (used e.g. for extra kernels in the non-Newtonian model)
 		this->computeBeforeLBMKernel();
 
+		// technically this should happen after the LBM kernel, but we need to
+		// check actions beforehand
+		nse.iterations++;
+		ade.iterations = nse.iterations;
+
+		// determine if macroscopic quantities computed in the LBM kernel will be
+		// written in the dmacro array
+		bool compute_macro =
+			NSE::MACRO::compute_in_each_iteration || ADE::MACRO::compute_in_each_iteration || NSE::MACRO::use_syncMacro || ADE::MACRO::use_syncMacro;
+		for (int c = 0; c < MAX_COUNTER; c++)
+			if (c != PRINT && c != SAVESTATE)
+				if (cnt[c].action(nse.physTime()))
+					compute_macro = true;
+
 #ifdef HAVE_MPI
 	#ifdef AA_PATTERN
 		uint8_t output_df = df_cur;
@@ -190,7 +204,8 @@ struct State_NSE_ADE : State<NSE>
 					block_ade.data,
 					idx3d{0, 0, 0},
 					block_nse.local,
-					block_nse.is_distributed()
+					block_nse.is_distributed(),
+					compute_macro
 				);
 			}
 			// synchronize the null-stream after all grids
@@ -223,7 +238,14 @@ struct State_NSE_ADE : State<NSE>
 						const idx3d offset = block_nse.computeData.at(direction).offset;
 						const idx3d size = block_nse.computeData.at(direction).size;
 						TNL::Backend::launchKernelAsync(
-							cudaLBMKernel<NSE, ADE>, launch_config, block_nse.data, block_ade.data, offset, offset + size, block_nse.is_distributed()
+							cudaLBMKernel<NSE, ADE>,
+							launch_config,
+							block_nse.data,
+							block_ade.data,
+							offset,
+							offset + size,
+							block_nse.is_distributed(),
+							compute_macro
 						);
 					}
 			}
@@ -240,7 +262,14 @@ struct State_NSE_ADE : State<NSE>
 				const idx3d offset = block_nse.computeData.at(direction).offset;
 				const idx3d size = block_nse.computeData.at(direction).size;
 				TNL::Backend::launchKernelAsync(
-					cudaLBMKernel<NSE, ADE>, launch_config, block_nse.data, block_ade.data, offset, offset + size, block_nse.is_distributed()
+					cudaLBMKernel<NSE, ADE>,
+					launch_config,
+					block_nse.data,
+					block_ade.data,
+					offset,
+					offset + size,
+					block_nse.is_distributed(),
+					compute_macro
 				);
 			}
 
@@ -275,7 +304,7 @@ struct State_NSE_ADE : State<NSE>
 			for (idx x = 0; x < block_nse.local.x(); x++)
 				for (idx z = 0; z < block_nse.local.z(); z++)
 					for (idx y = 0; y < block_nse.local.y(); y++) {
-						LBMKernel<NSE, ADE>(block_nse.data, block_ade.data, x, y, z, block_nse.is_distributed());
+						LBMKernel<NSE, ADE>(block_nse.data, block_ade.data, x, y, z, block_nse.is_distributed(), compute_macro);
 					}
 		}
 	#ifdef HAVE_MPI
@@ -284,24 +313,20 @@ struct State_NSE_ADE : State<NSE>
 		ade.synchronizeDFsAndMacroDevice(output_df);
 	#endif
 #endif
-
-		nse.iterations++;
-		ade.iterations = nse.iterations;
-
-		bool doit = false;
-		for (int c = 0; c < MAX_COUNTER; c++)
-			if (c != PRINT && c != SAVESTATE)
-				if (cnt[c].action(nse.physTime()))
-					doit = true;
-		if (doit) {
-			// common copy
-			nse.copyMacroToHost();
-			ade.copyMacroToHost();
-		}
 	}
 
 	void AfterSimUpdate() override
 	{
+		bool copy_macro = false;
+		for (int c = 0; c < MAX_COUNTER; c++)
+			if (c != PRINT && c != SAVESTATE)
+				if (cnt[c].action(nse.physTime()))
+					copy_macro = true;
+		if (copy_macro) {
+			// nse.copyMacroToHost() is done in State<NSE>::AfterSimUpdate()
+			ade.copyMacroToHost();
+		}
+
 		State<NSE>::AfterSimUpdate();
 		// TODO: figure out what should be done for ade here...
 	}

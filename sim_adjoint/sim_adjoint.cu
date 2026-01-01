@@ -17,6 +17,13 @@ static constexpr double MIN_STEP_SIZE = 1e-9;
 static constexpr int BLOCK_SIZE = 32;
 static constexpr int MACRO_ALL_ITERS_MAX_GB = 5;
 
+template <typename TRAITS>
+struct MacroLocal : D3Q27_MACRO_Default<TRAITS>
+{
+	// specifies if macroscopic quantities are computed in the kernel in each iteration
+	static const bool compute_in_each_iteration = true;
+};
+
 template <typename NSE>
 struct StateLocal : State<NSE>
 {
@@ -574,7 +581,7 @@ void run(double* velocityProfileX, double* velocityProfileY, double* velocityPro
 		typename COLL::EQ,
 		D3Q27_STREAMING<TRAITS>,
 		D3Q27_BC_All,
-		D3Q27_MACRO_Default<TRAITS>>;
+		MacroLocal<TRAITS>>;
 
 	sim<NSE_CONFIG>(velocityProfileX, velocityProfileY, velocityProfileZ, RES, print);
 }

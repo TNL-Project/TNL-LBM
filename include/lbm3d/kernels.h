@@ -58,15 +58,21 @@ __cuda_callable__ void kernelInitIndices(
 
 template <typename NSE>
 #ifdef USE_CUDA
-__global__ void
-cudaLBMKernel(typename NSE::DATA SD, typename NSE::TRAITS::idx3d offset, typename NSE::TRAITS::idx3d end, typename NSE::TRAITS::bool3d distributed)
+__global__ void cudaLBMKernel(
+	typename NSE::DATA SD,
+	typename NSE::TRAITS::idx3d offset,
+	typename NSE::TRAITS::idx3d end,
+	typename NSE::TRAITS::bool3d distributed,
+	bool output_macro
+)
 #else
 CUDA_HOSTDEV void LBMKernel(
 	typename NSE::DATA SD,
 	typename NSE::TRAITS::idx x,
 	typename NSE::TRAITS::idx y,
 	typename NSE::TRAITS::idx z,
-	typename NSE::TRAITS::bool3d distributed
+	typename NSE::TRAITS::bool3d distributed,
+	bool output_macro
 )
 #endif
 {
@@ -101,7 +107,8 @@ CUDA_HOSTDEV void LBMKernel(
 		NSE::COLL::collision(KS);
 	NSE::BC::postCollision(SD, KS, gi_map, xm, x, xp, ym, y, yp, zm, z, zp);
 
-	NSE::MACRO::outputMacro(SD, KS, x, y, z);
+	if (output_macro)
+		NSE::MACRO::outputMacro(SD, KS, x, y, z);
 }
 
 template <typename NSE, typename ADE>
@@ -111,7 +118,8 @@ __global__ void cudaLBMKernel(
 	typename ADE::DATA ADE_SD,
 	typename NSE::TRAITS::idx3d offset,
 	typename NSE::TRAITS::idx3d end,
-	typename NSE::TRAITS::bool3d distributed
+	typename NSE::TRAITS::bool3d distributed,
+	bool output_macro
 )
 #else
 CUDA_HOSTDEV void LBMKernel(
@@ -120,7 +128,8 @@ CUDA_HOSTDEV void LBMKernel(
 	typename NSE::TRAITS::idx x,
 	typename NSE::TRAITS::idx y,
 	typename NSE::TRAITS::idx z,
-	typename NSE::TRAITS::bool3d distributed
+	typename NSE::TRAITS::bool3d distributed,
+	bool output_macro
 )
 #endif
 {
@@ -157,7 +166,8 @@ CUDA_HOSTDEV void LBMKernel(
 		NSE::COLL::collision(NSE_KS);
 	NSE::BC::postCollision(NSE_SD, NSE_KS, NSE_mapgi, xm, x, xp, ym, y, yp, zm, z, zp);
 
-	NSE::MACRO::outputMacro(NSE_SD, NSE_KS, x, y, z);
+	if (output_macro)
+		NSE::MACRO::outputMacro(NSE_SD, NSE_KS, x, y, z);
 
 	// ADE part
 	typename ADE::template KernelStruct<dreal> ADE_KS;
@@ -181,7 +191,8 @@ CUDA_HOSTDEV void LBMKernel(
 		ADE::COLL::collision(ADE_KS);
 	ADE::BC::postCollision(ADE_SD, ADE_KS, ADE_mapgi, xm, x, xp, ym, y, yp, zm, z, zp);
 
-	ADE::MACRO::outputMacro(ADE_SD, ADE_KS, x, y, z);
+	if (output_macro)
+		ADE::MACRO::outputMacro(ADE_SD, ADE_KS, x, y, z);
 }
 
 template <typename NSE>

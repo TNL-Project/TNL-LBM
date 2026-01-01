@@ -16,6 +16,10 @@ struct D3Q7_MACRO_Default
 		N
 	};
 
+	// specifies if macroscopic quantities are computed in the kernel in each iteration
+	static const bool compute_in_each_iteration = false;
+
+	// specifies if the dmacro array is synchronized with MPI in each iteration
 	static const bool use_syncMacro = false;
 
 	// maximum width of overlaps for the macro arrays
