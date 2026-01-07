@@ -23,10 +23,6 @@ template <typename TRAITS>
 template <typename T>
 void UniformDataWriter<TRAITS>::write(std::string varName, T val)
 {
-	if (! dataManager->isVariableDefined<T>(varName, simType)) {
-		dataManager->defineData<T>(varName, simType);
-	}
-
 	dataManager->outputData<T>(varName, val, simType);
 }
 
@@ -35,13 +31,6 @@ template <typename T>
 void UniformDataWriter<TRAITS>::write(std::string varName, std::vector<T>& val, int dim)
 {
 	recordVariable(varName, dim);
-
-	if (! dataManager->isVariableDefined<T>(varName, simType)) {
-		adios2::Dims shape{static_cast<std::size_t>(global.z()), static_cast<std::size_t>(global.y()), static_cast<std::size_t>(global.x())};
-		adios2::Dims start{static_cast<std::size_t>(offset.z()), static_cast<std::size_t>(offset.y()), static_cast<std::size_t>(offset.x())};
-		adios2::Dims count{static_cast<std::size_t>(local.z()), static_cast<std::size_t>(local.y()), static_cast<std::size_t>(local.x())};
-		dataManager->defineData<T>(varName, shape, start, count, simType);
-	}
 
 	// keep internal copy of the data until EndStep()
 	auto& buffer = this->template newBuffer<T>(val.size());
