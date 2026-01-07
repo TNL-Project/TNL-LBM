@@ -38,7 +38,7 @@ void State<NSE>::ensureFidesJsonModel(const std::string& dimsVariable, const std
 		// Make sure parent directories exist
 		create_parent_directories(jsonPath.c_str());
 
-		
+
 		const std::string dimVar = dimsVariable.empty() ? std::string("wall") : dimsVariable;
 
 		json model;
@@ -487,8 +487,9 @@ void State<NSE>::writeVTKs_3D()
 	if (cnt[VTK3D].count == 0) {
 		predefineVTK3D(fname, nse.blocks.front());
 	}
-	// Safe to call repeatedly
-	dataManager.openEngine(fname);
+	// Match previous behavior: reopen as Append after the first cycle
+	const auto mode = (cnt[VTK3D].count == 0) ? adios2::Mode::Write : adios2::Mode::Append;
+	dataManager.openEngine(fname, mode);
 
 	TNL::Timer timer;
 	for (const auto& block : nse.blocks) {
