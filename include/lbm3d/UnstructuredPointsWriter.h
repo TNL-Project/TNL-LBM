@@ -1,6 +1,5 @@
 #pragma once
 
-#include <map>
 #include <string>
 
 #include "DataManager.h"
@@ -21,25 +20,17 @@ private:
 	std::string cell_types_variable = "cell_types";
 	std::string num_points_variable = "number_of_points";
 
-	// data variables recorded for output (mapping of name to dimension)
-	std::map<std::string, int> variables;
+protected:
+	void addVTKAttributes() override;
 
-	// DataManager reference
-	DataManager* dataManager;
-	const std::string& simType;
-
-	void recordVariable(const std::string& name, int dim);
-
-	void addVTKAttributes();
-
-	void addFidesAttributes();
+	void addFidesAttributes() override;
 
 public:
 	UnstructuredPointsWriter() = delete;
 
 	UnstructuredPointsWriter(
 		DataManager& dataManager,
-		const std::string& simType,
+		std::string ioName,
 		std::string coordinates_variable = "points",
 		std::string connectivity_variable = "connectivity",
 		std::string cell_types_variable = "cell_types"
@@ -51,7 +42,7 @@ public:
 	template <typename T>
 	void write(std::string varName, std::vector<T>& val, int dim, idx num_points);
 
-	~UnstructuredPointsWriter();
+	virtual ~UnstructuredPointsWriter();
 };
 
 #include "UnstructuredPointsWriter.hpp"

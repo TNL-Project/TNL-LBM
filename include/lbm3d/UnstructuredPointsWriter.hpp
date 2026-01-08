@@ -4,57 +4,41 @@
 
 template <typename TRAITS>
 UnstructuredPointsWriter<TRAITS>::UnstructuredPointsWriter(
-	DataManager& dataManager,
-	const std::string& simType,
-	std::string coordinates_variable,
-	std::string connectivity_variable,
-	std::string cell_types_variable
+	DataManager& dataManager, std::string ioName, std::string coordinates_variable, std::string connectivity_variable, std::string cell_types_variable
 )
-: dataManager(&dataManager),
-  simType(simType),
+: DataWriter<TRAITS>::DataWriter(dataManager, std::move(ioName)),
   coordinates_variable(std::move(coordinates_variable)),
   connectivity_variable(std::move(connectivity_variable)),
   cell_types_variable(std::move(cell_types_variable))
-{
-	dataManager.beginStep(simType);
-}
+{}
 
 template <typename TRAITS>
 template <typename T>
 void UnstructuredPointsWriter<TRAITS>::write(std::string varName, T val)
 {
-	dataManager->outputData<T>(varName, val, simType);
+	this->recordVariable(varName, 0);
+
+	this->dataManager->template outputData<T>(varName, val, this->ioName);
 }
 
 template <typename TRAITS>
 template <typename T>
 void UnstructuredPointsWriter<TRAITS>::write(std::string varName, std::vector<T>& val, int dim, idx num_points)
 {
-	recordVariable(varName, dim);
+	this->recordVariable(varName, dim);
 
 	// keep internal copy of the data until EndStep()
 	auto& buffer = this->template newBuffer<T>(val.size());
 	// Avoid extra copy: move data into internal buffer (val stays usable as an empty preallocated buffer)
 	buffer.swap(val);
-	dataManager->outputData<T>(varName, buffer.data(), simType);
-}
-
-template <typename TRAITS>
-void UnstructuredPointsWriter<TRAITS>::recordVariable(const std::string& name, int dim)
-{
-	if (variables.count(name) > 0)
-		throw std::invalid_argument("Variable \"" + name + "\" is already defined.");
-	if (dim != 0 && dim != 1 && dim != 3)
-		throw std::invalid_argument("Invalid dimension of \"" + name + "\"(" + std::to_string(dim) + ").");
-
-	variables[name] = dim;
+	this->dataManager->template outputData<T>(varName, buffer.data(), this->ioName);
 }
 
 template <typename TRAITS>
 void UnstructuredPointsWriter<TRAITS>::addVTKAttributes()
 {
 	std::string dataArrays;
-	for (const auto& [name, dim] : variables) {
+	for (const auto& [name, dim] : this->variables) {
 		if (name == coordinates_variable || name == connectivity_variable || name == cell_types_variable)
 			continue;
 		switch (dim) {
@@ -95,7 +79,7 @@ void UnstructuredPointsWriter<TRAITS>::addVTKAttributes()
 			</UnstructuredGrid>
         </VTKFile>)";
 
-	dataManager->defineAttribute<std::string>("vtk.xml", dataModel, simType);
+	this->dataManager->template defineAttribute<std::string>("vtk.xml", dataModel, this->ioName);
 }
 
 template <typename TRAITS>
@@ -103,14 +87,14 @@ void UnstructuredPointsWriter<TRAITS>::addFidesAttributes()
 {
 	// add attributes for Fides
 	// https://fides.readthedocs.io/en/latest/components/components.html#unstructured-with-single-cell-type-data-model
-	dataManager->defineAttribute<std::string>("Fides_Data_Model", "unstructured_single", simType);
-	dataManager->defineAttribute<std::string>("Fides_Cell_Type", "vertex", simType);
-	dataManager->defineAttribute<std::string>("Fides_Coordinates_Variable", coordinates_variable, simType);
-	dataManager->defineAttribute<std::string>("Fides_Connectivity_Variable", connectivity_variable, simType);
+	this->dataManager->template defineAttribute<std::string>("Fides_Data_Model", "unstructured_single", this->ioName);
+	this->dataManager->template defineAttribute<std::string>("Fides_Cell_Type", "vertex", this->ioName);
+	this->dataManager->template defineAttribute<std::string>("Fides_Coordinates_Variable", coordinates_variable, this->ioName);
+	this->dataManager->template defineAttribute<std::string>("Fides_Connectivity_Variable", connectivity_variable, this->ioName);
 
 	std::vector<std::string> variable_list;
 	std::vector<std::string> variable_associations;
-	for (const auto& [name, dim] : variables) {
+	for (const auto& [name, dim] : this->variables) {
 		if (name == coordinates_variable || name == connectivity_variable)
 			continue;
 		if (dim > 0) {
@@ -118,17 +102,15 @@ void UnstructuredPointsWriter<TRAITS>::addFidesAttributes()
 			variable_associations.emplace_back("points");
 		}
 	}
-	dataManager->defineAttribute<std::string>("Fides_Variable_List", variable_list.data(), variable_list.size(), simType);
-	dataManager->defineAttribute<std::string>("Fides_Variable_Associations", variable_associations.data(), variable_associations.size(), simType);
-	dataManager->defineAttribute<std::string>("Fides_Time_Variable", "TIME", simType);
+	this->dataManager->template defineAttribute<std::string>("Fides_Variable_List", variable_list.data(), variable_list.size(), this->ioName);
+	this->dataManager->template defineAttribute<std::string>(
+		"Fides_Variable_Associations", variable_associations.data(), variable_associations.size(), this->ioName
+	);
+	this->dataManager->template defineAttribute<std::string>("Fides_Time_Variable", "TIME", this->ioName);
 }
 
 template <typename TRAITS>
 UnstructuredPointsWriter<TRAITS>::~UnstructuredPointsWriter()
 {
-	if (! variables.empty()) {
-		addVTKAttributes();
-		addFidesAttributes();
-	}
-	dataManager->performPutsAndStep(simType);
+	this->endStep();
 }

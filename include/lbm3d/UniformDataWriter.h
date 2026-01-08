@@ -1,6 +1,5 @@
 #pragma once
 
-#include <map>
 #include <string>
 
 #include "DataManager.h"
@@ -22,23 +21,15 @@ private:
 	point_t physOrigin;
 	real physDl;
 
-	// data variables recorded for output (mapping of name to dimension)
-	std::map<std::string, int> variables;
+protected:
+	void addVTKAttributes() override;
 
-	// DataManager reference
-	DataManager* dataManager;
-	const std::string& simType;
-
-	void recordVariable(const std::string& name, int dim);
-
-	void addVTKAttributes();
-
-	void addFidesAttributes();
+	void addFidesAttributes() override;
 
 public:
 	UniformDataWriter() = delete;
 
-	UniformDataWriter(idx3d global, idx3d local, idx3d offset, point_t physOrigin, real physDl, DataManager& dataManager, const std::string& simType);
+	UniformDataWriter(idx3d global, idx3d local, idx3d offset, point_t physOrigin, real physDl, DataManager& dataManager, std::string ioName);
 
 	template <typename T>
 	void write(std::string varName, T val);
@@ -46,7 +37,7 @@ public:
 	template <typename T>
 	void write(std::string varName, std::vector<T>& val, int dim);
 
-	~UniformDataWriter();
+	virtual ~UniformDataWriter();
 };
 
 #include "UniformDataWriter.hpp"

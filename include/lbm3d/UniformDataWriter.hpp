@@ -6,48 +6,36 @@
 
 template <typename TRAITS>
 UniformDataWriter<TRAITS>::UniformDataWriter(
-	idx3d global, idx3d local, idx3d offset, point_t physOrigin, real physDl, DataManager& dataManager, const std::string& simType
+	idx3d global, idx3d local, idx3d offset, point_t physOrigin, real physDl, DataManager& dataManager, std::string ioName
 )
-: simType(simType)
-{
-	this->global = global;
-	this->local = local;
-	this->offset = offset;
-	this->physOrigin = physOrigin;
-	this->physDl = physDl;
-	this->dataManager = &dataManager;
-	dataManager.beginStep(simType);
-}
+: DataWriter<TRAITS>::DataWriter(dataManager, std::move(ioName)),
+  global(global),
+  local(local),
+  offset(offset),
+  physOrigin(physOrigin),
+  physDl(physDl)
+{}
 
 template <typename TRAITS>
 template <typename T>
 void UniformDataWriter<TRAITS>::write(std::string varName, T val)
 {
-	dataManager->outputData<T>(varName, val, simType);
+	this->recordVariable(varName, 0);
+
+	this->dataManager->template outputData<T>(varName, val, this->ioName);
 }
 
 template <typename TRAITS>
 template <typename T>
 void UniformDataWriter<TRAITS>::write(std::string varName, std::vector<T>& val, int dim)
 {
-	recordVariable(varName, dim);
+	this->recordVariable(varName, dim);
 
 	// keep internal copy of the data until EndStep()
 	auto& buffer = this->template newBuffer<T>(val.size());
 	// Avoid extra copy: move data into internal buffer (val stays usable as an empty preallocated buffer)
 	buffer.swap(val);
-	dataManager->outputData<T>(varName, buffer.data(), simType);
-}
-
-template <typename TRAITS>
-void UniformDataWriter<TRAITS>::recordVariable(const std::string& name, int dim)
-{
-	if (variables.count(name) > 0)
-		throw std::invalid_argument("Variable \"" + name + "\" is already defined.");
-	if (dim != 0 && dim != 1 && dim != 3)
-		throw std::invalid_argument("Invalid dimension of \"" + name + "\"(" + std::to_string(dim) + ").");
-
-	variables[name] = dim;
+	this->dataManager->template outputData<T>(varName, buffer.data(), this->ioName);
 }
 
 template <typename TRAITS>
@@ -59,7 +47,7 @@ void UniformDataWriter<TRAITS>::addVTKAttributes()
 	const std::string spacing = fmt::format("{} {} {}", physDl, physDl, physDl);
 
 	std::string dataArrays;
-	for (const auto& [name, dim] : variables) {
+	for (const auto& [name, dim] : this->variables) {
 		switch (dim) {
 			case 0:
 				dataArrays += "<DataArray Name=\"" + name + "\"> " + name + " </DataArray>\n";
@@ -89,7 +77,7 @@ void UniformDataWriter<TRAITS>::addVTKAttributes()
             </ImageData>
         </VTKFile>)";
 
-	dataManager->defineAttribute<std::string>("vtk.xml", dataModel, simType);
+	this->dataManager->template defineAttribute<std::string>("vtk.xml", dataModel, this->ioName);
 }
 
 template <typename TRAITS>
@@ -97,15 +85,15 @@ void UniformDataWriter<TRAITS>::addFidesAttributes()
 {
 	// add attributes for Fides
 	// https://fides.readthedocs.io/en/latest/components/components.html#uniform-data-model
-	dataManager->defineAttribute<std::string>("Fides_Data_Model", "uniform", simType);
-	dataManager->defineAttribute<typename point_t::ValueType>("Fides_Origin", &physOrigin[0], point_t::getSize(), simType);
+	this->dataManager->template defineAttribute<std::string>("Fides_Data_Model", "uniform", this->ioName);
+	this->dataManager->template defineAttribute<typename point_t::ValueType>("Fides_Origin", &physOrigin[0], point_t::getSize(), this->ioName);
 	real spacing[3] = {physDl, physDl, physDl};
-	dataManager->defineAttribute<real>("Fides_Spacing", spacing, 3, simType);
+	this->dataManager->template defineAttribute<real>("Fides_Spacing", spacing, 3, this->ioName);
 
 	bool dimension_variable_set = false;
 	std::vector<std::string> variable_list;
 	std::vector<std::string> variable_associations;
-	for (const auto& [name, dim] : variables) {
+	for (const auto& [name, dim] : this->variables) {
 		if (dim > 0) {
 			if (! dimension_variable_set) {
 				// NOTE: Fides_Dimension_Variable must refer to a scalar variable
@@ -113,24 +101,22 @@ void UniformDataWriter<TRAITS>::addFidesAttributes()
 				// FIXME: Fides requires this variable to be PointData for sizing,
 				// but PointData leads to visual "gaps" between subdomains in Paraview
 				// https://github.com/ornladios/ADIOS2-Examples/issues/90
-				dataManager->defineAttribute<std::string>("Fides_Dimension_Variable", name, simType);
+				this->dataManager->template defineAttribute<std::string>("Fides_Dimension_Variable", name, this->ioName);
 				dimension_variable_set = true;
 			}
 			variable_list.push_back(name);
 			variable_associations.emplace_back("points");
 		}
 	}
-	dataManager->defineAttribute<std::string>("Fides_Variable_List", variable_list.data(), variable_list.size(), simType);
-	dataManager->defineAttribute<std::string>("Fides_Variable_Associations", variable_associations.data(), variable_associations.size(), simType);
-	dataManager->defineAttribute<std::string>("Fides_Time_Variable", "TIME", simType);
+	this->dataManager->template defineAttribute<std::string>("Fides_Variable_List", variable_list.data(), variable_list.size(), this->ioName);
+	this->dataManager->template defineAttribute<std::string>(
+		"Fides_Variable_Associations", variable_associations.data(), variable_associations.size(), this->ioName
+	);
+	this->dataManager->template defineAttribute<std::string>("Fides_Time_Variable", "TIME", this->ioName);
 }
 
 template <typename TRAITS>
 UniformDataWriter<TRAITS>::~UniformDataWriter()
 {
-	if (! variables.empty()) {
-		addVTKAttributes();
-		addFidesAttributes();
-	}
-	dataManager->performPutsAndStep(simType);
+	this->endStep();
 }
