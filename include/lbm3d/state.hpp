@@ -170,17 +170,35 @@ void State<NSE>::writeVTK_Points(const char* name, real time, int cycle)
 template <typename NSE>
 void State<NSE>::writeVTK_Points(const char* name, real time, int cycle, const typename Lagrange3D::HLPVECTOR& hLL_lat)
 {
-	if (cnt[VTK3D].count == 0)
-		dataManager.initEngine(fmt::format("results_{}/output_points", id));
-	else
-		dataManager.initEngine(fmt::format("results_{}/output_points", id), adios2::Mode::Append);
-
-	const std::string fname = fmt::format("results_{}/output_points", id);
+	const std::string fname = fmt::format("results_{}/output_points/{}", id, name);
 	create_parent_directories(fname.c_str());
 
 	const std::string& coordinates_variable = "points";
 	const std::string& connectivity_variable = "connectivity";
 	const std::string cell_types_variable = "cell_types";
+
+	dataManager.prepareIO(fname);
+	if (cycle == 0) {
+		// Define all variables before opening an engine
+		// TODO: make it distributed
+		adios2::Dims shape3{static_cast<std::size_t>(hLL_lat.getSize()), std::size_t(3)};
+		adios2::Dims start3{static_cast<std::size_t>(0), static_cast<std::size_t>(0)};
+		adios2::Dims count3{static_cast<std::size_t>(hLL_lat.getSize()), static_cast<std::size_t>(3)};
+		dataManager.template defineData<float>(coordinates_variable, shape3, start3, count3, fname);
+
+		adios2::Dims shape{static_cast<std::size_t>(hLL_lat.getSize()), std::size_t(1)};
+		adios2::Dims start{static_cast<std::size_t>(0), static_cast<std::size_t>(0)};
+		adios2::Dims count{static_cast<std::size_t>(hLL_lat.getSize()), static_cast<std::size_t>(1)};
+		dataManager.template defineData<idx>(connectivity_variable, shape, start, count, fname);
+
+		dataManager.template defineData<std::uint32_t>(cell_types_variable, fname);
+		dataManager.template defineData<idx>("number_of_points", fname);
+		dataManager.template defineData<real>("TIME", fname);
+	}
+	// Match previous behavior: reopen as Append after the first cycle
+	const auto mode = (cycle == 0) ? adios2::Mode::Write : adios2::Mode::Append;
+	dataManager.openEngine(fname, mode);
+
 	UnstructuredPointsWriter<TRAITS> writer(dataManager, fname, coordinates_variable, connectivity_variable, cell_types_variable);
 
 	std::vector<float> points_data;
@@ -203,6 +221,8 @@ void State<NSE>::writeVTK_Points(const char* name, real time, int cycle, const t
 	// This is only for the ADIOS2VTXReader
 	const idx npoints = hLL_lat.getSize();
 	writer.write("number_of_points", npoints);
+
+	writer.write("TIME", time);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

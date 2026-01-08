@@ -23,10 +23,6 @@ template <typename TRAITS>
 template <typename T>
 void UnstructuredPointsWriter<TRAITS>::write(std::string varName, T val)
 {
-	if (! dataManager->isVariableDefined<T>(varName, simType)) {
-		dataManager->defineData<T>(varName, simType);
-	}
-
 	dataManager->outputData<T>(varName, val, simType);
 }
 
@@ -35,14 +31,6 @@ template <typename T>
 void UnstructuredPointsWriter<TRAITS>::write(std::string varName, std::vector<T>& val, int dim, idx num_points)
 {
 	recordVariable(varName, dim);
-
-	if (! dataManager->isVariableDefined<T>(varName, simType)) {
-		// TODO: make it distributed
-		adios2::Dims shape{static_cast<std::size_t>(num_points), std::size_t(dim)};
-		adios2::Dims start{static_cast<std::size_t>(0), static_cast<std::size_t>(0)};
-		adios2::Dims count{static_cast<std::size_t>(num_points), static_cast<std::size_t>(dim)};
-		dataManager->defineData<T>(varName, shape, start, count, simType);
-	}
 
 	// keep internal copy of the data until EndStep()
 	auto& buffer = this->template newBuffer<T>(val.size());
