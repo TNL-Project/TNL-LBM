@@ -134,13 +134,11 @@ struct StateLocal : State<NSE>
 	void probe1() override
 	{
 		static idx cycle = 0;
-		const std::string basename = fmt::format("ball_{:04d}", cycle);
-		this->writeVTK_Points(basename.c_str(), nse.physTime(), cycle);
+		this->writeVTK_Points("ball", nse.physTime(), cycle);
 
 		// output the center alone in a vtk file for easier rendering
-		const std::string center_basename = fmt::format("ball_center_{:04d}", cycle);
 		typename Lagrange3D<NSE>::HLPVECTOR center_vector({nse.lat.phys2lbmPoint(ball_c)});
-		this->writeVTK_Points(center_basename.c_str(), nse.physTime(), cycle, center_vector);
+		this->writeVTK_Points("ball_center", nse.physTime(), cycle, center_vector);
 
 		cycle++;
 	}
