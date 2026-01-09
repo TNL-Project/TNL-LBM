@@ -71,7 +71,6 @@ public:
 		auto eng_it = engines_.find(ioName);
 		if (eng_it != engines_.end() && eng_it->second) {
 			if (current_mode_[ioName] == mode) {
-				engine_ = &eng_it->second;
 				return;
 			}
 			eng_it->second.Close();
@@ -86,7 +85,6 @@ public:
 		spdlog::info("Opening engine '{}' (after variable definitions)", ioName);
 		engines_[ioName] = io_ref.Open(filename, mode);
 		current_mode_[ioName] = mode;
-		engine_ = &engines_[ioName];
 	}
 
 	void initEngine(const std::string& ioName, adios2::Mode mode = adios2::Mode::Write)
@@ -304,8 +302,7 @@ public:
 		if (engines_.count(ioName) == 0 || ! engines_[ioName]) {
 			throw std::runtime_error(fmt::format("Engine for '{}' is not initialized", ioName));
 		}
-		engine_ = &engines_[ioName];
-		engine_->BeginStep();
+		engines_[ioName].BeginStep();
 	}
 
 	void performPutsAndStep(const std::string& ioName)
@@ -313,16 +310,15 @@ public:
 		if (engines_.count(ioName) == 0 || ! engines_[ioName]) {
 			throw std::runtime_error(fmt::format("Engine for '{}' is not initialized", ioName));
 		}
-		engine_ = &engines_[ioName];
 
 		if (current_mode_[ioName] == adios2::Mode::Write || current_mode_[ioName] == adios2::Mode::Append) {
-			engine_->PerformPuts();
+			engines_[ioName].PerformPuts();
 		}
 		else {
-			engine_->PerformGets();
+			engines_[ioName].PerformGets();
 		}
 
-		engine_->EndStep();
+		engines_[ioName].EndStep();
 	}
 
 	template <typename T>
@@ -338,6 +334,5 @@ private:
 	adios2::IO defaultIO;
 	std::map<std::string, adios2::Engine> engines_;
 	std::map<std::string, adios2::Mode> current_mode_;	// Track if in read or write mode
-	adios2::Engine* engine_ = nullptr;
 	std::string pluginDataModelPath_;
 };
