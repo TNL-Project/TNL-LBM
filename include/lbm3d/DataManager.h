@@ -107,16 +107,16 @@ public:
 
 	adios2::Engine& getEngine(const std::string& ioName)
 	{
-		if (! engines_[ioName]) {
-			throw std::runtime_error("Engine not initialized for this simulation type");
+		if (engines_.count(ioName) == 0 || ! engines_[ioName]) {
+			throw std::runtime_error(fmt::format("Engine for '{}' is not initialized", ioName));
 		}
 		return engines_[ioName];
 	}
 
 	adios2::Mode getEngineMode(const std::string& ioName)
 	{
-		if (! engines_[ioName]) {
-			throw std::runtime_error("Engine not initialized for this simulation type");
+		if (engines_.count(ioName) == 0 || ! engines_[ioName]) {
+			throw std::runtime_error(fmt::format("Engine for '{}' is not initialized", ioName));
 		}
 		return current_mode_[ioName];
 	}
@@ -124,7 +124,7 @@ public:
 	// Explicitly close a specific engine
 	void closeEngine(const std::string& ioName)
 	{
-		if (engines_.count(ioName) > 0) {
+		if (engines_.count(ioName) > 0 && engines_[ioName]) {
 			engines_[ioName].Close();
 			engines_.erase(ioName);
 			spdlog::debug("Closed engine for {}", ioName);
@@ -201,8 +201,8 @@ public:
 	template <typename T>
 	void outputData(const std::string& varName, const T& data, const std::string& ioName)
 	{
-		if (! engines_[ioName]) {
-			return;
+		if (engines_.count(ioName) == 0 || ! engines_[ioName]) {
+			throw std::runtime_error(fmt::format("Engine for '{}' is not initialized", ioName));
 		}
 
 		if (current_mode_[ioName] != adios2::Mode::Write && current_mode_[ioName] != adios2::Mode::Append) {
@@ -215,15 +215,15 @@ public:
 			// engines_[ioName].PerformPuts();
 		}
 		else {
-			throw std::runtime_error(fmt::format("Variable \"{}\" not found", varName));
+			throw std::runtime_error(fmt::format("Variable '{}' not found", varName));
 		}
 	}
 
 	template <typename T>
 	void outputData(const std::string& varName, const T* data, const std::string& ioName)
 	{
-		if (! engines_[ioName]) {
-			return;
+		if (engines_.count(ioName) == 0 || ! engines_[ioName]) {
+			throw std::runtime_error(fmt::format("Engine for '{}' is not initialized", ioName));
 		}
 
 		if (current_mode_[ioName] != adios2::Mode::Write && current_mode_[ioName] != adios2::Mode::Append) {
@@ -236,7 +236,7 @@ public:
 			// engines_[ioName].PerformPuts();
 		}
 		else {
-			throw std::runtime_error(fmt::format("Variable \"{}\" not found", varName));
+			throw std::runtime_error(fmt::format("Variable '{}' not found", varName));
 		}
 	}
 
@@ -244,8 +244,8 @@ public:
 	template <typename T>
 	T readAttribute(const std::string& attrName, const std::string& ioName)
 	{
-		if (! engines_[ioName]) {
-			throw std::runtime_error("Engine not initialized for this simulation type");
+		if (engines_.count(ioName) == 0 || ! engines_[ioName]) {
+			throw std::runtime_error(fmt::format("Engine for '{}' is not initialized", ioName));
 		}
 
 		if (current_mode_[ioName] != adios2::Mode::Read) {
@@ -254,7 +254,7 @@ public:
 
 		auto attr = ios_[ioName].InquireAttribute<T>(attrName);
 		if (! attr) {
-			throw std::runtime_error(fmt::format("Attribute \"{}\" not found", attrName));
+			throw std::runtime_error(fmt::format("Attribute '{}' not found", attrName));
 		}
 
 		return attr.Data()[0];
@@ -263,8 +263,8 @@ public:
 	template <typename T>
 	std::vector<T> readAttributeArray(const std::string& attrName, const std::string& ioName)
 	{
-		if (! engines_[ioName]) {
-			throw std::runtime_error("Engine not initialized for this simulation type");
+		if (engines_.count(ioName) == 0 || ! engines_[ioName]) {
+			throw std::runtime_error(fmt::format("Engine for '{}' is not initialized", ioName));
 		}
 
 		if (current_mode_[ioName] != adios2::Mode::Read) {
@@ -273,7 +273,7 @@ public:
 
 		auto attr = ios_[ioName].InquireAttribute<T>(attrName);
 		if (! attr) {
-			throw std::runtime_error(fmt::format("Attribute \"{}\" not found", attrName));
+			throw std::runtime_error(fmt::format("Attribute '{}' not found", attrName));
 		}
 
 		return std::vector<T>(attr.Data(), attr.Data() + attr.Size());
@@ -282,8 +282,8 @@ public:
 	template <typename T>
 	void readVariable(const std::string& varName, T* data, const std::string& ioName)
 	{
-		if (! engines_[ioName]) {
-			throw std::runtime_error("Engine not initialized for this simulation type");
+		if (engines_.count(ioName) == 0 || ! engines_[ioName]) {
+			throw std::runtime_error(fmt::format("Engine for '{}' is not initialized", ioName));
 		}
 
 		if (current_mode_[ioName] != adios2::Mode::Read) {
@@ -292,7 +292,7 @@ public:
 
 		adios2::Variable<T> var = ios_.at(ioName).InquireVariable<T>(varName);
 		if (! var) {
-			throw std::runtime_error(fmt::format("Variable \"{}\" not found", varName));
+			throw std::runtime_error(fmt::format("Variable '{}' not found", varName));
 		}
 
 		engines_[ioName].Get(var, data);
@@ -301,8 +301,8 @@ public:
 
 	void beginStep(const std::string& ioName)
 	{
-		if (! engines_[ioName]) {
-			return;
+		if (engines_.count(ioName) == 0 || ! engines_[ioName]) {
+			throw std::runtime_error(fmt::format("Engine for '{}' is not initialized", ioName));
 		}
 		engine_ = &engines_[ioName];
 		engine_->BeginStep();
@@ -310,8 +310,8 @@ public:
 
 	void performPutsAndStep(const std::string& ioName)
 	{
-		if (! engines_[ioName]) {
-			return;
+		if (engines_.count(ioName) == 0 || ! engines_[ioName]) {
+			throw std::runtime_error(fmt::format("Engine for '{}' is not initialized", ioName));
 		}
 		engine_ = &engines_[ioName];
 
