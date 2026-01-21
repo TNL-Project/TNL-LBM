@@ -285,7 +285,7 @@ void State<NSE>::write1Dcut_X(idx y, idx z, const std::string& fname)
 		for (idx i = block.offset.x(); i < block.offset.x() + block.local.x(); i++) {
 			fprintf(fout, "%e", nse.lat.lbm2physX(i));
 			index = 0;
-			if (outputData(block, index++, 0, idd, block.offset.x(), block.offset.y(), block.offset.z(), value, dofs)) {
+			while (outputData(block, index++, 0, idd, block.offset.x(), block.offset.y(), block.offset.z(), value, dofs)) {
 				for (int dof = 0; dof < dofs; dof++) {
 					outputData(block, index - 1, dof, idd, i, y, z, value, dofs);
 					fprintf(fout, "\t%e", value);
