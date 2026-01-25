@@ -82,6 +82,13 @@ __cuda_callable__ typename lat_t::PointType computeVorticity(
 	return vorticity;
 }
 
+template <typename TRAITS>
+struct D3Q27_MACRO_Sync : D3Q27_MACRO_Default<TRAITS>
+{
+	// needed for computing velocity gradient
+	static const bool use_syncMacro = true;
+};
+
 template <typename NSE>
 struct StateLocal : State<NSE>
 {
@@ -100,8 +107,6 @@ struct StateLocal : State<NSE>
 	using point_t = typename TRAITS::point_t;
 	using bool3d = typename TRAITS::bool3d;
 	using lat_t = Lattice<3, real, idx>;
-
-	using dVectorView = TNL::Containers::VectorView<dreal, TNL::Devices::Cuda, idx>;
 
 	// problem parameters
 	dreal rho_0 = 1;
@@ -163,6 +168,8 @@ struct StateLocal : State<NSE>
 			for (uint8_t dftype = 1; dftype < DFMAX; dftype++)
 				block.dfs[dftype] = block.dfs[0];
 		}
+
+		nse.copyDFsToHost();
 	}
 
 	bool outputData(const BLOCK& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) override
@@ -183,28 +190,12 @@ struct StateLocal : State<NSE>
 		return false;
 	}
 
-	auto dmacroVector(int macro_idx) -> dVectorView
-	{
-		if (macro_idx >= MACRO::N)
-			throw std::logic_error("macro_idx must be less than MACRO::N");
-
-		auto& block = nse.blocks.front();
-
-		// offset for the requested quantity
-		const idx quantity_offset = block.dmacro.getStorageIndex(macro_idx, block.offset.x(), block.offset.y(), block.offset.z());
-
-		// pointer to the data
-		dreal* data = block.dmacro.getData() + quantity_offset;
-
-		return {data, block.data.XYZ};
-	}
-
 	void probe1() override
 	{
 		spdlog::info("probe1 called at t={:f} iter={:d}", nse.physTime(), nse.iterations);
 
 		// Initialize the logger
-		if (kinetic_energy_logger == nullptr) {
+		if (kinetic_energy_logger == nullptr && nse.rank == 0) {
 			const std::string dir = fmt::format("results_{}/probe1", this->id);
 			mkdir_p(dir.c_str(), 0777);
 			const std::string fname = fmt::format("{}/{}_rank{:03d}.txt", dir, "kinetic_energy", this->nse.rank);
@@ -223,19 +214,11 @@ struct StateLocal : State<NSE>
 			spdlog::info("probe1 logger initialized");
 		}
 
-		// FIXME: multiple blocks
-		const auto drho = dmacroVector(MACRO::e_rho);
-		const auto dvx = dmacroVector(MACRO::e_vx);
-		const auto dvy = dmacroVector(MACRO::e_vy);
-		const auto dvz = dmacroVector(MACRO::e_vz);
-
-		// integrate the kinetic energy on the whole domain
 		const dreal domain_volume = nse.lat.global.x() * nse.lat.global.y() * nse.lat.global.z();
-		const dreal lbm_kinetic_energy = TNL::sum(drho * (dvx * dvx + dvy * dvy + dvz * dvz)) / rho_0 / 2 / domain_volume;
-		const dreal kinetic_energy = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(lbm_kinetic_energy));
 
 		// extract variables and views for capturing in the lambda function
 		const lat_t lat = nse.lat;
+		const idx3d local_size = nse.blocks.front().local;
 		const bool3d distributed = nse.blocks.front().is_distributed();
 #ifdef HAVE_MPI
 		const auto& dmacro_view = nse.blocks.front().dmacro.getLocalView();
@@ -243,40 +226,63 @@ struct StateLocal : State<NSE>
 		const auto& dmacro_view = nse.blocks.front().dmacro.getView();
 #endif
 
-		// integrate enstrophy on the whole domain
-		// FIXME: lambda does not work with MPI
-		const dreal enstrophy_lat =	 //
+		// integrate the kinetic energy on the whole domain
+		const real lbm_kinetic_energy_local =  //
 			TNL::Algorithms::reduce<DeviceType>(
 				idx(0),
-				nse.blocks.front().data.XYZ,
-				[lat, distributed, dmacro_view] __cuda_callable__(idx i) -> dreal
+				local_size.x() * local_size.y() * local_size.z(),
+				[local_size, dmacro_view] __cuda_callable__(idx i) -> real
 				{
-					const idx x = i % lat.global.x();
-					const idx y = (i / lat.global.x()) % lat.global.y();
-					const idx z = i / (lat.global.x() * lat.global.y());
+					const idx x = i % local_size.x();
+					const idx y = (i / local_size.x()) % local_size.y();
+					const idx z = i / (local_size.x() * local_size.y());
+					const dreal rho = dmacro_view(MACRO::e_rho, x, y, z);
+					const dreal vx = dmacro_view(MACRO::e_vx, x, y, z);
+					const dreal vy = dmacro_view(MACRO::e_vy, x, y, z);
+					const dreal vz = dmacro_view(MACRO::e_vz, x, y, z);
+					return rho * (vx * vx + vy * vy + vz * vz);
+				},
+				TNL::Plus{},
+				real(0)
+			);
+		const real lbm_kinetic_energy = TNL::MPI::reduce(lbm_kinetic_energy_local, MPI_SUM, nse.communicator) / rho_0 / 2 / domain_volume;
+		const real kinetic_energy = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(lbm_kinetic_energy));
+
+		// integrate enstrophy on the whole domain
+		const real lbm_enstrophy_local =  //
+			TNL::Algorithms::reduce<DeviceType>(
+				idx(0),
+				local_size.x() * local_size.y() * local_size.z(),
+				[lat, local_size, distributed, dmacro_view] __cuda_callable__(idx i) -> real
+				{
+					const idx x = i % local_size.x();
+					const idx y = (i / local_size.x()) % local_size.y();
+					const idx z = i / (local_size.x() * local_size.y());
 					const dreal rho = dmacro_view(MACRO::e_rho, x, y, z);
 					//const point_t vorticity = computeVorticity<MACRO>(dmacro_view, lat, distributed, x, y, z);
 					//return rho * TNL::dot(vorticity, vorticity);
 					const auto G = computeGradVel<MACRO>(dmacro_view, lat, distributed, x, y, z);
-					const dreal G_norm_squared =
+					const real G_norm_squared =
 						G.xx * G.xx + G.yy * G.yy + G.zz * G.zz + G.xy * G.xy + G.xz * G.xz + G.yz * G.yz + G.yx * G.yx + G.zx * G.zx + G.zy * G.zy;
 					return rho * G_norm_squared;
 				},
 				TNL::Plus{},
-				dreal(0)
-			)
-			/ rho_0 / 2 / domain_volume;
-		const dreal enstrophy = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(enstrophy_lat)) / nse.lat.physDl / nse.lat.physDl;
-		const dreal enstrophy_dissipation = enstrophy * 2 * nse.lat.physViscosity;
+				real(0)
+			);
+		const real lbm_enstrophy = TNL::MPI::reduce(lbm_enstrophy_local, MPI_SUM, nse.communicator) / rho_0 / 2 / domain_volume;
+		const real enstrophy = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(lbm_enstrophy)) / nse.lat.physDl / nse.lat.physDl;
+		const real enstrophy_dissipation = enstrophy * 2 * nse.lat.physViscosity;
 
-		kinetic_energy_logger->info(
-			"{:06d} {:12.8e} {:12.8e} {:12.8e} {:12.8e}", nse.iterations, nse.physTime(), kinetic_energy, enstrophy, enstrophy_dissipation
-		);
-		kinetic_energy_logger->flush();
+		if (nse.rank == 0) {
+			kinetic_energy_logger->info(
+				"{:06d} {:12.8e} {:12.8e} {:12.8e} {:12.8e}", nse.iterations, nse.physTime(), kinetic_energy, enstrophy, enstrophy_dissipation
+			);
+			kinetic_energy_logger->flush();
+		}
 	}
 
-	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat)
-	: State<NSE>(id, communicator, std::move(lat))
+	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, std::vector<BLOCK>&& blocks)
+	: State<NSE>(id, communicator, std::move(lat), std::move(blocks))
 	{}
 };
 
@@ -287,6 +293,7 @@ int sim(
 	double LBM_VISCOSITY = 1e-4	 // [Δx^2/Δt]
 )
 {
+	using BLOCK = LBM_BLOCK<NSE>;
 	using idx = typename NSE::TRAITS::idx;
 	using real = typename NSE::TRAITS::real;
 	using dreal = typename NSE::TRAITS::dreal;
@@ -316,10 +323,16 @@ int sim(
 	lat.physDt = PHYS_DT;
 	lat.physViscosity = PHYS_VISCOSITY;
 
+	// periodic lattice decomposition
+	// (but do not add overlaps for single process simulations)
+	const bool periodic_lattice = TNL::MPI::GetSize(MPI_COMM_WORLD) > 1;
+	std::vector<BLOCK> blocks;
+	blocks.emplace_back(decomposeLattice_D1Q3<NSE>(MPI_COMM_WORLD, lat.global, periodic_lattice));
+
 	const std::string state_id = fmt::format(
 		"sim_4_{}_np{:03d}/res={:02d}_Re={:g}_nu={:e}", TNL::getType<dreal>(), TNL::MPI::GetSize(MPI_COMM_WORLD), RESOLUTION, Re, LBM_VISCOSITY
 	);
-	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat);
+	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, std::move(blocks));
 	state.V_0 = V_0;
 	state.L = L;
 	spdlog::info("Physical parameters: L={}, V_0={}, Re={}, nu={}, dl={}, dt={}", L, V_0, Re, PHYS_VISCOSITY, PHYS_DL, PHYS_DT);
@@ -360,7 +373,7 @@ void run(int RES, double Re, double lbm_viscosity)
 		typename COLL::EQ,
 		D3Q27_STREAMING<TRAITS>,
 		D3Q27_BC_All,
-		D3Q27_MACRO_Default<TRAITS>>;
+		D3Q27_MACRO_Sync<TRAITS>>;
 
 	sim<NSE_CONFIG>(RES, Re, lbm_viscosity);
 }
