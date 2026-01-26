@@ -28,16 +28,16 @@ struct D3Q343_ELBM : D3Q343_COMMON<TRAITS, LBM_EQ>
         const dreal beta1 = 1./(no2*KS.lbmViscosity/T0 + no1);
         const dreal tau =  (no2*KS.lbmViscosity/T0 + no1);
 
-        dreal feq[LBM_KS::Q];
-        //KS.vx -= 1.0*KS.fx/2;
-        //KS.vy -= 1.0*KS.fy/2;
+        dreal feqNoForce[LBM_KS::Q];
+        KS.vx -= 1.0*KS.fx/2;
+        KS.vy -= 1.0*KS.fy/2;
 
         dreal A = KS.A;
         dreal B = KS.B1;
         dreal C = KS.B2;
         dreal D = KS.B3;
         findEntropicEquilibrium(A, B, C,D, KS);
-        calculateEquilibriumDistribution(feq,A,B,C,D,KS);
+        calculateEquilibriumDistribution(feqNoForce,A,B,C,D,KS);
 
         // Update the Lagrange multipliers to converge faster on the next iteration
         KS.A = A;
@@ -46,13 +46,27 @@ struct D3Q343_ELBM : D3Q343_COMMON<TRAITS, LBM_EQ>
         KS.B3 = D;
         if(equilibrium){
             for(int id = 0; id < LBM_KS::Q; id++){
-                KS.f[id] = feq[id];
+                KS.f[id] = feqNoForce[id];
             }
             return;
         }
 
+		dreal feqFullForce[LBM_KS::Q];
+        for(int i = 0; i < LBM_KS::Q; i++){
+            feqFullForce[i] = feqNoForce[i];
+        }
+        if (KS.fx != 0 || KS.fy != 0) {
+            KS.vx += 1.0*KS.fx;
+            KS.vy += 1.0*KS.fy;
+            findEntropicEquilibrium(A,B,C,D,KS);
+            calculateEquilibriumDistribution(feqFullForce,A,B,C,D,KS);
+        }
+
+        KS.vx -= 1.0*KS.fx/2;
+        KS.vy -= 1.0*KS.fy/2;
+
 		for(int id = 0; id < LBM_KS::Q; id++){
-            KS.f[id] += KS.alpha*beta1*(feq[id] - KS.f[id]);// + (fFeq[id] - feq[id]);
+            KS.f[id] += KS.alpha*beta1*(feqNoForce[id] - KS.f[id]) + (feqFullForce[id] - feqNoForce[id]);
         }
 	}
 
