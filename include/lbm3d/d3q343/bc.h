@@ -34,7 +34,8 @@ struct D3Q343_BC_All
 		GEO_SYM_RIGHT,
 		GEO_SYM_BACK,
 		GEO_SYM_FRONT,
-		GEO_INFLOW_LEFT_PRESSURE
+		GEO_INFLOW_LEFT_PRESSURE,
+		GEO_INFLOW_LEFT_PRESSURE_THREE
 	};
 
 	__cuda_callable__ static bool isPeriodic(map_t mapgi)
@@ -90,11 +91,13 @@ struct D3Q343_BC_All
 				#ifdef __CUDA_ARCH__
 				#pragma unroll
 				#endif
-				for(int id = 0; id < LBM_KS::Qhalf; id++){
+				for(int id = 0; id < LBM_KS::Q; id++){
 					KS.f[id] /= KS.rho;
 				}
 				KS.rho = 1;
 				break;
+			// entropic or polynomial
+			//	KS.f -= eq + KS.f
 			case GEO_WALL:
 				// does not affect the computation, only the output
 				KS.rho = 1;
@@ -105,7 +108,7 @@ struct D3Q343_BC_All
 				#ifdef __CUDA_ARCH__
 				#pragma unroll
 				#endif
-				for(int id = 0; id < LBM_KS::Qhalf; id++){
+				for(int id = 0; id < LBM_KS::Q; id++){
 					TNL::swap(KS.f[id], KS.f[KS.flip_id(id)]);
 				}
 				break;
@@ -158,6 +161,18 @@ struct D3Q343_BC_All
             	STREAMING::streaming(SD,KS,streamGrid);
 				for(int i = 0; i < LBM_KS::ONE_SIZE; i++){
 					streamGrid.x(i)--;
+				}
+				COLL::computeDensityAndVelocity(KS);
+				SD.inflow(KS, x, y, z);
+				COLL::setEquilibrium(KS);
+				break;
+			case GEO_INFLOW_LEFT_PRESSURE_THREE:
+				for(int i = 0; i < LBM_KS::ONE_SIZE; i++){
+					streamGrid.x(i)+=3;
+				}
+            	STREAMING::streaming(SD,KS,streamGrid);
+				for(int i = 0; i < LBM_KS::ONE_SIZE; i++){
+					streamGrid.x(i)-=3;
 				}
 				COLL::computeDensityAndVelocity(KS);
 				SD.inflow(KS, x, y, z);
