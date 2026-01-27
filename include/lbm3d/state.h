@@ -31,7 +31,6 @@ struct probe3Dcut
 {
 	IDX ox, oy, oz;	 // lower left front point
 	IDX lx, ly, lz;	 // length
-	IDX step;		 // 1: every voxel 2: every 3 voxels etc.
 	std::string name;
 	int cycle;
 };
@@ -166,7 +165,7 @@ struct State
 	// 3D cuts
 	virtual void writeVTKs_3Dcut();
 	template <typename... ARGS>
-	void add3Dcut(idx ox, idx oy, idx oz, idx lx, idx ly, idx lz, idx step, const char* fmt, ARGS... args);
+	void add3Dcut(idx ox, idx oy, idx oz, idx lx, idx ly, idx lz, const char* fmt, ARGS... args);
 
 	virtual void writeVTKs_1D();
 

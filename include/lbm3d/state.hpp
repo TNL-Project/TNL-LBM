@@ -620,13 +620,12 @@ template <typename NSE>
 void State<NSE>::predefineVTK3Dcut(const std::string& ioName, const BLOCK_NSE& block, const T_PROBE3DCUT& probe)
 {
 	// Mirrors the domain intersection logic in LBM_BLOCK::writeVTK_3Dcut()
-	const idx ox = probe.ox;
-	const idx oy = probe.oy;
-	const idx oz = probe.oz;
-	const idx gx = probe.lx;
-	const idx gy = probe.ly;
-	const idx gz = probe.lz;
-	const idx step = probe.step;
+	idx ox = probe.ox;
+	idx oy = probe.oy;
+	idx oz = probe.oz;
+	idx gx = probe.lx;
+	idx gy = probe.ly;
+	idx gz = probe.lz;
 
 	const bool overlapT =
 		! (ox + gx <= block.offset.x() || block.offset.x() + block.local.x() <= ox || oy + gy <= block.offset.y()
@@ -645,23 +644,10 @@ void State<NSE>::predefineVTK3Dcut(const std::string& ioName, const BLOCK_NSE& b
 	idx oY = TNL::max(0, block.offset.y() - oy);
 	idx oZ = TNL::max(0, block.offset.z() - oz);
 
-	// box dimensions (round-up integer division)
-	idx lX = lx / step + (lx % step != 0);
-	idx lY = ly / step + (ly % step != 0);
-	idx lZ = lz / step + (lz % step != 0);
-
-	idx gX = gx / step + (gx % step != 0);
-	idx gY = gy / step + (gy % step != 0);
-	idx gZ = gz / step + (gz % step != 0);
-
-	oX = oX / step + (oX % step != 0);
-	oY = oY / step + (oY % step != 0);
-	oZ = oZ / step + (oZ % step != 0);
-
 	// NOTE: ADIOS2 dims are in {Z, Y, X} order for ImageData writer
-	const adios2::Dims shape{static_cast<std::size_t>(gZ), static_cast<std::size_t>(gY), static_cast<std::size_t>(gX)};
+	const adios2::Dims shape{static_cast<std::size_t>(gz), static_cast<std::size_t>(gy), static_cast<std::size_t>(gx)};
 	const adios2::Dims start{static_cast<std::size_t>(oZ), static_cast<std::size_t>(oY), static_cast<std::size_t>(oX)};
-	const adios2::Dims count{static_cast<std::size_t>(lZ), static_cast<std::size_t>(lY), static_cast<std::size_t>(lX)};
+	const adios2::Dims count{static_cast<std::size_t>(lz), static_cast<std::size_t>(ly), static_cast<std::size_t>(lx)};
 
 	predefineVTK(ioName, block, shape, start, count);
 }
@@ -676,7 +662,7 @@ void State<NSE>::predefineVTK3Dcut(const std::string& ioName, const BLOCK_NSE& b
 
 template <typename NSE>
 template <typename... ARGS>
-void State<NSE>::add3Dcut(idx ox, idx oy, idx oz, idx lx, idx ly, idx lz, idx step, const char* fmts, ARGS... args)
+void State<NSE>::add3Dcut(idx ox, idx oy, idx oz, idx lx, idx ly, idx lz, const char* fmts, ARGS... args)
 {
 	probe3Dvec.push_back(T_PROBE3DCUT());
 	int last = probe3Dvec.size() - 1;
@@ -689,7 +675,6 @@ void State<NSE>::add3Dcut(idx ox, idx oy, idx oz, idx lx, idx ly, idx lz, idx st
 	probe3Dvec[last].lx = lx;
 	probe3Dvec[last].ly = ly;
 	probe3Dvec[last].lz = lz;
-	probe3Dvec[last].step = step;
 	probe3Dvec[last].cycle = 0;
 }
 
@@ -730,7 +715,6 @@ void State<NSE>::writeVTKs_3Dcut()
 				probevec.lx,
 				probevec.ly,
 				probevec.lz,
-				probevec.step,
 				dataManager
 			);
 			spdlog::info("[vtk {} written, time {:f}, cycle {:d}] ", fname, nse.physTime(), probevec.cycle);

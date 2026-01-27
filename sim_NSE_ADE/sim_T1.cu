@@ -537,7 +537,7 @@ int simT1_test(int RESOLUTION = 2, const std::string& adiosConfigPath = "adios2.
 
 	//state.cnt[VTK3D].period = 0.001;
 	//state.cnt[VTK3DCUT].period = 0.001;
-	//state.add3Dcut(X/4,Y/4,Z/4, X/2,Y/2,Z/2, 2, "box");
+	//state.add3Dcut(X/4,Y/4,Z/4, X/2,Y/2,Z/2, "box");
 
 	execute(state);
 

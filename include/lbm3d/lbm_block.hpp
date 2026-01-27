@@ -821,7 +821,6 @@ void LBM_BLOCK<CONFIG>::writeVTK_3Dcut(
 	idx gx,
 	idx gy,
 	idx gz,
-	idx step,
 	DataManager& dataManager
 ) const
 {
@@ -842,34 +841,21 @@ void LBM_BLOCK<CONFIG>::writeVTK_3Dcut(
 	idx oY = TNL::max(0, offset.y() - oy);
 	idx oZ = TNL::max(0, offset.z() - oz);
 
-	// box dimensions (round-up integer division)
-	idx lX = lx / step + (lx % step != 0);
-	idx lY = ly / step + (ly % step != 0);
-	idx lZ = lz / step + (lz % step != 0);
-
-	idx gX = gx / step + (gx % step != 0);
-	idx gY = gy / step + (gy % step != 0);
-	idx gZ = gz / step + (gz % step != 0);
-
-	oX = oX / step + (oX % step != 0);
-	oY = oY / step + (oY % step != 0);
-	oZ = oZ / step + (oZ % step != 0);
-
 	std::vector<int> tempIData;
 	std::vector<float> tempFData;
-	const std::size_t nCells = static_cast<std::size_t>(lX) * static_cast<std::size_t>(lY) * static_cast<std::size_t>(lZ);
+	const std::size_t nCells = static_cast<std::size_t>(lx) * static_cast<std::size_t>(ly) * static_cast<std::size_t>(lz);
 	tempIData.reserve(nCells);
 	tempFData.reserve(nCells);
 	const point_t origin = lat.lbm2physPoint(ox, oy, oz);
-	UniformDataWriter<TRAITS> writer({gX, gY, gZ}, {lX, lY, lZ}, {oX, oY, oZ}, origin, lat.physDl * step, dataManager, filename);
+	UniformDataWriter<TRAITS> writer({gx, gy, gz}, {lx, ly, lz}, {oX, oY, oZ}, origin, lat.physDl, dataManager, filename);
 
 	ox = TNL::max(ox, offset.x());
 	oy = TNL::max(oy, offset.y());
 	oz = TNL::max(oz, offset.z());
 
-	for (idx z = oz; z < oz + lz; z += step)
-		for (idx y = oy; y < oy + ly; y += step)
-			for (idx x = ox; x < ox + lx; x += step)
+	for (idx z = oz; z < oz + lz; z++)
+		for (idx y = oy; y < oy + ly; y++)
+			for (idx x = ox; x < ox + lx; x++)
 				tempIData.push_back(hmap(x, y, z));
 	writer.write("wall", tempIData, 1);
 	tempIData.clear();
@@ -878,9 +864,9 @@ void LBM_BLOCK<CONFIG>::writeVTK_3Dcut(
 	int index = 0;
 	while (outputData(*this, index++, 0, ox, oy, oz, desc)) {
 		for (int dof = 0; dof < desc.dofs; dof++) {
-			for (idx z = oz; z < oz + lz; z += step)
-				for (idx y = oy; y < oy + ly; y += step)
-					for (idx x = ox; x < ox + lx; x += step) {
+			for (idx z = oz; z < oz + lz; z++)
+				for (idx y = oy; y < oy + ly; y++)
+					for (idx x = ox; x < ox + lx; x++) {
 						outputData(*this, index - 1, dof, x, y, z, desc);
 						tempFData.push_back(desc.value);
 					}

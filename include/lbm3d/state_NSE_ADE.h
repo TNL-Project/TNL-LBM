@@ -408,7 +408,6 @@ struct State_NSE_ADE : State<NSE>
 					probevec.lx,
 					probevec.ly,
 					probevec.lz,
-					probevec.step,
 					dataManager
 				);
 				spdlog::info("[vtk {} written, time {:f}, cycle {:d}] ", fname, nse.physTime(), probevec.cycle);
@@ -435,7 +434,6 @@ struct State_NSE_ADE : State<NSE>
 					probevec.lx,
 					probevec.ly,
 					probevec.lz,
-					probevec.step,
 					dataManager
 				);
 				spdlog::info("[vtk {} written, time {:f}, cycle {:d}] ", fname, nse.physTime(), probevec.cycle);

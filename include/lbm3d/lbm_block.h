@@ -219,10 +219,9 @@ struct LBM_BLOCK
 		idx ox,
 		idx oy,
 		idx oz,
-		idx lx,
-		idx ly,
-		idx lz,
-		idx step,
+		idx gx,
+		idx gy,
+		idx gz,
 		DataManager& dataManager
 	) const;
 	template <typename Output>
