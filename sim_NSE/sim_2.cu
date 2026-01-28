@@ -418,7 +418,6 @@ int sim(int RES, bool use_forcing, Scaling scaling, double final_time, const std
 	//state.add2Dcut_X(LBM_X/2,"cut_X");
 	//state.add2Dcut_Y(LBM_Y/2,"cut_Y");
 	//state.add2Dcut_Z(LBM_Z/2,"cut_Z");
-	//state.add1Dcut_Z(LBM_X/2*PHYS_DL, LBM_Y/2*PHYS_DL, "cut_Z");
 
 	execute(state);
 

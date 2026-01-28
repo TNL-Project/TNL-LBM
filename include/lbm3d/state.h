@@ -44,26 +44,6 @@ struct probe2Dcut
 	int cycle;
 };
 
-template <typename IDX>
-struct probe1Dcut
-{
-	int type;  // 0=X, 1=Y, 2=Z
-	std::string name;
-	IDX pos1;  // x/y/z
-	IDX pos2;  // y/z
-	int cycle;
-};
-
-template <typename REAL>
-struct probe1Dlinecut
-{
-	std::string name;
-	using point_t = TNL::Containers::StaticVector<3, REAL>;
-	point_t from;  // physical units
-	point_t to;	   // physical units
-	int cycle;
-};
-
 // for print/stat/write/reset counters
 template <typename REAL>
 struct counter
@@ -81,7 +61,6 @@ enum Actions : std::uint8_t
 	STAT_RESET,
 	STAT2_RESET,
 	PRINT,
-	VTK1D,
 	VTK2D,
 	VTK3D,
 	PROBE1,
@@ -109,8 +88,6 @@ struct State
 
 	using T_PROBE3DCUT = probe3Dcut<idx>;
 	using T_PROBE2DCUT = probe2Dcut<idx>;
-	using T_PROBE1DCUT = probe1Dcut<idx>;
-	using T_PROBE1DLINECUT = probe1Dlinecut<real>;
 	using T_COUNTER = counter<real>;
 
 	std::string id;
@@ -126,8 +103,6 @@ struct State
 
 	std::vector<T_PROBE3DCUT> probe3Dvec;
 	std::vector<T_PROBE2DCUT> probe2Dvec;
-	std::vector<T_PROBE1DCUT> probe1Dvec;
-	std::vector<T_PROBE1DLINECUT> probe1Dlinevec;
 
 	// Immersed boundary method
 	Lagrange3D ibm;
@@ -166,21 +141,6 @@ struct State
 	virtual void writeVTKs_3Dcut();
 	template <typename... ARGS>
 	void add3Dcut(idx ox, idx oy, idx oz, idx lx, idx ly, idx lz, const char* fmt, ARGS... args);
-
-	virtual void writeVTKs_1D();
-
-	template <typename... ARGS>
-	void add1Dcut(point_t from, point_t to, const char* fmt, ARGS... args);
-	template <typename... ARGS>
-	void add1Dcut_X(real y, real z, const char* fmt, ARGS... args);
-	template <typename... ARGS>
-	void add1Dcut_Y(real x, real z, const char* fmt, ARGS... args);
-	template <typename... ARGS>
-	void add1Dcut_Z(real x, real y, const char* fmt, ARGS... args);
-	void write1Dcut(point_t from, point_t to, const std::string& fname);
-	void write1Dcut_X(idx y, idx z, const std::string& fname);
-	void write1Dcut_Y(idx x, idx z, const std::string& fname);
-	void write1Dcut_Z(idx x, idx y, const std::string& fname);
 
 	virtual bool outputData(const BLOCK_NSE& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc)
 	{

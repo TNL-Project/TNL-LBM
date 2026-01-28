@@ -227,264 +227,6 @@ void State<NSE>::writeVTK_Points(const char* name, real time, int cycle, const t
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                                                                                                                                                                                                //
 //                                                                                                                                                                                                                //
-// VTK 1D CUT
-//                                                                                                                                                                                                                //
-//                                                                                                                                                                                                                //
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-template <typename NSE>
-template <typename... ARGS>
-void State<NSE>::add1Dcut(point_t from, point_t to, const char* fmts, ARGS... args)
-{
-	probe1Dlinevec.push_back(T_PROBE1DLINECUT());
-	int last = probe1Dlinevec.size() - 1;
-	probe1Dlinevec[last].name = fmt::format(fmts, args...);
-	probe1Dlinevec[last].from = from;
-	probe1Dlinevec[last].to = to;
-	probe1Dlinevec[last].cycle = 0;
-}
-
-template <typename NSE>
-template <typename... ARGS>
-void State<NSE>::add1Dcut_X(real y, real z, const char* fmts, ARGS... args)
-{
-	probe1Dvec.push_back(T_PROBE1DCUT());
-	int last = probe1Dvec.size() - 1;
-	probe1Dvec[last].name = fmt::format(fmts, args...);
-	probe1Dvec[last].type = 0;
-	probe1Dvec[last].pos1 = nse.lat.phys2lbmY(y);
-	probe1Dvec[last].pos2 = nse.lat.phys2lbmZ(z);
-	probe1Dvec[last].cycle = 0;
-}
-
-template <typename NSE>
-template <typename... ARGS>
-void State<NSE>::add1Dcut_Y(real x, real z, const char* fmts, ARGS... args)
-{
-	probe1Dvec.push_back(T_PROBE1DCUT());
-	int last = probe1Dvec.size() - 1;
-	probe1Dvec[last].name = fmt::format(fmts, args...);
-	probe1Dvec[last].type = 1;
-	probe1Dvec[last].pos1 = nse.lat.phys2lbmX(x);
-	probe1Dvec[last].pos2 = nse.lat.phys2lbmZ(z);
-	probe1Dvec[last].cycle = 0;
-}
-
-template <typename NSE>
-template <typename... ARGS>
-void State<NSE>::add1Dcut_Z(real x, real y, const char* fmts, ARGS... args)
-{
-	probe1Dvec.push_back(T_PROBE1DCUT());
-	int last = probe1Dvec.size() - 1;
-	probe1Dvec[last].name = fmt::format(fmts, args...);
-	probe1Dvec[last].type = 2;
-	probe1Dvec[last].pos1 = nse.lat.phys2lbmX(x);
-	probe1Dvec[last].pos2 = nse.lat.phys2lbmY(y);
-	probe1Dvec[last].cycle = 0;
-}
-
-template <typename NSE>
-void State<NSE>::writeVTKs_1D()
-{
-	if (probe1Dvec.size() > 0) {
-		// browse all 1D probeline cuts
-		for (std::size_t i = 0; i < probe1Dvec.size(); i++) {
-			const std::string fname = fmt::format("results_{}/probes1D/{}_rank{:03d}_{:06d}", id, probe1Dvec[i].name, nse.rank, probe1Dvec[i].cycle);
-			create_parent_directories(fname.c_str());
-			spdlog::info("[1dcut {}]", fname);
-			//			probeLine(probe1Dvec[i].from[0],probe1Dvec[i].from[1],probe1Dvec[i].from[2],probe1Dvec[i].to[0],probe1Dvec[i].to[1],probe1Dvec[i].to[2],fname);
-			switch (probe1Dvec[i].type) {
-				case 0:
-					write1Dcut_X(probe1Dvec[i].pos1, probe1Dvec[i].pos2, fname);
-					break;
-				case 1:
-					write1Dcut_Y(probe1Dvec[i].pos1, probe1Dvec[i].pos2, fname);
-					break;
-				case 2:
-					write1Dcut_Z(probe1Dvec[i].pos1, probe1Dvec[i].pos2, fname);
-					break;
-			}
-			probe1Dvec[i].cycle++;
-		}
-	}
-
-	// browse all 1D probe cuts
-	for (std::size_t i = 0; i < probe1Dlinevec.size(); i++) {
-		const std::string fname =
-			fmt::format("results_{}/probes1D/{}_rank{:03d}_{:06d}", id, probe1Dlinevec[i].name, nse.rank, probe1Dlinevec[i].cycle);
-		create_parent_directories(fname.c_str());
-		spdlog::info("[1dcut {}]", fname);
-		write1Dcut(probe1Dlinevec[i].from, probe1Dlinevec[i].to, fname);
-		probe1Dlinevec[i].cycle++;
-	}
-}
-
-template <typename NSE>
-void State<NSE>::write1Dcut(point_t from, point_t to, const std::string& fname)
-{
-	FILE* fout = fopen(fname.c_str(), "wt");  // append information
-	point_t i = nse.lat.phys2lbmPoint(from);
-	point_t f = nse.lat.phys2lbmPoint(to);
-	real dist = TNL::l2Norm(i - f);
-	real ds = 1.0 / (dist * 2.0);  // rozliseni najit
-	// special case: sampling along an axis
-	if ((i[0] == f[0] && i[1] == f[1]) || (i[1] == f[1] && i[2] == f[2]) || (i[0] == f[0] && i[2] == f[2]))
-		ds = 1.0 / dist;
-
-	fprintf(fout, "#time %f s\n", nse.physTime());
-	fprintf(fout, "#1:rel_pos");
-
-	OutputDataDescriptor<dreal> desc;
-	int count = 2;
-	int index = 0;
-	while (
-		outputData(nse.blocks.front(), index++, 0, nse.blocks.front().offset.x(), nse.blocks.front().offset.y(), nse.blocks.front().offset.z(), desc)
-	)
-	{
-		if (desc.dofs == 1)
-			fprintf(fout, "\t%d:%s", count++, desc.quantity.c_str());
-		else
-			for (int i = 0; i < desc.dofs; i++)
-				fprintf(fout, "\t%d:%s[%d]", count++, desc.quantity.c_str(), i);
-	}
-	fprintf(fout, "\n");
-
-	for (real s = 0; s <= 1.0; s += ds) {
-		point_t p = i + s * (f - i);
-		for (const auto& block : nse.blocks) {
-			if (! block.isLocalIndex((idx) p.x(), (idx) p.y(), (idx) p.z()))
-				continue;
-			fprintf(fout, "%e", (s * dist - 0.5) * nse.lat.physDl);
-			index = 0;
-			while (outputData(block, index++, 0, block.offset.x(), block.offset.y(), block.offset.z(), desc)) {
-				for (int dof = 0; dof < desc.dofs; dof++) {
-					outputData(block, index - 1, dof, (idx) p.x(), (idx) p.y(), (idx) p.z(), desc);
-					fprintf(fout, "\t%e", desc.value);
-				}
-			}
-			fprintf(fout, "\n");
-		}
-	}
-	fclose(fout);
-}
-
-template <typename NSE>
-void State<NSE>::write1Dcut_X(idx y, idx z, const std::string& fname)
-{
-	FILE* fout = fopen(fname.c_str(), "wt");  // append information
-	// probe vertical profile at x_m
-	fprintf(fout, "#time %f s\n", nse.physTime());
-	fprintf(fout, "#1:x");
-
-	OutputDataDescriptor<dreal> desc;
-	int count = 2;
-	int index = 0;
-	while (
-		outputData(nse.blocks.front(), index++, 0, nse.blocks.front().offset.x(), nse.blocks.front().offset.y(), nse.blocks.front().offset.z(), desc)
-	)
-	{
-		if (desc.dofs == 1)
-			fprintf(fout, "\t%d:%s", count++, desc.quantity.c_str());
-		else
-			for (idx i = 0; i < desc.dofs; i++)
-				fprintf(fout, "\t%d:%s[%d]", count++, desc.quantity.c_str(), (int) i);
-	}
-	fprintf(fout, "\n");
-
-	for (const auto& block : nse.blocks)
-		for (idx i = block.offset.x(); i < block.offset.x() + block.local.x(); i++) {
-			fprintf(fout, "%e", nse.lat.lbm2physX(i));
-			index = 0;
-			while (outputData(block, index++, 0, block.offset.x(), block.offset.y(), block.offset.z(), desc)) {
-				for (int dof = 0; dof < desc.dofs; dof++) {
-					outputData(block, index - 1, dof, i, y, z, desc);
-					fprintf(fout, "\t%e", desc.value);
-				}
-			}
-			fprintf(fout, "\n");
-		}
-	fclose(fout);
-}
-
-template <typename NSE>
-void State<NSE>::write1Dcut_Y(idx x, idx z, const std::string& fname)
-{
-	FILE* fout = fopen(fname.c_str(), "wt");  // append information
-	// probe vertical profile at x_m
-	fprintf(fout, "#time %f s\n", nse.physTime());
-	fprintf(fout, "#1:y");
-
-	OutputDataDescriptor<dreal> desc;
-	int count = 2;
-	int index = 0;
-	while (
-		outputData(nse.blocks.front(), index++, 0, nse.blocks.front().offset.x(), nse.blocks.front().offset.y(), nse.blocks.front().offset.z(), desc)
-	)
-	{
-		if (desc.dofs == 1)
-			fprintf(fout, "\t%d:%s", count++, desc.quantity.c_str());
-		else
-			for (idx i = 0; i < desc.dofs; i++)
-				fprintf(fout, "\t%d:%s[%d]", count++, desc.quantity.c_str(), (int) i);
-	}
-	fprintf(fout, "\n");
-
-	for (const auto& block : nse.blocks)
-		for (idx i = block.offset.y(); i < block.offset.y() + block.local.y(); i++) {
-			fprintf(fout, "%e", nse.lat.lbm2physY(i));
-			int index = 0;
-			while (outputData(block, index++, 0, block.offset.x(), block.offset.y(), block.offset.z(), desc)) {
-				for (int dof = 0; dof < desc.dofs; dof++) {
-					outputData(block, index - 1, dof, x, i, z, desc);
-					fprintf(fout, "\t%e", desc.value);
-				}
-			}
-			fprintf(fout, "\n");
-		}
-	fclose(fout);
-}
-
-template <typename NSE>
-void State<NSE>::write1Dcut_Z(idx x, idx y, const std::string& fname)
-{
-	FILE* fout = fopen(fname.c_str(), "wt");  // append information
-	// probe vertical profile at x_m
-	fprintf(fout, "#time %f s\n", nse.physTime());
-	fprintf(fout, "#1:z");
-
-	OutputDataDescriptor<dreal> desc;
-	int count = 2;
-	int index = 0;
-	while (
-		outputData(nse.blocks.front(), index++, 0, nse.blocks.front().offset.x(), nse.blocks.front().offset.y(), nse.blocks.front().offset.z(), desc)
-	)
-	{
-		if (desc.dofs == 1)
-			fprintf(fout, "\t%d:%s", count++, desc.quantity.c_str());
-		else
-			for (idx i = 0; i < desc.dofs; i++)
-				fprintf(fout, "\t%d:%s[%d]", count++, desc.quantity.c_str(), (int) i);
-	}
-	fprintf(fout, "\n");
-
-	for (const auto& block : nse.blocks)
-		for (idx i = block.offset.z(); i < block.offset.z() + block.local.z(); i++) {
-			fprintf(fout, "%e", nse.lat.lbm2physZ(i));
-			index = 0;
-			while (outputData(block, index++, 0, block.offset.x(), block.offset.y(), block.offset.z(), desc)) {
-				for (int dof = 0; dof < desc.dofs; dof++) {
-					outputData(block, index - 1, dof, x, y, i, desc);
-					fprintf(fout, "\t%e", desc.value);
-				}
-			}
-			fprintf(fout, "\n");
-		}
-	fclose(fout);
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//                                                                                                                                                                                                                //
-//                                                                                                                                                                                                                //
 // VTK 3D
 //                                                                                                                                                                                                                //
 //                                                                                                                                                                                                                //
@@ -985,14 +727,6 @@ void State<NSE>::checkpointState(adios2::Mode mode)
 		const std::string name = fmt::format("State_probe2D_{}_cycle", i);
 		checkpoint.saveLoadAttribute(name, probe2Dvec[i].cycle);
 	}
-	for (std::size_t i = 0; i < probe1Dvec.size(); i++) {
-		const std::string name = fmt::format("State_probe1D_{}_cycle", i);
-		checkpoint.saveLoadAttribute(name, probe1Dvec[i].cycle);
-	}
-	for (std::size_t i = 0; i < probe1Dlinevec.size(); i++) {
-		const std::string name = fmt::format("State_probe1Dline_{}_cycle", i);
-		checkpoint.saveLoadAttribute(name, probe1Dlinevec[i].cycle);
-	}
 
 	for (auto& block : nse.blocks) {
 		// save/load map
@@ -1482,9 +1216,9 @@ void State<NSE>::AfterSimUpdate()
 
 	bool write_info = false;
 
-	if (cnt[PRINT].action(nse.physTime()) || cnt[VTK1D].action(nse.physTime()) || cnt[VTK2D].action(nse.physTime())
-		|| cnt[VTK3D].action(nse.physTime()) || cnt[VTK3DCUT].action(nse.physTime()) || cnt[PROBE1].action(nse.physTime())
-		|| cnt[PROBE2].action(nse.physTime()) || cnt[PROBE3].action(nse.physTime()))
+	if (cnt[PRINT].action(nse.physTime()) || cnt[VTK2D].action(nse.physTime()) || cnt[VTK3D].action(nse.physTime())
+		|| cnt[VTK3DCUT].action(nse.physTime()) || cnt[PROBE1].action(nse.physTime()) || cnt[PROBE2].action(nse.physTime())
+		|| cnt[PROBE3].action(nse.physTime()))
 	{
 		write_info = true;
 		cnt[PRINT].count++;
@@ -1515,9 +1249,8 @@ void State<NSE>::AfterSimUpdate()
 		}
 	}
 
-	if (cnt[VTK1D].action(nse.physTime()) || cnt[VTK2D].action(nse.physTime()) || cnt[VTK3D].action(nse.physTime())
-		|| cnt[VTK3DCUT].action(nse.physTime()) || cnt[PROBE1].action(nse.physTime()) || cnt[PROBE2].action(nse.physTime())
-		|| cnt[PROBE3].action(nse.physTime()) || nan_detected)
+	if (cnt[VTK2D].action(nse.physTime()) || cnt[VTK3D].action(nse.physTime()) || cnt[VTK3DCUT].action(nse.physTime())
+		|| cnt[PROBE1].action(nse.physTime()) || cnt[PROBE2].action(nse.physTime()) || cnt[PROBE3].action(nse.physTime()) || nan_detected)
 	{
 		// probe1
 		if (cnt[PROBE1].action(nse.physTime())) {
@@ -1548,11 +1281,6 @@ void State<NSE>::AfterSimUpdate()
 		if (cnt[VTK2D].action(nse.physTime()) || nan_detected) {
 			writeVTKs_2D();
 			cnt[VTK2D].count++;
-		}
-		// 1D VTK
-		if (cnt[VTK1D].action(nse.physTime())) {
-			writeVTKs_1D();
-			cnt[VTK1D].count++;
 		}
 	}
 
