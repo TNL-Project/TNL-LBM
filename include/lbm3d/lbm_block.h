@@ -2,24 +2,6 @@
 
 #include "defs.h"
 #include "lattice.h"
-#include "DataManager.h"
-
-// Descriptor used in the outputData functions
-template <typename real>
-struct OutputDataDescriptor
-{
-	std::string quantity;  // name of the quantity
-	real value;			   // value to be written
-	int dofs = 1;		   // 1 for scalar, 3 for vector
-
-	bool set(const std::string& iquantity, real ivalue, int idofs)
-	{
-		quantity = iquantity;
-		value = ivalue;
-		dofs = idofs;
-		return true;
-	}
-};
 
 template <typename CONFIG>
 struct LBM_BLOCK
@@ -205,31 +187,6 @@ struct LBM_BLOCK
 
 	template <typename F>
 	void forAllLatticeSites(F f);
-
-	// VTK output
-	template <typename Output>
-	void writeVTK_3D(lat_t lat, Output&& outputData, const std::string& filename, real time, int cycle, DataManager& dataManager) const;
-	template <typename Output>
-	void writeVTK_3Dcut(
-		lat_t lat,
-		Output&& outputData,
-		const std::string& filename,
-		real time,
-		int cycle,
-		idx ox,
-		idx oy,
-		idx oz,
-		idx gx,
-		idx gy,
-		idx gz,
-		DataManager& dataManager
-	) const;
-	template <typename Output>
-	void writeVTK_2DcutX(lat_t lat, Output&& outputData, const std::string& filename, real time, int cycle, idx XPOS, DataManager& dataManager) const;
-	template <typename Output>
-	void writeVTK_2DcutY(lat_t lat, Output&& outputData, const std::string& filename, real time, int cycle, idx YPOS, DataManager& dataManager) const;
-	template <typename Output>
-	void writeVTK_2DcutZ(lat_t lat, Output&& outputData, const std::string& filename, real time, int cycle, idx ZPOS, DataManager& dataManager) const;
 
 	~LBM_BLOCK() = default;
 };

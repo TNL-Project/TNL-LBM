@@ -10,14 +10,15 @@ struct State_NSE_ADE : State<NSE>
 	using BLOCK_ADE = LBM_BLOCK<ADE>;
 
 	using State<NSE>::id;
-	using State<NSE>::dataManager;
 	using State<NSE>::nse;
 	using State<NSE>::cnt;
 
+	using map_t = typename TRAITS::map_t;
 	using idx = typename TRAITS::idx;
 	using idx3d = typename TRAITS::idx3d;
 	using real = typename TRAITS::real;
 	using dreal = typename TRAITS::dreal;
+	using point_t = typename TRAITS::point_t;
 	using lat_t = Lattice<3, real, idx>;
 
 	LBM<ADE> ade;
@@ -353,157 +354,48 @@ struct State_NSE_ADE : State<NSE>
 		ade.copyMacroToHost();
 	}
 
-	void writeVTKs_3D() override
+	void predefineOutputVariables(
+		const std::string& ioName, const BLOCK_NSE& block, const adios2::Dims& shape, const adios2::Dims& start, const adios2::Dims& count
+	) override
 	{
-		dataManager.initEngine(fmt::format("results_{}/output_NSE_3D", id));
-		for (const auto& block : nse.blocks) {
-			const std::string fname = fmt::format("results_{}/output_NSE_3D", id);
-			create_parent_directories(fname.c_str());
-			auto outputData = [this](const BLOCK_NSE& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc) mutable
-			{
-				return this->outputData(block, index, dof, x, y, z, desc);
-			};
-			block.writeVTK_3D(nse.lat, outputData, fname, nse.physTime(), cnt[VTK3D].count, dataManager);
-			spdlog::info("[vtk {} written, time {:f}, cycle {:d}] ", fname, nse.physTime(), cnt[VTK3D].count);
+		// Build a field list for auto-generation of the Fides JSON data model.
+		std::vector<std::string> fidesFields;
+		fidesFields.reserve(16);
+		fidesFields.emplace_back("wall");
+		std::string dimsVariable;
+
+		this->dataManager.template defineData<real>("TIME", ioName);
+		spdlog::info("Defined variable 'TIME'");
+
+		this->dataManager.template defineData<map_t>("wall_nse", shape, start, count, ioName);
+		spdlog::info("Predefined output variable 'wall_nse'");
+
+		this->dataManager.template defineData<map_t>("wall_ade", shape, start, count, ioName);
+		spdlog::info("Predefined output variable 'wall_nse'");
+
+		for (const std::string& varName : this->getOutputDataNames()) {
+			this->dataManager.template defineData<dreal>(varName, shape, start, count, ioName);
+			spdlog::info("Predefined output variable '{}'", varName);
+
+			fidesFields.push_back(varName);
+			if (dimsVariable.empty() || varName == "lbm_density") {
+				dimsVariable = varName;
+			}
 		}
 
-		dataManager.initEngine(fmt::format("results_{}/output_ADE_3D", id));
-		for (const auto& block : ade.blocks) {
-			const std::string fname = fmt::format("results_{}/output_ADE_3D", id);
-			create_parent_directories(fname.c_str());
-			auto outputData = [this](const BLOCK_ADE& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc) mutable
-			{
-				return this->outputData(block, index, dof, x, y, z, desc);
-			};
-			block.writeVTK_3D(ade.lat, outputData, fname, nse.physTime(), cnt[VTK3D].count, dataManager);
-			spdlog::info("[vtk {} written, time {:f}, cycle {:d}] ", fname, nse.physTime(), cnt[VTK3D].count);
-		}
+		this->ensureFidesJsonModel(dimsVariable, fidesFields);
 	}
 
-	void writeVTKs_3Dcut() override
+	void outputDataPhase1(UniformDataWriter<TRAITS>& writer, std::size_t block_index, const idx3d& begin, const idx3d& end) override
 	{
-		if (this->probe3Dvec.size() <= 0)
-			return;
-
-		// browse all 3D vtk cuts
-		for (auto& probevec : this->probe3Dvec) {
-			dataManager.initEngine(fmt::format("results_{}/output_NSE_3Dcut_{}", id, probevec.name));
-			for (const auto& block : nse.blocks) {
-				const std::string fname = fmt::format("results_{}/output_NSE_3Dcut_{}", id, probevec.name);
-				// create parent directories
-				create_file(fname.c_str());
-				auto outputData = [this](const BLOCK_NSE& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc) mutable
-				{
-					return this->outputData(block, index, dof, x, y, z, desc);
-				};
-				block.writeVTK_3Dcut(
-					nse.lat,
-					outputData,
-					fname,
-					nse.physTime(),
-					probevec.cycle,
-					probevec.ox,
-					probevec.oy,
-					probevec.oz,
-					probevec.lx,
-					probevec.ly,
-					probevec.lz,
-					dataManager
-				);
-				spdlog::info("[vtk {} written, time {:f}, cycle {:d}] ", fname, nse.physTime(), probevec.cycle);
-			}
-
-			dataManager.initEngine(fmt::format("results_{}/output_ADE_3Dcut_{}", id, probevec.name));
-			for (const auto& block : ade.blocks) {
-				const std::string fname = fmt::format("results_{}/output_ADE_3Dcut_{}", id, probevec.name);
-				// create parent directories
-				create_file(fname.c_str());
-				auto outputData = [this](const BLOCK_ADE& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc) mutable
-				{
-					return this->outputData(block, index, dof, x, y, z, desc);
-				};
-				block.writeVTK_3Dcut(
-					ade.lat,
-					outputData,
-					fname,
-					nse.physTime(),
-					probevec.cycle,
-					probevec.ox,
-					probevec.oy,
-					probevec.oz,
-					probevec.lx,
-					probevec.ly,
-					probevec.lz,
-					dataManager
-				);
-				spdlog::info("[vtk {} written, time {:f}, cycle {:d}] ", fname, nse.physTime(), probevec.cycle);
-			}
-			probevec.cycle++;
-		}
+		writer.write("TIME", nse.physTime());
+		writer.write("wall_nse", nse.blocks[block_index].hmap, begin, end);
+		this->outputData(writer, nse.blocks[block_index], begin, end);
+		writer.write("wall_ade", ade.blocks[block_index].hmap, begin, end);
+		this->outputData(writer, ade.blocks[block_index], begin, end);
 	}
 
-	void writeVTKs_2D() override
-	{
-		if (this->probe2Dvec.size() <= 0)
-			return;
+	void outputData(UniformDataWriter<TRAITS>& writer, const BLOCK_NSE& block, const idx3d& begin, const idx3d& end) override {}
 
-		// browse all 2D vtk cuts
-		for (auto& probevec : this->probe2Dvec) {
-			dataManager.initEngine(fmt::format("results_{}/output_NSE_2D_{}", id, probevec.name));
-			for (const auto& block : nse.blocks) {
-				const std::string fname = fmt::format("results_{}/output_NSE_2D_{}", id, probevec.name);
-				// create parent directories
-				create_file(fname.c_str());
-				auto outputData = [this](const BLOCK_NSE& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc) mutable
-				{
-					return this->outputData(block, index, dof, x, y, z, desc);
-				};
-				switch (probevec.type) {
-					case 0:
-						block.writeVTK_2DcutX(nse.lat, outputData, fname, nse.physTime(), probevec.cycle, probevec.position, dataManager);
-						break;
-					case 1:
-						block.writeVTK_2DcutY(nse.lat, outputData, fname, nse.physTime(), probevec.cycle, probevec.position, dataManager);
-						break;
-					case 2:
-						block.writeVTK_2DcutZ(nse.lat, outputData, fname, nse.physTime(), probevec.cycle, probevec.position, dataManager);
-						break;
-				}
-				spdlog::info("[vtk {} written, time {:f}, cycle {:d}] ", fname, nse.physTime(), probevec.cycle);
-			}
-
-			dataManager.initEngine(fmt::format("results_{}/output_ADE_2D_{}", id, probevec.name));
-			for (const auto& block : ade.blocks) {
-				const std::string fname = fmt::format("results_{}/output_ADE_2D_{}", id, probevec.name);
-				// create parent directories
-				create_file(fname.c_str());
-				auto outputData = [this](const BLOCK_ADE& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc) mutable
-				{
-					return this->outputData(block, index, dof, x, y, z, desc);
-				};
-				switch (probevec.type) {
-					case 0:
-						block.writeVTK_2DcutX(nse.lat, outputData, fname, nse.physTime(), probevec.cycle, probevec.position, dataManager);
-						break;
-					case 1:
-						block.writeVTK_2DcutY(nse.lat, outputData, fname, nse.physTime(), probevec.cycle, probevec.position, dataManager);
-						break;
-					case 2:
-						block.writeVTK_2DcutZ(nse.lat, outputData, fname, nse.physTime(), probevec.cycle, probevec.position, dataManager);
-						break;
-				}
-				spdlog::info("[vtk {} written, time {:f}, cycle {:d}] ", fname, nse.physTime(), probevec.cycle);
-			}
-			probevec.cycle++;
-		}
-	}
-
-	bool outputData(const BLOCK_NSE& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc) override
-	{
-		return false;
-	}
-	virtual bool outputData(const BLOCK_ADE& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc)
-	{
-		return false;
-	}
+	virtual void outputData(UniformDataWriter<TRAITS>& writer, const BLOCK_ADE& block, const idx3d& begin, const idx3d& end) {}
 };

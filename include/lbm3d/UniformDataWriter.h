@@ -34,8 +34,9 @@ public:
 	template <typename T>
 	void write(std::string varName, T val);
 
-	template <typename T>
-	void write(std::string varName, std::vector<T>& val, int dim);
+	// DataSource is a 3D array of type T or lambda function with signature src(idx x, idx y, idx z) -> T
+	template <typename DataSource>
+	void write(const std::string& varName, const DataSource& src, idx3d begin, idx3d end);
 
 	virtual ~UniformDataWriter();
 };

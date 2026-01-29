@@ -146,13 +146,13 @@ bool State<NSE>::canCompute()
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                                                                                                                                                                                                //
 //                                                                                                                                                                                                                //
-// VTK POINTS
+// UNSTRUCTURED POINTS
 //                                                                                                                                                                                                                //
 //                                                                                                                                                                                                                //
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename NSE>
-void State<NSE>::writeVTK_Points(const char* name, real time, int cycle)
+void State<NSE>::writePoints(const char* name, real time, int cycle)
 {
 	if (! ibm.allocated)
 		ibm.convertLagrangianPoints();
@@ -163,11 +163,11 @@ void State<NSE>::writeVTK_Points(const char* name, real time, int cycle)
 		ibm.hLL_velocity_lat = ibm.dLL_velocity_lat;
 	}
 
-	writeVTK_Points(name, time, cycle, ibm.hLL_lat);
+	writePoints(name, time, cycle, ibm.hLL_lat);
 }
 
 template <typename NSE>
-void State<NSE>::writeVTK_Points(const char* name, real time, int cycle, const typename Lagrange3D::HLPVECTOR& hLL_lat)
+void State<NSE>::writePoints(const char* name, real time, int cycle, const typename Lagrange3D::HLPVECTOR& hLL_lat)
 {
 	const std::string fname = fmt::format("results_{}/output_points/{}", id, name);
 	create_parent_directories(fname.c_str());
@@ -227,43 +227,53 @@ void State<NSE>::writeVTK_Points(const char* name, real time, int cycle, const t
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                                                                                                                                                                                                //
 //                                                                                                                                                                                                                //
-// VTK 3D
+// 3D OUTPUT
 //                                                                                                                                                                                                                //
 //                                                                                                                                                                                                                //
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename NSE>
-void State<NSE>::writeVTKs_3D()
+void State<NSE>::outputDataPhase1(UniformDataWriter<TRAITS>& writer, std::size_t block_index, const idx3d& begin, const idx3d& end)
+{
+	writer.write("TIME", nse.physTime());
+	writer.write("wall", nse.blocks[block_index].hmap, begin, end);
+	this->outputData(writer, nse.blocks[block_index], begin, end);
+}
+
+template <typename NSE>
+void State<NSE>::write3D()
 {
 	const std::string fname = fmt::format("results_{}/output_3D", id);
 	create_parent_directories(fname.c_str());
 
-	auto outputData = [this](const BLOCK_NSE& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc) mutable
-	{
-		return this->outputData(block, index, dof, x, y, z, desc);
-	};
-
 	dataManager.prepareIO(fname);
 	if (cnt[VTK3D].count == 0) {
-		predefineVTK3D(fname, nse.blocks.front());
+		predefine3D(fname, nse.blocks.front());
 	}
 	// Match previous behavior: reopen as Append after the first cycle
 	const auto mode = (cnt[VTK3D].count == 0) ? adios2::Mode::Write : adios2::Mode::Append;
 	dataManager.openEngine(fname, mode);
 
 	TNL::Timer timer;
-	for (const auto& block : nse.blocks) {
+	for (std::size_t i = 0; i < nse.blocks.size(); i++) {
+		const auto& block = nse.blocks[i];
 		timer.start();
-		block.writeVTK_3D(nse.lat, outputData, fname, nse.physTime(), cnt[VTK3D].count, dataManager);
+		{
+			const point_t origin = nse.lat.lbm2physPoint(0, 0, 0);
+			UniformDataWriter<TRAITS> writer(block.global, block.local, block.offset, origin, nse.lat.physDl, dataManager, fname);
+			idx3d begin = block.offset;
+			idx3d end = block.offset + block.local;
+			outputDataPhase1(writer, i, begin, end);
+		}
 		timer.stop();
 		spdlog::info("write3D saved in: {:.2f} seconds", timer.getRealTime());
 		timer.reset();
-		spdlog::info("[vtk {} written, time {:f}, cycle {:d}] ", fname, nse.physTime(), cnt[VTK3D].count);
+		spdlog::info("Output {} written, time {:f}, cycle {:d}", fname, nse.physTime(), cnt[VTK3D].count);
 	}
 }
 
 template <typename NSE>
-void State<NSE>::predefineVTK(
+void State<NSE>::predefineOutputVariables(
 	const std::string& ioName, const BLOCK_NSE& block, const adios2::Dims& shape, const adios2::Dims& start, const adios2::Dims& count
 )
 {
@@ -273,38 +283,19 @@ void State<NSE>::predefineVTK(
 	fidesFields.emplace_back("wall");
 	std::string dimsVariable;
 
-	dataManager.defineData<int>("wall", shape, start, count, ioName);
-	spdlog::info("Defined variable 'wall' with shape [{},{},{}]", shape[0], shape[1], shape[2]);
-
 	dataManager.defineData<real>("TIME", ioName);
 	spdlog::info("Defined variable 'TIME'");
 
-	OutputDataDescriptor<dreal> desc;
-	int index = 0;
-	while (outputData(block, index++, 0, block.offset.x(), block.offset.y(), block.offset.z(), desc)) {
-		const std::string& varName = desc.quantity;
-		if (desc.dofs == 1) {
-			dataManager.defineData<float>(varName, shape, start, count, ioName);
-			spdlog::info("Defined variable '{}' (scalar)", varName);
+	dataManager.defineData<map_t>("wall", shape, start, count, ioName);
+	spdlog::info("Predefined output variable 'wall'");
 
-			fidesFields.push_back(varName);
-			if (dimsVariable.empty() || varName == "lbm_density") {
-				dimsVariable = varName;
-			}
-		}
-		else {
-			dataManager.defineData<float>(varName + "X", shape, start, count, ioName);
-			dataManager.defineData<float>(varName + "Y", shape, start, count, ioName);
-			dataManager.defineData<float>(varName + "Z", shape, start, count, ioName);
-			spdlog::info("Defined variable '{}' (vector: X,Y,Z)", varName);
+	for (const std::string& varName : getOutputDataNames()) {
+		dataManager.defineData<dreal>(varName, shape, start, count, ioName);
+		spdlog::info("Predefined output variable '{}'", varName);
 
-			fidesFields.push_back(varName + "X");
-			fidesFields.push_back(varName + "Y");
-			fidesFields.push_back(varName + "Z");
-			if (dimsVariable.empty()) {
-				// Fallback: use any scalar component as the dimension variable
-				dimsVariable = varName + "X";
-			}
+		fidesFields.push_back(varName);
+		if (dimsVariable.empty() || varName == "lbm_density") {
+			dimsVariable = varName;
 		}
 	}
 
@@ -312,7 +303,7 @@ void State<NSE>::predefineVTK(
 }
 
 template <typename NSE>
-void State<NSE>::predefineVTK3D(const std::string& ioName, const BLOCK_NSE& block)
+void State<NSE>::predefine3D(const std::string& ioName, const BLOCK_NSE& block)
 {
 	const adios2::Dims shape{
 		static_cast<std::size_t>(block.global.z()), static_cast<std::size_t>(block.global.y()), static_cast<std::size_t>(block.global.x())
@@ -324,11 +315,11 @@ void State<NSE>::predefineVTK3D(const std::string& ioName, const BLOCK_NSE& bloc
 		static_cast<std::size_t>(block.local.z()), static_cast<std::size_t>(block.local.y()), static_cast<std::size_t>(block.local.x())
 	};
 
-	predefineVTK(ioName, block, shape, start, count);
+	predefineOutputVariables(ioName, block, shape, start, count);
 }
 
 template <typename NSE>
-void State<NSE>::predefineVTK2D(const std::string& ioName, const BLOCK_NSE& block, int cutType)
+void State<NSE>::predefine2D(const std::string& ioName, const BLOCK_NSE& block, int cutType)
 {
 	adios2::Dims shape;
 	adios2::Dims start;
@@ -352,16 +343,16 @@ void State<NSE>::predefineVTK2D(const std::string& ioName, const BLOCK_NSE& bloc
 			count = {static_cast<std::size_t>(1), static_cast<std::size_t>(block.local.y()), static_cast<std::size_t>(block.local.x())};
 			break;
 		default:
-			throw std::invalid_argument("predefineVTK2D: invalid cutType");
+			throw std::invalid_argument("predefine2D: invalid cut type");
 	}
 
-	predefineVTK(ioName, block, shape, start, count);
+	predefineOutputVariables(ioName, block, shape, start, count);
 }
 
 template <typename NSE>
-void State<NSE>::predefineVTK3Dcut(const std::string& ioName, const BLOCK_NSE& block, const T_PROBE3DCUT& probe)
+void State<NSE>::predefine3Dcut(const std::string& ioName, const BLOCK_NSE& block, const T_PROBE3DCUT& probe)
 {
-	// Mirrors the domain intersection logic in LBM_BLOCK::writeVTK_3Dcut()
+	// Mirrors the domain intersection logic in write3Dcut()
 	idx ox = probe.ox;
 	idx oy = probe.oy;
 	idx oz = probe.oz;
@@ -391,13 +382,13 @@ void State<NSE>::predefineVTK3Dcut(const std::string& ioName, const BLOCK_NSE& b
 	const adios2::Dims start{static_cast<std::size_t>(oZ), static_cast<std::size_t>(oY), static_cast<std::size_t>(oX)};
 	const adios2::Dims count{static_cast<std::size_t>(lz), static_cast<std::size_t>(ly), static_cast<std::size_t>(lx)};
 
-	predefineVTK(ioName, block, shape, start, count);
+	predefineOutputVariables(ioName, block, shape, start, count);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                                                                                                                                                                                                //
 //                                                                                                                                                                                                                //
-// VTK 3D CUT
+// 3D CUT OUTPUT
 //                                                                                                                                                                                                                //
 //                                                                                                                                                                                                                //
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -421,45 +412,57 @@ void State<NSE>::add3Dcut(idx ox, idx oy, idx oz, idx lx, idx ly, idx lz, const 
 }
 
 template <typename NSE>
-void State<NSE>::writeVTKs_3Dcut()
+void State<NSE>::write3Dcut()
 {
 	if (probe3Dvec.size() <= 0)
 		return;
 
-	auto outputData = [this](const BLOCK_NSE& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc) mutable
-	{
-		return this->outputData(block, index, dof, x, y, z, desc);
-	};
-
-	// browse all 3D vtk cuts
+	// browse all 3D cuts
 	for (auto& probevec : probe3Dvec) {
 		const std::string fname = fmt::format("results_{}/output_3Dcut_{}", id, probevec.name);
 		create_parent_directories(fname.c_str());
 
 		dataManager.prepareIO(fname);
 		if (probevec.cycle == 0) {
-			predefineVTK3Dcut(fname, nse.blocks.front(), probevec);
+			predefine3Dcut(fname, nse.blocks.front(), probevec);
 		}
 		// Match previous behavior: reopen as Append after the first cycle
 		const auto mode = (probevec.cycle == 0) ? adios2::Mode::Write : adios2::Mode::Append;
 		dataManager.openEngine(fname, mode);
 
-		for (const auto& block : nse.blocks) {
-			block.writeVTK_3Dcut(
-				nse.lat,
-				outputData,
-				fname,
-				nse.physTime(),
-				probevec.cycle,
-				probevec.ox,
-				probevec.oy,
-				probevec.oz,
-				probevec.lx,
-				probevec.ly,
-				probevec.lz,
-				dataManager
-			);
-			spdlog::info("[vtk {} written, time {:f}, cycle {:d}] ", fname, nse.physTime(), probevec.cycle);
+		idx ox = probevec.ox;
+		idx oy = probevec.oy;
+		idx oz = probevec.oz;
+		idx gx = probevec.lx;
+		idx gy = probevec.ly;
+		idx gz = probevec.lz;
+
+		for (std::size_t i = 0; i < nse.blocks.size(); i++) {
+			const auto& block = nse.blocks[i];
+
+			const bool overlapT =
+				! (ox + gx <= block.offset.x() || block.offset.x() + block.local.x() <= ox || oy + gy <= block.offset.y()
+				   || block.offset.y() + block.local.y() <= oy || oz + gz <= block.offset.z() || block.offset.z() + block.local.z() <= oz);
+			if (! overlapT)
+				continue;
+
+			// intersection of the local domain with the box
+			idx lx = TNL::min(ox + gx, block.offset.x() + block.local.x()) - TNL::max(ox, block.offset.x());
+			idx ly = TNL::min(oy + gy, block.offset.y() + block.local.y()) - TNL::max(oy, block.offset.y());
+			idx lz = TNL::min(oz + gz, block.offset.z() + block.local.z()) - TNL::max(oz, block.offset.z());
+
+			idx oX = TNL::max(0, block.offset.x() - ox);
+			idx oY = TNL::max(0, block.offset.y() - oy);
+			idx oZ = TNL::max(0, block.offset.z() - oz);
+
+			const point_t origin = nse.lat.lbm2physPoint(ox, oy, oz);
+			UniformDataWriter<TRAITS> writer({gx, gy, gz}, {lx, ly, lz}, {oX, oY, oZ}, origin, nse.lat.physDl, dataManager, fname);
+
+			idx3d begin = {TNL::max(ox, block.offset.x()), TNL::max(oy, block.offset.y()), TNL::max(oz, block.offset.z())};
+			idx3d end = begin + idx3d{lx, ly, lz};
+			outputDataPhase1(writer, i, begin, end);
+
+			spdlog::info("Output {} written, time {:f}, cycle {:d}", fname, nse.physTime(), probevec.cycle);
 		}
 		probevec.cycle++;
 	}
@@ -468,7 +471,7 @@ void State<NSE>::writeVTKs_3Dcut()
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                                                                                                                                                                                                //
 //                                                                                                                                                                                                                //
-// VTK 2D CUT
+// 2D CUT OUTPUT
 //                                                                                                                                                                                                                //
 //                                                                                                                                                                                                                //
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -527,42 +530,71 @@ void State<NSE>::add2Dcut_Z(idx z, const char* fmts, ARGS... args)
 }
 
 template <typename NSE>
-void State<NSE>::writeVTKs_2D()
+void State<NSE>::write2D()
 {
 	if (probe2Dvec.size() <= 0)
 		return;
 
-	auto outputData = [this](const BLOCK_NSE& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc) mutable
-	{
-		return this->outputData(block, index, dof, x, y, z, desc);
-	};
-
-	// browse all 2D vtk cuts
+	// browse all 2D cuts
 	for (auto& probevec : probe2Dvec) {
 		const std::string fname = fmt::format("results_{}/output_2D_{}", id, probevec.name);
 		create_parent_directories(fname.c_str());
 
 		dataManager.prepareIO(fname);
 		if (probevec.cycle == 0) {
-			predefineVTK2D(fname, nse.blocks.front(), probevec.type);
+			predefine2D(fname, nse.blocks.front(), probevec.type);
 		}
 		// Match previous behavior: reopen as Append after the first cycle
 		const auto mode = (probevec.cycle == 0) ? adios2::Mode::Write : adios2::Mode::Append;
 		dataManager.openEngine(fname, mode);
 
-		for (const auto& block : nse.blocks) {
+		for (std::size_t i = 0; i < nse.blocks.size(); i++) {
+			const auto& block = nse.blocks[i];
+
+			point_t cut_origin;
+			idx3d cut_global;
+			idx3d cut_local;
+			idx3d cut_offset;
+			idx3d begin;
+			idx3d end;
+
 			switch (probevec.type) {
 				case 0:
-					block.writeVTK_2DcutX(nse.lat, outputData, fname, nse.physTime(), probevec.cycle, probevec.position, dataManager);
+					if (! block.isLocalX(probevec.position))
+						continue;
+					cut_origin = nse.lat.lbm2physPoint(probevec.position, 0, 0);
+					cut_global = {1, block.global.y(), block.global.z()};
+					cut_local = {1, block.local.y(), block.local.z()};
+					cut_offset = {0, block.offset.y(), block.offset.z()};
+					begin = {probevec.position, block.offset.y(), block.offset.z()};
+					end = begin + idx3d{1, block.local.y(), block.local.z()};
 					break;
 				case 1:
-					block.writeVTK_2DcutY(nse.lat, outputData, fname, nse.physTime(), probevec.cycle, probevec.position, dataManager);
+					if (! block.isLocalY(probevec.position))
+						continue;
+					cut_origin = nse.lat.lbm2physPoint(0, probevec.position, 0);
+					cut_global = {block.global.x(), 1, block.global.z()};
+					cut_local = {block.local.x(), 1, block.local.z()};
+					cut_offset = {block.offset.x(), 0, block.offset.z()};
+					begin = {block.offset.x(), probevec.position, block.offset.z()};
+					end = begin + idx3d{block.local.x(), 1, block.local.z()};
 					break;
 				case 2:
-					block.writeVTK_2DcutZ(nse.lat, outputData, fname, nse.physTime(), probevec.cycle, probevec.position, dataManager);
+					if (! block.isLocalZ(probevec.position))
+						continue;
+					cut_origin = nse.lat.lbm2physPoint(0, 0, probevec.position);
+					cut_global = {block.global.x(), block.global.y(), 1};
+					cut_local = {block.local.x(), block.local.y(), 1};
+					cut_offset = {block.offset.x(), block.offset.y(), 0};
+					begin = {block.offset.x(), block.offset.y(), probevec.position};
+					end = begin + idx3d{block.local.x(), block.local.y(), 1};
 					break;
 			}
-			spdlog::info("[vtk {} written, time {:f}, cycle {:d}] ", fname, nse.physTime(), probevec.cycle);
+
+			UniformDataWriter<TRAITS> writer(cut_global, cut_local, cut_offset, cut_origin, nse.lat.physDl, dataManager, fname);
+			outputDataPhase1(writer, i, begin, end);
+
+			spdlog::info("Output {} written, time {:f}, cycle {:d}", fname, nse.physTime(), probevec.cycle);
 		}
 		probevec.cycle++;
 	}
@@ -1267,24 +1299,24 @@ void State<NSE>::AfterSimUpdate()
 			probe3();
 			cnt[PROBE3].count++;
 		}
-		// 3D VTK
+		// 3D output
 		if (cnt[VTK3D].action(nse.physTime()) || nan_detected) {
-			writeVTKs_3D();
+			write3D();
 			cnt[VTK3D].count++;
 		}
-		// 3D VTK CUT
+		// 3D cut output
 		if (cnt[VTK3DCUT].action(nse.physTime())) {
-			writeVTKs_3Dcut();
+			write3Dcut();
 			cnt[VTK3DCUT].count++;
 		}
-		// 2D VTK
+		// 2D output
 		if (cnt[VTK2D].action(nse.physTime()) || nan_detected) {
-			writeVTKs_2D();
+			write2D();
 			cnt[VTK2D].count++;
 		}
 	}
 
-	// statReset is called after all probes and VTK output
+	// statReset is called after all probes and output methods
 	// copy macro from host to device after reset
 	if (cnt[STAT_RESET].action(nse.physTime())) {
 		statReset();

@@ -297,6 +297,7 @@ struct StateLocal : State_NSE_ADE<NSE, ADE>
 	using State_NSE_ADE<NSE, ADE>::ade;
 
 	using idx = typename TRAITS::idx;
+	using idx3d = typename TRAITS::idx3d;
 	using real = typename TRAITS::real;
 	using dreal = typename TRAITS::dreal;
 	using point_t = typename TRAITS::point_t;
@@ -423,32 +424,57 @@ struct StateLocal : State_NSE_ADE<NSE, ADE>
 	}
 #endif
 
-	bool outputData(const BLOCK_NSE& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc) override
+	[[nodiscard]] std::vector<std::string> getOutputDataNames() const override
 	{
-		int k = 0;
-		if (index == k++)
-			return desc.set("lbm_density", block.hmacro(NSE::MACRO::e_rho, x, y, z), 1);
-		if (index == k++) {
-			switch (dof) {
-				case 0:
-					return desc.set("velocity", nse.lat.lbm2physVelocity(block.hmacro(NSE::MACRO::e_vx, x, y, z)), 3);
-				case 1:
-					return desc.set("velocity", nse.lat.lbm2physVelocity(block.hmacro(NSE::MACRO::e_vy, x, y, z)), 3);
-				case 2:
-					return desc.set("velocity", nse.lat.lbm2physVelocity(block.hmacro(NSE::MACRO::e_vz, x, y, z)), 3);
-			}
-		}
-		//if (index==k++) return desc.set("lbm_qcriterion", block.hmacro(NSE::MACRO::e_qcrit,x,y,z), 1);
-		return false;
+		// return all quantity names used in outputData
+		return {"lbm_density", "lbm_density_fluctuation", "velocity_x", "velocity_y", "velocity_z", "lbm_phi"};
 	}
 
-	bool outputData(const BLOCK_ADE& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc) override
+	void outputData(UniformDataWriter<TRAITS>& writer, const BLOCK_NSE& block, const idx3d& begin, const idx3d& end) override
 	{
-		int k = 0;
-		if (index == k++)
-			return desc.set("lbm_phi", block.hmacro(ADE::MACRO::e_phi, x, y, z), 1);
-		//if (index==k++) return desc.set("lbm_phigradmag2", block.hmacro(ADE::MACRO::e_phigradmag2,x,y,z), 1);
-		return false;
+		writer.write("lbm_density", getMacroView<TRAITS>(block.hmacro, NSE::MACRO::e_rho), begin, end);
+		writer.write(
+			"lbm_density_fluctuation",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return block.hmacro(NSE::MACRO::e_rho, x, y, z) - 1.0;
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_x",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(NSE::MACRO::e_vx, x, y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_y",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(NSE::MACRO::e_vy, x, y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_z",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(NSE::MACRO::e_vz, x, y, z));
+			},
+			begin,
+			end
+		);
+	}
+
+	void outputData(UniformDataWriter<TRAITS>& writer, const BLOCK_ADE& block, const idx3d& begin, const idx3d& end) override
+	{
+		writer.write("lbm_phi", getMacroView<TRAITS>(block.hmacro, ADE::MACRO::e_phi), begin, end);
+		//writer.write("lbm_phigradmag2", getMacroView<TRAITS>(block.hmacro, ADE::MACRO::e_phigradmag2), begin, end);
 	}
 
 	void probe1() override

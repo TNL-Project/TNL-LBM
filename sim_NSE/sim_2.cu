@@ -43,6 +43,7 @@ struct StateLocal : State<NSE>
 	using State<NSE>::nse;
 
 	using idx = typename TRAITS::idx;
+	using idx3d = typename TRAITS::idx3d;
 	using real = typename TRAITS::real;
 	using dreal = typename TRAITS::dreal;
 	using point_t = typename TRAITS::point_t;
@@ -137,54 +138,103 @@ struct StateLocal : State<NSE>
 		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_NOTHING);	// front
 	}
 
-	bool outputData(const BLOCK& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc) override
+	[[nodiscard]] std::vector<std::string> getOutputDataNames() const override
 	{
-		int k = 0;
-		if (index == k++)
-			return desc.set("lbm_density", block.hmacro(MACRO::e_rho, x, y, z), 1);
-		if (index == k++)
-			return desc.set("lbm_delta_density", block.hmacro(MACRO::e_rho, x, y, z) - 1.0, 1);
-		if (index == k++) {
-			switch (dof) {
-				case 0:
-					return desc.set("lbm_velocity", block.hmacro(MACRO::e_vx, x, y, z), 3);
-				case 1:
-					return desc.set("lbm_velocity", block.hmacro(MACRO::e_vy, x, y, z), 3);
-				case 2:
-					return desc.set("lbm_velocity", block.hmacro(MACRO::e_vz, x, y, z), 3);
-			}
-		}
-		if (index == k++)
-			return desc.set("lbm_analytical_ux", analytical_ux(y, z), 1);
-		if (index == k++)
-			return desc.set("lbm_ux", block.hmacro(MACRO::e_vx, x, y, z), 1);
-		if (index == k++)
-			return desc.set("lbm_uy", block.hmacro(MACRO::e_vy, x, y, z), 1);
-		if (index == k++)
-			return desc.set("lbm_uz", block.hmacro(MACRO::e_vz, x, y, z), 1);
-		if (index == k++)
-			return desc.set("lbm_error_ux", fabs(block.hmacro(MACRO::e_vx, x, y, z) - analytical_ux(y, z)), 1);
-		if (index == k++) {
-			switch (dof) {
-				case 0:
-					return desc.set("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vx, x, y, z)), 3);
-				case 1:
-					return desc.set("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vy, x, y, z)), 3);
-				case 2:
-					return desc.set("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vz, x, y, z)), 3);
-			}
-		}
-		if (index == k++)
-			return desc.set("analytical_ux", nse.lat.lbm2physVelocity(analytical_ux(y, z)), 1);
-		if (index == k++)
-			return desc.set("ux", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vx, x, y, z)), 1);
-		if (index == k++)
-			return desc.set("uy", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vy, x, y, z)), 1);
-		if (index == k++)
-			return desc.set("uz", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vz, x, y, z)), 1);
-		if (index == k++)
-			return desc.set("error_ux", nse.lat.lbm2physVelocity(fabs(block.hmacro(MACRO::e_vx, x, y, z) - analytical_ux(y, z))), 1);
-		return false;
+		// return all quantity names used in outputData
+		return {
+			"lbm_density",
+			"lbm_density_fluctuation",
+			"lbm_velocity_x",
+			"lbm_velocity_y",
+			"lbm_velocity_z",
+			"velocity_x",
+			"velocity_y",
+			"velocity_z",
+			"lbm_analytical_ux",
+			"lbm_error_ux",
+			"analytical_ux",
+			"error_ux"
+		};
+	}
+
+	void outputData(UniformDataWriter<TRAITS>& writer, const BLOCK& block, const idx3d& begin, const idx3d& end) override
+	{
+		writer.write("lbm_density", getMacroView<TRAITS>(block.hmacro, MACRO::e_rho), begin, end);
+		writer.write(
+			"lbm_density_fluctuation",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return block.hmacro(MACRO::e_rho, x, y, z) - 1.0;
+			},
+			begin,
+			end
+		);
+		writer.write("lbm_velocity_x", getMacroView<TRAITS>(block.hmacro, MACRO::e_vx), begin, end);
+		writer.write("lbm_velocity_y", getMacroView<TRAITS>(block.hmacro, MACRO::e_vy), begin, end);
+		writer.write("lbm_velocity_z", getMacroView<TRAITS>(block.hmacro, MACRO::e_vz), begin, end);
+		writer.write(
+			"velocity_x",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vx, x, y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_y",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vy, x, y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_z",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vz, x, y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"lbm_analytical_ux",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return analytical_ux(y, z);
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"lbm_error_ux",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return TNL::abs(block.hmacro(MACRO::e_vx, x, y, z) - analytical_ux(y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"analytical_ux",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(analytical_ux(y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"error_ux",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(TNL::abs(block.hmacro(MACRO::e_vx, x, y, z) - analytical_ux(y, z)));
+			},
+			begin,
+			end
+		);
 	}
 
 	void probe1() override

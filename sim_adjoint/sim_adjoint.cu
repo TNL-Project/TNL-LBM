@@ -35,6 +35,7 @@ struct StateLocal : State<NSE>
 	using State<NSE>::nse;
 
 	using idx = typename TRAITS::idx;
+	using idx3d = typename TRAITS::idx3d;
 	using real = typename TRAITS::real;
 	using dreal = typename TRAITS::dreal;
 	using point_t = typename TRAITS::point_t;
@@ -58,22 +59,27 @@ struct StateLocal : State<NSE>
 		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_WALL);	 // front
 	}
 
-	bool outputData(const BLOCK& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc) override
+	[[nodiscard]] std::vector<std::string> getOutputDataNames() const override
 	{
-		int k = 0;
-		if (index == k++)
-			return desc.set("lbm_density", block.hmacro(MACRO::e_rho, x, y, z), 1);
-		if (index == k++) {
-			switch (dof) {
-				case 0:
-					return desc.set("velocity", block.hmacro(MACRO::e_vx, x, y, z), 3);
-				case 1:
-					return desc.set("velocity", block.hmacro(MACRO::e_vy, x, y, z), 3);
-				case 2:
-					return desc.set("velocity", block.hmacro(MACRO::e_vz, x, y, z), 3);
-			}
-		}
-		return false;
+		// return all quantity names used in outputData
+		return {"lbm_density", "lbm_density_fluctuation", "lbm_velocity_x", "lbm_velocity_y", "lbm_velocity_z"};
+	}
+
+	void outputData(UniformDataWriter<TRAITS>& writer, const BLOCK& block, const idx3d& begin, const idx3d& end) override
+	{
+		writer.write("lbm_density", getMacroView<TRAITS>(block.hmacro, MACRO::e_rho), begin, end);
+		writer.write(
+			"lbm_density_fluctuation",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return block.hmacro(MACRO::e_rho, x, y, z) - 1.0;
+			},
+			begin,
+			end
+		);
+		writer.write("lbm_velocity_x", getMacroView<TRAITS>(block.hmacro, MACRO::e_vx), begin, end);
+		writer.write("lbm_velocity_y", getMacroView<TRAITS>(block.hmacro, MACRO::e_vy), begin, end);
+		writer.write("lbm_velocity_z", getMacroView<TRAITS>(block.hmacro, MACRO::e_vz), begin, end);
 	}
 
 	void computeAfterLBMKernel() override
@@ -97,6 +103,7 @@ struct StateLocalAdjoint : State<NSE>
 	using State<NSE>::nse;
 
 	using idx = typename TRAITS::idx;
+	using idx3d = typename TRAITS::idx3d;
 	using real = typename TRAITS::real;
 	using dreal = typename TRAITS::dreal;
 	using point_t = typename TRAITS::point_t;
@@ -132,34 +139,51 @@ struct StateLocalAdjoint : State<NSE>
 		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_ADJOINT_WALL);	 // front
 	}
 
-	bool outputData(const BLOCK& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc) override
+	[[nodiscard]] std::vector<std::string> getOutputDataNames() const override
 	{
-		int k = 0;
-		if (index == k++)
-			return desc.set("lbm_density", block.hmacro(MACRO::e_rho, x, y, z), 1);
-		if (index == k++) {
-			switch (dof) {
-				case 0:
-					return desc.set("velocity", block.hmacro(MACRO::e_vx, x, y, z), 3);
-				case 1:
-					return desc.set("velocity", block.hmacro(MACRO::e_vy, x, y, z), 3);
-				case 2:
-					return desc.set("velocity", block.hmacro(MACRO::e_vz, x, y, z), 3);
-			}
-		}
-		if (index == k++)
-			return desc.set("lbm_density_m", block.hmacro(MACRO::e_rho_m, x, y, z), 1);
-		if (index == k++) {
-			switch (dof) {
-				case 0:
-					return desc.set("velocity_m", block.hmacro(MACRO::e_vx_m, x, y, z), 3);
-				case 1:
-					return desc.set("velocity_m", block.hmacro(MACRO::e_vy_m, x, y, z), 3);
-				case 2:
-					return desc.set("velocity_m", block.hmacro(MACRO::e_vz_m, x, y, z), 3);
-			}
-		}
-		return false;
+		// return all quantity names used in outputData
+		return {
+			"lbm_density",
+			"lbm_density_fluctuation",
+			"lbm_velocity_x",
+			"lbm_velocity_y",
+			"lbm_velocity_z",
+			"lbm_density_m",
+			"lbm_density_m_fluctuation",
+			"lbm_velocity_m_x",
+			"lbm_velocity_m_y",
+			"lbm_velocity_m_z"
+		};
+	}
+
+	void outputData(UniformDataWriter<TRAITS>& writer, const BLOCK& block, const idx3d& begin, const idx3d& end) override
+	{
+		writer.write("lbm_density", getMacroView<TRAITS>(block.hmacro, MACRO::e_rho), begin, end);
+		writer.write(
+			"lbm_density_fluctuation",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return block.hmacro(MACRO::e_rho, x, y, z) - 1.0;
+			},
+			begin,
+			end
+		);
+		writer.write("lbm_velocity_x", getMacroView<TRAITS>(block.hmacro, MACRO::e_vx), begin, end);
+		writer.write("lbm_velocity_y", getMacroView<TRAITS>(block.hmacro, MACRO::e_vy), begin, end);
+		writer.write("lbm_velocity_z", getMacroView<TRAITS>(block.hmacro, MACRO::e_vz), begin, end);
+		writer.write("lbm_density_m", getMacroView<TRAITS>(block.hmacro, MACRO::e_rho_m), begin, end);
+		writer.write(
+			"lbm_density_m_fluctuation",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return block.hmacro(MACRO::e_rho_m, x, y, z) - 1.0;
+			},
+			begin,
+			end
+		);
+		writer.write("lbm_velocity_m_x", getMacroView<TRAITS>(block.hmacro, MACRO::e_vx_m), begin, end);
+		writer.write("lbm_velocity_m_y", getMacroView<TRAITS>(block.hmacro, MACRO::e_vy_m), begin, end);
+		writer.write("lbm_velocity_m_z", getMacroView<TRAITS>(block.hmacro, MACRO::e_vz_m), begin, end);
 	}
 
 	void reset() override

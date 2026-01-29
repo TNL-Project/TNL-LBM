@@ -21,6 +21,7 @@
 #include "checkpoint.h"
 
 #include "DataManager.h"
+#include "UniformDataWriter.h"
 
 // ibm: lagrangian filament/surface
 #include "lagrange_3D.h"
@@ -107,8 +108,8 @@ struct State
 	// Immersed boundary method
 	Lagrange3D ibm;
 
-	void writeVTK_Points(const char* name, real time, int cycle);
-	void writeVTK_Points(const char* name, real time, int cycle, const typename Lagrange3D::HLPVECTOR& hLL_lat);
+	void writePoints(const char* name, real time, int cycle);
+	void writePoints(const char* name, real time, int cycle, const typename Lagrange3D::HLPVECTOR& hLL_lat);
 
 	// how often to probe/print/write/stat
 	std::array<T_COUNTER, MAX_COUNTER> cnt;
@@ -118,8 +119,8 @@ struct State
 	virtual void statReset() {}
 	virtual void stat2Reset() {}
 
-	// vtk export
-	virtual void writeVTKs_2D();
+	// data output
+	void write2D();
 	template <typename... ARGS>
 	void add2Dcut_X(idx x, const char* fmt, ARGS... args);
 	template <typename... ARGS>
@@ -127,25 +128,31 @@ struct State
 	template <typename... ARGS>
 	void add2Dcut_Z(idx z, const char* fmt, ARGS... args);
 
-	virtual void writeVTKs_3D();
+	void write3D();
 
-	void
-	predefineVTK(const std::string& ioName, const BLOCK_NSE& block, const adios2::Dims& shape, const adios2::Dims& start, const adios2::Dims& count);
-	void predefineVTK3D(const std::string& ioName, const BLOCK_NSE& block);
-	void predefineVTK2D(const std::string& ioName, const BLOCK_NSE& block, int cutType);
-	void predefineVTK3Dcut(const std::string& ioName, const BLOCK_NSE& block, const T_PROBE3DCUT& probe);
+	virtual void predefineOutputVariables(
+		const std::string& ioName, const BLOCK_NSE& block, const adios2::Dims& shape, const adios2::Dims& start, const adios2::Dims& count
+	);
+	void predefine3D(const std::string& ioName, const BLOCK_NSE& block);
+	void predefine2D(const std::string& ioName, const BLOCK_NSE& block, int cutType);
+	void predefine3Dcut(const std::string& ioName, const BLOCK_NSE& block, const T_PROBE3DCUT& probe);
 
 	void ensureFidesJsonModel(const std::string& dimsVariable, const std::vector<std::string>& fields);
 
 	// 3D cuts
-	virtual void writeVTKs_3Dcut();
+	void write3Dcut();
 	template <typename... ARGS>
 	void add3Dcut(idx ox, idx oy, idx oz, idx lx, idx ly, idx lz, const char* fmt, ARGS... args);
 
-	virtual bool outputData(const BLOCK_NSE& block, int index, int dof, idx x, idx y, idx z, OutputDataDescriptor<dreal>& desc)
+	// "internal" method which outputs implicit variables (e.g. TIME and wall)
+	virtual void outputDataPhase1(UniformDataWriter<TRAITS>& writer, std::size_t block_index, const idx3d& begin, const idx3d& end);
+
+	// main entry points for extending in derived classes
+	[[nodiscard]] virtual std::vector<std::string> getOutputDataNames() const
 	{
-		return false;
+		return {};
 	}
+	virtual void outputData(UniformDataWriter<TRAITS>& writer, const BLOCK_NSE& block, const idx3d& begin, const idx3d& end) {}
 
 	bool projectPNG_X(
 		const std::string& filename,
