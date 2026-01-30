@@ -34,8 +34,8 @@ struct StateLocal : State<NSE>
 	int resolution = 0;
 	bool steady = false;
 
-	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat)
-	: State<NSE>(id, communicator, lat)
+	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath = "adios2.xml")
+	: State<NSE>(id, communicator, std::move(lat), adiosConfigPath)
 	{}
 
 	void setupBoundaries() override

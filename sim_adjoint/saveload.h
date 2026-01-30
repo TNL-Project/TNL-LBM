@@ -16,31 +16,21 @@ void saveloadMacro(State& state, adios2::Mode mode, const std::string& fname, bo
 	using MACRO = typename State::MACRO;
 	static_assert(MACRO::N > 0);
 
-	adios2::IO io;
-	try {
-		io = state.adios.AtIO("macro");
-	}
-	catch (std::invalid_argument& e) {
-		io = state.adios.DeclareIO("macro");
-		io.SetEngine("bpfile");
-	}
-
-	adios2::Engine engine = io.Open(fname, mode);
-	engine.BeginStep();
+	CheckpointManager checkpoint(state.dataManager);
+	checkpoint.start(fname, mode);
 
 	for (auto& block : state.nse.blocks) {
-		checkpoint_global_array(io, engine, mode, "LBM_macro", block, block.hmacro);
+		checkpoint.saveLoadVariable("LBM_macro", block, block.hmacro);
 	}
 
-	engine.EndStep();
-	engine.Close();
+	checkpoint.finalize();
 }
 
 // loads primary and measured macro values - adjoint problem
 template <typename State>
 void loadPrimaryAndMeasuredMacro(State& state, const std::string& fname_primary, const std::string& fname_measured, bool steady = false)
 {
-	if (!steady) {
+	if (! steady) {
 		throw std::runtime_error("loadPrimaryAndMeasuredMacro is not implemented yet for 'steady = false'");
 	}
 
@@ -56,18 +46,10 @@ void loadPrimaryAndMeasuredMacro(State& state, const std::string& fname_primary,
 	using SizesHolder = typename local_array4d_view::SizesHolderType;
 	using hmacro_array_t = typename State::BLOCK_NSE::hmacro_array_t;
 
-	adios2::IO io;
-	try {
-		io = state.adios.AtIO("macro");
-	}
-	catch (std::invalid_argument& e) {
-		io = state.adios.DeclareIO("macro");
-		io.SetEngine("bpfile");
-	}
 	adios2::Mode mode = adios2::Mode::Read;
 
-	adios2::Engine engine = io.Open(fname_primary, mode);
-	engine.BeginStep();
+	CheckpointManager checkpoint(state.dataManager);
+	checkpoint.start(fname_primary, mode);
 
 	for (auto& block : state.nse.blocks) {
 		// primary macros - first half of block.hmacro
@@ -88,14 +70,12 @@ void loadPrimaryAndMeasuredMacro(State& state, const std::string& fname_primary,
 		dreal* begin = block.hmacro.getData();
 		macro_view.bind(begin, indexer);
 
-		checkpoint_global_array(io, engine, mode, "LBM_macro", block, macro_view);
+		checkpoint.saveLoadVariable("LBM_macro", block, macro_view);
 	}
 
-	engine.EndStep();
-	engine.Close();
+	checkpoint.finalize();
 
-	engine = io.Open(fname_measured, mode);
-	engine.BeginStep();
+	checkpoint.start(fname_measured, mode);
 
 	for (auto& block : state.nse.blocks) {
 		// measured macros - second half of block.hmacro
@@ -116,9 +96,8 @@ void loadPrimaryAndMeasuredMacro(State& state, const std::string& fname_primary,
 		dreal* begin = block.hmacro.getData() + hmacro.getStorageSize() / 2;
 		macro_view.bind(begin, indexer);
 
-		checkpoint_global_array(io, engine, mode, "LBM_macro", block, macro_view);
+		checkpoint.saveLoadVariable("LBM_macro", block, macro_view);
 	}
 
-	engine.EndStep();
-	engine.Close();
+	checkpoint.finalize();
 }

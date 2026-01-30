@@ -37,8 +37,8 @@ struct StateLocal : State<NSE>
 	int resolution = 0;
 	bool steady = false;
 
-	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat)
-	: State<NSE>(id, communicator, lat)
+	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath = "adios2.xml")
+	: State<NSE>(id, communicator, std::move(lat), adiosConfigPath)
 	{}
 
 	void setupBoundaries() override
@@ -105,8 +105,8 @@ struct StateLocalAdjoint : State<NSE>
 	int resolution = 0;
 	bool steady = false;
 
-	StateLocalAdjoint(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat)
-	: State<NSE>(id, communicator, lat)
+	StateLocalAdjoint(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath = "adios2.xml")
+	: State<NSE>(id, communicator, std::move(lat), adiosConfigPath)
 	{}
 
 	void setupBoundaries() override
@@ -425,7 +425,7 @@ int simAdjoint(
 			state.nse.copyMacroToHost();
 			real sum = 0.0;
 #pragma omp parallel for collapse(3) reduction(+ : sum)
-			for (idx x = state.hide * block.local.x(); x < block.local.x(); x++)	// assume 1 block
+			for (idx x = state.hide * block.local.x(); x < block.local.x(); x++)  // assume 1 block
 				for (idx y = 0; y < block.local.y(); y++)
 					for (idx z = 0; z < block.local.z(); z++) {
 						const real err_rho = block.hmacro(MACRO::e_rho, x, y, z) - block.hmacro(MACRO::e_rho_m, x, y, z);
