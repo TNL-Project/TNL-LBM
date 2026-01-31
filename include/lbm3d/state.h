@@ -104,7 +104,6 @@ struct State
 	using real = typename TRAITS::real;
 	using point_t = typename TRAITS::point_t;
 	using idx3d = typename TRAITS::idx3d;
-	using bool3d = typename TRAITS::bool3d;
 	using lat_t = typename LBM<NSE>::lat_t;
 
 	using T_PROBE3DCUT = probe3Dcut<idx>;

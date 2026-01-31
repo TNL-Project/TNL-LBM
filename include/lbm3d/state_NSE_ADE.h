@@ -180,7 +180,13 @@ struct State_NSE_ADE : State<NSE>
 				launch_config.blockSize = block_nse.computeData.at(direction).blockSize;
 				launch_config.gridSize = block_nse.computeData.at(direction).gridSize;
 				TNL::Backend::launchKernelAsync(
-					cudaLBMKernel<NSE, ADE>, launch_config, block_nse.data, block_ade.data, nse.total_blocks, idx3d{0, 0, 0}, block_nse.local
+					cudaLBMKernel<NSE, ADE>,
+					launch_config,
+					block_nse.data,
+					block_ade.data,
+					idx3d{0, 0, 0},
+					block_nse.local,
+					block_nse.is_distributed()
 				);
 			}
 			// synchronize the null-stream after all grids
@@ -213,7 +219,7 @@ struct State_NSE_ADE : State<NSE>
 						const idx3d offset = block_nse.computeData.at(direction).offset;
 						const idx3d size = block_nse.computeData.at(direction).size;
 						TNL::Backend::launchKernelAsync(
-							cudaLBMKernel<NSE, ADE>, launch_config, block_nse.data, block_ade.data, nse.total_blocks, offset, offset + size
+							cudaLBMKernel<NSE, ADE>, launch_config, block_nse.data, block_ade.data, offset, offset + size, block_nse.is_distributed()
 						);
 					}
 			}
@@ -230,7 +236,7 @@ struct State_NSE_ADE : State<NSE>
 				const idx3d offset = block_nse.computeData.at(direction).offset;
 				const idx3d size = block_nse.computeData.at(direction).size;
 				TNL::Backend::launchKernelAsync(
-					cudaLBMKernel<NSE, ADE>, launch_config, block_nse.data, block_ade.data, nse.total_blocks, offset, offset + size
+					cudaLBMKernel<NSE, ADE>, launch_config, block_nse.data, block_ade.data, offset, offset + size, block_nse.is_distributed()
 				);
 			}
 
@@ -265,7 +271,7 @@ struct State_NSE_ADE : State<NSE>
 			for (idx x = 0; x < block_nse.local.x(); x++)
 				for (idx z = 0; z < block_nse.local.z(); z++)
 					for (idx y = 0; y < block_nse.local.y(); y++) {
-						LBMKernel<NSE, ADE>(block_nse.data, block_ade.data, x, y, z, nse.total_blocks);
+						LBMKernel<NSE, ADE>(block_nse.data, block_ade.data, x, y, z, block_nse.is_distributed());
 					}
 		}
 	#ifdef HAVE_MPI
