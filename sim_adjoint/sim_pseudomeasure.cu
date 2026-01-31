@@ -140,13 +140,13 @@ int sim(int resolution, double vy_amplitude, VelocityProfile vy_profile)
 	state.nse.physFinalTime = 16.0;
 
 	// add cuts
-	state.cnt[VTK2D].period = state.nse.physFinalTime / 100.0;
+	state.cnt[OUT2D].period = state.nse.physFinalTime / 100.0;
 	state.add2Dcut_X(0, "cutsX/cut_X");
 	state.add2Dcut_X(X / 2, "cutsX2/cut_X");
 	state.add2Dcut_Y(Y / 2, "cutsY/cut_Y");
 	state.add2Dcut_Z(Z / 2, "cutsZ/cut_Z");
 
-	state.cnt[VTK3D].period = state.nse.physFinalTime / 4.0;
+	state.cnt[OUT3D].period = state.nse.physFinalTime / 4.0;
 
 	// set inflow velocity profile
 	std::unique_ptr<double[]> velocityProfileX = initGuess(VelocityProfile::zero, Y, Z);

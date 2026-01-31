@@ -377,12 +377,12 @@ int sim(
 		state.cnt[PROBE1].period = 2 * PHYS_DT;
 
 	// add outputs
-	state.cnt[VTK2D].period = state.nse.physFinalTime / 1000;
+	state.cnt[OUT2D].period = state.nse.physFinalTime / 1000;
 	state.add2Dcut_X(0, "left_side");
 	state.add2Dcut_X(X / 2, "cut_X");
 	state.add2Dcut_Y(Y / 2, "cut_Y");
 	state.add2Dcut_Z(Z / 2, "cut_Z");
-	state.cnt[VTK3D].period = state.nse.physFinalTime / 10;
+	state.cnt[OUT3D].period = state.nse.physFinalTime / 10;
 
 	execute(state);
 

@@ -180,7 +180,7 @@ struct StateLocal : State<NSE>
 		static idx cycle = 0;
 		this->writePoints("ball", nse.physTime(), cycle);
 
-		// output the center alone in a vtk file for easier rendering
+		// output the center alone in a separate file for easier rendering
 		typename Lagrange3D<NSE>::HLPVECTOR center_vector({nse.lat.phys2lbmPoint(ball_c)});
 		this->writePoints("ball_center", nse.physTime(), cycle, center_vector);
 
@@ -300,9 +300,9 @@ int sim(
 	state.cnt[PRINT].period = 0.1;
 	state.nse.physFinalTime = 30.0;
 
-	//state.cnt[VTK3D].period = 1.0;
-	state.cnt[VTK2D].period = 0.01;
-	state.cnt[PROBE1].period = 0.01;  // Lagrangian points VTK output
+	//state.cnt[OUT3D].period = 1.0;
+	state.cnt[OUT2D].period = 0.01;
+	state.cnt[PROBE1].period = 0.01;  // Lagrangian points output
 
 	// add cuts
 	state.add2Dcut_X(LBM_X / 2, "cut_X");

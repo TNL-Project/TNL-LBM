@@ -247,11 +247,11 @@ void State<NSE>::write3D()
 	create_parent_directories(fname.c_str());
 
 	dataManager.prepareIO(fname);
-	if (cnt[VTK3D].count == 0) {
+	if (cnt[OUT3D].count == 0) {
 		predefine3D(fname, nse.blocks.front());
 	}
 	// Match previous behavior: reopen as Append after the first cycle
-	const auto mode = (cnt[VTK3D].count == 0) ? adios2::Mode::Write : adios2::Mode::Append;
+	const auto mode = (cnt[OUT3D].count == 0) ? adios2::Mode::Write : adios2::Mode::Append;
 	dataManager.openEngine(fname, mode);
 
 	TNL::Timer timer;
@@ -268,7 +268,7 @@ void State<NSE>::write3D()
 		timer.stop();
 		spdlog::info("write3D saved in: {:.2f} seconds", timer.getRealTime());
 		timer.reset();
-		spdlog::info("Output {} written, time {:f}, cycle {:d}", fname, nse.physTime(), cnt[VTK3D].count);
+		spdlog::info("Output {} written, time {:f}, cycle {:d}", fname, nse.physTime(), cnt[OUT3D].count);
 	}
 }
 
@@ -1248,8 +1248,8 @@ void State<NSE>::AfterSimUpdate()
 
 	bool write_info = false;
 
-	if (cnt[PRINT].action(nse.physTime()) || cnt[VTK2D].action(nse.physTime()) || cnt[VTK3D].action(nse.physTime())
-		|| cnt[VTK3DCUT].action(nse.physTime()) || cnt[PROBE1].action(nse.physTime()) || cnt[PROBE2].action(nse.physTime())
+	if (cnt[PRINT].action(nse.physTime()) || cnt[OUT2D].action(nse.physTime()) || cnt[OUT3D].action(nse.physTime())
+		|| cnt[OUT3DCUT].action(nse.physTime()) || cnt[PROBE1].action(nse.physTime()) || cnt[PROBE2].action(nse.physTime())
 		|| cnt[PROBE3].action(nse.physTime()))
 	{
 		write_info = true;
@@ -1281,7 +1281,7 @@ void State<NSE>::AfterSimUpdate()
 		}
 	}
 
-	if (cnt[VTK2D].action(nse.physTime()) || cnt[VTK3D].action(nse.physTime()) || cnt[VTK3DCUT].action(nse.physTime())
+	if (cnt[OUT2D].action(nse.physTime()) || cnt[OUT3D].action(nse.physTime()) || cnt[OUT3DCUT].action(nse.physTime())
 		|| cnt[PROBE1].action(nse.physTime()) || cnt[PROBE2].action(nse.physTime()) || cnt[PROBE3].action(nse.physTime()) || nan_detected)
 	{
 		// probe1
@@ -1300,19 +1300,19 @@ void State<NSE>::AfterSimUpdate()
 			cnt[PROBE3].count++;
 		}
 		// 3D output
-		if (cnt[VTK3D].action(nse.physTime()) || nan_detected) {
+		if (cnt[OUT3D].action(nse.physTime()) || nan_detected) {
 			write3D();
-			cnt[VTK3D].count++;
+			cnt[OUT3D].count++;
 		}
 		// 3D cut output
-		if (cnt[VTK3DCUT].action(nse.physTime())) {
+		if (cnt[OUT3DCUT].action(nse.physTime())) {
 			write3Dcut();
-			cnt[VTK3DCUT].count++;
+			cnt[OUT3DCUT].count++;
 		}
 		// 2D output
-		if (cnt[VTK2D].action(nse.physTime()) || nan_detected) {
+		if (cnt[OUT2D].action(nse.physTime()) || nan_detected) {
 			write2D();
-			cnt[VTK2D].count++;
+			cnt[OUT2D].count++;
 		}
 	}
 

@@ -249,13 +249,13 @@ int sim(int RESOLUTION = 2, const std::string& adiosConfigPath = "adios2.xml")
 	state.cnt[PRINT].period = 0.01;
 
 	// add cuts
-	state.cnt[VTK2D].period = 1;
+	state.cnt[OUT2D].period = 1;
 	state.add2Dcut_X(X / 2, "cutsX/cut_X");
 	state.add2Dcut_Y(Y / 2, "cutsY/cut_Y");
 	state.add2Dcut_Z(Z / 2, "cutsZ/cut_Z");
 
-	//state.cnt[VTK3D].period = 0.001;
-	//state.cnt[VTK3DCUT].period = 0.001;
+	//state.cnt[OUT3D].period = 0.001;
+	//state.cnt[OUT3DCUT].period = 0.001;
 	//state.add3Dcut(X/4,Y/4,Z/4, X/2,Y/2,Z/2, "box");
 
 	execute(state);

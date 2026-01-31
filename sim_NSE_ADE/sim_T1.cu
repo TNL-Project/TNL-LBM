@@ -541,28 +541,15 @@ int simT1_test(int RESOLUTION = 2, const std::string& adiosConfigPath = "adios2.
 	state.nse.physFinalTime = 10.0;
 	state.cnt[PRINT].period = 0.01;
 	//state.cnt[PROBE1].period = 0.001;
-	// test
-	//state.cnt[PRINT].period = 100*PHYS_DT;
-	//state.nse.physFinalTime = 1000*PHYS_DT;
-	//state.cnt[VTK3D].period = 1000*PHYS_DT;
-	//state.cnt[SAVESTATE].period = 600;  // save state every [period] of wall time
-	//state.check_savestate_flag = false;
-	//state.wallTime = 60;
-	// RCI
-	//state.nse.physFinalTime = 0.5;
-	//state.cnt[VTK3D].period = 0.5;
-	//state.cnt[SAVESTATE].period = 3600;  // save state every [period] of wall time
-	//state.check_savestate_flag = false;
-	//state.wallTime = 3600 * 23.5;
 
 	// add cuts
-	state.cnt[VTK2D].period = 0.01;
+	state.cnt[OUT2D].period = 0.01;
 	state.add2Dcut_X(X / 2, "cutsX/cut_X");
 	state.add2Dcut_Y(Y / 2, "cutsY/cut_Y");
 	state.add2Dcut_Z(Z / 2, "cutsZ/cut_Z");
 
-	//state.cnt[VTK3D].period = 0.001;
-	//state.cnt[VTK3DCUT].period = 0.001;
+	//state.cnt[OUT3D].period = 0.001;
+	//state.cnt[OUT3DCUT].period = 0.001;
 	//state.add3Dcut(X/4,Y/4,Z/4, X/2,Y/2,Z/2, "box");
 
 	execute(state);

@@ -448,7 +448,7 @@ int sim(int RES, bool use_forcing, Scaling scaling, double final_time, const std
 	state.cnt[PROBE1].period = 1.0;
 	//state.nse.physFinalTime = PHYS_DT * 1e7;
 	state.nse.physFinalTime = final_time;
-	//state.cnt[VTK2D].period = 1.0;
+	//state.cnt[OUT2D].period = 1.0;
 
 	if (scaling == Scaling::weak_3d) {
 		// TRICK to keep the benchmark fast: decrease the periods and physFinalTime

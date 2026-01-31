@@ -267,8 +267,8 @@ int sim(
 	state.cnt[PRINT].period = 0.1;
 	state.nse.physFinalTime = 0.0;
 
-	//state.cnt[VTK3D].period = 1.0;
-	state.cnt[VTK2D].period = 1.0;
+	//state.cnt[OUT3D].period = 1.0;
+	state.cnt[OUT2D].period = 1.0;
 
 	// add cuts
 	state.add2Dcut_X(LBM_X / 2, "cut_X");

@@ -166,8 +166,8 @@ int sim(int RES, double Re, const std::string& adiosConfigPath)
 	state.cnt[PRINT].period = 0.1;
 	state.nse.physFinalTime = 30.0;
 
-	//state.cnt[VTK3D].period = 1.0;
-	state.cnt[VTK2D].period = 0.1;
+	//state.cnt[OUT3D].period = 1.0;
+	state.cnt[OUT2D].period = 0.1;
 	state.cnt[PROBE1].period = 0.1;
 
 	// add cuts
