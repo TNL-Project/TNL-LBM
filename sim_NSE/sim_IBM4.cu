@@ -64,10 +64,10 @@ struct StateLocal : State<NSE>
 
 	using State<NSE>::nse;
 	using State<NSE>::ibm;
-	using State<NSE>::vtk_helper;
 	using State<NSE>::id;
 
 	using idx = typename TRAITS::idx;
+	using idx3d = typename TRAITS::idx3d;
 	using real = typename TRAITS::real;
 	using dreal = typename TRAITS::dreal;
 	using point_t = typename TRAITS::point_t;
@@ -80,67 +80,109 @@ struct StateLocal : State<NSE>
 	dreal ball_amplitude = 0;
 	dreal ball_period = 1;
 
-	bool outputData(const BLOCK& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) override
+	[[nodiscard]] std::vector<std::string> getOutputDataNames() const override
 	{
-		int k = 0;
-		if (index == k++) {
-			switch (dof) {
-				case 0:
-					return vtk_helper("lbm_velocity", block.hmacro(MACRO::e_vx, x, y, z), 3, desc, value, dofs);
-				case 1:
-					return vtk_helper("lbm_velocity", block.hmacro(MACRO::e_vy, x, y, z), 3, desc, value, dofs);
-				case 2:
-					return vtk_helper("lbm_velocity", block.hmacro(MACRO::e_vz, x, y, z), 3, desc, value, dofs);
-			}
-		}
-		if (index == k++) {
-			switch (dof) {
-				case 0:
-					return vtk_helper("lbm_force", block.hmacro(MACRO::e_fx, x, y, z), 3, desc, value, dofs);
-				case 1:
-					return vtk_helper("lbm_force", block.hmacro(MACRO::e_fy, x, y, z), 3, desc, value, dofs);
-				case 2:
-					return vtk_helper("lbm_force", block.hmacro(MACRO::e_fz, x, y, z), 3, desc, value, dofs);
-			}
-		}
-		if (index == k++)
-			return vtk_helper("lbm_density", block.hmacro(MACRO::e_rho, x, y, z), 1, desc, value, dofs);
-		if (index == k++)
-			return vtk_helper("lbm_density_fluctuation", block.hmacro(MACRO::e_rho, x, y, z) - 1.0, 1, desc, value, dofs);
-		if (index == k++) {
-			switch (dof) {
-				case 0:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vx, x, y, z)), 3, desc, value, dofs);
-				case 1:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vy, x, y, z)), 3, desc, value, dofs);
-				case 2:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vz, x, y, z)), 3, desc, value, dofs);
-			}
-		}
-		if (index == k++) {
-			switch (dof) {
-				case 0:
-					return vtk_helper("force", nse.lat.lbm2physForce(block.hmacro(MACRO::e_fx, x, y, z)), 3, desc, value, dofs);
-				case 1:
-					return vtk_helper("force", nse.lat.lbm2physForce(block.hmacro(MACRO::e_fy, x, y, z)), 3, desc, value, dofs);
-				case 2:
-					return vtk_helper("force", nse.lat.lbm2physForce(block.hmacro(MACRO::e_fz, x, y, z)), 3, desc, value, dofs);
-			}
-		}
-		//if (index==k++) return vtk_helper("density", block.hmacro(MACRO::e_rho,x,y,z)*nse.physFluidDensity, 1, desc, value, dofs);
-		return false;
+		// return all quantity names used in outputData
+		return {
+			"lbm_density",
+			"lbm_density_fluctuation",
+			"lbm_velocity_x",
+			"lbm_velocity_y",
+			"lbm_velocity_z",
+			"velocity_x",
+			"velocity_y",
+			"velocity_z",
+			"lbm_force_x",
+			"lbm_force_y",
+			"lbm_force_z",
+			"force_x",
+			"force_y",
+			"force_z",
+		};
+	}
+
+	void outputData(UniformDataWriter<TRAITS>& writer, const BLOCK& block, const idx3d& begin, const idx3d& end) override
+	{
+		writer.write("lbm_density", getMacroView<TRAITS>(block.hmacro, MACRO::e_rho), begin, end);
+		writer.write(
+			"lbm_density_fluctuation",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return block.hmacro(MACRO::e_rho, x, y, z) - 1.0;
+			},
+			begin,
+			end
+		);
+		writer.write("lbm_velocity_x", getMacroView<TRAITS>(block.hmacro, MACRO::e_vx), begin, end);
+		writer.write("lbm_velocity_y", getMacroView<TRAITS>(block.hmacro, MACRO::e_vy), begin, end);
+		writer.write("lbm_velocity_z", getMacroView<TRAITS>(block.hmacro, MACRO::e_vz), begin, end);
+		writer.write(
+			"velocity_x",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vx, x, y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_y",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vy, x, y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_z",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vz, x, y, z));
+			},
+			begin,
+			end
+		);
+		writer.write("lbm_force_x", getMacroView<TRAITS>(block.hmacro, MACRO::e_fx), begin, end);
+		writer.write("lbm_force_y", getMacroView<TRAITS>(block.hmacro, MACRO::e_fy), begin, end);
+		writer.write("lbm_force_z", getMacroView<TRAITS>(block.hmacro, MACRO::e_fz), begin, end);
+		writer.write(
+			"force_x",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physForce(block.hmacro(MACRO::e_fx, x, y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"force_y",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physForce(block.hmacro(MACRO::e_fy, x, y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"force_z",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physForce(block.hmacro(MACRO::e_fz, x, y, z));
+			},
+			begin,
+			end
+		);
 	}
 
 	void probe1() override
 	{
 		static idx cycle = 0;
-		const std::string basename = fmt::format("ball_{:04d}", cycle);
-		this->writeVTK_Points(basename.c_str(), nse.physTime(), cycle);
+		this->writePoints("ball", nse.physTime(), cycle);
 
-		// output the center alone in a vtk file for easier rendering
-		const std::string center_basename = fmt::format("ball_center_{:04d}", cycle);
+		// output the center alone in a separate file for easier rendering
 		typename Lagrange3D<NSE>::HLPVECTOR center_vector({nse.lat.phys2lbmPoint(ball_c)});
-		this->writeVTK_Points(center_basename.c_str(), nse.physTime(), cycle, center_vector);
+		this->writePoints("ball_center", nse.physTime(), cycle, center_vector);
 
 		cycle++;
 	}
@@ -184,13 +226,15 @@ struct StateLocal : State<NSE>
 		nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_INFLOW);		  // bottom
 	}
 
-	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat)
-	: State<NSE>(id, communicator, std::move(lat))
+	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath = "adios2.xml")
+	: State<NSE>(id, communicator, std::move(lat), adiosConfigPath)
 	{}
 };
 
 template <typename NSE>
-int sim(int RES, double Re, double discretization_ratio, IbmCompute computeVariant, int dirac, IbmMethod methodVariant)
+int sim(
+	int RES, double Re, double discretization_ratio, IbmCompute computeVariant, int dirac, IbmMethod methodVariant, const std::string& adiosConfigPath
+)
 {
 	using idx = typename NSE::TRAITS::idx;
 	using real = typename NSE::TRAITS::real;
@@ -242,7 +286,7 @@ int sim(int RES, double Re, double discretization_ratio, IbmCompute computeVaria
 	const std::string state_id = fmt::format(
 		"sim_IBM4_{}_{}_dirac_{}_res_{}_Re_{}_nas_{:05.4f}_compute_{}", NSE::COLL::id, method_name, dirac, RES, Re, discretization_ratio, compute_name
 	);
-	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat);
+	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, adiosConfigPath);
 
 	if (! state.canCompute())
 		return 0;
@@ -256,9 +300,9 @@ int sim(int RES, double Re, double discretization_ratio, IbmCompute computeVaria
 	state.cnt[PRINT].period = 0.1;
 	state.nse.physFinalTime = 30.0;
 
-	//state.cnt[VTK3D].period = 1.0;
-	state.cnt[VTK2D].period = 0.01;
-	state.cnt[PROBE1].period = 0.01;  // Lagrangian points VTK output
+	//state.cnt[OUT3D].period = 1.0;
+	state.cnt[OUT2D].period = 0.01;
+	state.cnt[PROBE1].period = 0.01;  // Lagrangian points output
 
 	// add cuts
 	state.add2Dcut_X(LBM_X / 2, "cut_X");
@@ -284,7 +328,7 @@ int sim(int RES, double Re, double discretization_ratio, IbmCompute computeVaria
 }
 
 template <typename TRAITS = TraitsSP>
-void run(int res, double Re, double discretization_ratio, IbmCompute compute, int dirac, IbmMethod method)
+void run(int res, double Re, double discretization_ratio, IbmCompute compute, int dirac, IbmMethod method, const std::string& adiosConfigPath)
 {
 	using COLL = D3Q27_CUM<TRAITS>;
 	using NSE_CONFIG = LBM_CONFIG<
@@ -297,7 +341,7 @@ void run(int res, double Re, double discretization_ratio, IbmCompute compute, in
 		D3Q27_BC_All,
 		MacroLocal<TRAITS>>;
 
-	sim<NSE_CONFIG>(res, Re, discretization_ratio, compute, dirac, method);
+	sim<NSE_CONFIG>(res, Re, discretization_ratio, compute, dirac, method, adiosConfigPath);
 }
 
 int main(int argc, char** argv)
@@ -316,6 +360,7 @@ int main(int argc, char** argv)
 	program.add_argument("--compute").help("IBM compute method").default_value("GPU").choices("GPU", "CPU", "hybrid", "hybrid_zerocopy").nargs(1);
 	program.add_argument("--dirac").help("Dirac delta function to use in IBM").scan<'i', int>().default_value(1).choices(1, 2, 3, 4).nargs(1);
 	program.add_argument("--method").help("IBM method").default_value("modified").choices("modified", "original").nargs(1);
+	program.add_argument("--adios-config").help("path to adios2 configuration file").default_value(std::string("adios2.xml")).nargs(1);
 
 	try {
 		program.parse_args(argc, argv);
@@ -332,6 +377,7 @@ int main(int argc, char** argv)
 	const auto compute = program.get<std::string>("--compute");
 	const auto dirac = program.get<int>("--dirac");
 	const auto method = program.get<std::string>("--method");
+	const auto adiosConfigPath = program.get<std::string>("--adios-config");
 
 	if (resolution < 1) {
 		fmt::println(stderr, "CLI error: resolution must be at least 1");
@@ -349,7 +395,7 @@ int main(int argc, char** argv)
 	const IbmCompute computeEnum = magic_enum::enum_cast<IbmCompute>(compute).value_or(IbmCompute::GPU);
 	const IbmMethod methodEnum = magic_enum::enum_cast<IbmMethod>(method).value_or(IbmMethod::modified);
 
-	run(resolution, Re, discretization_ratio, computeEnum, dirac, methodEnum);
+	run(resolution, Re, discretization_ratio, computeEnum, dirac, methodEnum, adiosConfigPath);
 
 	return 0;
 }

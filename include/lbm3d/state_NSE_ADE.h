@@ -9,20 +9,25 @@ struct State_NSE_ADE : State<NSE>
 	using BLOCK_NSE = LBM_BLOCK<NSE>;
 	using BLOCK_ADE = LBM_BLOCK<ADE>;
 
+	using State<NSE>::id;
 	using State<NSE>::nse;
 	using State<NSE>::cnt;
-	using State<NSE>::vtk_helper;
 
+	using map_t = typename TRAITS::map_t;
 	using idx = typename TRAITS::idx;
 	using idx3d = typename TRAITS::idx3d;
 	using real = typename TRAITS::real;
+	using dreal = typename TRAITS::dreal;
+	using point_t = typename TRAITS::point_t;
 	using lat_t = Lattice<3, real, idx>;
 
 	LBM<ADE> ade;
 
 	// constructor
-	State_NSE_ADE(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat_nse, lat_t lat_ade)
-	: State<NSE>(id, communicator, lat_nse),
+	State_NSE_ADE(
+		const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat_nse, lat_t lat_ade, const std::string& adiosConfigPath = "adios2.xml"
+	)
+	: State<NSE>(id, communicator, lat_nse, adiosConfigPath),
 	  ade(communicator, lat_ade)
 	{
 		// ADE allocation
@@ -154,6 +159,20 @@ struct State_NSE_ADE : State<NSE>
 		// call hook method (used e.g. for extra kernels in the non-Newtonian model)
 		this->computeBeforeLBMKernel();
 
+		// technically this should happen after the LBM kernel, but we need to
+		// check actions beforehand
+		nse.iterations++;
+		ade.iterations = nse.iterations;
+
+		// determine if macroscopic quantities computed in the LBM kernel will be
+		// written in the dmacro array
+		bool compute_macro =
+			NSE::MACRO::compute_in_each_iteration || ADE::MACRO::compute_in_each_iteration || NSE::MACRO::use_syncMacro || ADE::MACRO::use_syncMacro;
+		for (int c = 0; c < MAX_COUNTER; c++)
+			if (c != PRINT && c != SAVESTATE)
+				if (cnt[c].action(nse.physTime()))
+					compute_macro = true;
+
 #ifdef HAVE_MPI
 	#ifdef AA_PATTERN
 		uint8_t output_df = df_cur;
@@ -186,7 +205,8 @@ struct State_NSE_ADE : State<NSE>
 					block_ade.data,
 					idx3d{0, 0, 0},
 					block_nse.local,
-					block_nse.is_distributed()
+					block_nse.is_distributed(),
+					compute_macro
 				);
 			}
 			// synchronize the null-stream after all grids
@@ -219,7 +239,14 @@ struct State_NSE_ADE : State<NSE>
 						const idx3d offset = block_nse.computeData.at(direction).offset;
 						const idx3d size = block_nse.computeData.at(direction).size;
 						TNL::Backend::launchKernelAsync(
-							cudaLBMKernel<NSE, ADE>, launch_config, block_nse.data, block_ade.data, offset, offset + size, block_nse.is_distributed()
+							cudaLBMKernel<NSE, ADE>,
+							launch_config,
+							block_nse.data,
+							block_ade.data,
+							offset,
+							offset + size,
+							block_nse.is_distributed(),
+							compute_macro
 						);
 					}
 			}
@@ -236,7 +263,14 @@ struct State_NSE_ADE : State<NSE>
 				const idx3d offset = block_nse.computeData.at(direction).offset;
 				const idx3d size = block_nse.computeData.at(direction).size;
 				TNL::Backend::launchKernelAsync(
-					cudaLBMKernel<NSE, ADE>, launch_config, block_nse.data, block_ade.data, offset, offset + size, block_nse.is_distributed()
+					cudaLBMKernel<NSE, ADE>,
+					launch_config,
+					block_nse.data,
+					block_ade.data,
+					offset,
+					offset + size,
+					block_nse.is_distributed(),
+					compute_macro
 				);
 			}
 
@@ -271,7 +305,7 @@ struct State_NSE_ADE : State<NSE>
 			for (idx x = 0; x < block_nse.local.x(); x++)
 				for (idx z = 0; z < block_nse.local.z(); z++)
 					for (idx y = 0; y < block_nse.local.y(); y++) {
-						LBMKernel<NSE, ADE>(block_nse.data, block_ade.data, x, y, z, block_nse.is_distributed());
+						LBMKernel<NSE, ADE>(block_nse.data, block_ade.data, x, y, z, block_nse.is_distributed(), compute_macro);
 					}
 		}
 	#ifdef HAVE_MPI
@@ -280,24 +314,20 @@ struct State_NSE_ADE : State<NSE>
 		ade.synchronizeDFsAndMacroDevice(output_df);
 	#endif
 #endif
-
-		nse.iterations++;
-		ade.iterations = nse.iterations;
-
-		bool doit = false;
-		for (int c = 0; c < MAX_COUNTER; c++)
-			if (c != PRINT && c != SAVESTATE)
-				if (cnt[c].action(nse.physTime()))
-					doit = true;
-		if (doit) {
-			// common copy
-			nse.copyMacroToHost();
-			ade.copyMacroToHost();
-		}
 	}
 
 	void AfterSimUpdate() override
 	{
+		bool copy_macro = false;
+		for (int c = 0; c < MAX_COUNTER; c++)
+			if (c != PRINT && c != SAVESTATE)
+				if (cnt[c].action(nse.physTime()))
+					copy_macro = true;
+		if (copy_macro) {
+			// nse.copyMacroToHost() is done in State<NSE>::AfterSimUpdate()
+			ade.copyMacroToHost();
+		}
+
 		State<NSE>::AfterSimUpdate();
 		// TODO: figure out what should be done for ade here...
 	}
@@ -324,153 +354,48 @@ struct State_NSE_ADE : State<NSE>
 		ade.copyMacroToHost();
 	}
 
-	void writeVTKs_3D() override
+	void predefineOutputVariables(
+		const std::string& ioName, const BLOCK_NSE& block, const adios2::Dims& shape, const adios2::Dims& start, const adios2::Dims& count
+	) override
 	{
-		const std::string dir = fmt::format("results_{}/vtk3D", this->id);
-		mkdir_p(dir.c_str(), 0755);
+		// Build a field list for auto-generation of the Fides JSON data model.
+		std::vector<std::string> fidesFields;
+		fidesFields.reserve(16);
+		fidesFields.emplace_back("wall");
+		std::string dimsVariable;
 
-		for (const auto& block : nse.blocks) {
-			const std::string basename = fmt::format("NSE_block{:03d}_{:d}.vtk", block.id, cnt[VTK3D].count);
-			const std::string filename = fmt::format("{}/{}", dir, basename);
-			auto outputData = [this](const BLOCK_NSE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) mutable
-			{
-				return this->outputData(block, index, dof, desc, x, y, z, value, dofs);
-			};
-			block.writeVTK_3D(nse.lat, outputData, filename, nse.physTime(), cnt[VTK3D].count);
-			spdlog::info("[vtk {} written, time {:f}, cycle {:d}] ", filename, nse.physTime(), cnt[VTK3D].count);
-		}
-		for (const auto& block : ade.blocks) {
-			const std::string basename = fmt::format("ADE_block{:03d}_{:d}.vtk", block.id, cnt[VTK3D].count);
-			const std::string filename = fmt::format("{}/{}", dir, basename);
-			auto outputData = [this](const BLOCK_ADE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) mutable
-			{
-				return this->outputData(block, index, dof, desc, x, y, z, value, dofs);
-			};
-			block.writeVTK_3D(ade.lat, outputData, filename, nse.physTime(), cnt[VTK3D].count);
-			spdlog::info("[vtk {} written, time {:f}, cycle {:d}] ", filename, nse.physTime(), cnt[VTK3D].count);
-		}
-	}
+		this->dataManager.template defineData<real>("TIME", ioName);
+		spdlog::info("Defined variable 'TIME'");
 
-	void writeVTKs_3Dcut() override
-	{
-		if (this->probe3Dvec.size() <= 0)
-			return;
-		// browse all 3D vtk cuts
-		for (auto& probevec : this->probe3Dvec) {
-			for (const auto& block : nse.blocks) {
-				const std::string fname =
-					fmt::format("results_{}/vtk3Dcut/{}_NSE_block{:03d}_{:d}.vtk", this->id, probevec.name, block.id, probevec.cycle);
-				// create parent directories
-				create_file(fname.c_str());
-				auto outputData = [this](const BLOCK_NSE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) mutable
-				{
-					return this->outputData(block, index, dof, desc, x, y, z, value, dofs);
-				};
-				block.writeVTK_3Dcut(
-					nse.lat,
-					outputData,
-					fname,
-					nse.physTime(),
-					probevec.cycle,
-					probevec.ox,
-					probevec.oy,
-					probevec.oz,
-					probevec.lx,
-					probevec.ly,
-					probevec.lz,
-					probevec.step
-				);
-				spdlog::info("[vtk {} written, time {:f}, cycle {:d}] ", fname, nse.physTime(), probevec.cycle);
+		this->dataManager.template defineData<map_t>("wall_nse", shape, start, count, ioName);
+		spdlog::info("Predefined output variable 'wall_nse'");
+
+		this->dataManager.template defineData<map_t>("wall_ade", shape, start, count, ioName);
+		spdlog::info("Predefined output variable 'wall_nse'");
+
+		for (const std::string& varName : this->getOutputDataNames()) {
+			this->dataManager.template defineData<dreal>(varName, shape, start, count, ioName);
+			spdlog::info("Predefined output variable '{}'", varName);
+
+			fidesFields.push_back(varName);
+			if (dimsVariable.empty() || varName == "lbm_density") {
+				dimsVariable = varName;
 			}
-			for (const auto& block : ade.blocks) {
-				const std::string fname =
-					fmt::format("results_{}/vtk3Dcut/{}_ADE_block{:03d}_{:d}.vtk", this->id, probevec.name, block.id, probevec.cycle);
-				// create parent directories
-				create_file(fname.c_str());
-				auto outputData = [this](const BLOCK_ADE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) mutable
-				{
-					return this->outputData(block, index, dof, desc, x, y, z, value, dofs);
-				};
-				block.writeVTK_3Dcut(
-					ade.lat,
-					outputData,
-					fname,
-					nse.physTime(),
-					probevec.cycle,
-					probevec.ox,
-					probevec.oy,
-					probevec.oz,
-					probevec.lx,
-					probevec.ly,
-					probevec.lz,
-					probevec.step
-				);
-				spdlog::info("[vtk {} written, time {:f}, cycle {:d}] ", fname, nse.physTime(), probevec.cycle);
-			}
-			probevec.cycle++;
 		}
+
+		this->ensureFidesJsonModel(dimsVariable, fidesFields);
 	}
 
-	void writeVTKs_2D() override
+	void outputDataPhase1(UniformDataWriter<TRAITS>& writer, std::size_t block_index, const idx3d& begin, const idx3d& end) override
 	{
-		if (this->probe2Dvec.size() <= 0)
-			return;
-		// browse all 2D vtk cuts
-		for (auto& probevec : this->probe2Dvec) {
-			for (const auto& block : nse.blocks) {
-				const std::string fname =
-					fmt::format("results_{}/vtk2D/{}_NSE_block{:03d}_{:d}.vtk", this->id, probevec.name, block.id, probevec.cycle);
-				// create parent directories
-				create_file(fname.c_str());
-				auto outputData = [this](const BLOCK_NSE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) mutable
-				{
-					return this->outputData(block, index, dof, desc, x, y, z, value, dofs);
-				};
-				switch (probevec.type) {
-					case 0:
-						block.writeVTK_2DcutX(nse.lat, outputData, fname, nse.physTime(), probevec.cycle, probevec.position);
-						break;
-					case 1:
-						block.writeVTK_2DcutY(nse.lat, outputData, fname, nse.physTime(), probevec.cycle, probevec.position);
-						break;
-					case 2:
-						block.writeVTK_2DcutZ(nse.lat, outputData, fname, nse.physTime(), probevec.cycle, probevec.position);
-						break;
-				}
-				spdlog::info("[vtk {} written, time {:f}, cycle {:d}] ", fname, nse.physTime(), probevec.cycle);
-			}
-			for (const auto& block : ade.blocks) {
-				const std::string fname =
-					fmt::format("results_{}/vtk2D/{}_ADE_block{:03d}_{:d}.vtk", this->id, probevec.name, block.id, probevec.cycle);
-				// create parent directories
-				create_file(fname.c_str());
-				auto outputData = [this](const BLOCK_ADE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) mutable
-				{
-					return this->outputData(block, index, dof, desc, x, y, z, value, dofs);
-				};
-				switch (probevec.type) {
-					case 0:
-						block.writeVTK_2DcutX(nse.lat, outputData, fname, nse.physTime(), probevec.cycle, probevec.position);
-						break;
-					case 1:
-						block.writeVTK_2DcutY(nse.lat, outputData, fname, nse.physTime(), probevec.cycle, probevec.position);
-						break;
-					case 2:
-						block.writeVTK_2DcutZ(nse.lat, outputData, fname, nse.physTime(), probevec.cycle, probevec.position);
-						break;
-				}
-				spdlog::info("[vtk {} written, time {:f}, cycle {:d}] ", fname, nse.physTime(), probevec.cycle);
-			}
-			probevec.cycle++;
-		}
+		writer.write("TIME", nse.physTime());
+		writer.write("wall_nse", nse.blocks[block_index].hmap, begin, end);
+		this->outputData(writer, nse.blocks[block_index], begin, end);
+		writer.write("wall_ade", ade.blocks[block_index].hmap, begin, end);
+		this->outputData(writer, ade.blocks[block_index], begin, end);
 	}
 
-	bool outputData(const BLOCK_NSE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) override
-	{
-		return false;
-	}
-	virtual bool outputData(const BLOCK_ADE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs)
-	{
-		return false;
-	}
+	void outputData(UniformDataWriter<TRAITS>& writer, const BLOCK_NSE& block, const idx3d& begin, const idx3d& end) override {}
+
+	virtual void outputData(UniformDataWriter<TRAITS>& writer, const BLOCK_ADE& block, const idx3d& begin, const idx3d& end) {}
 };

@@ -28,10 +28,9 @@ struct StateLocal : State_NSE_ADE<NSE, ADE>
 
 	using State<NSE>::nse;
 	using State_NSE_ADE<NSE, ADE>::ade;
-	using State<NSE>::cnt;
-	using State<NSE>::vtk_helper;
 
 	using idx = typename TRAITS::idx;
+	using idx3d = typename TRAITS::idx3d;
 	using real = typename TRAITS::real;
 	using dreal = typename TRAITS::dreal;
 	using point_t = typename TRAITS::point_t;
@@ -43,8 +42,15 @@ struct StateLocal : State_NSE_ADE<NSE, ADE>
 	real diffusion_top = 0;
 	real diffusion_bottom = 0;
 
-	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat_nse, lat_t lat_ade, real iphysVelocity)
-	: State_NSE_ADE<NSE, ADE>(id, communicator, lat_nse, lat_ade)
+	StateLocal(
+		const std::string& id,
+		const TNL::MPI::Comm& communicator,
+		lat_t lat_nse,
+		lat_t lat_ade,
+		real iphysVelocity,
+		const std::string& adiosConfigPath = "adios2.xml"
+	)
+	: State_NSE_ADE<NSE, ADE>(id, communicator, lat_nse, lat_ade, adiosConfigPath)
 	{
 		//for (auto& block : nse.blocks)
 		//{
@@ -133,39 +139,71 @@ struct StateLocal : State_NSE_ADE<NSE, ADE>
 		ade.copyDFsToDevice();
 	}
 
-	bool outputData(const BLOCK_NSE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) override
+	[[nodiscard]] std::vector<std::string> getOutputDataNames() const override
 	{
-		int k = 0;
-		if (index == k++)
-			return vtk_helper("lbm_density", block.hmacro(NSE::MACRO::e_rho, x, y, z), 1, desc, value, dofs);
-		if (index == k++) {
-			switch (dof) {
-				case 0:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(NSE::MACRO::e_vx, x, y, z)), 3, desc, value, dofs);
-				case 1:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(NSE::MACRO::e_vy, x, y, z)), 3, desc, value, dofs);
-				case 2:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(NSE::MACRO::e_vz, x, y, z)), 3, desc, value, dofs);
-			}
-		}
-		return false;
+		// return all quantity names used in outputData
+		return {"lbm_density", "lbm_density_fluctuation", "velocity_x", "velocity_y", "velocity_z", "lbm_phi", "lbm_diffusion", "phys_diffusion"};
 	}
 
-	bool outputData(const BLOCK_ADE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) override
+	void outputData(UniformDataWriter<TRAITS>& writer, const BLOCK_NSE& block, const idx3d& begin, const idx3d& end) override
 	{
-		int k = 0;
-		if (index == k++)
-			return vtk_helper("lbm_phi", block.hmacro(ADE::MACRO::e_phi, x, y, z), 1, desc, value, dofs);
-		if (index == k++)
-			return vtk_helper("lbm_diffusion", block.hdiffusionCoeff(x, y, z), 1, desc, value, dofs);
-		if (index == k++)
-			return vtk_helper("phys_diffusion", ade.lat.lbm2physViscosity(block.hdiffusionCoeff(x, y, z)), 1, desc, value, dofs);
-		return false;
+		writer.write("lbm_density", getMacroView<TRAITS>(block.hmacro, NSE::MACRO::e_rho), begin, end);
+		writer.write(
+			"lbm_density_fluctuation",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return block.hmacro(NSE::MACRO::e_rho, x, y, z) - 1.0;
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_x",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(NSE::MACRO::e_vx, x, y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_y",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(NSE::MACRO::e_vy, x, y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_z",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(NSE::MACRO::e_vz, x, y, z));
+			},
+			begin,
+			end
+		);
+	}
+
+	void outputData(UniformDataWriter<TRAITS>& writer, const BLOCK_ADE& block, const idx3d& begin, const idx3d& end) override
+	{
+		writer.write("lbm_phi", getMacroView<TRAITS>(block.hmacro, ADE::MACRO::e_phi), begin, end);
+		writer.write("lbm_diffusion", block.hdiffusionCoeff, begin, end);
+		writer.write(
+			"phys_diffusion",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physViscosity(block.hdiffusionCoeff(x, y, z));
+			},
+			begin,
+			end
+		);
 	}
 };
 
 template <typename NSE, typename ADE>
-int sim(int RESOLUTION = 2)
+int sim(int RESOLUTION = 2, const std::string& adiosConfigPath = "adios2.xml")
 {
 	using idx = typename NSE::TRAITS::idx;
 	using real = typename NSE::TRAITS::real;
@@ -196,7 +234,7 @@ int sim(int RESOLUTION = 2)
 	lat_ade.physViscosity = 0;	// unused, the diffusion coeff for ADE is set below
 
 	const std::string state_id = fmt::format("sim_T2_res{:02d}_np{:03d}", RESOLUTION, TNL::MPI::GetSize(MPI_COMM_WORLD));
-	StateLocal<NSE, ADE> state(state_id, MPI_COMM_WORLD, lat_nse, lat_ade, PHYS_VELOCITY);
+	StateLocal<NSE, ADE> state(state_id, MPI_COMM_WORLD, lat_nse, lat_ade, PHYS_VELOCITY, adiosConfigPath);
 
 	if (! state.canCompute())
 		return 0;
@@ -211,14 +249,14 @@ int sim(int RESOLUTION = 2)
 	state.cnt[PRINT].period = 0.01;
 
 	// add cuts
-	state.cnt[VTK2D].period = 1;
+	state.cnt[OUT2D].period = 1;
 	state.add2Dcut_X(X / 2, "cutsX/cut_X");
 	state.add2Dcut_Y(Y / 2, "cutsY/cut_Y");
 	state.add2Dcut_Z(Z / 2, "cutsZ/cut_Z");
 
-	//state.cnt[VTK3D].period = 0.001;
-	//state.cnt[VTK3DCUT].period = 0.001;
-	//state.add3Dcut(X/4,Y/4,Z/4, X/2,Y/2,Z/2, 2, "box");
+	//state.cnt[OUT3D].period = 0.001;
+	//state.cnt[OUT3DCUT].period = 0.001;
+	//state.add3Dcut(X/4,Y/4,Z/4, X/2,Y/2,Z/2, "box");
 
 	execute(state);
 
@@ -227,7 +265,7 @@ int sim(int RESOLUTION = 2)
 
 //template <typename TRAITS=TraitsSP>
 template <typename TRAITS = TraitsDP>
-void run(int RES)
+void run(int RES, const std::string& adiosConfigPath)
 {
 	using NSE_COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
 	using NSE_CONFIG = LBM_CONFIG<
@@ -253,7 +291,7 @@ void run(int RES)
 		D3Q7_BC_All,
 		D3Q7_MACRO_Default<TRAITS>>;
 
-	sim<NSE_CONFIG, ADE_CONFIG>(RES);
+	sim<NSE_CONFIG, ADE_CONFIG>(RES, adiosConfigPath);
 }
 
 int main(int argc, char** argv)
@@ -263,6 +301,7 @@ int main(int argc, char** argv)
 	argparse::ArgumentParser program("sim_T2");
 	program.add_description("Simple coupled D3Q27-D3Q7 simulation example.");
 	program.add_argument("resolution").help("resolution of the lattice").scan<'i', int>().default_value(1);
+	program.add_argument("--adios-config").help("path to ADIOS2 XML configuration file").default_value(std::string("adios2.xml"));
 
 	try {
 		program.parse_args(argc, argv);
@@ -277,7 +316,9 @@ int main(int argc, char** argv)
 	if (resolution < 1)
 		throw std::invalid_argument("CLI error: resolution must be at least 1");
 
-	run(resolution);
+	const auto adiosConfigPath = program.get<std::string>("--adios-config");
+
+	run(resolution, adiosConfigPath);
 
 	return 0;
 }

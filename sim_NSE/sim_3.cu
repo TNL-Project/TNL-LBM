@@ -15,10 +15,10 @@ struct StateLocal : State<NSE>
 	using BLOCK = LBM_BLOCK<NSE>;
 
 	using State<NSE>::nse;
-	using State<NSE>::vtk_helper;
 	using State<NSE>::id;
 
 	using idx = typename TRAITS::idx;
+	using idx3d = typename TRAITS::idx3d;
 	using real = typename TRAITS::real;
 	using dreal = typename TRAITS::dreal;
 	using point_t = typename TRAITS::point_t;
@@ -40,34 +40,51 @@ struct StateLocal : State<NSE>
 		lbmDrawSphere(nse, BC::GEO_WALL, ball_c, ball_diameter * 0.5);
 	}
 
-	bool outputData(const BLOCK& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) override
+	[[nodiscard]] std::vector<std::string> getOutputDataNames() const override
 	{
-		int k = 0;
-		if (index == k++)
-			return vtk_helper("lbm_density", block.hmacro(MACRO::e_rho, x, y, z), 1, desc, value, dofs);
-		if (index == k++)
-			return vtk_helper("lbm_density_fluctuation", block.hmacro(MACRO::e_rho, x, y, z) - 1.0, 1, desc, value, dofs);
-		if (index == k++) {
-			switch (dof) {
-				case 0:
-					return vtk_helper("lbm_velocity", block.hmacro(MACRO::e_vx, x, y, z), 3, desc, value, dofs);
-				case 1:
-					return vtk_helper("lbm_velocity", block.hmacro(MACRO::e_vy, x, y, z), 3, desc, value, dofs);
-				case 2:
-					return vtk_helper("lbm_velocity", block.hmacro(MACRO::e_vz, x, y, z), 3, desc, value, dofs);
-			}
-		}
-		if (index == k++) {
-			switch (dof) {
-				case 0:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vx, x, y, z)), 3, desc, value, dofs);
-				case 1:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vy, x, y, z)), 3, desc, value, dofs);
-				case 2:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vz, x, y, z)), 3, desc, value, dofs);
-			}
-		}
-		return false;
+		// return all quantity names used in outputData
+		return {"lbm_density", "lbm_density_fluctuation", "velocity_x", "velocity_y", "velocity_z"};
+	}
+
+	void outputData(UniformDataWriter<TRAITS>& writer, const BLOCK& block, const idx3d& begin, const idx3d& end) override
+	{
+		writer.write("lbm_density", getMacroView<TRAITS>(block.hmacro, MACRO::e_rho), begin, end);
+		writer.write(
+			"lbm_density_fluctuation",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return block.hmacro(MACRO::e_rho, x, y, z) - 1.0;
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_x",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vx, x, y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_y",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vy, x, y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_z",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vz, x, y, z));
+			},
+			begin,
+			end
+		);
 	}
 
 	void probe1() override
@@ -89,13 +106,13 @@ struct StateLocal : State<NSE>
 		}
 	}
 
-	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat)
-	: State<NSE>(id, communicator, std::move(lat))
+	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath = "adios2.xml")
+	: State<NSE>(id, communicator, std::move(lat), adiosConfigPath)
 	{}
 };
 
 template <typename NSE>
-int sim(int RES, double Re)
+int sim(int RES, double Re, const std::string& adiosConfigPath)
 {
 	using idx = typename NSE::TRAITS::idx;
 	using real = typename NSE::TRAITS::real;
@@ -130,7 +147,7 @@ int sim(int RES, double Re)
 	lat.physViscosity = PHYS_VISCOSITY;
 
 	const std::string state_id = fmt::format("sim_3_{}_res_{}_Re_{}", NSE::COLL::id, RES, Re);
-	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat);
+	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, adiosConfigPath);
 
 	if (! state.canCompute())
 		return 0;
@@ -149,8 +166,8 @@ int sim(int RES, double Re)
 	state.cnt[PRINT].period = 0.1;
 	state.nse.physFinalTime = 30.0;
 
-	//state.cnt[VTK3D].period = 1.0;
-	state.cnt[VTK2D].period = 0.1;
+	//state.cnt[OUT3D].period = 1.0;
+	state.cnt[OUT2D].period = 0.1;
 	state.cnt[PROBE1].period = 0.1;
 
 	// add cuts
@@ -165,7 +182,7 @@ int sim(int RES, double Re)
 }
 
 template <typename TRAITS = TraitsSP>
-void run(int res, double Re)
+void run(int res, double Re, const std::string& adiosConfigPath)
 {
 	using COLL = D3Q27_CUM<TRAITS>;
 	using NSE_CONFIG = LBM_CONFIG<
@@ -178,7 +195,7 @@ void run(int res, double Re)
 		D3Q27_BC_All,
 		D3Q27_MACRO_Default<TRAITS>>;
 
-	sim<NSE_CONFIG>(res, Re);
+	sim<NSE_CONFIG>(res, Re, adiosConfigPath);
 }
 
 int main(int argc, char** argv)
@@ -189,6 +206,7 @@ int main(int argc, char** argv)
 	program.add_description("LBM simulation with ball in 3D.");
 	program.add_argument("--resolution").help("resolution of the lattice").scan<'i', int>().default_value(1).nargs(1);
 	program.add_argument("--Re").help("desired Reynolds number (affects the inflow velocity)").scan<'g', double>().default_value(100.0).nargs(1);
+	program.add_argument("--adios-config").help("path to adios2 configuration file").default_value(std::string("adios2.xml")).nargs(1);
 
 	try {
 		program.parse_args(argc, argv);
@@ -201,6 +219,7 @@ int main(int argc, char** argv)
 
 	const auto resolution = program.get<int>("--resolution");
 	const auto Re = program.get<double>("--Re");
+	const auto adiosConfigPath = program.get<std::string>("--adios-config");
 
 	if (resolution < 1) {
 		fmt::println(stderr, "CLI error: resolution must be at least 1");
@@ -211,7 +230,7 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
-	run(resolution, Re);
+	run(resolution, Re, adiosConfigPath);
 
 	return 0;
 }

@@ -11,16 +11,31 @@ struct StateLocal : State<NSE>
 	using MACRO = typename NSE::MACRO;
 	using BLOCK = LBM_BLOCK<NSE>;
 
+	using State<NSE>::checkpoint;
 	using State<NSE>::nse;
-	using State<NSE>::vtk_helper;
 
 	using idx = typename TRAITS::idx;
+	using idx3d = typename TRAITS::idx3d;
 	using real = typename TRAITS::real;
 	using dreal = typename TRAITS::dreal;
 	using point_t = typename TRAITS::point_t;
 	using lat_t = Lattice<3, real, idx>;
 
 	real lbm_inflow_vx = 0;
+
+	// Override checkpointStateLocal to save/load additional state data
+	void checkpointStateLocal(adios2::Mode mode) override
+	{
+		// Save/load the inflow velocity
+		checkpoint.saveLoadAttribute("lbm_inflow_vx", lbm_inflow_vx);
+
+		// You can add any additional state data that needs to be saved/loaded here
+
+		if (mode == adios2::Mode::Read)
+			spdlog::info("Checkpoint loaded local state (mode: Read)");
+		else
+			spdlog::info("Checkpoint saved local state (mode: Write)");
+	}
 
 	void setupBoundaries() override
 	{
@@ -51,22 +66,51 @@ struct StateLocal : State<NSE>
 					}
 	}
 
-	bool outputData(const BLOCK& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) override
+	[[nodiscard]] std::vector<std::string> getOutputDataNames() const override
 	{
-		int k = 0;
-		if (index == k++)
-			return vtk_helper("lbm_density", block.hmacro(MACRO::e_rho, x, y, z), 1, desc, value, dofs);
-		if (index == k++) {
-			switch (dof) {
-				case 0:
-					return vtk_helper("velocity", block.hmacro(MACRO::e_vx, x, y, z), 3, desc, value, dofs);
-				case 1:
-					return vtk_helper("velocity", block.hmacro(MACRO::e_vy, x, y, z), 3, desc, value, dofs);
-				case 2:
-					return vtk_helper("velocity", block.hmacro(MACRO::e_vz, x, y, z), 3, desc, value, dofs);
-			}
-		}
-		return false;
+		// return all quantity names used in outputData
+		return {"lbm_density", "lbm_density_fluctuation", "velocity_x", "velocity_y", "velocity_z"};
+	}
+
+	void outputData(UniformDataWriter<TRAITS>& writer, const BLOCK& block, const idx3d& begin, const idx3d& end) override
+	{
+		writer.write("lbm_density", getMacroView<TRAITS>(block.hmacro, MACRO::e_rho), begin, end);
+		writer.write(
+			"lbm_density_fluctuation",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return block.hmacro(MACRO::e_rho, x, y, z) - 1.0;
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_x",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vx, x, y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_y",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vy, x, y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_z",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vz, x, y, z));
+			},
+			begin,
+			end
+		);
 	}
 
 	void updateKernelVelocities() override
@@ -78,13 +122,13 @@ struct StateLocal : State<NSE>
 		}
 	}
 
-	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat)
-	: State<NSE>(id, communicator, std::move(lat))
+	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath = "adios2.xml")
+	: State<NSE>(id, communicator, std::move(lat), adiosConfigPath)
 	{}
 };
 
 template <typename NSE>
-int sim(int RESOLUTION = 2)
+int sim(int RESOLUTION = 2, const std::string& adiosConfigPath = "adios2.xml")
 {
 	using idx = typename NSE::TRAITS::idx;
 	using real = typename NSE::TRAITS::real;
@@ -92,21 +136,18 @@ int sim(int RESOLUTION = 2)
 	using lat_t = Lattice<3, real, idx>;
 
 	int block_size = 32;
-	int X = 128 * RESOLUTION;  // width in pixels
-	//int Y = 41*RESOLUTION;// height in pixels --- top and bottom walls 1px
-	//int Z = 41*RESOLUTION;// height in pixels --- top and bottom walls 1px
+	int X = 128 * RESOLUTION;		  // width in pixels
 	int Y = block_size * RESOLUTION;  // height in pixels --- top and bottom walls 1px
 	int Z = Y;						  // height in pixels --- top and bottom walls 1px
 	real LBM_VISCOSITY = 0.00001;	  //1.0/6.0; /// GIVEN: optimal is 1/6
 	real PHYS_HEIGHT = 0.41;		  // [m] domain height (physical)
 	real PHYS_VISCOSITY = 1.5e-5;	  // [m^2/s] fluid viscosity .... blood?
-	//real PHYS_VELOCITY = 2.25; // m/s ... will be multip
 	real PHYS_VELOCITY = 1.0;
 	real PHYS_DL = PHYS_HEIGHT / ((real) Y - 2);
-	real PHYS_DT = LBM_VISCOSITY / PHYS_VISCOSITY * PHYS_DL * PHYS_DL;	//PHYS_HEIGHT/(real)LBM_HEIGHT;
+	real PHYS_DT = LBM_VISCOSITY / PHYS_VISCOSITY * PHYS_DL * PHYS_DL;
 	point_t PHYS_ORIGIN = {0., 0., 0.};
 
-	// initialize the lattice
+	// Initialize the lattice
 	lat_t lat;
 	lat.global = typename lat_t::CoordinatesType(X, Y, Z);
 	lat.physOrigin = PHYS_ORIGIN;
@@ -115,37 +156,36 @@ int sim(int RESOLUTION = 2)
 	lat.physViscosity = PHYS_VISCOSITY;
 
 	const std::string state_id = fmt::format("sim_1_res{:02d}_np{:03d}", RESOLUTION, TNL::MPI::GetSize(MPI_COMM_WORLD));
-	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat);
+	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, adiosConfigPath);
 
 	if (! state.canCompute())
 		return 0;
 
-	// problem parameters
+	// Problem parameters
 	state.lbm_inflow_vx = lat.phys2lbmVelocity(PHYS_VELOCITY);
 
-	state.nse.physFinalTime = 1.0;
-	state.cnt[PRINT].period = 0.001;
-	// test
-	//state.cnt[PRINT].period = 100*PHYS_DT;
-	//state.nse.physFinalTime = 1000*PHYS_DT;
-	//state.cnt[VTK3D].period = 1000*PHYS_DT;
-	//state.cnt[SAVESTATE].period = 600;  // save state every [period] of wall time
-	//state.wallTime = 60;
-	// RCI
-	//state.nse.physFinalTime = 0.5;
-	//state.cnt[VTK3D].period = 0.5;
-	//state.cnt[SAVESTATE].period = 3600;  // save state every [period] of wall time
-	//state.wallTime = 3600 * 23.5;
+	// Set up simulation parameters
+	state.nse.physFinalTime = 1.0;	  // Final physical time of simulation
+	state.cnt[PRINT].period = 0.001;  // Print info every 0.001 physical time units
 
-	// add cuts
-	state.cnt[VTK2D].period = 0.001;
+	// Enable checkpointing - create a checkpoint every 10 seconds of wall time
+	// state.cnt[SAVESTATE].period = 10;
+	// state.wallTime = 600;
+
+	// Add visualization cuts
+	state.cnt[OUT2D].period = 0.001;
 	state.add2Dcut_X(X / 2, "cutsX/cut_X");
+	state.add2Dcut_X(X / 4, "cutsX/cut_X4");
 	state.add2Dcut_Y(Y / 2, "cutsY/cut_Y");
 	state.add2Dcut_Z(Z / 2, "cutsZ/cut_Z");
 
-	state.cnt[VTK3D].period = 0.1;
-	state.cnt[VTK3DCUT].period = 0.1;
-	state.add3Dcut(X / 4, Y / 4, Z / 4, X / 2, Y / 2, Z / 2, 2, "box");
+	state.cnt[OUT3D].period = 0.001;
+	state.cnt[OUT3DCUT].period = 0.001;
+	state.add3Dcut(X / 4, Y / 4, Z / 4, X / 2, Y / 2, Z / 2, "box");
+
+	// Execute the simulation
+	spdlog::info("Starting simulation with checkpointing. Wall time limit: {} seconds", state.wallTime);
+	spdlog::info("Creating checkpoints every {} seconds of wall time", state.cnt[SAVESTATE].period);
 
 	execute(state);
 
@@ -153,9 +193,8 @@ int sim(int RESOLUTION = 2)
 }
 
 template <typename TRAITS = TraitsSP>
-void run(int RES)
+void run(int RES, const std::string& adiosConfigPath)
 {
-	//	using COLL = D3Q27_CUM< TRAITS >;
 	using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
 
 	using NSE_CONFIG = LBM_CONFIG<
@@ -168,7 +207,7 @@ void run(int RES)
 		D3Q27_BC_All,
 		D3Q27_MACRO_Default<TRAITS>>;
 
-	sim<NSE_CONFIG>(RES);
+	sim<NSE_CONFIG>(RES, adiosConfigPath);
 }
 
 int main(int argc, char** argv)
@@ -178,6 +217,8 @@ int main(int argc, char** argv)
 	argparse::ArgumentParser program("sim_1");
 	program.add_description("Simple incompressible Navier-Stokes simulation example.");
 	program.add_argument("resolution").help("resolution of the lattice").scan<'i', int>().default_value(1);
+
+	program.add_argument("--adios-config").help("path to adios2.xml configuration file").default_value(std::string("adios2.xml"));
 
 	try {
 		program.parse_args(argc, argv);
@@ -194,7 +235,8 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
-	run(resolution);
+	const auto adiosConfigPath = program.get<std::string>("adios-config");
+	run(resolution, adiosConfigPath);
 
 	return 0;
 }

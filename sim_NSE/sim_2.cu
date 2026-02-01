@@ -41,9 +41,9 @@ struct StateLocal : State<NSE>
 	using BLOCK = LBM_BLOCK<NSE>;
 
 	using State<NSE>::nse;
-	using State<NSE>::vtk_helper;
 
 	using idx = typename TRAITS::idx;
+	using idx3d = typename TRAITS::idx3d;
 	using real = typename TRAITS::real;
 	using dreal = typename TRAITS::dreal;
 	using point_t = typename TRAITS::point_t;
@@ -138,56 +138,103 @@ struct StateLocal : State<NSE>
 		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_NOTHING);	// front
 	}
 
-	bool outputData(const BLOCK& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) override
+	[[nodiscard]] std::vector<std::string> getOutputDataNames() const override
 	{
-		int k = 0;
-		if (index == k++)
-			return vtk_helper("lbm_density", block.hmacro(MACRO::e_rho, x, y, z), 1, desc, value, dofs);
-		if (index == k++)
-			return vtk_helper("lbm_delta_density", block.hmacro(MACRO::e_rho, x, y, z) - 1.0, 1, desc, value, dofs);
-		if (index == k++) {
-			switch (dof) {
-				case 0:
-					return vtk_helper("lbm_velocity", block.hmacro(MACRO::e_vx, x, y, z), 3, desc, value, dofs);
-				case 1:
-					return vtk_helper("lbm_velocity", block.hmacro(MACRO::e_vy, x, y, z), 3, desc, value, dofs);
-				case 2:
-					return vtk_helper("lbm_velocity", block.hmacro(MACRO::e_vz, x, y, z), 3, desc, value, dofs);
-			}
-		}
-		if (index == k++)
-			return vtk_helper("lbm_analytical_ux", analytical_ux(y, z), 1, desc, value, dofs);
-		if (index == k++)
-			return vtk_helper("lbm_ux", block.hmacro(MACRO::e_vx, x, y, z), 1, desc, value, dofs);
-		if (index == k++)
-			return vtk_helper("lbm_uy", block.hmacro(MACRO::e_vy, x, y, z), 1, desc, value, dofs);
-		if (index == k++)
-			return vtk_helper("lbm_uz", block.hmacro(MACRO::e_vz, x, y, z), 1, desc, value, dofs);
-		if (index == k++)
-			return vtk_helper("lbm_error_ux", fabs(block.hmacro(MACRO::e_vx, x, y, z) - analytical_ux(y, z)), 1, desc, value, dofs);
-		if (index == k++) {
-			switch (dof) {
-				case 0:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vx, x, y, z)), 3, desc, value, dofs);
-				case 1:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vy, x, y, z)), 3, desc, value, dofs);
-				case 2:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vz, x, y, z)), 3, desc, value, dofs);
-			}
-		}
-		if (index == k++)
-			return vtk_helper("analytical_ux", nse.lat.lbm2physVelocity(analytical_ux(y, z)), 1, desc, value, dofs);
-		if (index == k++)
-			return vtk_helper("ux", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vx, x, y, z)), 1, desc, value, dofs);
-		if (index == k++)
-			return vtk_helper("uy", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vy, x, y, z)), 1, desc, value, dofs);
-		if (index == k++)
-			return vtk_helper("uz", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vz, x, y, z)), 1, desc, value, dofs);
-		if (index == k++)
-			return vtk_helper(
-				"error_ux", nse.lat.lbm2physVelocity(fabs(block.hmacro(MACRO::e_vx, x, y, z) - analytical_ux(y, z))), 1, desc, value, dofs
-			);
-		return false;
+		// return all quantity names used in outputData
+		return {
+			"lbm_density",
+			"lbm_density_fluctuation",
+			"lbm_velocity_x",
+			"lbm_velocity_y",
+			"lbm_velocity_z",
+			"velocity_x",
+			"velocity_y",
+			"velocity_z",
+			"lbm_analytical_ux",
+			"lbm_error_ux",
+			"analytical_ux",
+			"error_ux"
+		};
+	}
+
+	void outputData(UniformDataWriter<TRAITS>& writer, const BLOCK& block, const idx3d& begin, const idx3d& end) override
+	{
+		writer.write("lbm_density", getMacroView<TRAITS>(block.hmacro, MACRO::e_rho), begin, end);
+		writer.write(
+			"lbm_density_fluctuation",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return block.hmacro(MACRO::e_rho, x, y, z) - 1.0;
+			},
+			begin,
+			end
+		);
+		writer.write("lbm_velocity_x", getMacroView<TRAITS>(block.hmacro, MACRO::e_vx), begin, end);
+		writer.write("lbm_velocity_y", getMacroView<TRAITS>(block.hmacro, MACRO::e_vy), begin, end);
+		writer.write("lbm_velocity_z", getMacroView<TRAITS>(block.hmacro, MACRO::e_vz), begin, end);
+		writer.write(
+			"velocity_x",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vx, x, y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_y",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vy, x, y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_z",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vz, x, y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"lbm_analytical_ux",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return analytical_ux(y, z);
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"lbm_error_ux",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return TNL::abs(block.hmacro(MACRO::e_vx, x, y, z) - analytical_ux(y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"analytical_ux",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(analytical_ux(y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"error_ux",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(TNL::abs(block.hmacro(MACRO::e_vx, x, y, z) - analytical_ux(y, z)));
+			},
+			begin,
+			end
+		);
 	}
 
 	void probe1() override
@@ -256,8 +303,10 @@ struct StateLocal : State<NSE>
 			);
 	}
 
-	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, bool periodic_lattice)
-	: State<NSE>(id, communicator, std::move(lat), periodic_lattice)
+	StateLocal(
+		const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, bool periodic_lattice, const std::string& adiosConfigPath = "adios2.xml"
+	)
+	: State<NSE>(id, communicator, std::move(lat), adiosConfigPath, periodic_lattice)
 	{
 		errors_count = 10;
 		l1errors = new real[errors_count];
@@ -272,7 +321,7 @@ struct StateLocal : State<NSE>
 };
 
 template <typename NSE>
-int sim(int RES, bool use_forcing, Scaling scaling, double final_time)
+int sim(int RES, bool use_forcing, Scaling scaling, double final_time, const std::string& adiosConfigPath)
 {
 	using idx = typename NSE::TRAITS::idx;
 	using real = typename NSE::TRAITS::real;
@@ -316,7 +365,7 @@ int sim(int RES, bool use_forcing, Scaling scaling, double final_time)
 	const auto scaling_variant = magic_enum::enum_name(scaling);
 	const std::string state_id =
 		fmt::format("sim_2_{}_{}_{}_{}_res_{}_np_{}", NSE::COLL::id, prec, bc_variant, scaling_variant, RES, TNL::MPI::GetSize(MPI_COMM_WORLD));
-	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, use_forcing);
+	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, use_forcing, adiosConfigPath);
 
 	if (! state.canCompute())
 		return 0;
@@ -399,7 +448,7 @@ int sim(int RES, bool use_forcing, Scaling scaling, double final_time)
 	state.cnt[PROBE1].period = 1.0;
 	//state.nse.physFinalTime = PHYS_DT * 1e7;
 	state.nse.physFinalTime = final_time;
-	//state.cnt[VTK2D].period = 1.0;
+	//state.cnt[OUT2D].period = 1.0;
 
 	if (scaling == Scaling::weak_3d) {
 		// TRICK to keep the benchmark fast: decrease the periods and physFinalTime
@@ -419,7 +468,6 @@ int sim(int RES, bool use_forcing, Scaling scaling, double final_time)
 	//state.add2Dcut_X(LBM_X/2,"cut_X");
 	//state.add2Dcut_Y(LBM_Y/2,"cut_Y");
 	//state.add2Dcut_Z(LBM_Z/2,"cut_Z");
-	//state.add1Dcut_Z(LBM_X/2*PHYS_DL, LBM_Y/2*PHYS_DL, "cut_Z");
 
 	execute(state);
 
@@ -436,7 +484,7 @@ int sim(int RES, bool use_forcing, Scaling scaling, double final_time)
 }
 
 template <typename TRAITS = TraitsSP>
-void run(int RES, bool use_forcing, Scaling scaling, double final_time)
+void run(int RES, bool use_forcing, Scaling scaling, double final_time, const std::string& adiosConfigPath)
 {
 	using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
 	//using COLL = D3Q27_FCLBM<TRAITS>;
@@ -462,7 +510,7 @@ void run(int RES, bool use_forcing, Scaling scaling, double final_time)
 		D3Q27_BC_All,
 		D3Q27_MACRO_Default<TRAITS>>;
 
-	sim<NSE_CONFIG>(RES, use_forcing, scaling, final_time);
+	sim<NSE_CONFIG>(RES, use_forcing, scaling, final_time, adiosConfigPath);
 }
 
 int main(int argc, char** argv)
@@ -485,6 +533,7 @@ int main(int argc, char** argv)
 		.choices("single", "double")
 		.default_value("single")
 		.nargs(1);
+	program.add_argument("--adios-config").help("path to adios2 configuration file").default_value(std::string("adios2.xml")).nargs(1);
 
 	try {
 		program.parse_args(argc, argv);
@@ -515,13 +564,14 @@ int main(int argc, char** argv)
 	const bool use_forcing = program.get<bool>("--use-forcing");
 	const auto scaling_name = program.get<std::string>("--scaling");
 	const Scaling scaling = magic_enum::enum_cast<Scaling>(scaling_name).value_or(Scaling::strong);
+	const auto adiosConfigPath = program.get<std::string>("--adios-config");
 
 	for (int i = min_resolution; i <= max_resolution; i++) {
 		int res = pow(2, i);
 		if (program.get<std::string>("--precision") == "double")
-			run<TraitsDP>(res, use_forcing, scaling, final_time);
+			run<TraitsDP>(res, use_forcing, scaling, final_time, adiosConfigPath);
 		else
-			run<TraitsSP>(res, use_forcing, scaling, final_time);
+			run<TraitsSP>(res, use_forcing, scaling, final_time, adiosConfigPath);
 	}
 
 	return 0;

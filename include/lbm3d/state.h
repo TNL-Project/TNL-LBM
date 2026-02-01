@@ -20,6 +20,9 @@
 #include "lbm_block.h"
 #include "checkpoint.h"
 
+#include "DataManager.h"
+#include "UniformDataWriter.h"
+
 // ibm: lagrangian filament/surface
 #include "lagrange_3D.h"
 
@@ -29,7 +32,6 @@ struct probe3Dcut
 {
 	IDX ox, oy, oz;	 // lower left front point
 	IDX lx, ly, lz;	 // length
-	IDX step;		 // 1: every voxel 2: every 3 voxels etc.
 	std::string name;
 	int cycle;
 };
@@ -40,26 +42,6 @@ struct probe2Dcut
 	int type;  // 0=X, 1=Y, 2=Z
 	std::string name;
 	IDX position;  // x/y/z ... LBM units ... int
-	int cycle;
-};
-
-template <typename IDX>
-struct probe1Dcut
-{
-	int type;  // 0=X, 1=Y, 2=Z
-	std::string name;
-	IDX pos1;  // x/y/z
-	IDX pos2;  // y/z
-	int cycle;
-};
-
-template <typename REAL>
-struct probe1Dlinecut
-{
-	std::string name;
-	using point_t = TNL::Containers::StaticVector<3, REAL>;
-	point_t from;  // physical units
-	point_t to;	   // physical units
 	int cycle;
 };
 
@@ -80,14 +62,13 @@ enum Actions : std::uint8_t
 	STAT_RESET,
 	STAT2_RESET,
 	PRINT,
-	VTK1D,
-	VTK2D,
-	VTK3D,
+	OUT2D,
+	OUT3D,
+	OUT3DCUT,
 	PROBE1,
 	PROBE2,
 	PROBE3,
 	SAVESTATE,
-	VTK3DCUT,
 	MAX_COUNTER
 };
 
@@ -108,27 +89,27 @@ struct State
 
 	using T_PROBE3DCUT = probe3Dcut<idx>;
 	using T_PROBE2DCUT = probe2Dcut<idx>;
-	using T_PROBE1DCUT = probe1Dcut<idx>;
-	using T_PROBE1DLINECUT = probe1Dlinecut<real>;
 	using T_COUNTER = counter<real>;
 
 	std::string id;
 
 	adios2::ADIOS adios;
+	DataManager dataManager;
 	CheckpointManager checkpoint;
 
 	LBM<NSE> nse;
 
+	// Generated once on demand from discovered output variables (Fides JSON for Catalyst)
+	bool fidesJsonGenerated = false;
+
 	std::vector<T_PROBE3DCUT> probe3Dvec;
 	std::vector<T_PROBE2DCUT> probe2Dvec;
-	std::vector<T_PROBE1DCUT> probe1Dvec;
-	std::vector<T_PROBE1DLINECUT> probe1Dlinevec;
 
 	// Immersed boundary method
 	Lagrange3D ibm;
 
-	void writeVTK_Points(const char* name, real time, int cycle);
-	void writeVTK_Points(const char* name, real time, int cycle, const typename Lagrange3D::HLPVECTOR& hLL_lat);
+	void writePoints(const char* name, real time, int cycle);
+	void writePoints(const char* name, real time, int cycle, const typename Lagrange3D::HLPVECTOR& hLL_lat);
 
 	// how often to probe/print/write/stat
 	std::array<T_COUNTER, MAX_COUNTER> cnt;
@@ -138,16 +119,8 @@ struct State
 	virtual void statReset() {}
 	virtual void stat2Reset() {}
 
-	// vtk export
-	template <typename real1, typename real2>
-	bool vtk_helper(const char* iid, real1 ivalue, int idofs, char* id, real2& value, int& dofs)  /// simplifies data output routine
-	{
-		sprintf(id, "%s", iid);
-		dofs = idofs;
-		value = ivalue;
-		return true;
-	}
-	virtual void writeVTKs_2D();
+	// data output
+	void write2D();
 	template <typename... ARGS>
 	void add2Dcut_X(idx x, const char* fmt, ARGS... args);
 	template <typename... ARGS>
@@ -155,32 +128,31 @@ struct State
 	template <typename... ARGS>
 	void add2Dcut_Z(idx z, const char* fmt, ARGS... args);
 
-	virtual void writeVTKs_3D();
+	void write3D();
+
+	virtual void predefineOutputVariables(
+		const std::string& ioName, const BLOCK_NSE& block, const adios2::Dims& shape, const adios2::Dims& start, const adios2::Dims& count
+	);
+	void predefine3D(const std::string& ioName, const BLOCK_NSE& block);
+	void predefine2D(const std::string& ioName, const BLOCK_NSE& block, int cutType);
+	void predefine3Dcut(const std::string& ioName, const BLOCK_NSE& block, const T_PROBE3DCUT& probe);
+
+	void ensureFidesJsonModel(const std::string& dimsVariable, const std::vector<std::string>& fields);
 
 	// 3D cuts
-	virtual void writeVTKs_3Dcut();
+	void write3Dcut();
 	template <typename... ARGS>
-	void add3Dcut(idx ox, idx oy, idx oz, idx lx, idx ly, idx lz, idx step, const char* fmt, ARGS... args);
+	void add3Dcut(idx ox, idx oy, idx oz, idx lx, idx ly, idx lz, const char* fmt, ARGS... args);
 
-	virtual void writeVTKs_1D();
+	// "internal" method which outputs implicit variables (e.g. TIME and wall)
+	virtual void outputDataPhase1(UniformDataWriter<TRAITS>& writer, std::size_t block_index, const idx3d& begin, const idx3d& end);
 
-	template <typename... ARGS>
-	void add1Dcut(point_t from, point_t to, const char* fmt, ARGS... args);
-	template <typename... ARGS>
-	void add1Dcut_X(real y, real z, const char* fmt, ARGS... args);
-	template <typename... ARGS>
-	void add1Dcut_Y(real x, real z, const char* fmt, ARGS... args);
-	template <typename... ARGS>
-	void add1Dcut_Z(real x, real y, const char* fmt, ARGS... args);
-	void write1Dcut(point_t from, point_t to, const std::string& fname);
-	void write1Dcut_X(idx y, idx z, const std::string& fname);
-	void write1Dcut_Y(idx x, idx z, const std::string& fname);
-	void write1Dcut_Z(idx x, idx y, const std::string& fname);
-
-	virtual bool outputData(const BLOCK_NSE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs)
+	// main entry points for extending in derived classes
+	[[nodiscard]] virtual std::vector<std::string> getOutputDataNames() const
 	{
-		return false;
+		return {};
 	}
+	virtual void outputData(UniformDataWriter<TRAITS>& writer, const BLOCK_NSE& block, const idx3d& begin, const idx3d& end) {}
 
 	bool projectPNG_X(
 		const std::string& filename,
@@ -281,21 +253,21 @@ struct State
 	// timers for profiling
 	TNL::Timer timer_SimInit, timer_SimUpdate, timer_AfterSimUpdate, timer_compute, timer_compute_overlaps, timer_wait_communication,
 		timer_wait_computation;
-
 	// constructors
 	template <typename... ARGS>
-	State(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, ARGS&&... args)
+	State(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath = "adios2.xml", ARGS&&... args)
 	: id(id),
 #ifdef HAVE_MPI
-	  adios(communicator),
+	  adios(adiosConfigPath, communicator),
 #else
-	  adios(),
+	  adios(adiosConfigPath),
 #endif
-	  checkpoint(adios),
+	  dataManager(&adios),
+	  checkpoint(dataManager),
 	  nse(communicator, lat, std::forward<ARGS>(args)...),
 	  ibm(nse, id)
 	{
-		// try to lock the results directory
+		// Try to lock the results directory
 		if (nse.rank == 0) {
 			const std::string dir = fmt::format("results_{}", id);
 			mkdir(dir.c_str(), 0777);
@@ -312,6 +284,10 @@ struct State
 		if (have_lock)
 			init_logging(id, communicator);
 
+		if (dataManager.isPluginEngine()) {
+			dataManager.setPluginDataModelPath(fmt::format("results_{}/lbm-fides.json", id));
+		}
+
 		bool local_estimate = estimateMemoryDemands();
 		bool global_result = TNL::MPI::reduce(local_estimate, MPI_LAND, communicator);
 		if (! local_estimate)
@@ -319,10 +295,10 @@ struct State
 		if (! global_result)
 			throw std::runtime_error("Not enough memory available (CPU or GPU).");
 
-		// allocate host data -- after the estimate
+		// Allocate host data after the estimate
 		nse.allocateHostData();
 
-		// initial time of current simulation
+		// Start the timer for the simulation
 		timer_total.start();
 	}
 

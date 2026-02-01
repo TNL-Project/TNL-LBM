@@ -98,7 +98,6 @@ struct StateLocal : State<NSE>
 	using BLOCK = LBM_BLOCK<NSE>;
 
 	using State<NSE>::nse;
-	using State<NSE>::vtk_helper;
 
 	using idx = typename TRAITS::idx;
 	using idx3d = typename TRAITS::idx3d;
@@ -172,22 +171,51 @@ struct StateLocal : State<NSE>
 		nse.copyDFsToHost();
 	}
 
-	bool outputData(const BLOCK& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) override
+	[[nodiscard]] std::vector<std::string> getOutputDataNames() const override
 	{
-		int k = 0;
-		if (index == k++)
-			return vtk_helper("lbm_density", block.hmacro(MACRO::e_rho, x, y, z), 1, desc, value, dofs);
-		if (index == k++) {
-			switch (dof) {
-				case 0:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vx, x, y, z)), 3, desc, value, dofs);
-				case 1:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vy, x, y, z)), 3, desc, value, dofs);
-				case 2:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vz, x, y, z)), 3, desc, value, dofs);
-			}
-		}
-		return false;
+		// return all quantity names used in outputData
+		return {"lbm_density", "lbm_density_fluctuation", "velocity_x", "velocity_y", "velocity_z"};
+	}
+
+	void outputData(UniformDataWriter<TRAITS>& writer, const BLOCK& block, const idx3d& begin, const idx3d& end) override
+	{
+		writer.write("lbm_density", getMacroView<TRAITS>(block.hmacro, MACRO::e_rho), begin, end);
+		writer.write(
+			"lbm_density_fluctuation",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return block.hmacro(MACRO::e_rho, x, y, z) - 1.0;
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_x",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vx, x, y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_y",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vy, x, y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_z",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vz, x, y, z));
+			},
+			begin,
+			end
+		);
 	}
 
 	void probe1() override
@@ -281,13 +309,14 @@ struct StateLocal : State<NSE>
 		}
 	}
 
-	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, std::vector<BLOCK>&& blocks)
-	: State<NSE>(id, communicator, std::move(lat), std::move(blocks))
+	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath, std::vector<BLOCK>&& blocks)
+	: State<NSE>(id, communicator, std::move(lat), adiosConfigPath, std::move(blocks))
 	{}
 };
 
 template <typename NSE>
 int sim(
+	const std::string& adiosConfigPath = "adios2.xml",
 	int RESOLUTION = 2,
 	double Re = 1600,			 // [-] Reynolds number
 	double LBM_VISCOSITY = 1e-4	 // [Δx^2/Δt]
@@ -332,7 +361,7 @@ int sim(
 	const std::string state_id = fmt::format(
 		"sim_4_{}_np{:03d}/res={:02d}_Re={:g}_nu={:e}", TNL::getType<dreal>(), TNL::MPI::GetSize(MPI_COMM_WORLD), RESOLUTION, Re, LBM_VISCOSITY
 	);
-	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, std::move(blocks));
+	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, adiosConfigPath, std::move(blocks));
 	state.V_0 = V_0;
 	state.L = L;
 	spdlog::info("Physical parameters: L={}, V_0={}, Re={}, nu={}, dl={}, dt={}", L, V_0, Re, PHYS_VISCOSITY, PHYS_DL, PHYS_DT);
@@ -348,12 +377,12 @@ int sim(
 		state.cnt[PROBE1].period = 2 * PHYS_DT;
 
 	// add outputs
-	state.cnt[VTK2D].period = state.nse.physFinalTime / 1000;
+	state.cnt[OUT2D].period = state.nse.physFinalTime / 1000;
 	state.add2Dcut_X(0, "left_side");
 	state.add2Dcut_X(X / 2, "cut_X");
 	state.add2Dcut_Y(Y / 2, "cut_Y");
 	state.add2Dcut_Z(Z / 2, "cut_Z");
-	state.cnt[VTK3D].period = state.nse.physFinalTime / 10;
+	state.cnt[OUT3D].period = state.nse.physFinalTime / 10;
 
 	execute(state);
 
@@ -361,7 +390,7 @@ int sim(
 }
 
 template <typename TRAITS = TraitsSP>
-void run(int RES, double Re, double lbm_viscosity)
+void run(const std::string& adiosConfigPath, int RES, double Re, double lbm_viscosity)
 {
 	using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
 
@@ -375,7 +404,7 @@ void run(int RES, double Re, double lbm_viscosity)
 		D3Q27_BC_All,
 		D3Q27_MACRO_Sync<TRAITS>>;
 
-	sim<NSE_CONFIG>(RES, Re, lbm_viscosity);
+	sim<NSE_CONFIG>(adiosConfigPath, RES, Re, lbm_viscosity);
 }
 
 int main(int argc, char** argv)
@@ -384,6 +413,7 @@ int main(int argc, char** argv)
 
 	argparse::ArgumentParser program("sim_1");
 	program.add_description("3D Taylor-Green vortex simulation using incompressible Navier-Stokes equations.");
+	program.add_argument("--adios-config").help("path to adios2.xml configuration file").default_value(std::string("adios2.xml"));
 	program.add_argument("--resolution").help("resolution of the lattice").scan<'i', int>().default_value(1);
 	program.add_argument("--Re").help("desired Reynolds number").scan<'g', double>().default_value(1600.0).nargs(1);
 	program.add_argument("--lbm-viscosity").help("LBM viscosity [Δx^2/Δt]").scan<'g', double>().default_value(1e-4).nargs(1);
@@ -397,6 +427,7 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
+	const auto adiosConfigPath = program.get<std::string>("adios-config");
 	const auto resolution = program.get<int>("--resolution");
 	const auto Re = program.get<double>("--Re");
 	const auto lbm_viscosity = program.get<double>("--lbm-viscosity");
@@ -414,7 +445,7 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
-	run(resolution, Re, lbm_viscosity);
+	run(adiosConfigPath, resolution, Re, lbm_viscosity);
 
 	return 0;
 }

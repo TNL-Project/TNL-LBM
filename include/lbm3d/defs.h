@@ -123,6 +123,49 @@ struct Traits
 using TraitsSP = Traits<float>;	 //_dreal is float only
 using TraitsDP = Traits<double>;
 
+// helper function for getting a 3D array view from a 4D distributed array
+template <typename TRAITS, typename Array>
+auto getMacroView(const Array& array, std::uint8_t id)
+{
+	using local_array_t = typename TRAITS::template array3d<typename Array::ValueType, typename Array::DeviceType>;
+	using local_view_t = typename local_array_t::ViewType;
+#ifdef HAVE_MPI
+	using view_t = TNL::Containers::DistributedNDArrayView<local_view_t>;
+#else
+	using view_t = local_view_t;
+#endif
+
+	// getSubarrayView does not handle overlaps :-(
+	typename TRAITS::xyz_overlaps overlaps;
+#ifdef HAVE_MPI
+	overlaps.template setSize<0>(array.getOverlaps().template getSize<1>());
+	overlaps.template setSize<1>(array.getOverlaps().template getSize<2>());
+	overlaps.template setSize<2>(array.getOverlaps().template getSize<3>());
+	const auto subarray = array.getConstLocalView().template getSubarrayView<1, 2, 3>(id, 0, 0, 0);
+#else
+	const auto subarray = array.getConstView().template getSubarrayView<1, 2, 3>(id, 0, 0, 0);
+#endif
+	local_view_t local_view(const_cast<typename Array::ValueType*>(subarray.getData()), subarray.getSizes(), subarray.getStrides(), overlaps);
+
+#ifdef HAVE_MPI
+	typename view_t::SizesHolderType global_sizes;
+	global_sizes.template setSize<0>(array.template getSize<1>());
+	global_sizes.template setSize<1>(array.template getSize<2>());
+	global_sizes.template setSize<2>(array.template getSize<3>());
+	typename view_t::LocalBeginsType local_begins;
+	local_begins.template setSize<0>(array.getLocalBegins().template getSize<1>());
+	local_begins.template setSize<1>(array.getLocalBegins().template getSize<2>());
+	local_begins.template setSize<2>(array.getLocalBegins().template getSize<3>());
+	typename view_t::SizesHolderType local_ends;
+	local_ends.template setSize<0>(array.getLocalEnds().template getSize<1>());
+	local_ends.template setSize<1>(array.getLocalEnds().template getSize<2>());
+	local_ends.template setSize<2>(array.getLocalEnds().template getSize<3>());
+	return view_t(local_view, global_sizes, local_begins, local_ends, array.getCommunicator());
+#else
+	return local_view;
+#endif
+}
+
 // KernelStruct - D3Q7
 template <typename REAL>
 struct D3Q7_KernelStruct
