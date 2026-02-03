@@ -247,9 +247,7 @@ void State<NSE>::write3D()
 	create_parent_directories(fname.c_str());
 
 	dataManager.prepareIO(fname);
-	if (cnt[OUT3D].count == 0) {
-		predefine3D(fname, nse.blocks.front());
-	}
+	predefine3D(fname, nse.blocks.front());
 	// Match previous behavior: reopen as Append after the first cycle
 	const auto mode = (cnt[OUT3D].count == 0) ? adios2::Mode::Write : adios2::Mode::Append;
 	dataManager.openEngine(fname, mode);
@@ -277,6 +275,10 @@ void State<NSE>::predefineOutputVariables(
 	const std::string& ioName, const BLOCK_NSE& block, const adios2::Dims& shape, const adios2::Dims& start, const adios2::Dims& count
 )
 {
+	// Check if already predefined
+	if (dataManager.isVariableDefined<real>("TIME", ioName))
+		return;
+
 	// Build a field list for auto-generation of the Fides JSON data model.
 	std::vector<std::string> fidesFields;
 	fidesFields.reserve(16);
@@ -423,9 +425,7 @@ void State<NSE>::write3Dcut()
 		create_parent_directories(fname.c_str());
 
 		dataManager.prepareIO(fname);
-		if (probevec.cycle == 0) {
-			predefine3Dcut(fname, nse.blocks.front(), probevec);
-		}
+		predefine3Dcut(fname, nse.blocks.front(), probevec);
 		// Match previous behavior: reopen as Append after the first cycle
 		const auto mode = (probevec.cycle == 0) ? adios2::Mode::Write : adios2::Mode::Append;
 		dataManager.openEngine(fname, mode);
@@ -541,9 +541,7 @@ void State<NSE>::write2D()
 		create_parent_directories(fname.c_str());
 
 		dataManager.prepareIO(fname);
-		if (probevec.cycle == 0) {
-			predefine2D(fname, nse.blocks.front(), probevec.type);
-		}
+		predefine2D(fname, nse.blocks.front(), probevec.type);
 		// Match previous behavior: reopen as Append after the first cycle
 		const auto mode = (probevec.cycle == 0) ? adios2::Mode::Write : adios2::Mode::Append;
 		dataManager.openEngine(fname, mode);
