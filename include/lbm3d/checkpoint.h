@@ -2,6 +2,7 @@
 
 #include <adios2.h>
 #include <fmt/core.h>
+#include <TNL/TypeTraits.h>
 #include "DataManager.h"
 
 class CheckpointManager
@@ -150,7 +151,13 @@ public:
 
 		using T = typename Array::ValueType;
 
-		adios2::Dims shape = {std::size_t(array.getStorageSize())};
+		adios2::Dims shape;
+		if constexpr (TNL::IsArrayType<Array>::value)
+			// TNL::Containers::Array
+			shape = adios2::Dims{array.getSize()};
+		else
+			// TNL::Containers::NDArray
+			shape = adios2::Dims{array.getStorageSize()};
 		adios2::Dims start = {0};
 		adios2::Dims count = shape;
 		name += fmt::format("_rank_{}", rank);
