@@ -112,7 +112,7 @@ struct StateLocal : State<NSE>
 };
 
 template <typename NSE>
-int sim(int RES, double Re, const std::string& adiosConfigPath)
+int sim(const std::string& adios_config, int RES, double Re)
 {
 	using idx = typename NSE::TRAITS::idx;
 	using real = typename NSE::TRAITS::real;
@@ -147,7 +147,7 @@ int sim(int RES, double Re, const std::string& adiosConfigPath)
 	lat.physViscosity = PHYS_VISCOSITY;
 
 	const std::string state_id = fmt::format("sim_3_{}_res_{}_Re_{}", NSE::COLL::id, RES, Re);
-	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, adiosConfigPath);
+	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, adios_config);
 
 	if (! state.canCompute())
 		return 0;
@@ -182,7 +182,7 @@ int sim(int RES, double Re, const std::string& adiosConfigPath)
 }
 
 template <typename TRAITS = TraitsSP>
-void run(int res, double Re, const std::string& adiosConfigPath)
+void run(const std::string& adiosConfigPath, int resolution, double Re)
 {
 	using COLL = D3Q27_CUM<TRAITS>;
 	using NSE_CONFIG = LBM_CONFIG<
@@ -195,7 +195,7 @@ void run(int res, double Re, const std::string& adiosConfigPath)
 		D3Q27_BC_All,
 		D3Q27_MACRO_Default<TRAITS>>;
 
-	sim<NSE_CONFIG>(res, Re, adiosConfigPath);
+	sim<NSE_CONFIG>(adiosConfigPath, resolution, Re);
 }
 
 int main(int argc, char** argv)
@@ -204,9 +204,9 @@ int main(int argc, char** argv)
 
 	argparse::ArgumentParser program("sim_3");
 	program.add_description("LBM simulation with ball in 3D.");
+	program.add_argument("--adios-config").help("path to ADIOS2 configuration file").default_value(std::string("adios2.xml")).nargs(1);
 	program.add_argument("--resolution").help("resolution of the lattice").scan<'i', int>().default_value(1).nargs(1);
 	program.add_argument("--Re").help("desired Reynolds number (affects the inflow velocity)").scan<'g', double>().default_value(100.0).nargs(1);
-	program.add_argument("--adios-config").help("path to adios2 configuration file").default_value(std::string("adios2.xml")).nargs(1);
 
 	try {
 		program.parse_args(argc, argv);
@@ -217,9 +217,9 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
+	const auto adios_config = program.get<std::string>("--adios-config");
 	const auto resolution = program.get<int>("--resolution");
 	const auto Re = program.get<double>("--Re");
-	const auto adiosConfigPath = program.get<std::string>("--adios-config");
 
 	if (resolution < 1) {
 		fmt::println(stderr, "CLI error: resolution must be at least 1");
@@ -230,7 +230,7 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
-	run(resolution, Re, adiosConfigPath);
+	run(adios_config, resolution, Re);
 
 	return 0;
 }

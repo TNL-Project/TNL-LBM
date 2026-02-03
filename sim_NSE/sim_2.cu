@@ -321,7 +321,7 @@ struct StateLocal : State<NSE>
 };
 
 template <typename NSE>
-int sim(int RES, bool use_forcing, Scaling scaling, double final_time, const std::string& adiosConfigPath)
+int sim(const std::string& adios_config, int RES, bool use_forcing, Scaling scaling, double final_time)
 {
 	using idx = typename NSE::TRAITS::idx;
 	using real = typename NSE::TRAITS::real;
@@ -365,7 +365,7 @@ int sim(int RES, bool use_forcing, Scaling scaling, double final_time, const std
 	const auto scaling_variant = magic_enum::enum_name(scaling);
 	const std::string state_id =
 		fmt::format("sim_2_{}_{}_{}_{}_res_{}_np_{}", NSE::COLL::id, prec, bc_variant, scaling_variant, RES, TNL::MPI::GetSize(MPI_COMM_WORLD));
-	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, use_forcing, adiosConfigPath);
+	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, use_forcing, adios_config);
 
 	if (! state.canCompute())
 		return 0;
@@ -484,7 +484,7 @@ int sim(int RES, bool use_forcing, Scaling scaling, double final_time, const std
 }
 
 template <typename TRAITS = TraitsSP>
-void run(int RES, bool use_forcing, Scaling scaling, double final_time, const std::string& adiosConfigPath)
+void run(const std::string& adios_config, int RES, bool use_forcing, Scaling scaling, double final_time)
 {
 	using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
 	//using COLL = D3Q27_FCLBM<TRAITS>;
@@ -510,7 +510,7 @@ void run(int RES, bool use_forcing, Scaling scaling, double final_time, const st
 		D3Q27_BC_All,
 		D3Q27_MACRO_Default<TRAITS>>;
 
-	sim<NSE_CONFIG>(RES, use_forcing, scaling, final_time, adiosConfigPath);
+	sim<NSE_CONFIG>(adios_config, RES, use_forcing, scaling, final_time);
 }
 
 int main(int argc, char** argv)
@@ -519,6 +519,7 @@ int main(int argc, char** argv)
 
 	argparse::ArgumentParser program("sim_2");
 	program.add_description("Square duct flow with verification against analytical solution.");
+	program.add_argument("--adios-config").help("path to ADIOS2 configuration file").default_value(std::string("adios2.xml")).nargs(1);
 	program.add_argument("--min-resolution").help("minimum resolution of the lattice").scan<'i', int>().default_value(2).nargs(1);
 	program.add_argument("--max-resolution").help("maximum resolution of the lattice").scan<'i', int>().default_value(4).nargs(1);
 	program.add_argument("--final-time").help("final time of the simulation").scan<'g', double>().default_value(100.0).nargs(1);
@@ -533,7 +534,6 @@ int main(int argc, char** argv)
 		.choices("single", "double")
 		.default_value("single")
 		.nargs(1);
-	program.add_argument("--adios-config").help("path to adios2 configuration file").default_value(std::string("adios2.xml")).nargs(1);
 
 	try {
 		program.parse_args(argc, argv);
@@ -561,17 +561,17 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
+	const auto adios_config = program.get<std::string>("--adios-config");
 	const bool use_forcing = program.get<bool>("--use-forcing");
 	const auto scaling_name = program.get<std::string>("--scaling");
 	const Scaling scaling = magic_enum::enum_cast<Scaling>(scaling_name).value_or(Scaling::strong);
-	const auto adiosConfigPath = program.get<std::string>("--adios-config");
 
 	for (int i = min_resolution; i <= max_resolution; i++) {
 		int res = pow(2, i);
 		if (program.get<std::string>("--precision") == "double")
-			run<TraitsDP>(res, use_forcing, scaling, final_time, adiosConfigPath);
+			run<TraitsDP>(adios_config, res, use_forcing, scaling, final_time);
 		else
-			run<TraitsSP>(res, use_forcing, scaling, final_time, adiosConfigPath);
+			run<TraitsSP>(adios_config, res, use_forcing, scaling, final_time);
 	}
 
 	return 0;

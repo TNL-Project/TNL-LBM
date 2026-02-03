@@ -266,9 +266,8 @@ struct StateLocal : State<NSE>
 };
 
 template <typename NSE>
-int sim(
-	int RES, double Re, double discretization_ratio, IbmCompute computeVariant, int dirac, IbmMethod methodVariant, const std::string& adiosConfigPath
-)
+int
+sim(const std::string& adios_config, int RES, double Re, double discretization_ratio, IbmCompute computeVariant, int dirac, IbmMethod methodVariant)
 {
 	using idx = typename NSE::TRAITS::idx;
 	using real = typename NSE::TRAITS::real;
@@ -309,7 +308,7 @@ int sim(
 	const std::string state_id = fmt::format(
 		"sim_IBM1_{}_{}_dirac_{}_res_{}_Re_{}_nas_{:05.4f}_compute_{}", NSE::COLL::id, method_name, dirac, RES, Re, discretization_ratio, compute_name
 	);
-	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, adiosConfigPath);
+	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, adios_config);
 
 	if (! state.canCompute())
 		return 0;
@@ -356,7 +355,7 @@ int sim(
 }
 
 template <typename TRAITS = TraitsSP>
-void run(int res, double Re, double discretization_ratio, IbmCompute compute, int dirac, IbmMethod method, const std::string& adiosConfigPath)
+void run(const std::string& adios_config, int resolution, double Re, double discretization_ratio, IbmCompute compute, int dirac, IbmMethod method)
 {
 	using COLL = D3Q27_CUM<TRAITS>;
 	using NSE_CONFIG = LBM_CONFIG<
@@ -369,7 +368,7 @@ void run(int res, double Re, double discretization_ratio, IbmCompute compute, in
 		D3Q27_BC_All,
 		MacroLocal<TRAITS>>;
 
-	sim<NSE_CONFIG>(res, Re, discretization_ratio, compute, dirac, method, adiosConfigPath);
+	sim<NSE_CONFIG>(adios_config, resolution, Re, discretization_ratio, compute, dirac, method);
 }
 
 int main(int argc, char** argv)
@@ -378,6 +377,7 @@ int main(int argc, char** argv)
 
 	argparse::ArgumentParser program("sim_IBM1");
 	program.add_description("IBM-LBM simulation with cylinder in 3D - Schafer-Turek problem.");
+	program.add_argument("--adios-config").help("path to ADIOS2 configuration file").default_value(std::string("adios2.xml")).nargs(1);
 	program.add_argument("--resolution").help("resolution of the lattice").scan<'i', int>().default_value(1).nargs(1);
 	program.add_argument("--Re").help("desired Reynolds number (affects the inflow velocity)").scan<'g', double>().default_value(100.0).nargs(1);
 	program.add_argument("--discretization-ratio")
@@ -388,7 +388,6 @@ int main(int argc, char** argv)
 	program.add_argument("--compute").help("IBM compute method").default_value("GPU").choices("GPU", "CPU", "hybrid", "hybrid_zerocopy").nargs(1);
 	program.add_argument("--dirac").help("Dirac delta function to use in IBM").scan<'i', int>().default_value(1).choices(1, 2, 3, 4).nargs(1);
 	program.add_argument("--method").help("IBM method").default_value("modified").choices("modified", "original").nargs(1);
-	program.add_argument("--adios-config").help("path to adios2 configuration file").default_value(std::string("adios2.xml")).nargs(1);
 
 	try {
 		program.parse_args(argc, argv);
@@ -399,13 +398,13 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
+	const auto adios_config = program.get<std::string>("--adios-config");
 	const auto resolution = program.get<int>("--resolution");
 	const auto Re = program.get<double>("--Re");
 	const auto discretization_ratio = program.get<double>("--discretization-ratio");
 	const auto compute = program.get<std::string>("--compute");
 	const auto dirac = program.get<int>("--dirac");
 	const auto method = program.get<std::string>("--method");
-	const auto adiosConfigPath = program.get<std::string>("--adios-config");
 
 	if (resolution < 1) {
 		fmt::println(stderr, "CLI error: resolution must be at least 1");
@@ -423,7 +422,7 @@ int main(int argc, char** argv)
 	const IbmCompute computeEnum = magic_enum::enum_cast<IbmCompute>(compute).value_or(IbmCompute::GPU);
 	const IbmMethod methodEnum = magic_enum::enum_cast<IbmMethod>(method).value_or(IbmMethod::modified);
 
-	run(resolution, Re, discretization_ratio, computeEnum, dirac, methodEnum, adiosConfigPath);
+	run(adios_config, resolution, Re, discretization_ratio, computeEnum, dirac, methodEnum);
 
 	return 0;
 }
