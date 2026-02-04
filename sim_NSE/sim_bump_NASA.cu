@@ -29,7 +29,6 @@ struct StateLocal : State<NSE>
 
 	// Refernce values for drag and lift
 	double H,L,W; // bump dimensions
-	double
 
 	void setupBoundaries() override
 	{
@@ -384,7 +383,7 @@ int sim(int RESOLUTION = 2)
 
 	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat);
 	state.loadState();
-	state.wallTime = 100;
+	state.wallTime = 10000;
 
 	// problem parameters
 	state.lbm_inflow_vx = lat.phys2lbmVelocity(PHYS_VELOCITY);
