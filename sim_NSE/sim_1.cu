@@ -2,8 +2,8 @@
 #include <utility>
 
 // As of now, enum and sync direction are specific for different models and need to be included before core!!!
-//#include "lbm3d/d3q27/defs.h"
-#include "lbm3d/d3q343/defs.h"
+#include "lbm3d/d3q27/defs.h"
+//#include "lbm3d/d3q343/defs.h"
 //#include "lbm3d/d3q53/defs.h"
 #include "lbm3d/core.h"
 
@@ -220,28 +220,28 @@ template <typename TRAITS = TraitsSP>
 void run(const std::string& adios_config, int resolution)
 {
 	//	using COLL = D3Q27_CUM< TRAITS >;
-	//using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
-	//using NSE_CONFIG = LBM_CONFIG<
-	//	TRAITS,
-	//	D3Q27_KernelStruct,
-	//	NSE_Data_ConstInflow<TRAITS>,
-	//	COLL,
-	//	typename COLL::EQ,
-	//	D3Q27_STREAMING<TRAITS>,
-	//	D3Q27_BC_All,
-	//	D3Q27_MACRO_Default<TRAITS>>;
-
-	// D3Q343
-	using COLL = D3Q343_SRT<TRAITS, D3Q343_EQ<TRAITS>>;
+	using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
 	using NSE_CONFIG = LBM_CONFIG<
 		TRAITS,
-		D3Q343_KernelStruct,
+		D3Q27_KernelStruct,
 		NSE_Data_ConstInflow<TRAITS>,
 		COLL,
 		typename COLL::EQ,
-		D3Q343_STREAMING<TRAITS>,
-		D3Q343_BC_All,
-		D3Q343_MACRO_Default<TRAITS>>;
+		D3Q27_STREAMING<TRAITS>,
+		D3Q27_BC_All,
+		D3Q27_MACRO_Default<TRAITS>>;
+
+	// D3Q343
+	//using COLL = D3Q343_SRT<TRAITS, D3Q343_EQ<TRAITS>>;
+	//using NSE_CONFIG = LBM_CONFIG<
+	//	TRAITS,
+	//	D3Q343_KernelStruct,
+	//	NSE_Data_ConstInflow<TRAITS>,
+	//	COLL,
+	//	typename COLL::EQ,
+	//	D3Q343_STREAMING<TRAITS>,
+	//	D3Q343_BC_All,
+	//	D3Q343_MACRO_Default<TRAITS>>;
 
 	// D3Q53
 	//using COLL = D3Q53_SRT<TRAITS, D3Q53_EQ<TRAITS>>;

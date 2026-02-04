@@ -430,6 +430,8 @@ struct D3Q53_KernelStruct
 	REAL fx = 0, fy = 0, fz = 0;
 	REAL vx = 0, vy = 0, vz = 0;
 	REAL rho = 1.0, lbmViscosity = 1.0;
+};
+
 // KernelStruct - D3Q27
 template <typename REAL>
 struct D3Q27_KernelStruct_Adjoint : public D3Q27_KernelStruct<REAL>

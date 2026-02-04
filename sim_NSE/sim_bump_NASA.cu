@@ -15,11 +15,12 @@ struct StateLocal : State<NSE>
 	using MACRO = typename NSE::MACRO;
 	using BLOCK = LBM_BLOCK<NSE>;
 
+	using State<NSE>::checkpoint;
 	using State<NSE>::nse;
-	using State<NSE>::vtk_helper;
 	using State<NSE>::id;
 
 	using idx = typename TRAITS::idx;
+	using idx3d = typename TRAITS::idx3d;
 	using real = typename TRAITS::real;
 	using dreal = typename TRAITS::dreal;
 	using point_t = typename TRAITS::point_t;
@@ -29,6 +30,20 @@ struct StateLocal : State<NSE>
 
 	// Refernce values for drag and lift
 	double H,L,W; // bump dimensions
+
+	// Override checkpointStateLocal to save/load additional state data
+	void checkpointStateLocal(adios2::Mode mode) override
+	{
+		// Save/load the inflow velocity
+		checkpoint.saveLoadAttribute("lbm_inflow_vx", lbm_inflow_vx);
+
+		// You can add any additional state data that needs to be saved/loaded here
+
+		if (mode == adios2::Mode::Read)
+			spdlog::info("Checkpoint loaded local state (mode: Read)");
+		else
+			spdlog::info("Checkpoint saved local state (mode: Write)");
+	}
 
 	void setupBoundaries() override
 	{
@@ -307,30 +322,58 @@ struct StateLocal : State<NSE>
 		dragprofile();
   	}
 
-	void startedAtCheckpoint() override {
-		firstrun = false;
-		firstrunProfile = false;
-		// TODO: known mistake that probes have to run at least one during first walltime run!!!, otherwise doesnt overwrite
-		// FIX: just delete simulation files before starting new simulation
+	//void startedAtCheckpoint() override {
+	//	firstrun = false;
+	//	firstrunProfile = false;
+	//	// TODO: known mistake that probes have to run at least one during first walltime run!!!, otherwise doesnt overwrite
+	//	// FIX: just delete simulation files before starting new simulation
+	//}
+
+	[[nodiscard]] std::vector<std::string> getOutputDataNames() const override
+	{
+		// return all quantity names used in outputData
+		return {"lbm_density", "lbm_density_fluctuation", "velocity_x", "velocity_y", "velocity_z"};
 	}
 
-
-	bool outputData(const BLOCK& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) override
+	void outputData(UniformDataWriter<TRAITS>& writer, const BLOCK& block, const idx3d& begin, const idx3d& end) override
 	{
-		int k = 0;
-		if (index == k++)
-			return vtk_helper("lbm_density", block.hmacro(MACRO::e_rho, x, y, z), 1, desc, value, dofs);
-		if (index == k++) {
-			switch (dof) {
-				case 0:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vx, x, y, z)), 3, desc, value, dofs);
-				case 1:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vy, x, y, z)), 3, desc, value, dofs);
-				case 2:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vz, x, y, z)), 3, desc, value, dofs);
-			}
-		}
-		return false;
+		writer.write("lbm_density", getMacroView<TRAITS>(block.hmacro, MACRO::e_rho), begin, end);
+		writer.write(
+			"lbm_density_fluctuation",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return block.hmacro(MACRO::e_rho, x, y, z) - 1.0;
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_x",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vx, x, y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_y",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vy, x, y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_z",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vz, x, y, z));
+			},
+			begin,
+			end
+		);
 	}
 
 	void updateKernelVelocities() override
@@ -343,12 +386,12 @@ struct StateLocal : State<NSE>
 	}
 
 	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat)
-	: State<NSE>(id, communicator, std::move(lat))
+	: State<NSE>(id, communicator, std::move(lat), adiosConfigPath)
 	{}
 };
 
 template <typename NSE>
-int sim(int RESOLUTION = 2)
+int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 {
 	using idx = typename NSE::TRAITS::idx;
 	using real = typename NSE::TRAITS::real;
@@ -381,8 +424,9 @@ int sim(int RESOLUTION = 2)
 
 	const std::string state_id = fmt::format("sim_bump_NASA_res{:02d}_np{:03d}", RESOLUTION, TNL::MPI::GetSize(MPI_COMM_WORLD));
 
-	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat);
-	state.loadState();
+	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat,adios_config);
+	//state.loadState();
+	state.cnt[SAVESTATE].period = 1000;
 	state.wallTime = 10000;
 
 	// problem parameters
@@ -392,16 +436,20 @@ int sim(int RESOLUTION = 2)
 	state.cnt[PRINT].period = 0.1;
 
 	// add cuts
-	state.cnt[VTK2D].period = 0.1;
+	state.cnt[OUT2D].period = 0.1;
 	state.add2Dcut_X(X / 2, "cutsX/cut_X");
 	state.add2Dcut_Y(Y / 2, "cutsY/cut_Y");
 	state.add2Dcut_Z(Z / 2, "cutsZ/cut_Z");
 
-	state.cnt[VTK3D].period = 1.;
-	state.cnt[VTK3DCUT].period = 1.;
-	state.add3Dcut(X / 4, Y / 4, Z / 4, X / 2, Y / 2, Z / 2, 2, "box");
+	state.cnt[OUT3D].period = 1.;
+	state.cnt[OUT3DCUT].period = 1.;
+	state.add3Dcut(X / 4, Y / 4, Z / 4, X / 2, Y / 2, Z / 2, "box");
 
 	state.cnt[PROBE1].period = 0.001;
+
+	spdlog::info("Starting simulation with checkpointing. Wall time limit: {} seconds", state.wallTime);
+	spdlog::info("Creating checkpoints every {} seconds of wall time", state.cnt[SAVESTATE].period);
+
 
 	execute(state);
 
@@ -409,7 +457,7 @@ int sim(int RESOLUTION = 2)
 }
 
 template <typename TRAITS = TraitsSP>
-void run(int RES)
+void run(const std::string& adios_config, int resolution)
 {
 	// D3Q27
 	using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
@@ -435,16 +483,17 @@ void run(int RES)
 	//	D3Q343_BC_All,
 	//	D3Q343_MACRO_Default<TRAITS>>;
 
-	sim<NSE_CONFIG>(RES);
+	sim<NSE_CONFIG>(adios_config,resolution);
 }
 
 int main(int argc, char** argv)
 {
 	TNLMPI_INIT mpi(argc, argv);
 
-	argparse::ArgumentParser program("sim_bump_NASA");
-	program.add_description("Simulation of a bump in a channel.");
-	program.add_argument("resolution").help("resolution of the lattice").scan<'i', int>().default_value(1);
+	argparse::ArgumentParser program("sim_1");
+	program.add_description("3D bump NASA modified simulation.");
+	program.add_argument("--adios-config").help("path to ADIOS2 configuration file").default_value(std::string("adios2.xml")).nargs(1);
+	program.add_argument("--resolution").help("resolution of the lattice").scan<'i', int>().default_value(1).nargs(1);
 
 	try {
 		program.parse_args(argc, argv);
@@ -455,13 +504,15 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
-	const auto resolution = program.get<int>("resolution");
+	const auto adios_config = program.get<std::string>("--adios-config");
+	const auto resolution = program.get<int>("--resolution");
+
 	if (resolution < 1) {
 		fmt::println(stderr, "CLI error: resolution must be at least 1");
 		return 1;
 	}
 
-	run(resolution);
+	run(adios_config, resolution);
 
 	return 0;
 }
