@@ -39,6 +39,19 @@ public:
 		dataManager->beginStep(currentCheckpointName);
 	}
 
+	// Perform all deferred put/get operations (depending on the current mode).
+	void performDeferred()
+	{
+		if (! isActive || dataManager == nullptr) {
+			return;
+		}
+
+		if (currentMode == adios2::Mode::Read)
+			dataManager->performGets(currentCheckpointName);
+		else
+			dataManager->performPuts(currentCheckpointName);
+	}
+
 	// End the checkpoint session
 	void finalize()
 	{
