@@ -177,7 +177,7 @@ void State<NSE>::writePoints(const char* name, real time, int cycle, const typen
 	const std::string cell_types_variable = "cell_types";
 
 	dataManager.prepareIO(fname);
-	if (cycle == 0) {
+	if (! dataManager.isVariableDefined<real>("TIME", fname)) {
 		// Define all variables before opening an engine
 		// TODO: make it distributed
 		adios2::Dims shape3{static_cast<std::size_t>(hLL_lat.getSize()), std::size_t(3)};
