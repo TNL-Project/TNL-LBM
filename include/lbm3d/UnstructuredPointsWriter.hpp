@@ -112,5 +112,5 @@ void UnstructuredPointsWriter<TRAITS>::addFidesAttributes()
 template <typename TRAITS>
 UnstructuredPointsWriter<TRAITS>::~UnstructuredPointsWriter()
 {
-	this->endStep();
+	this->finalize();
 }

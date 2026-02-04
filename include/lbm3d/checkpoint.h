@@ -39,15 +39,6 @@ public:
 		dataManager->beginStep(currentCheckpointName);
 	}
 
-	// Perform all deferred operations
-	void performDeferred()
-	{
-		if (! isActive || dataManager == nullptr) {
-			return;
-		}
-		// This is handled automatically by DataManager
-	}
-
 	// End the checkpoint session
 	void finalize()
 	{
@@ -55,7 +46,7 @@ public:
 			return;
 		}
 
-		dataManager->performPutsAndStep(currentCheckpointName);
+		dataManager->endStep(currentCheckpointName);
 		isActive = false;
 		currentMode = adios2::Mode::Undefined;
 		dataManager->closeEngine(currentCheckpointName);

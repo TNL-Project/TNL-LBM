@@ -53,13 +53,13 @@ protected:
 
 	// Calling virtual methods does not work from the destructor, so derived classes must
 	// call this method from their own destructors.
-	void endStep()
+	void finalize()
 	{
 		if (! variables.empty()) {
 			addVTKAttributes();
 			addFidesAttributes();
 		}
-		dataManager->performPutsAndStep(ioName);
+		dataManager->performPuts(ioName);
 	}
 
 public:
@@ -68,9 +68,7 @@ public:
 	DataWriter(DataManager& dataManager, std::string ioName)
 	: dataManager(&dataManager),
 	  ioName(std::move(ioName))
-	{
-		dataManager.beginStep(this->ioName);
-	}
+	{}
 
 	virtual ~DataWriter() = default;
 };

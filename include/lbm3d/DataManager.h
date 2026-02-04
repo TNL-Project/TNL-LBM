@@ -52,6 +52,7 @@ public:
 	}
 
 	// Open engine after variables are defined
+	// NOTE: this is an MPI collective function
 	void openEngine(const std::string& ioName, adios2::Mode mode = adios2::Mode::Write)
 	{
 		auto io_it = ios_.find(ioName);
@@ -87,6 +88,7 @@ public:
 		current_mode_[ioName] = mode;
 	}
 
+	// NOTE: this is an MPI collective function
 	void initEngine(const std::string& ioName, adios2::Mode mode = adios2::Mode::Write)
 	{
 		prepareIO(ioName);
@@ -120,6 +122,7 @@ public:
 	}
 
 	// Explicitly close a specific engine
+	// NOTE: this is an MPI collective function
 	void closeEngine(const std::string& ioName)
 	{
 		if (engines_.count(ioName) > 0 && engines_[ioName]) {
@@ -130,6 +133,7 @@ public:
 	}
 
 	// Close all engines
+	// NOTE: this is an MPI collective function
 	void closeAllEngines()
 	{
 		while (! engines_.empty()) {
@@ -297,6 +301,7 @@ public:
 		engines_[ioName].PerformGets();
 	}
 
+	// NOTE: this is an MPI collective function
 	void beginStep(const std::string& ioName)
 	{
 		if (engines_.count(ioName) == 0 || ! engines_[ioName]) {
@@ -305,19 +310,30 @@ public:
 		engines_[ioName].BeginStep();
 	}
 
-	void performPutsAndStep(const std::string& ioName)
+	void performPuts(const std::string& ioName)
 	{
 		if (engines_.count(ioName) == 0 || ! engines_[ioName]) {
 			throw std::runtime_error(fmt::format("Engine for '{}' is not initialized", ioName));
 		}
 
-		if (current_mode_[ioName] == adios2::Mode::Write || current_mode_[ioName] == adios2::Mode::Append) {
-			engines_[ioName].PerformPuts();
-		}
-		else {
-			engines_[ioName].PerformGets();
+		engines_[ioName].PerformPuts();
+	}
+
+	void performGets(const std::string& ioName)
+	{
+		if (engines_.count(ioName) == 0 || ! engines_[ioName]) {
+			throw std::runtime_error(fmt::format("Engine for '{}' is not initialized", ioName));
 		}
 
+		engines_[ioName].PerformGets();
+	}
+
+	// NOTE: this is an MPI collective function
+	void endStep(const std::string& ioName)
+	{
+		if (engines_.count(ioName) == 0 || ! engines_[ioName]) {
+			throw std::runtime_error(fmt::format("Engine for '{}' is not initialized", ioName));
+		}
 		engines_[ioName].EndStep();
 	}
 

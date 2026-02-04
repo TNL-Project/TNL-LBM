@@ -197,6 +197,7 @@ void State<NSE>::writePoints(const char* name, real time, int cycle, const typen
 	// Match previous behavior: reopen as Append after the first cycle
 	const auto mode = (cycle == 0) ? adios2::Mode::Write : adios2::Mode::Append;
 	dataManager.openEngine(fname, mode);
+	dataManager.beginStep(fname);
 
 	UnstructuredPointsWriter<TRAITS> writer(dataManager, fname, coordinates_variable, connectivity_variable, cell_types_variable);
 
@@ -222,6 +223,8 @@ void State<NSE>::writePoints(const char* name, real time, int cycle, const typen
 	writer.write("number_of_points", npoints);
 
 	writer.write("TIME", time);
+
+	dataManager.endStep(fname);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -251,23 +254,24 @@ void State<NSE>::write3D()
 	// Match previous behavior: reopen as Append after the first cycle
 	const auto mode = (cnt[OUT3D].count == 0) ? adios2::Mode::Write : adios2::Mode::Append;
 	dataManager.openEngine(fname, mode);
+	dataManager.beginStep(fname);
 
 	TNL::Timer timer;
+	timer.start();
 	for (std::size_t i = 0; i < nse.blocks.size(); i++) {
 		const auto& block = nse.blocks[i];
-		timer.start();
-		{
-			const point_t origin = nse.lat.lbm2physPoint(0, 0, 0);
-			UniformDataWriter<TRAITS> writer(block.global, block.local, block.offset, origin, nse.lat.physDl, dataManager, fname);
-			idx3d begin = block.offset;
-			idx3d end = block.offset + block.local;
-			outputDataPhase1(writer, i, begin, end);
-		}
-		timer.stop();
-		spdlog::info("write3D saved in: {:.2f} seconds", timer.getRealTime());
-		timer.reset();
-		spdlog::info("Output {} written, time {:f}, cycle {:d}", fname, nse.physTime(), cnt[OUT3D].count);
+		const point_t origin = nse.lat.lbm2physPoint(0, 0, 0);
+		UniformDataWriter<TRAITS> writer(block.global, block.local, block.offset, origin, nse.lat.physDl, dataManager, fname);
+		idx3d begin = block.offset;
+		idx3d end = block.offset + block.local;
+		outputDataPhase1(writer, i, begin, end);
 	}
+
+	dataManager.endStep(fname);
+	spdlog::info("Output {} written, time {:f}, cycle {:d}", fname, nse.physTime(), cnt[OUT3D].count);
+
+	timer.stop();
+	spdlog::info("write3D saved in: {:.2f} seconds", timer.getRealTime());
 }
 
 template <typename NSE>
@@ -429,6 +433,7 @@ void State<NSE>::write3Dcut()
 		// Match previous behavior: reopen as Append after the first cycle
 		const auto mode = (probevec.cycle == 0) ? adios2::Mode::Write : adios2::Mode::Append;
 		dataManager.openEngine(fname, mode);
+		dataManager.beginStep(fname);
 
 		idx ox = probevec.ox;
 		idx oy = probevec.oy;
@@ -461,9 +466,10 @@ void State<NSE>::write3Dcut()
 			idx3d begin = {TNL::max(ox, block.offset.x()), TNL::max(oy, block.offset.y()), TNL::max(oz, block.offset.z())};
 			idx3d end = begin + idx3d{lx, ly, lz};
 			outputDataPhase1(writer, i, begin, end);
-
-			spdlog::info("Output {} written, time {:f}, cycle {:d}", fname, nse.physTime(), probevec.cycle);
 		}
+
+		dataManager.endStep(fname);
+		spdlog::info("Output {} written, time {:f}, cycle {:d}", fname, nse.physTime(), probevec.cycle);
 		probevec.cycle++;
 	}
 }
@@ -545,6 +551,7 @@ void State<NSE>::write2D()
 		// Match previous behavior: reopen as Append after the first cycle
 		const auto mode = (probevec.cycle == 0) ? adios2::Mode::Write : adios2::Mode::Append;
 		dataManager.openEngine(fname, mode);
+		dataManager.beginStep(fname);
 
 		for (std::size_t i = 0; i < nse.blocks.size(); i++) {
 			const auto& block = nse.blocks[i];
@@ -591,9 +598,10 @@ void State<NSE>::write2D()
 
 			UniformDataWriter<TRAITS> writer(cut_global, cut_local, cut_offset, cut_origin, nse.lat.physDl, dataManager, fname);
 			outputDataPhase1(writer, i, begin, end);
-
-			spdlog::info("Output {} written, time {:f}, cycle {:d}", fname, nse.physTime(), probevec.cycle);
 		}
+
+		dataManager.endStep(fname);
+		spdlog::info("Output {} written, time {:f}, cycle {:d}", fname, nse.physTime(), probevec.cycle);
 		probevec.cycle++;
 	}
 }

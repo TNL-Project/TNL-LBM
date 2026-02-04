@@ -148,5 +148,5 @@ void UniformDataWriter<TRAITS>::addFidesAttributes()
 template <typename TRAITS>
 UniformDataWriter<TRAITS>::~UniformDataWriter()
 {
-	this->endStep();
+	this->finalize();
 }
