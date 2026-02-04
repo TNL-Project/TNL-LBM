@@ -6,7 +6,6 @@
 template <typename CONFIG>
 struct LBM_BLOCK
 {
-	using MACRO = typename CONFIG::MACRO;
 	using TRAITS = typename CONFIG::TRAITS;
 
 	using idx = typename TRAITS::idx;
@@ -15,6 +14,7 @@ struct LBM_BLOCK
 	using map_t = typename TRAITS::map_t;
 	using point_t = typename TRAITS::point_t;
 	using idx3d = typename TRAITS::idx3d;
+	using bool3d = typename TRAITS::bool3d;
 	using lat_t = Lattice<3, real, idx>;
 
 	using hmap_array_t = typename CONFIG::hmap_array_t;
@@ -79,7 +79,7 @@ struct LBM_BLOCK
 
 #ifdef HAVE_MPI
 	// synchronizers for dfs, macro and map
-	TNL::Containers::DistributedNDArraySynchronizer<typename dreal_array_t::ViewType> dreal_sync[CONFIG::Q + MACRO::N];
+	TNL::Containers::DistributedNDArraySynchronizer<typename dreal_array_t::ViewType> dreal_sync[CONFIG::Q + CONFIG::MACRO::N];
 	TNL::Containers::DistributedNDArraySynchronizer<dmap_array_t> map_sync;
 #endif
 
@@ -126,7 +126,7 @@ struct LBM_BLOCK
 	static constexpr int overlap_width = 0;
 #endif
 	// maximum width of overlaps for the macro arrays
-	static constexpr int macro_overlap_width = MACRO::overlap_width;
+	static constexpr int macro_overlap_width = CONFIG::MACRO::overlap_width;
 
 	int df_overlap_X()
 	{
@@ -139,6 +139,12 @@ struct LBM_BLOCK
 	int df_overlap_Z()
 	{
 		return data.indexer.template getOverlap<2>();
+	}
+
+	// returns a tuple of bools indicating if the lattice is distributed along each dimension
+	bool3d is_distributed() const
+	{
+		return TNL::notEqualTo(local, global);
 	}
 
 #ifdef HAVE_MPI
@@ -185,20 +191,6 @@ struct LBM_BLOCK
 
 	template <typename F>
 	void forAllLatticeSites(F f);
-
-	// VTK output
-	template <typename Output>
-	void writeVTK_3D(lat_t lat, Output&& outputData, const std::string& filename, real time, int cycle) const;
-	template <typename Output>
-	void writeVTK_3Dcut(
-		lat_t lat, Output&& outputData, const std::string& filename, real time, int cycle, idx ox, idx oy, idx oz, idx lx, idx ly, idx lz, idx step
-	) const;
-	template <typename Output>
-	void writeVTK_2DcutX(lat_t lat, Output&& outputData, const std::string& filename, real time, int cycle, idx XPOS) const;
-	template <typename Output>
-	void writeVTK_2DcutY(lat_t lat, Output&& outputData, const std::string& filename, real time, int cycle, idx YPOS) const;
-	template <typename Output>
-	void writeVTK_2DcutZ(lat_t lat, Output&& outputData, const std::string& filename, real time, int cycle, idx ZPOS) const;
 
 	~LBM_BLOCK() = default;
 };

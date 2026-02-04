@@ -559,7 +559,7 @@ struct MacroNonNewtonianDefault : D3Q27_MACRO_Default<TRAITS>
 	using idx = typename TRAITS::idx;
 	using map_t = typename TRAITS::map_t;
 
-	enum
+	enum QuantityNames : std::uint8_t
 	{
 		e_rho,
 		e_vx,

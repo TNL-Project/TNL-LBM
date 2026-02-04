@@ -10,7 +10,7 @@ struct LBM
 	using MACRO = typename CONFIG::MACRO;
 	using TRAITS = typename CONFIG::TRAITS;
 	using BLOCK = LBM_BLOCK<CONFIG>;
-	static_assert(std::is_move_constructible<BLOCK>::value, "LBM_BLOCK must be move-constructible");
+	static_assert(std::is_move_constructible_v<BLOCK>, "LBM_BLOCK must be move-constructible");
 
 	using idx = typename TRAITS::idx;
 	using dreal = typename TRAITS::dreal;

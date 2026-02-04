@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include <TNL/Backend/Macros.h>
 
 template <typename TRAITS>
@@ -8,12 +10,16 @@ struct D3Q7_MACRO_Default
 	using dreal = typename TRAITS::dreal;
 	using idx = typename TRAITS::idx;
 
-	enum
+	enum QuantityNames : std::uint8_t
 	{
 		e_phi,
 		N
 	};
 
+	// specifies if macroscopic quantities are computed in the kernel in each iteration
+	static const bool compute_in_each_iteration = false;
+
+	// specifies if the dmacro array is synchronized with MPI in each iteration
 	static const bool use_syncMacro = false;
 
 	// maximum width of overlaps for the macro arrays

@@ -119,7 +119,7 @@ target_include_directories(
 include(FetchContent)
 FetchContent_Declare(fmt
     GIT_REPOSITORY https://github.com/fmtlib/fmt.git
-    GIT_TAG 12.0.0
+    GIT_TAG 12.1.0
     SYSTEM
     FIND_PACKAGE_ARGS
 )
@@ -128,7 +128,7 @@ FetchContent_MakeAvailable(fmt)
 
 FetchContent_Declare(spdlog
     GIT_REPOSITORY https://github.com/gabime/spdlog.git
-    GIT_TAG v1.16.0
+    GIT_TAG v1.17.0
     SYSTEM
     FIND_PACKAGE_ARGS
 )
@@ -168,7 +168,7 @@ FetchContent_MakeAvailable(magic_enum)
 FetchContent_Declare(TNL
     GIT_REPOSITORY https://gitlab.com/tnl-project/tnl.git
     # TNL does not have any releases
-    GIT_TAG 9e7b0f44cde84d847e65dcab508785445b28cada
+    GIT_TAG a7c3f3fbd6fd5b58bf4ebd47da1472189f7eff49
     EXCLUDE_FROM_ALL
 )
 set(TNL_EXPORT_INTERFACE_TARGETS ON)  # needed for adding to the interface target
@@ -198,15 +198,25 @@ if(OPENMP_FOUND)
 endif()
 if(MPI_FOUND AND TNL_LBM_ENABLE_MPI)
     target_compile_definitions(TNL_LBM INTERFACE "-DHAVE_MPI")
-    target_link_libraries(TNL_LBM INTERFACE MPI::MPI_CXX adios2::cxx11_mpi)
+    # the adios2::cxx11_mpi target is deprecated since adios2 2.11.0
+    if(TARGET adios2::cxx_mpi)
+        target_link_libraries(TNL_LBM INTERFACE MPI::MPI_CXX adios2::cxx_mpi)
+    else()
+        target_link_libraries(TNL_LBM INTERFACE MPI::MPI_CXX adios2::cxx11_mpi)
+    endif()
 else()
-    target_link_libraries(TNL_LBM INTERFACE MPI::MPI_CXX adios2::cxx11)
+    # the adios2::cxx11 target is deprecated since adios2 2.11.0
+    if(TARGET adios2::cxx_mpi)
+        target_link_libraries(TNL_LBM INTERFACE MPI::MPI_CXX adios2::cxx)
+    else()
+        target_link_libraries(TNL_LBM INTERFACE MPI::MPI_CXX adios2::cxx11)
+    endif()
 endif()
 # Add special flags used in lbm3d
 target_compile_definitions(TNL_LBM INTERFACE "-DUSE_CUDA")
 
 # Add project subdirectories
 add_subdirectory(include)
-add_subdirectory(sim_2D)
+add_subdirectory(sim_adjoint)
 add_subdirectory(sim_NSE)
 add_subdirectory(sim_NSE_ADE)

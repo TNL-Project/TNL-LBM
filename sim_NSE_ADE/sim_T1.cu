@@ -253,7 +253,18 @@ struct D3Q27_MACRO_QCriterion : D3Q27_MACRO_Base< TRAITS >
 	using dreal = typename TRAITS::dreal;
 	using idx = typename TRAITS::idx;
 
-	enum { e_rho, e_vx, e_vy, e_vz, e_fx, e_fy, e_fz, e_qcrit, N};
+	enum QuantityNames : std::uint8_t
+	{
+		e_rho,
+		e_vx,
+		e_vy,
+		e_vz,
+		e_fx,
+		e_fy,
+		e_fz,
+		e_qcrit,
+		N
+	};
 
 	template < typename LBM_DATA, typename LBM_KS >
 	CUDA_HOSTDEV static void outputMacro(LBM_DATA &SD, LBM_KS &KS, idx x, idx y, idx z)
@@ -284,10 +295,9 @@ struct StateLocal : State_NSE_ADE<NSE, ADE>
 
 	using State<NSE>::nse;
 	using State_NSE_ADE<NSE, ADE>::ade;
-	using State<NSE>::cnt;
-	using State<NSE>::vtk_helper;
 
 	using idx = typename TRAITS::idx;
+	using idx3d = typename TRAITS::idx3d;
 	using real = typename TRAITS::real;
 	using dreal = typename TRAITS::dreal;
 	using point_t = typename TRAITS::point_t;
@@ -297,8 +307,10 @@ struct StateLocal : State_NSE_ADE<NSE, ADE>
 	dreal lbm_inflow_vx = 0;
 
 	// constructor
-	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat_nse, lat_t lat_ade)
-	: State_NSE_ADE<NSE, ADE>(id, communicator, lat_nse, lat_ade)
+	StateLocal(
+		const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat_nse, lat_t lat_ade, const std::string& adiosConfigPath = "adios2.xml"
+	)
+	: State_NSE_ADE<NSE, ADE>(id, communicator, lat_nse, lat_ade, adiosConfigPath)
 	{}
 
 	void setupBoundaries() override
@@ -412,32 +424,57 @@ struct StateLocal : State_NSE_ADE<NSE, ADE>
 	}
 #endif
 
-	bool outputData(const BLOCK_NSE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) override
+	[[nodiscard]] std::vector<std::string> getOutputDataNames() const override
 	{
-		int k = 0;
-		if (index == k++)
-			return vtk_helper("lbm_density", block.hmacro(NSE::MACRO::e_rho, x, y, z), 1, desc, value, dofs);
-		if (index == k++) {
-			switch (dof) {
-				case 0:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(NSE::MACRO::e_vx, x, y, z)), 3, desc, value, dofs);
-				case 1:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(NSE::MACRO::e_vy, x, y, z)), 3, desc, value, dofs);
-				case 2:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(NSE::MACRO::e_vz, x, y, z)), 3, desc, value, dofs);
-			}
-		}
-		//if (index==k++) return vtk_helper("lbm_qcriterion", block.hmacro(NSE::MACRO::e_qcrit,x,y,z), 1, desc, value, dofs);
-		return false;
+		// return all quantity names used in outputData
+		return {"lbm_density", "lbm_density_fluctuation", "velocity_x", "velocity_y", "velocity_z", "lbm_phi"};
 	}
 
-	bool outputData(const BLOCK_ADE& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) override
+	void outputData(UniformDataWriter<TRAITS>& writer, const BLOCK_NSE& block, const idx3d& begin, const idx3d& end) override
 	{
-		int k = 0;
-		if (index == k++)
-			return vtk_helper("lbm_phi", block.hmacro(ADE::MACRO::e_phi, x, y, z), 1, desc, value, dofs);
-		//if (index==k++) return vtk_helper("lbm_phigradmag2", block.hmacro(ADE::MACRO::e_phigradmag2,x,y,z), 1, desc, value, dofs);
-		return false;
+		writer.write("lbm_density", getMacroView<TRAITS>(block.hmacro, NSE::MACRO::e_rho), begin, end);
+		writer.write(
+			"lbm_density_fluctuation",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return block.hmacro(NSE::MACRO::e_rho, x, y, z) - 1.0;
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_x",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(NSE::MACRO::e_vx, x, y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_y",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(NSE::MACRO::e_vy, x, y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_z",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(NSE::MACRO::e_vz, x, y, z));
+			},
+			begin,
+			end
+		);
+	}
+
+	void outputData(UniformDataWriter<TRAITS>& writer, const BLOCK_ADE& block, const idx3d& begin, const idx3d& end) override
+	{
+		writer.write("lbm_phi", getMacroView<TRAITS>(block.hmacro, ADE::MACRO::e_phi), begin, end);
+		//writer.write("lbm_phigradmag2", getMacroView<TRAITS>(block.hmacro, ADE::MACRO::e_phigradmag2), begin, end);
 	}
 
 	void probe1() override
@@ -458,7 +495,7 @@ struct StateLocal : State_NSE_ADE<NSE, ADE>
 };
 
 template <typename NSE, typename ADE>
-int simT1_test(int RESOLUTION = 2)
+int simT1_test(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 {
 	using idx = typename NSE::TRAITS::idx;
 	using real = typename NSE::TRAITS::real;
@@ -493,7 +530,7 @@ int simT1_test(int RESOLUTION = 2)
 	lat_ade.physViscosity = PHYS_DIFFUSION;
 
 	const std::string state_id = fmt::format("sim_T1_res{:02d}_np{:03d}", RESOLUTION, TNL::MPI::GetSize(MPI_COMM_WORLD));
-	StateLocal<NSE, ADE> state(state_id, MPI_COMM_WORLD, lat_nse, lat_ade);
+	StateLocal<NSE, ADE> state(state_id, MPI_COMM_WORLD, lat_nse, lat_ade, adios_config);
 
 	if (! state.canCompute())
 		return 0;
@@ -504,29 +541,16 @@ int simT1_test(int RESOLUTION = 2)
 	state.nse.physFinalTime = 10.0;
 	state.cnt[PRINT].period = 0.01;
 	//state.cnt[PROBE1].period = 0.001;
-	// test
-	//state.cnt[PRINT].period = 100*PHYS_DT;
-	//state.nse.physFinalTime = 1000*PHYS_DT;
-	//state.cnt[VTK3D].period = 1000*PHYS_DT;
-	//state.cnt[SAVESTATE].period = 600;  // save state every [period] of wall time
-	//state.check_savestate_flag = false;
-	//state.wallTime = 60;
-	// RCI
-	//state.nse.physFinalTime = 0.5;
-	//state.cnt[VTK3D].period = 0.5;
-	//state.cnt[SAVESTATE].period = 3600;  // save state every [period] of wall time
-	//state.check_savestate_flag = false;
-	//state.wallTime = 3600 * 23.5;
 
 	// add cuts
-	state.cnt[VTK2D].period = 0.01;
+	state.cnt[OUT2D].period = 0.01;
 	state.add2Dcut_X(X / 2, "cutsX/cut_X");
 	state.add2Dcut_Y(Y / 2, "cutsY/cut_Y");
 	state.add2Dcut_Z(Z / 2, "cutsZ/cut_Z");
 
-	//state.cnt[VTK3D].period = 0.001;
-	//state.cnt[VTK3DCUT].period = 0.001;
-	//state.add3Dcut(X/4,Y/4,Z/4, X/2,Y/2,Z/2, 2, "box");
+	//state.cnt[OUT3D].period = 0.001;
+	//state.cnt[OUT3DCUT].period = 0.001;
+	//state.add3Dcut(X/4,Y/4,Z/4, X/2,Y/2,Z/2, "box");
 
 	execute(state);
 
@@ -535,7 +559,7 @@ int simT1_test(int RESOLUTION = 2)
 
 //template <typename TRAITS=TraitsSP>
 template <typename TRAITS = TraitsDP>
-void run(int RES)
+void run(const std::string& adios_config, int resolution)
 {
 	using NSE_COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
 	using NSE_CONFIG = LBM_CONFIG<
@@ -565,7 +589,7 @@ void run(int RES)
 		D3Q7_BC_All,
 		D3Q7_MACRO_Default<TRAITS>>;
 
-	simT1_test<NSE_CONFIG, ADE_CONFIG>(RES);
+	simT1_test<NSE_CONFIG, ADE_CONFIG>(adios_config, resolution);
 }
 
 int main(int argc, char** argv)
@@ -574,22 +598,25 @@ int main(int argc, char** argv)
 
 	argparse::ArgumentParser program("sim_T1");
 	program.add_description("Simple coupled D3Q27-D3Q7 simulation example.");
-	program.add_argument("resolution").help("resolution of the lattice").scan<'i', int>().default_value(1);
+	program.add_argument("--adios-config").help("path to ADIOS2 configuration file").default_value(std::string("adios2.xml")).nargs(1);
+	program.add_argument("--resolution").help("resolution of the lattice").scan<'i', int>().default_value(1).nargs(1);
 
 	try {
 		program.parse_args(argc, argv);
 	}
 	catch (const std::exception& err) {
-		std::cerr << err.what() << std::endl;
+		std::cerr << err.what() << '\n';
 		std::cerr << program;
 		return 1;
 	}
 
-	const auto resolution = program.get<int>("resolution");
+	const auto adios_config = program.get<std::string>("--adios-config");
+	const auto resolution = program.get<int>("--resolution");
+
 	if (resolution < 1)
 		throw std::invalid_argument("CLI error: resolution must be at least 1");
 
-	run(resolution);
+	run(adios_config, resolution);
 
 	return 0;
 }

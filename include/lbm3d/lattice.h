@@ -137,7 +137,7 @@ struct Lattice
 
 	//! \brief Returns the size of the **grid** represented by the lattice
 	//! (i.e., the number of voxels between the lattice sites).
-	__cuda_callable__ const CoordinatesType& getDimensions() const
+	__cuda_callable__ CoordinatesType getDimensions() const
 	{
 		return global - 1;
 	}
@@ -149,7 +149,7 @@ struct Lattice
 	}
 
 	//! \brief Returns the space steps of the grid/lattice.
-	__cuda_callable__ const PointType& getSpaceSteps() const
+	__cuda_callable__ PointType getSpaceSteps() const
 	{
 		return physDl;
 	}

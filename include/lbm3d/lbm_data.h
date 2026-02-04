@@ -1,7 +1,7 @@
 #pragma once
 
 #include "defs.h"
-#include "state.h"
+#include "lbm_common/ciselnik.h"
 
 // only a base type - common for all D3Q* models, cannot be used directly
 template <typename TRAITS>
@@ -156,18 +156,179 @@ struct NSE_Data_Analytical_Solution : NSE_Data<TRAITS>
 };
 
 template <typename TRAITS>
-struct NSE_Data_NoInflow : NSE_Data<TRAITS>
+struct NSE_Data_ConstInflow_PressureGradient : NSE_Data<TRAITS>
 {
 	using idx = typename TRAITS::idx;
 	using dreal = typename TRAITS::dreal;
 
+	dreal inflow_vx = 0;
+	dreal inflow_vy = 0;
+	dreal inflow_vz = 0;
+	dreal inflow_g = 0.;
+	dreal no1oT0 = 3; // set to 1./0.6979533220196830882384091; // FOR D2Q49
+
+
 	template <typename LBM_KS>
 	CUDA_HOSTDEV void inflow(LBM_KS& KS, idx x, idx y, idx z)
 	{
-		KS.rho = 1;
-		KS.vx = 0;
-		KS.vy = 0;
-		KS.vz = 0;
+		KS.rho += no1oT0*inflow_g;
+		KS.vx = inflow_vx;
+		KS.vy = inflow_vy;
+		KS.vz = inflow_vz;
+	}
+};
+
+template <typename TRAITS>
+struct NSE_Data_Analytical_Solution : NSE_Data<TRAITS>
+{
+	using idx = typename TRAITS::idx;
+	using dreal = typename TRAITS::dreal;
+
+	dreal inflow_vx = 0;
+	dreal inflow_vy = 0;
+	dreal inflow_vz = 0;
+	dreal a = 0; // size of channel
+    dreal inflow_g=0;
+    dreal InitPoint [3];
+
+	template <typename LBM_KS>
+	CUDA_HOSTDEV void inflow(LBM_KS& KS, idx x, idx y, idx z)
+	{
+		KS.vx = inflow_vx;
+		KS.vy = inflow_vy;
+		KS.vz = inflow_vz;
+	}
+
+	CUDA_HOSTDEV void sum_to_order(dreal a, dreal x, dreal y, int order){
+		dreal sum = 0;
+		const dreal PI = 3.1415926;
+		for(int m = 0;m<order;m++){
+		for(int n = 0;n<order;n++){
+			sum += coefficient_of_sum(a, x, y, m, n);
+		}}
+		return -4*a*a/pow(PI,4)*sum;
+	}
+
+	CUDA_HOSTDEV void coefficient_of_sum(dreal a, dreal x, dreal y, int m, int n){
+		const dreal PI = 3.1415926; // somehow does not work with #define because of conflicting definition
+		return sin(1.*m/a*PI)*sin(1.*n/a*PI)/m/n/(m*m+n*n);
+	}
+};
+
+template <typename TRAITS>
+struct NSE_Data_InflowProfile : NSE_Data<TRAITS>
+{
+	using idx = typename TRAITS::idx;
+	using dreal = typename TRAITS::dreal;
+
+	// arrays for inflow velocity profile
+	dreal* inflow_vx = nullptr;
+	dreal* inflow_vy = nullptr;
+	dreal* inflow_vz = nullptr;
+
+	CUDA_HOSTDEV dreal vel_x(idx y, idx z)
+	{
+		if (inflow_vx == nullptr)
+			return 0;
+		return inflow_vx[this->Y() * z + y];
+	}
+
+	CUDA_HOSTDEV dreal vel_y(idx y, idx z)
+	{
+		if (inflow_vy == nullptr)
+			return 0;
+		return inflow_vy[this->Y() * z + y];
+	}
+
+	CUDA_HOSTDEV dreal vel_z(idx y, idx z)
+	{
+		if (inflow_vz == nullptr)
+			return 0;
+		return inflow_vz[this->Y() * z + y];
+	}
+
+	template <typename LBM_KS>
+	CUDA_HOSTDEV void inflow(LBM_KS& KS, idx x, idx y, idx z)
+	{
+		KS.vx = vel_x(y, z);
+		KS.vy = vel_y(y, z);
+		KS.vz = vel_z(y, z);
+	}
+};
+
+template <typename TRAITS>
+struct NSE_Data_Adjoint : NSE_Data<TRAITS>
+{
+	using idx = typename TRAITS::idx;
+	using dreal = typename TRAITS::dreal;
+
+	dreal* vx_profile = nullptr;
+	dreal* vy_profile = nullptr;
+	dreal* vz_profile = nullptr;
+	dreal* gx_profile = nullptr;
+	dreal* gy_profile = nullptr;
+	dreal* gz_profile = nullptr;
+	dreal* vx_profile_result = nullptr;
+	dreal* vy_profile_result = nullptr;
+	dreal* vz_profile_result = nullptr;
+
+	bool* b_profile = nullptr;
+
+	dreal eps = 0;
+
+	dreal loss_function = 0;
+
+	template <typename LBM_KS>
+	CUDA_HOSTDEV void inflow(LBM_KS& KS, idx x, idx y, idx z)
+	{
+		if (! b_profile[this->Y() * z + y]) {
+			KS.vx = vx_profile[this->Y() * z + y];
+			KS.vy = vy_profile[this->Y() * z + y];
+			KS.vz = vz_profile[this->Y() * z + y];
+			b_profile[this->Y() * z + y] = true;
+		}
+		else {
+			// clang-format off
+			/*
+			gx_profile[this->Y() * z + y] = - KS.f[pzz] * no2 * n2o27  * KS.rho * no3
+											- KS.f[ppz] * no2 * n1o54  * KS.rho * no3
+											- KS.f[pmz] * no2 * n1o54  * KS.rho * no3
+											- KS.f[pzp] * no2 * n1o54  * KS.rho * no3
+											- KS.f[pzm] * no2 * n1o54  * KS.rho * no3
+											- KS.f[ppp] * no2 * n1o216 * KS.rho * no3
+											- KS.f[ppm] * no2 * n1o216 * KS.rho * no3
+											- KS.f[pmp] * no2 * n1o216 * KS.rho * no3
+											- KS.f[pmm] * no2 * n1o216 * KS.rho * no3;
+			vx_profile_result[this->Y() * z + y] += eps * gx_profile[this->Y() * z + y];
+			*/
+			gy_profile[this->Y() * z + y] = - KS.f[ppz] * no2 * n1o54 * KS.rho * no3
+											+ KS.f[pmz] * no2 * n1o54 * KS.rho * no3
+											- KS.f[ppp] * no2 * n1o216 * KS.rho * no3
+											- KS.f[ppm] * no2 * n1o216 * KS.rho * no3
+											+ KS.f[pmp] * no2 * n1o216 * KS.rho * no3
+											+ KS.f[pmm] * no2 * n1o216 * KS.rho * no3;
+			vy_profile_result[this->Y() * z + y] += eps * gy_profile[this->Y() * z + y];
+			/*
+			gz_profile[this->Y() * z + y] = - KS.f[pzp] * no2 * n1o54  * KS.rho * no3
+											+ KS.f[pzm] * no2 * n1o54  * KS.rho * no3
+											- KS.f[ppp] * no2 * n1o216 * KS.rho * no3
+											+ KS.f[ppm] * no2 * n1o216 * KS.rho * no3
+											- KS.f[pmp] * no2 * n1o216 * KS.rho * no3
+											+ KS.f[pmm] * no2 * n1o216 * KS.rho * no3;
+			vz_profile_result[this->Y() * z + y] += eps * gz_profile[this->Y() * z + y];
+			*/
+			b_profile[this->Y() * z + y] = false;
+			// clang-format on
+		}
+		/*
+		#ifdef USE_CUDA
+		atomicAdd(&loss_function, (dreal)0.5 * (dreal)std::sqrt(((KS.rho-KS.rho_m)*(KS.rho-KS.rho_m) + (KS.vx-KS.vx_m)*(KS.vx-KS.vx_m) +
+		(KS.vy-KS.vy_m)*(KS.vy-KS.vy_m) + (KS.vz-KS.vz_m)*(KS.vz-KS.vz_m))));
+		#else
+		loss_function += (dreal)0.5 * (dreal)std::sqrt(((KS.rho-KS.rho_m)*(KS.rho-KS.rho_m) + (KS.vx-KS.vx_m)*(KS.vx-KS.vx_m) +
+		(KS.vy-KS.vy_m)*(KS.vy-KS.vy_m) + (KS.vz-KS.vz_m)*(KS.vz-KS.vz_m)));
+		#endif
+		*/
 	}
 };
 

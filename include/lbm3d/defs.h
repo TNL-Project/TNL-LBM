@@ -1,5 +1,22 @@
 #pragma once
 
+#include <cstdint>
+#include <utility>
+
+#include <TNL/Backend/Stream.h>
+#include <TNL/Backend/Types.h>
+#include <TNL/Containers/BlockPartitioning.h>
+#include <TNL/Containers/DistributedNDArray.h>
+#include <TNL/Containers/DistributedNDArraySyncDirections.h>
+#include <TNL/Containers/DistributedNDArraySynchronizer.h>
+#include <TNL/Containers/NDArray.h>
+#include <TNL/Containers/StaticVector.h>
+#include <TNL/Containers/ndarray/SizesHolder.h>
+#include <TNL/Devices/Cuda.h>
+#include <TNL/Devices/Host.h>
+#include <TNL/MPI.h>
+#include <TNL/MPI/ScopedInitializer.h>
+
 #if ! defined(AB_PATTERN) && ! defined(AA_PATTERN)
 	// TODO: update multidimensional MPI synchronization for AA pattern
 	// (for the even time step which is similar to a "push scheme", we need to
@@ -8,19 +25,6 @@
 	#define AB_PATTERN
 #endif
 
-#include <cstdio>
-#include <cstdlib>
-
-#include <utility>
-
-#include <TNL/Containers/StaticVector.h>
-#include <TNL/Containers/NDArray.h>
-#include <TNL/Containers/DistributedNDArray.h>
-#include <TNL/Containers/DistributedNDArraySynchronizer.h>
-#include <TNL/Containers/BlockPartitioning.h>
-#include <TNL/MPI.h>
-#include <TNL/Backend/Stream.h>
-#include <TNL/Backend/Types.h>
 #if ! defined(__CUDACC__) && ! defined(__HIP__)
 using TNL::dim3;
 #endif
@@ -83,6 +87,7 @@ struct Traits
 	using map_t = _map_t;
 	using point_t = TNL::Containers::StaticVector<3, real>;
 	using idx3d = TNL::Containers::StaticVector<3, idx>;
+	using bool3d = TNL::Containers::StaticVector<3, bool>;
 
 	using xyz_permutation = std::index_sequence<0, 2, 1>;	 // x, z, y
 	using d4_permutation = std::index_sequence<0, 1, 3, 2>;	 // id, x, z, y
@@ -173,6 +178,48 @@ struct D2Q9_KernelStruct
 	REAL f[Q];
 	REAL vx=0., vy=0., vz=0., rho=1.0, lbmViscosity=1.0, T=1./3;
 };
+// helper function for getting a 3D array view from a 4D distributed array
+template <typename TRAITS, typename Array>
+auto getMacroView(const Array& array, std::uint8_t id)
+{
+	using local_array_t = typename TRAITS::template array3d<typename Array::ValueType, typename Array::DeviceType>;
+	using local_view_t = typename local_array_t::ViewType;
+#ifdef HAVE_MPI
+	using view_t = TNL::Containers::DistributedNDArrayView<local_view_t>;
+#else
+	using view_t = local_view_t;
+#endif
+
+	// getSubarrayView does not handle overlaps :-(
+	typename TRAITS::xyz_overlaps overlaps;
+#ifdef HAVE_MPI
+	overlaps.template setSize<0>(array.getOverlaps().template getSize<1>());
+	overlaps.template setSize<1>(array.getOverlaps().template getSize<2>());
+	overlaps.template setSize<2>(array.getOverlaps().template getSize<3>());
+	const auto subarray = array.getConstLocalView().template getSubarrayView<1, 2, 3>(id, 0, 0, 0);
+#else
+	const auto subarray = array.getConstView().template getSubarrayView<1, 2, 3>(id, 0, 0, 0);
+#endif
+	local_view_t local_view(const_cast<typename Array::ValueType*>(subarray.getData()), subarray.getSizes(), subarray.getStrides(), overlaps);
+
+#ifdef HAVE_MPI
+	typename view_t::SizesHolderType global_sizes;
+	global_sizes.template setSize<0>(array.template getSize<1>());
+	global_sizes.template setSize<1>(array.template getSize<2>());
+	global_sizes.template setSize<2>(array.template getSize<3>());
+	typename view_t::LocalBeginsType local_begins;
+	local_begins.template setSize<0>(array.getLocalBegins().template getSize<1>());
+	local_begins.template setSize<1>(array.getLocalBegins().template getSize<2>());
+	local_begins.template setSize<2>(array.getLocalBegins().template getSize<3>());
+	typename view_t::SizesHolderType local_ends;
+	local_ends.template setSize<0>(array.getLocalEnds().template getSize<1>());
+	local_ends.template setSize<1>(array.getLocalEnds().template getSize<2>());
+	local_ends.template setSize<2>(array.getLocalEnds().template getSize<3>());
+	return view_t(local_view, global_sizes, local_begins, local_ends, array.getCommunicator());
+#else
+	return local_view;
+#endif
+}
 
 // KernelStruct - D3Q7
 template <typename REAL>
@@ -383,6 +430,14 @@ struct D3Q53_KernelStruct
 	REAL fx = 0, fy = 0, fz = 0;
 	REAL vx = 0, vy = 0, vz = 0;
 	REAL rho = 1.0, lbmViscosity = 1.0;
+// KernelStruct - D3Q27
+template <typename REAL>
+struct D3Q27_KernelStruct_Adjoint : public D3Q27_KernelStruct<REAL>
+{
+	// ..._m = measured velocities
+	REAL vz_m = 0, vx_m = 0, vy_m = 0;
+	REAL rho_m = 1.0;
+	// REAL gx=0, gy=0, gz=0; //! adjoint gradient - if gradient update should not be done on kernel -> remove
 };
 
 template <

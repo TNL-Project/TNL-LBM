@@ -6,7 +6,7 @@ template <typename NSE>
 __cuda_callable__ void kernelInitIndices(
 	typename NSE::DATA SD,
 	typename NSE::TRAITS::map_t map,
-	short int nproc,
+	typename NSE::TRAITS::bool3d distributed,
 	typename NSE::TRAITS::idx x,
 	typename NSE::TRAITS::idx y,
 	typename NSE::TRAITS::idx z,
@@ -73,10 +73,22 @@ __cuda_callable__ void kernelInitIndices(
 
 template <typename NSE>
 #ifdef USE_CUDA
-__global__ void cudaLBMKernel(typename NSE::DATA SD, short int nproc, typename NSE::TRAITS::idx3d offset, typename NSE::TRAITS::idx3d end)
+__global__ void cudaLBMKernel(
+	typename NSE::DATA SD,
+	typename NSE::TRAITS::idx3d offset,
+	typename NSE::TRAITS::idx3d end,
+	typename NSE::TRAITS::bool3d distributed,
+	bool output_macro
+)
 #else
-CUDA_HOSTDEV void
-LBMKernel(typename NSE::DATA SD, typename NSE::TRAITS::idx x, typename NSE::TRAITS::idx y, typename NSE::TRAITS::idx z, short int nproc)
+CUDA_HOSTDEV void LBMKernel(
+	typename NSE::DATA SD,
+	typename NSE::TRAITS::idx x,
+	typename NSE::TRAITS::idx y,
+	typename NSE::TRAITS::idx z,
+	typename NSE::TRAITS::bool3d distributed,
+	bool output_macro
+)
 #endif
 {
 	using dreal = typename NSE::TRAITS::dreal;
@@ -95,7 +107,7 @@ LBMKernel(typename NSE::DATA SD, typename NSE::TRAITS::idx x, typename NSE::TRAI
 	map_t gi_map = SD.map(x, y, z);
 
 	typename NSE::LBM_KS::SG streamGrid;
-	kernelInitIndices<NSE>(SD, gi_map, nproc,x,y,z, streamGrid);
+	kernelInitIndices<NSE>(SD, gi_map, distributed, x, y, z, streamGrid);
 
 	typename NSE::template KernelStruct<dreal> KS;
 
@@ -110,13 +122,19 @@ LBMKernel(typename NSE::DATA SD, typename NSE::TRAITS::idx x, typename NSE::TRAI
 		NSE::COLL::collision(KS);
 	NSE::BC::postCollision(SD, KS, gi_map, streamGrid);
 
-	NSE::MACRO::outputMacro(SD, KS, x, y, z);
+	if (output_macro)
+		NSE::MACRO::outputMacro(SD, KS, x, y, z);
 }
 
 template <typename NSE, typename ADE>
 #ifdef USE_CUDA
 __global__ void cudaLBMKernel(
-	typename NSE::DATA NSE_SD, typename ADE::DATA ADE_SD, short int nproc, typename NSE::TRAITS::idx3d offset, typename NSE::TRAITS::idx3d end
+	typename NSE::DATA NSE_SD,
+	typename ADE::DATA ADE_SD,
+	typename NSE::TRAITS::idx3d offset,
+	typename NSE::TRAITS::idx3d end,
+	typename NSE::TRAITS::bool3d distributed,
+	bool output_macro
 )
 #else
 CUDA_HOSTDEV void LBMKernel(
@@ -125,7 +143,8 @@ CUDA_HOSTDEV void LBMKernel(
 	typename NSE::TRAITS::idx x,
 	typename NSE::TRAITS::idx y,
 	typename NSE::TRAITS::idx z,
-	short int nproc
+	typename NSE::TRAITS::bool3d distributed,
+	bool output_macro
 )
 #endif
 {
@@ -146,7 +165,7 @@ CUDA_HOSTDEV void LBMKernel(
 	const map_t ADE_mapgi = ADE_SD.map(x, y, z);
 
 	typename NSE::LBM_KS::SG streamGrid;
-	kernelInitIndices<NSE>(NSE_SD, NSE_mapgi, nproc,x,y,z, streamGrid);
+	kernelInitIndices<NSE>(NSE_SD, NSE_mapgi, distributed,x,y,z, streamGrid);
 
 	// NSE part
 	typename NSE::template KernelStruct<dreal> NSE_KS;
@@ -162,7 +181,8 @@ CUDA_HOSTDEV void LBMKernel(
 		NSE::COLL::collision(NSE_KS);
 	NSE::BC::postCollision(NSE_SD, NSE_KS, NSE_mapgi, streamGrid);
 
-	NSE::MACRO::outputMacro(NSE_SD, NSE_KS, x, y, z);
+	if (output_macro)
+		NSE::MACRO::outputMacro(NSE_SD, NSE_KS, x, y, z);
 
 	// ADE part
 	typename ADE::template KernelStruct<dreal> ADE_KS;
@@ -186,15 +206,20 @@ CUDA_HOSTDEV void LBMKernel(
 		ADE::COLL::collision(ADE_KS);
 	ADE::BC::postCollision(ADE_SD, ADE_KS, ADE_mapgi, streamGrid);
 
-	ADE::MACRO::outputMacro(ADE_SD, ADE_KS, x, y, z);
+	if (output_macro)
+		ADE::MACRO::outputMacro(ADE_SD, ADE_KS, x, y, z);
 }
 
 template <typename NSE>
 #ifdef USE_CUDA
-__global__ void cudaLBMComputeVelocitiesStarAndZeroForce(typename NSE::DATA SD, short int nproc)
+__global__ void cudaLBMComputeVelocitiesStarAndZeroForce(typename NSE::DATA SD, typename NSE::TRAITS::bool3d distributed)
 #else
 void LBMComputeVelocitiesStarAndZeroForce(
-	typename NSE::DATA SD, typename NSE::TRAITS::idx x, typename NSE::TRAITS::idx y, typename NSE::TRAITS::idx z, short int nproc
+	typename NSE::DATA SD,
+	typename NSE::TRAITS::idx x,
+	typename NSE::TRAITS::idx y,
+	typename NSE::TRAITS::idx z,
+	typename NSE::TRAITS::bool3d distributed
 )
 #endif
 {
@@ -219,7 +244,7 @@ void LBMComputeVelocitiesStarAndZeroForce(
 	NSE::MACRO::copyQuantities(SD, KS, x, y, z);
 
 	typename NSE::LBM_KS::SG streamGrid;
-	kernelInitIndices<NSE>(SD, gi_map, nproc,x,y,z, streamGrid);
+	kernelInitIndices<NSE>(SD, gi_map, distributed,x,y,z, streamGrid);
 
 	NSE::MACRO::zeroForcesInKS(KS);
 

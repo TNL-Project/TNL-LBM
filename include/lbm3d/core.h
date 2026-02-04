@@ -1,5 +1,9 @@
 #pragma once
 
+#include <spdlog/spdlog.h>
+
+#include <TNL/MPI/Utils.h>
+
 // default
 #include "lbm_data.h"  // LBM_Data is a general template (for any Q)
 #include "d3q27/macro.h"
@@ -9,6 +13,8 @@
 #include "d3q27/eq_inv_cum.h"
 #include "d3q27/eq_well.h"
 #include "d3q27/eq_entropic.h"
+
+#include "d3q27/eq_adjoint.h"
 
 // exactly one streaming header must be included
 #ifdef AA_PATTERN
@@ -31,6 +37,8 @@
 #include "d3q27/col_clbm_well.h"
 #include "d3q27/col_cum_well.h"
 #include "d3q27/col_bgk_well.h"
+
+#include "d3q27/col_srt_adjoint.h"
 
 
 #include "d3q343/eq.h"

@@ -3,9 +3,6 @@
 #include "common.h"
 #include "eq.h"
 
-// improved BRK (SRT) model by Geier 2017
-// for standard DF (no well-conditioned)
-
 template <typename TRAITS, typename LBM_EQ = D3Q27_EQ<TRAITS>>
 struct D3Q27_SRT_MODIF_FORCE : D3Q27_COMMON<TRAITS, LBM_EQ>
 {
@@ -17,7 +14,6 @@ struct D3Q27_SRT_MODIF_FORCE : D3Q27_COMMON<TRAITS, LBM_EQ>
 	__cuda_callable__ static void collision(LBM_KS& KS)
 	{
 		const dreal tau = no3 * KS.lbmViscosity + n1o2;
-		// Modif_Force_SRT.mw PE
 		const dreal Smmm = (2.0 * KS.vx + 3.0 * KS.vy + 3.0 * KS.vz - 1.0) * KS.fx / 72.
 						 + (3.0 * KS.vx + 2.0 * KS.vy + 3.0 * KS.vz - 1.0) * KS.fy / 72.
 						 + (3.0 * KS.vx + 3.0 * KS.vy + 2.0 * KS.vz - 1.) * KS.fz / 72.;
