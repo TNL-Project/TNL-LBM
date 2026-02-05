@@ -127,6 +127,7 @@ using TraitsDP = Traits<double>;
 template <typename TRAITS, typename Array>
 auto getMacroView(const Array& array, std::uint8_t id)
 {
+	using holder_t = TNL::Containers::SizesHolder<typename TRAITS::idx, 0, 0, 0>;
 	using local_array_t = typename TRAITS::template array3d<typename Array::ValueType, typename Array::DeviceType>;
 	using local_view_t = typename local_array_t::ViewType;
 #ifdef HAVE_MPI
@@ -135,17 +136,36 @@ auto getMacroView(const Array& array, std::uint8_t id)
 	using view_t = local_view_t;
 #endif
 
-	// getSubarrayView does not handle overlaps :-(
+#ifdef HAVE_MPI
+	const auto local_4d_view = array.getConstLocalView();
+#else
+	const auto local_4d_view = array.getConstView();
+#endif
+
+	holder_t sizes;
+	sizes.template setSize<0>(local_4d_view.template getSize<1>());
+	sizes.template setSize<1>(local_4d_view.template getSize<2>());
+	sizes.template setSize<2>(local_4d_view.template getSize<3>());
+
+	holder_t strides;
+	// NOTE: this works only because the static 0-dimension is the slowest
+	strides.template setSize<0>(local_4d_view.template getStride<1>());
+	strides.template setSize<1>(local_4d_view.template getStride<2>());
+	strides.template setSize<2>(local_4d_view.template getStride<3>());
+
 	typename TRAITS::xyz_overlaps overlaps;
 #ifdef HAVE_MPI
 	overlaps.template setSize<0>(array.getOverlaps().template getSize<1>());
 	overlaps.template setSize<1>(array.getOverlaps().template getSize<2>());
 	overlaps.template setSize<2>(array.getOverlaps().template getSize<3>());
-	const auto subarray = array.getConstLocalView().template getSubarrayView<1, 2, 3>(id, 0, 0, 0);
-#else
-	const auto subarray = array.getConstView().template getSubarrayView<1, 2, 3>(id, 0, 0, 0);
 #endif
-	local_view_t local_view(const_cast<typename Array::ValueType*>(subarray.getData()), subarray.getSizes(), subarray.getStrides(), overlaps);
+
+	const typename Array::IndexType offset =
+		local_4d_view.getStorageIndex(id, -overlaps.template getSize<0>(), -overlaps.template getSize<1>(), -overlaps.template getSize<2>());
+	const typename Array::ValueType* begin = local_4d_view.getData() + offset;
+
+	// getSubarrayView does not handle overlaps so we must get the subarray view this way
+	local_view_t local_view(const_cast<typename Array::ValueType*>(begin), sizes, strides, overlaps);
 
 #ifdef HAVE_MPI
 	typename view_t::SizesHolderType global_sizes;
