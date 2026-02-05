@@ -385,7 +385,7 @@ struct StateLocal : State<NSE>
 		}
 	}
 
-	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat)
+	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath = "adios2.xml")
 	: State<NSE>(id, communicator, std::move(lat), adiosConfigPath)
 	{}
 };
@@ -436,16 +436,16 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	state.cnt[PRINT].period = 0.1;
 
 	// add cuts
-	state.cnt[OUT2D].period = 0.1;
+	state.cnt[OUT2D].period = 10.;
 	state.add2Dcut_X(X / 2, "cutsX/cut_X");
 	state.add2Dcut_Y(Y / 2, "cutsY/cut_Y");
 	state.add2Dcut_Z(Z / 2, "cutsZ/cut_Z");
 
-	state.cnt[OUT3D].period = 1.;
-	state.cnt[OUT3DCUT].period = 1.;
+	state.cnt[OUT3D].period = 50.;
+	state.cnt[OUT3DCUT].period = 50.;
 	state.add3Dcut(X / 4, Y / 4, Z / 4, X / 2, Y / 2, Z / 2, "box");
 
-	state.cnt[PROBE1].period = 0.001;
+	state.cnt[PROBE1].period = 1.;
 
 	spdlog::info("Starting simulation with checkpointing. Wall time limit: {} seconds", state.wallTime);
 	spdlog::info("Creating checkpoints every {} seconds of wall time", state.cnt[SAVESTATE].period);
@@ -490,7 +490,7 @@ int main(int argc, char** argv)
 {
 	TNLMPI_INIT mpi(argc, argv);
 
-	argparse::ArgumentParser program("sim_1");
+	argparse::ArgumentParser program("sim_bump_NASA");
 	program.add_description("3D bump NASA modified simulation.");
 	program.add_argument("--adios-config").help("path to ADIOS2 configuration file").default_value(std::string("adios2.xml")).nargs(1);
 	program.add_argument("--resolution").help("resolution of the lattice").scan<'i', int>().default_value(1).nargs(1);

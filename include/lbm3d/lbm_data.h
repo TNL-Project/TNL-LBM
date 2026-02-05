@@ -316,8 +316,8 @@ struct NSE_Data_DoubleParabolic : NSE_Data<TRAITS>
 	template <typename LBM_KS>
 	CUDA_HOSTDEV void inflow(LBM_KS& KS, idx x, idx y, idx z)
 	{
-		const dreal yc = y + InitPoint[2];
-		const dreal zc = z + InitPoint[3];
+		const dreal yc = y + InitPoint[1];
+		const dreal zc = z + InitPoint[2];
 		KS.rho +=  no1oT0*inflow_g*16/inflow_y/inflow_z*((inflow_y-yc)*yc)*((inflow_z-zc)*zc); // from the 2D laplacian using inflow_g definition from 2D
 		KS.vx  =   16*inflow_vx*
 			(inflow_z*inflow_z*0.25-(yc-0.5*inflow_z)*(zc-0.5*inflow_z))/(inflow_z*inflow_z)*

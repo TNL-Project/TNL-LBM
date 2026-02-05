@@ -2,8 +2,8 @@
 #include <utility>
 
 // As of now, enum and sync direction are specific for different models and need to be included before core!!!
-//#include "lbm3d/d3q27/defs.h"
-#include "lbm3d/d3q343/defs.h"
+#include "lbm3d/d3q27/defs.h"
+//#include "lbm3d/d3q343/defs.h"
 #include "lbm3d/core.h"
 
 template <typename NSE>
@@ -15,10 +15,11 @@ struct StateLocal : State<NSE>
 	using BLOCK = LBM_BLOCK<NSE>;
 
 	using State<NSE>::nse;
-	using State<NSE>::vtk_helper;
+	using State<NSE>::checkpoint;
 	using State<NSE>::id;
 
 	using idx = typename TRAITS::idx;
+	using idx3d = typename TRAITS::idx3d;
 	using real = typename TRAITS::real;
 	using dreal = typename TRAITS::dreal;
 	using point_t = typename TRAITS::point_t;
@@ -27,6 +28,19 @@ struct StateLocal : State<NSE>
 	real lbm_inflow_vx = 0;
 	real inflow_g = 0;
 	bool NoDV = 1;
+
+	void checkpointStateLocal(adios2::Mode mode) override
+	{
+		// Save/load the inflow velocity
+		checkpoint.saveLoadAttribute("lbm_inflow_vx", lbm_inflow_vx);
+
+		// You can add any additional state data that needs to be saved/loaded here
+
+		if (mode == adios2::Mode::Read)
+			spdlog::info("Checkpoint loaded local state (mode: Read)");
+		else
+			spdlog::info("Checkpoint saved local state (mode: Write)");
+	}
 
 	void setupBoundaries() override
 	{
@@ -300,23 +314,52 @@ struct StateLocal : State<NSE>
 		dragprofile();
   	}
 
-
-	bool outputData(const BLOCK& block, int index, int dof, char* desc, idx x, idx y, idx z, real& value, int& dofs) override
+	[[nodiscard]] std::vector<std::string> getOutputDataNames() const override
 	{
-		int k = 0;
-		if (index == k++)
-			return vtk_helper("lbm_density", block.hmacro(MACRO::e_rho, x, y, z), 1, desc, value, dofs);
-		if (index == k++) {
-			switch (dof) {
-				case 0:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vx, x, y, z)), 3, desc, value, dofs);
-				case 1:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vy, x, y, z)), 3, desc, value, dofs);
-				case 2:
-					return vtk_helper("velocity", nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vz, x, y, z)), 3, desc, value, dofs);
-			}
-		}
-		return false;
+		// return all quantity names used in outputData
+		return {"lbm_density", "lbm_density_fluctuation", "velocity_x", "velocity_y", "velocity_z"};
+	}
+
+
+	void outputData(UniformDataWriter<TRAITS>& writer, const BLOCK& block, const idx3d& begin, const idx3d& end) override
+	{
+		writer.write("lbm_density", getMacroView<TRAITS>(block.hmacro, MACRO::e_rho), begin, end);
+		writer.write(
+			"lbm_density_fluctuation",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return block.hmacro(MACRO::e_rho, x, y, z) - 1.0;
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_x",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vx, x, y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_y",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vy, x, y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_z",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vz, x, y, z));
+			},
+			begin,
+			end
+		);
 	}
 
 	void updateKernelVelocities() override
@@ -330,18 +373,18 @@ struct StateLocal : State<NSE>
 			block.data.inflow_y = nse.lat.global.y();
 			block.data.inflow_z = nse.lat.global.z();
 			if(NSE::LBM_KS::NoDV == 3){
-				block.data.no1oT0 = 1./0.6979533220196830882384091; // FOR D2Q49
+				block.data.no1oT0 = 1./0.6979533220196830882384091; // FOR D3Q343
 			}
 		}
 	}
 
-	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat)
-	: State<NSE>(id, communicator, std::move(lat))
+	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath = "adios2.xml")
+	: State<NSE>(id, communicator, std::move(lat), adiosConfigPath)
 	{}
 };
 
 template <typename NSE>
-int sim(int RESOLUTION = 2)
+int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 {
 	using idx = typename NSE::TRAITS::idx;
 	using real = typename NSE::TRAITS::real;
@@ -374,7 +417,7 @@ int sim(int RESOLUTION = 2)
 	lat.physViscosity = PHYS_VISCOSITY;
 
 	const std::string state_id = fmt::format("sim_schafer_turek_res{:02d}_np{:03d}", RESOLUTION, TNL::MPI::GetSize(MPI_COMM_WORLD));
-	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat);
+	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, adios_config);
 
 	// problem parameters
 	state.lbm_inflow_vx = lat.phys2lbmVelocity(PHYS_VELOCITY);
@@ -383,17 +426,16 @@ int sim(int RESOLUTION = 2)
 	state.nse.physFinalTime = 20;
 	state.cnt[PRINT].period = 1;
 
-	state.loadState();
 	state.wallTime = 10000;
 	// add cuts
-	state.cnt[VTK2D].period = 1;
+	state.cnt[OUT2D].period = 1;
 	state.add2Dcut_X(X / 2, "cutsX/cut_X");
 	state.add2Dcut_Y(Y / 2, "cutsY/cut_Y");
 	state.add2Dcut_Z(Z / 2, "cutsZ/cut_Z");
 
-	state.cnt[VTK3D].period = 1;
-	state.cnt[VTK3DCUT].period = 1;
-	state.add3Dcut(X / 4, Y / 4, Z / 4, X / 2, Y / 2, Z / 2, 2, "box");
+	state.cnt[OUT3D].period = 1;
+	state.cnt[OUT3DCUT].period = 1;
+	state.add3Dcut(X / 4, Y / 4, Z / 4, X / 2, Y / 2, Z / 2, "box");
 
 	state.cnt[PROBE1].period = 0.1;
 
@@ -421,43 +463,44 @@ int sim(int RESOLUTION = 2)
 }
 
 template <typename TRAITS = TraitsDP>
-void run(int RES)
+void run(const std::string& adios_config, int resolution)
 {
 	// D3Q27
-	//using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
-	//using NSE_CONFIG = LBM_CONFIG<
-	//	TRAITS,
-	//	D3Q27_KernelStruct,
-	//	//NSE_Data_Parabolic_yconst<TRAITS>,
-	//	NSE_Data_DoubleParabolic<TRAITS>,
-	//	COLL,
-	//	typename COLL::EQ,
-	//	D3Q27_STREAMING<TRAITS>,
-	//	D3Q27_BC_All,
-	//	D3Q27_MACRO_Default<TRAITS>>;
-
-	// D3Q343
-	using COLL = D3Q343_ELBM<TRAITS, D3Q343_EQ<TRAITS>>;
+	using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
 	using NSE_CONFIG = LBM_CONFIG<
 		TRAITS,
-		D3Q343_KernelStruct,
+		D3Q27_KernelStruct,
+		//NSE_Data_Parabolic_yconst<TRAITS>,
 		NSE_Data_DoubleParabolic<TRAITS>,
 		COLL,
 		typename COLL::EQ,
-		D3Q343_STREAMING<TRAITS>,
-		D3Q343_BC_All,
-		D3Q343_MACRO_Default<TRAITS>>;
+		D3Q27_STREAMING<TRAITS>,
+		D3Q27_BC_All,
+		D3Q27_MACRO_Default<TRAITS>>;
 
-	sim<NSE_CONFIG>(RES);
+	// D3Q343
+	//using COLL = D3Q343_ELBM<TRAITS, D3Q343_EQ<TRAITS>>;
+	//using NSE_CONFIG = LBM_CONFIG<
+	//	TRAITS,
+	//	D3Q343_KernelStruct,
+	//	NSE_Data_DoubleParabolic<TRAITS>,
+	//	COLL,
+	//	typename COLL::EQ,
+	//	D3Q343_STREAMING<TRAITS>,
+	//	D3Q343_BC_All,
+	//	D3Q343_MACRO_Default<TRAITS>>;
+
+	sim<NSE_CONFIG>(adios_config, resolution);
 }
 
 int main(int argc, char** argv)
 {
 	TNLMPI_INIT mpi(argc, argv);
 
-	argparse::ArgumentParser program("sim_bump_NASA");
-	program.add_description("Simulation of a bump in a channel.");
-	program.add_argument("resolution").help("resolution of the lattice").scan<'i', int>().default_value(1);
+	argparse::ArgumentParser program("sim_schafer_turek");
+	program.add_description("Schafer Turek simulation in 3D");
+	program.add_argument("--adios-config").help("path to ADIOS2 configuration file").default_value(std::string("adios2.xml")).nargs(1);
+	program.add_argument("--resolution").help("resolution of the lattice").scan<'i', int>().default_value(1).nargs(1);
 
 	try {
 		program.parse_args(argc, argv);
@@ -468,13 +511,16 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
-	const auto resolution = program.get<int>("resolution");
+	const auto adios_config = program.get<std::string>("--adios-config");
+	const auto resolution = program.get<int>("--resolution");
+
 	if (resolution < 1) {
 		fmt::println(stderr, "CLI error: resolution must be at least 1");
 		return 1;
 	}
 
-	run(resolution);
+	run(adios_config, resolution);
 
 	return 0;
 }
+
