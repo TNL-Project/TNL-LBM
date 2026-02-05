@@ -2,6 +2,7 @@
 
 #include <fstream>
 #include <iomanip>
+#include <stdexcept>
 
 #include <nlohmann/json.hpp>
 #include <png.h>
@@ -12,7 +13,66 @@
 #include "UnstructuredPointsWriter.h"
 
 #include "../lbm_common/fileutils.h"
+#include "../lbm_common/logging.h"
 #include "../lbm_common/png_tool.h"
+
+template <typename NSE>
+template <typename... ARGS>
+State<NSE>::State(
+	const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath, ARGS&&... args
+)
+: id(id),
+#ifdef HAVE_MPI
+  adios(adiosConfigPath, communicator),
+#else
+  adios(adiosConfigPath),
+#endif
+  dataManager(&adios),
+  checkpoint(dataManager),
+  nse(communicator, lat, std::forward<ARGS>(args)...),
+  ibm(nse, id)
+{
+	// Try to lock the results directory
+	if (nse.rank == 0) {
+		const std::string dir = fmt::format("results_{}", id);
+		mkdir(dir.c_str(), 0777);
+		const std::string lock_filename = fmt::format("results_{}/lock", id);
+		lock_fd = tryLockFile(lock_filename.c_str());
+	}
+
+	// let all ranks know if we have a lock
+	bool have_lock = lock_fd >= 0;
+	TNL::MPI::Bcast(&have_lock, 1, 0, communicator);
+
+	// initialize default spdlog logger (check the lock to avoid writing
+	// to log files opened by another instance)
+	if (have_lock)
+		init_logging(id, communicator);
+
+	if (dataManager.isPluginEngine()) {
+		dataManager.setPluginDataModelPath(fmt::format("results_{}/lbm-fides.json", id));
+	}
+
+	bool local_estimate = estimateMemoryDemands();
+	bool global_result = TNL::MPI::reduce(local_estimate, MPI_LAND, communicator);
+	if (! local_estimate)
+		spdlog::error("Not enough memory available (CPU or GPU). [disable this check in lbm3d/state.h -> State constructor]");
+	if (! global_result)
+		throw std::runtime_error("Not enough memory available (CPU or GPU).");
+
+	// Allocate host data after the estimate
+	nse.allocateHostData();
+
+	// Start the timer for the simulation
+	timer_total.start();
+}
+
+template <typename NSE>
+State<NSE>::~State()
+{
+	deinit_logging();
+	releaseLock(lock_fd);
+}
 
 template <typename NSE>
 void State<NSE>::ensureFidesJsonModel(const std::string& dimsVariable, const std::vector<std::string>& fields)

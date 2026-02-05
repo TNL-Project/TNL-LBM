@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <stdexcept>
 #include <vector>
 #include <string>
 
@@ -14,8 +13,6 @@
 #include <fmt/core.h>
 #include <spdlog/spdlog.h>
 
-#include "../lbm_common/logging.h"
-#include "../lbm_common/fileutils.h"
 #include "lbm.h"
 #include "lbm_block.h"
 #include "checkpoint.h"
@@ -102,17 +99,34 @@ struct State
 	// Generated once on demand from discovered output variables (Fides JSON for Catalyst)
 	bool fidesJsonGenerated = false;
 
+	std::array<T_COUNTER, MAX_COUNTER> cnt;
 	std::vector<T_PROBE3DCUT> probe3Dvec;
 	std::vector<T_PROBE2DCUT> probe2Dvec;
 
 	// Immersed boundary method
 	Lagrange3D ibm;
 
+	// Attributes for incremental GLUPS calculation
+	int glups_prev_iterations = 0;
+	double glups_prev_time = 0;
+
+	// Timers for profiling
+	TNL::Timer timer_SimInit, timer_SimUpdate, timer_AfterSimUpdate, timer_compute, timer_compute_overlaps, timer_wait_communication,
+		timer_wait_computation;
+
+	// Constructors
+	State() = delete;
+
+	template <typename... ARGS>
+	State(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath = "adios2.xml", ARGS&&... args);
+
+	// Destructor
+	virtual ~State();
+
 	void writePoints(const char* name, real time, int cycle);
 	void writePoints(const char* name, real time, int cycle, const typename Lagrange3D::HLPVECTOR& hLL_lat);
 
 	// how often to probe/print/write/stat
-	std::array<T_COUNTER, MAX_COUNTER> cnt;
 	virtual void probe1() {}
 	virtual void probe2() {}
 	virtual void probe3() {}
@@ -245,68 +259,6 @@ struct State
 	double getWallTime(
 		bool collective = false
 	);	// collective: must be true when called by all MPI ranks and false otherwise (e.g. when called only by rank 0)
-
-	// helpers for incremental GLUPS calculation
-	int glups_prev_iterations = 0;
-	double glups_prev_time = 0;
-
-	// timers for profiling
-	TNL::Timer timer_SimInit, timer_SimUpdate, timer_AfterSimUpdate, timer_compute, timer_compute_overlaps, timer_wait_communication,
-		timer_wait_computation;
-	// constructors
-	template <typename... ARGS>
-	State(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath = "adios2.xml", ARGS&&... args)
-	: id(id),
-#ifdef HAVE_MPI
-	  adios(adiosConfigPath, communicator),
-#else
-	  adios(adiosConfigPath),
-#endif
-	  dataManager(&adios),
-	  checkpoint(dataManager),
-	  nse(communicator, lat, std::forward<ARGS>(args)...),
-	  ibm(nse, id)
-	{
-		// Try to lock the results directory
-		if (nse.rank == 0) {
-			const std::string dir = fmt::format("results_{}", id);
-			mkdir(dir.c_str(), 0777);
-			const std::string lock_filename = fmt::format("results_{}/lock", id);
-			lock_fd = tryLockFile(lock_filename.c_str());
-		}
-
-		// let all ranks know if we have a lock
-		bool have_lock = lock_fd >= 0;
-		TNL::MPI::Bcast(&have_lock, 1, 0, communicator);
-
-		// initialize default spdlog logger (check the lock to avoid writing
-		// to log files opened by another instance)
-		if (have_lock)
-			init_logging(id, communicator);
-
-		if (dataManager.isPluginEngine()) {
-			dataManager.setPluginDataModelPath(fmt::format("results_{}/lbm-fides.json", id));
-		}
-
-		bool local_estimate = estimateMemoryDemands();
-		bool global_result = TNL::MPI::reduce(local_estimate, MPI_LAND, communicator);
-		if (! local_estimate)
-			spdlog::error("Not enough memory available (CPU or GPU). [disable this check in lbm3d/state.h -> State constructor]");
-		if (! global_result)
-			throw std::runtime_error("Not enough memory available (CPU or GPU).");
-
-		// Allocate host data after the estimate
-		nse.allocateHostData();
-
-		// Start the timer for the simulation
-		timer_total.start();
-	}
-
-	virtual ~State()
-	{
-		deinit_logging();
-		releaseLock(lock_fd);
-	}
 };
 
 #include "state.hpp"
