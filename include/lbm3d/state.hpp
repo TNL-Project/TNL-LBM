@@ -594,6 +594,8 @@ void State<NSE>::write2D()
 					begin = {block.offset.x(), block.offset.y(), probevec.position};
 					end = begin + idx3d{block.local.x(), block.local.y(), 1};
 					break;
+				default:
+					throw std::invalid_argument(fmt::format("Invalid 2D cut type: {}", probevec.type));
 			}
 
 			UniformDataWriter<TRAITS> writer(cut_global, cut_local, cut_offset, cut_origin, nse.lat.physDl, dataManager, fname);
