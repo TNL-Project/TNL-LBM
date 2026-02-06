@@ -23,6 +23,7 @@ struct D3Q53_BC_All
 		GEO_WALL,	// compulsory
 		GEO_INFLOW,
 		GEO_INFLOW_LEFT,
+		GEO_INFLOW_LEFT_PRESSURE,
 		GEO_OUTFLOW_EQ,
 		GEO_OUTFLOW_RIGHT,
 		GEO_OUTFLOW_RIGHT_INTERP,
@@ -79,6 +80,17 @@ struct D3Q53_BC_All
 				break;
 			case GEO_INFLOW_LEFT:
 				SD.inflow(KS, x, y, z);
+			case GEO_INFLOW_LEFT_PRESSURE:
+				for(int i = 0; i < LBM_KS::ONE_SIZE; i++){
+					streamGrid.x(i)++;
+				}
+            	STREAMING::streaming(SD,KS,streamGrid);
+				for(int i = 0; i < LBM_KS::ONE_SIZE; i++){
+					streamGrid.x(i)--;
+				}
+				COLL::computeDensityAndVelocity(KS);
+				SD.inflow(KS, x, y, z);
+				COLL::setEquilibrium(KS);
 			case GEO_OUTFLOW_EQ:
 				COLL::computeDensityAndVelocity(KS);
 				KS.rho = 1;

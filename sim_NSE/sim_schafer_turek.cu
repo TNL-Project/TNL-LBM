@@ -2,7 +2,8 @@
 #include <utility>
 
 // As of now, enum and sync direction are specific for different models and need to be included before core!!!
-#include "lbm3d/d3q27/defs.h"
+//#include "lbm3d/d3q27/defs.h"
+#include "lbm3d/d3q53/defs.h"
 //#include "lbm3d/d3q343/defs.h"
 #include "lbm3d/core.h"
 
@@ -33,6 +34,7 @@ struct StateLocal : State<NSE>
 	{
 		// Save/load the inflow velocity
 		checkpoint.saveLoadAttribute("lbm_inflow_vx", lbm_inflow_vx);
+		checkpoint.saveLoadAttribute("lbm_inflow_vx", inflow_g);
 
 		// You can add any additional state data that needs to be saved/loaded here
 
@@ -221,7 +223,7 @@ struct StateLocal : State<NSE>
 		const double H = 0.1; // height of cylinder
 		const double L = 0.1; // length of cylinder
 		const double W = 0.41; // width of cylinder
-		const double Uoverline = 0.2; // average inflow velocity
+		const double Uoverline = 4./9*0.45; // average inflow velocity
 		// DIFFERENT AXIS ORIENTATION
 		real C_D = 2.*integrate_stress_tensor_general([this](int ix,int iy,int iz){ return this->isObject(ix, iy, iz);},0)/(Uoverline*Uoverline)/(H*W);
 		real C_S = 2.*integrate_stress_tensor_general([this](int ix,int iy,int iz){ return this->isObject(ix, iy, iz);},1)/(Uoverline*Uoverline)/(L*H);
@@ -263,10 +265,8 @@ struct StateLocal : State<NSE>
 	}
 		bool firstrunProfile = true;
 	void dragprofile(){
-		const double H = 0.1; // height of bump, 0.05 in origin
-		//const double L = 1.5; // length of bump
-		//const double W = 0.5; // width of bump
-		const double Uoverline = 1; // average inflow velocity
+		const double H = 0.1;
+		const double Uoverline = 4./9.*0.45; // average inflow velocity
 		const double delta_x = (double)nse.lat.physDl;
 
 
@@ -370,8 +370,8 @@ struct StateLocal : State<NSE>
 			block.data.inflow_vz = 0;
 			block.data.InitPoint = nse.lat.phys2lbmPoint(nse.lat.physOrigin);
 			block.data.inflow_g = inflow_g;
-			block.data.inflow_y = nse.lat.global.y();
-			block.data.inflow_z = nse.lat.global.z();
+			block.data.inflow_y = nse.lat.global.y()-6;
+			block.data.inflow_z = nse.lat.global.z()-6;
 			if(NSE::LBM_KS::NoDV == 3){
 				block.data.no1oT0 = 1./0.6979533220196830882384091; // FOR D3Q343
 			}
@@ -396,13 +396,13 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	real PHYS_HEIGHT = 0.41;		  // domain height (physical)
 	real PHYS_DEPTH = 0.41;		  // domain depth (physical)
 	// TODO: solve the rounding of pixels to have it precise
-	int X = floor(PHYS_LENGTH * RESOLUTION * block_size);  // width in pixels
-	int Y = floor(PHYS_DEPTH  * RESOLUTION * block_size);  // height in pixels --- top and bottom walls NoDV px
-	int Z = floor(PHYS_HEIGHT * RESOLUTION * block_size); // depth in pixels --- top and bottom walls  NoDV px
+	int Y = block_size*RESOLUTION; // Number of points in Y direction
+	real PHYS_DL = PHYS_HEIGHT / ((real) Y - 6); // naive fullway bounce-back
+	int X = floor(PHYS_LENGTH/PHYS_DL);
+	int Z = Y;
 	real LBM_VISCOSITY = 0.001;
 	real PHYS_VISCOSITY = 0.001;
-	real PHYS_VELOCITY = 0.3;
-	real PHYS_DL = PHYS_HEIGHT / ((real) Z - 6); // naive fullway bounce-back
+	real PHYS_VELOCITY = 0.45;
 	real PHYS_DT = LBM_VISCOSITY / PHYS_VISCOSITY * PHYS_DL * PHYS_DL;	//PHYS_HEIGHT/(real)LBM_HEIGHT;
 	point_t PHYS_ORIGIN = {0., -5./2*PHYS_DL, -5./2*PHYS_DL};
 
@@ -437,7 +437,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	state.cnt[OUT3DCUT].period = 1;
 	state.add3Dcut(X / 4, Y / 4, Z / 4, X / 2, Y / 2, Z / 2, "box");
 
-	state.cnt[PROBE1].period = 0.1;
+	state.cnt[PROBE1].period = 10.;
 
 	state.updateKernelData();
 	state.updateKernelVelocities();
@@ -451,7 +451,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	for (int y = 0; y < Y; y++) {
 	    for (int z = 0; z < Z; z++) {
 	        state.nse.blocks[0].data.inflow(KS, 0, y, z);
-	        fprintf(fp, "%d,%d,%e\n", y, z, KS.vx);
+	        fprintf(fp, "%d,%d,%e\n", y, z, state.nse.lat.lbm2physVelocity(KS.vx));
 	    }
 	}
 	fclose(fp);
@@ -462,21 +462,20 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	return 0;
 }
 
-template <typename TRAITS = TraitsDP>
+template <typename TRAITS = TraitsSP>
 void run(const std::string& adios_config, int resolution)
 {
 	// D3Q27
-	using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
-	using NSE_CONFIG = LBM_CONFIG<
-		TRAITS,
-		D3Q27_KernelStruct,
-		//NSE_Data_Parabolic_yconst<TRAITS>,
-		NSE_Data_DoubleParabolic<TRAITS>,
-		COLL,
-		typename COLL::EQ,
-		D3Q27_STREAMING<TRAITS>,
-		D3Q27_BC_All,
-		D3Q27_MACRO_Default<TRAITS>>;
+	//using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
+	//using NSE_CONFIG = LBM_CONFIG<
+	//	TRAITS,
+	//	D3Q27_KernelStruct,
+	//	NSE_Data_DoubleParabolic<TRAITS>,
+	//	COLL,
+	//	typename COLL::EQ,
+	//	D3Q27_STREAMING<TRAITS>,
+	//	D3Q27_BC_All,
+	//	D3Q27_MACRO_Default<TRAITS>>;
 
 	// D3Q343
 	//using COLL = D3Q343_ELBM<TRAITS, D3Q343_EQ<TRAITS>>;
@@ -489,6 +488,18 @@ void run(const std::string& adios_config, int resolution)
 	//	D3Q343_STREAMING<TRAITS>,
 	//	D3Q343_BC_All,
 	//	D3Q343_MACRO_Default<TRAITS>>;
+
+	// D3Q53
+	using COLL = D3Q53_SRT<TRAITS, D3Q53_EQ<TRAITS>>;
+	using NSE_CONFIG = LBM_CONFIG<
+		TRAITS,
+		D3Q53_KernelStruct,
+		NSE_Data_DoubleParabolic<TRAITS>,
+		COLL,
+		typename COLL::EQ,
+		D3Q53_STREAMING<TRAITS>,
+		D3Q53_BC_All,
+		D3Q53_MACRO_Default<TRAITS>>;
 
 	sim<NSE_CONFIG>(adios_config, resolution);
 }

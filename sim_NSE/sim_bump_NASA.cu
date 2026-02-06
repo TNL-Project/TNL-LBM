@@ -27,6 +27,7 @@ struct StateLocal : State<NSE>
 	using lat_t = Lattice<3, real, idx>;
 
 	real lbm_inflow_vx = 0;
+	real inflow_g = 0;
 
 	// Refernce values for drag and lift
 	double H,L,W; // bump dimensions
@@ -36,6 +37,7 @@ struct StateLocal : State<NSE>
 	{
 		// Save/load the inflow velocity
 		checkpoint.saveLoadAttribute("lbm_inflow_vx", lbm_inflow_vx);
+		checkpoint.saveLoadAttribute("inflow_g", inflow_g);
 
 		// You can add any additional state data that needs to be saved/loaded here
 
@@ -382,6 +384,10 @@ struct StateLocal : State<NSE>
 			block.data.inflow_vx = lbm_inflow_vx;
 			block.data.inflow_vy = 0;
 			block.data.inflow_vz = 0;
+			block.data.inflow_g = inflow_g;
+			if(NSE::LBM_KS::NoDV == 3){
+				block.data.no1oT0 = 1./0.6979533220196830882384091; // FOR D3Q343
+			}
 		}
 	}
 
@@ -400,16 +406,16 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 
 	int block_size = 32;
 	real PHYS_LENGTH = 10.; // length in some units (NASA does not specify)
-	real PHYS_HEIGHT = 5.;		  // domain height (physical)
+	real PHYS_HEIGHT = 1.;		  // domain height (physical)
 	real PHYS_DEPTH = 0.5;		  // domain depth (physical)
 	// TODO: solve the rounding of pixels to have it precise
 	int X = floor(PHYS_LENGTH * RESOLUTION * block_size);  // width in pixels
 	int Y = floor(PHYS_DEPTH  * RESOLUTION * block_size);  // height in pixels --- top and bottom walls NoDV px
 	int Z = floor(PHYS_HEIGHT * RESOLUTION * block_size); // depth in pixels --- top and bottom walls  NoDV px
-	real LBM_VISCOSITY = 0.001;
-	real PHYS_VISCOSITY = 1.5e-3;
-	real PHYS_VELOCITY = 10.0;
-	real PHYS_DL = PHYS_HEIGHT / ((real) Z - 6); // naive fullway bounce-back
+	real LBM_VISCOSITY = 0.0001;
+	real PHYS_VISCOSITY = 1.e-3;
+	real PHYS_VELOCITY = 100.0;
+	real PHYS_DL = PHYS_HEIGHT / ((real) Z ); // naive fullway bounce-back but everything is part of the domain
 	real PHYS_DT = LBM_VISCOSITY / PHYS_VISCOSITY * PHYS_DL * PHYS_DL;	//PHYS_HEIGHT/(real)LBM_HEIGHT;
 	point_t PHYS_ORIGIN = {-PHYS_LENGTH/2., -PHYS_DEPTH, 0.};
 
@@ -426,11 +432,11 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 
 	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat,adios_config);
 	//state.loadState();
-	state.cnt[SAVESTATE].period = 1000;
-	state.wallTime = 10000;
+	state.wallTime = 20000;
 
 	// problem parameters
 	state.lbm_inflow_vx = lat.phys2lbmVelocity(PHYS_VELOCITY);
+	state.inflow_g = 0.0005656; // already in nondim
 
 	state.nse.physFinalTime = 100;
 	state.cnt[PRINT].period = 0.1;
@@ -441,8 +447,8 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	state.add2Dcut_Y(Y / 2, "cutsY/cut_Y");
 	state.add2Dcut_Z(Z / 2, "cutsZ/cut_Z");
 
-	state.cnt[OUT3D].period = 50.;
-	state.cnt[OUT3DCUT].period = 50.;
+	state.cnt[OUT3D].period = 100.;
+	state.cnt[OUT3DCUT].period = 100.;
 	state.add3Dcut(X / 4, Y / 4, Z / 4, X / 2, Y / 2, Z / 2, "box");
 
 	state.cnt[PROBE1].period = 1.;
@@ -464,7 +470,7 @@ void run(const std::string& adios_config, int resolution)
 	using NSE_CONFIG = LBM_CONFIG<
 		TRAITS,
 		D3Q27_KernelStruct,
-		NSE_Data_ConstInflow<TRAITS>,
+		NSE_Data_ConstInflow_PressureGradient<TRAITS>,
 		COLL,
 		typename COLL::EQ,
 		D3Q27_STREAMING<TRAITS>,

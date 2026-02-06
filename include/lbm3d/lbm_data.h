@@ -291,7 +291,7 @@ struct NSE_Data_Parabolic_yconst : NSE_Data<TRAITS>
 	CUDA_HOSTDEV void inflow(LBM_KS& KS, idx x, idx y, idx z)
 	{
 		KS.rho +=  no1oT0*inflow_g;
-		KS.vx  =   4*inflow_vx*(inflow_z*inflow_z*0.25-((z + InitPoint[3])-0.5*inflow_z)*((z + InitPoint[3])-0.5*inflow_z))/(inflow_z*inflow_z);
+		KS.vx  =   4*inflow_vx*(inflow_z*inflow_z*0.25-((z + InitPoint[2])-0.5*inflow_z)*((z + InitPoint[2])-0.5*inflow_z))/(inflow_z*inflow_z);
 		KS.vy  =   0.;
 		KS.vz  =   0.;
 	}
@@ -318,10 +318,11 @@ struct NSE_Data_DoubleParabolic : NSE_Data<TRAITS>
 	{
 		const dreal yc = y + InitPoint[1];
 		const dreal zc = z + InitPoint[2];
-		KS.rho +=  no1oT0*inflow_g*16/inflow_y/inflow_z*((inflow_y-yc)*yc)*((inflow_z-zc)*zc); // from the 2D laplacian using inflow_g definition from 2D
+		KS.rho +=  no1oT0*inflow_g*64/inflow_y/inflow_z/inflow_y/inflow_z*(yc*(yc-inflow_y)+zc*(zc-inflow_z)); // from the 2D laplacian using inflow_g definition from 2D
 		KS.vx  =   16*inflow_vx*
-			(inflow_z*inflow_z*0.25-(yc-0.5*inflow_z)*(zc-0.5*inflow_z))/(inflow_z*inflow_z)*
-			(inflow_y*inflow_y*0.25-(zc-0.5*inflow_y)*(yc-0.5*inflow_y))/(inflow_y*inflow_y);
+			(inflow_z*inflow_z*0.25-(zc-0.5*inflow_z)*(zc-0.5*inflow_z))/(inflow_z*inflow_z)*
+			(inflow_y*inflow_y*0.25-(yc-0.5*inflow_y)*(yc-0.5*inflow_y))/(inflow_y*inflow_y);
+		//KS.vx = 16*inflow_vx*(zc-inflow_z)*zc*(yc-inflow_y)*yc/inflow_z/inflow_z/inflow_y/inflow_y;
 		KS.vy  =   0.;
 		KS.vz  =   0.;
 	}

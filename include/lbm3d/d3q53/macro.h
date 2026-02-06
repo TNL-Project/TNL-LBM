@@ -23,6 +23,9 @@ struct D3Q53_MACRO_Base
 		e_fz
 	};
 
+	// specifies if macroscopic quantities are computed in the kernel in each iteration
+	static const bool compute_in_each_iteration = false;
+	
 	static const bool use_syncMacro = false;
 
 	// maximum width of overlaps for the macro arrays
