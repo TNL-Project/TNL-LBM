@@ -168,7 +168,7 @@ FetchContent_MakeAvailable(magic_enum)
 FetchContent_Declare(TNL
     GIT_REPOSITORY https://gitlab.com/tnl-project/tnl.git
     # TNL does not have any releases
-    GIT_TAG a7c3f3fbd6fd5b58bf4ebd47da1472189f7eff49
+    GIT_TAG c44afa077cf3cc0e1fca195a04ac207d71b7c322
     EXCLUDE_FROM_ALL
 )
 set(TNL_EXPORT_INTERFACE_TARGETS ON)  # needed for adding to the interface target
