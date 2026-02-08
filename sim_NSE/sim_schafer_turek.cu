@@ -423,21 +423,21 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	state.lbm_inflow_vx = lat.phys2lbmVelocity(PHYS_VELOCITY);
 	state.inflow_g = lat.phys2lbmForce(g);
 
-	state.nse.physFinalTime = 20;
-	state.cnt[PRINT].period = 1;
+	state.nse.physFinalTime = 100;
+	state.cnt[PRINT].period = 0.1;
 
-	state.wallTime = 10000;
+	state.wallTime = 35000;
 	// add cuts
-	state.cnt[OUT2D].period = 1;
+	state.cnt[OUT2D].period = 10;
 	state.add2Dcut_X(X / 2, "cutsX/cut_X");
 	state.add2Dcut_Y(Y / 2, "cutsY/cut_Y");
 	state.add2Dcut_Z(Z / 2, "cutsZ/cut_Z");
 
-	state.cnt[OUT3D].period = 1;
-	state.cnt[OUT3DCUT].period = 1;
+	state.cnt[OUT3D].period = 50;
+	state.cnt[OUT3DCUT].period = 50;
 	state.add3Dcut(X / 4, Y / 4, Z / 4, X / 2, Y / 2, Z / 2, "box");
 
-	state.cnt[PROBE1].period = 10.;
+	state.cnt[PROBE1].period = 1.;
 
 	state.updateKernelData();
 	state.updateKernelVelocities();
