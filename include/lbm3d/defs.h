@@ -246,6 +246,7 @@ struct D3Q27_KernelStruct
 	static constexpr int Qhalf = (Q-1)/2;
 	static constexpr int NoDV = 1;
 	static constexpr int ONE_SIZE = 2*NoDV + 1;
+	static constexpr REAL T0 = 1./3;
 
 	__cuda_callable__ CONSTFUNC int flip_coord(int val){return ONE_SIZE-val-1;}
 	__cuda_callable__ CONSTFUNC int flip_id(int id){return Q - id - 1;}
@@ -301,6 +302,7 @@ struct D3Q343_KernelStruct
 	static constexpr int Qhalf = (Q-1)/2;
 	static constexpr int NoDV = 3;
 	static constexpr int ONE_SIZE = 2*NoDV + 1;
+	static constexpr REAL T0 = 0.6979533220196830882384091;
 
 	__cuda_callable__ CONSTFUNC int flip_coord(int val){return ONE_SIZE-val-1;}
 	__cuda_callable__ CONSTFUNC int flip_id(int id){return Q - id - 1;}
@@ -338,9 +340,10 @@ struct D3Q343_KernelStruct
 };
 
 template <typename REAL>
-struct D3Q53_KernelStruct
+struct D3Q53_KernelStruct_ELBM
 {
 	static constexpr int D = 3;
+	static constexpr REAL T0 = 1./2.67972986276583;
 	static constexpr int Q = 53;
 	static constexpr int Qhalf = (Q-1)/2;
 	static constexpr int NoDV = 3;
@@ -348,21 +351,37 @@ struct D3Q53_KernelStruct
 
 	__cuda_callable__ CONSTFUNC int flip_coord(int val){return ONE_SIZE-val-1;}
 	__cuda_callable__ CONSTFUNC int flip_id(int id){return Q - id - 1;}
+	__cuda_callable__ CONSTFUNC int flip_id_x(int id){
+		Coord c = id_to_coords(id);
+		int nx = flip_coord(c.x);
+		return coords_to_id(nx, c.y, c.z);
+	}
+	__cuda_callable__ CONSTFUNC int flip_id_y(int id){
+		Coord c = id_to_coords(id);
+		int ny = flip_coord(c.y);
+		return coords_to_id(c.x, ny, c.z);
+	}
+	__cuda_callable__ CONSTFUNC int flip_id_z(int id){
+		Coord c = id_to_coords(id);
+		int nz = flip_coord(c.z);
+		return coords_to_id(c.x, c.y, nz);
+	}
 
 	__cuda_callable__ CONSTFUNC Coord id_to_dv(int id){
-		const int XS[Q] = {-3,-2,-2,-2,-2,-2,-2,-2,-2,-1,-1,-1,-1,-1,-1,-1,-1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,2,2,2,2,2,2,2,2,3};
-		const int YS[Q] = {0,-2,-2,-2,0,0,2,2,2,-1,-1,-1,0,0,0,1,1,1,-3,-2,-2,-1,-1,-1,0,0,0,0,0,1,1,1,2,2,3,-1,-1,-1,0,0,0,1,1,1,-2,-2,-2,0,0,2,2,2,0};
-		const int ZS[Q] = {0,-2,0,2,-2,2,-2,0,2,-1,0,1,-1,0,1,-1,0,1,0,-2,2,-1,0,1,-3,-1,0,1,3,-1,0,1,-2,2,0,-1,0,1,-1,0,1,-1,0,1,-2,0,2,-2,2,-2,0,2,0};
+		Coord c = id_to_coords(id);
+		return {c.x-NoDV,c.y-NoDV,c.z-NoDV};
+	}
+
+	__cuda_callable__ CONSTFUNC Coord id_to_coords(int id){
+        const int XS[Q] = {0,1,1,1,1,1,1,1,1,2,2,2,2,2,2,2,2,2,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,4,4,4,4,4,4,4,4,4,5,5,5,5,5,5,5,5,6};
+        const int YS[Q] = {3,1,1,1,3,3,5,5,5,2,2,2,3,3,3,4,4,4,0,1,1,2,2,2,3,3,3,3,3,4,4,4,5,5,6,2,2,2,3,3,3,4,4,4,1,1,1,3,3,5,5,5,3};
+        const int ZS[Q] = {3,1,3,5,1,5,1,3,5,2,3,4,2,3,4,2,3,4,3,1,5,2,3,4,0,2,3,4,6,2,3,4,1,5,3,2,3,4,2,3,4,2,3,4,1,3,5,1,5,1,3,5,3};
 		int x = XS[id];
 		int y = YS[id];
 		int z = ZS[id];
 		return {x,y,z};
 	}
 
-	__cuda_callable__ CONSTFUNC Coord id_to_coords(int id){
-		Coord c = id_to_dv(id);
-		return {c.x+NoDV,c.y+NoDV,c.z+NoDV};
-	}
 
 	__cuda_callable__ CONSTFUNC int dv_to_id(int cx, int cy, int cz){
 		if (cx == -3 && cy == 0 && cz == 0) return 0;
@@ -420,8 +439,66 @@ struct D3Q53_KernelStruct
 		if (cx == 3 && cy == 0 && cz == 0) return 52;
 
 	}
+
 	__cuda_callable__ CONSTFUNC int coords_to_id(int cx, int cy, int cz){
 		return dv_to_id(cx-NoDV,cy-NoDV,cz-NoDV);
+	}
+
+    __cuda_callable__ CONSTFUNC REAL id_to_weight(int id){
+		if (id == 0) return 0.000254627832132497;
+		if (id == 1) return 0.00000404353462215176;
+		if (id == 2) return 0.0000785975745805697;
+		if (id == 3) return 0.00000404353462215176;
+		if (id == 4) return 0.0000785975745805697;
+		if (id == 5) return 0.0000785975745805697;
+		if (id == 6) return 0.00000404353462215176;
+		if (id == 7) return 0.0000785975745805697;
+		if (id == 8) return 0.00000404353462215176;
+		if (id == 9) return 0.00623707839948299;
+		if (id == 10) return 0.0209532136880463;
+		if (id == 11) return 0.00623707839948299;
+		if (id == 12) return 0.0209532136880463;
+		if (id == 13) return 0.0742108949874377;
+		if (id == 14) return 0.0209532136880463;
+		if (id == 15) return 0.00623707839948299;
+		if (id == 16) return 0.0209532136880463;
+		if (id == 17) return 0.00623707839948299;
+		if (id == 18) return 0.000254627832132497;
+		if (id == 19) return 0.0000785975745805697;
+		if (id == 20) return 0.0000785975745805697;
+		if (id == 21) return 0.0209532136880463;
+		if (id == 22) return 0.0742108949874377;
+		if (id == 23) return 0.0209532136880463;
+		if (id == 24) return 0.000254627832132497;
+		if (id == 25) return 0.0742108949874377;
+		if (id == 26) return 0.250896152458214;
+		if (id == 27) return 0.0742108949874377;
+		if (id == 28) return 0.000254627832132497;
+		if (id == 29) return 0.0209532136880463;
+		if (id == 30) return 0.0742108949874377;
+		if (id == 31) return 0.0209532136880463;
+		if (id == 32) return 0.0000785975745805697;
+		if (id == 33) return 0.0000785975745805697;
+		if (id == 34) return 0.000254627832132497;
+		if (id == 35) return 0.00623707839948299;
+		if (id == 36) return 0.0209532136880463;
+		if (id == 37) return 0.00623707839948299;
+		if (id == 38) return 0.0209532136880463;
+		if (id == 39) return 0.0742108949874377;
+		if (id == 40) return 0.0209532136880463;
+		if (id == 41) return 0.00623707839948299;
+		if (id == 42) return 0.0209532136880463;
+		if (id == 43) return 0.00623707839948299;
+		if (id == 44) return 0.00000404353462215176;
+		if (id == 45) return 0.0000785975745805697;
+		if (id == 46) return 0.00000404353462215176;
+		if (id == 47) return 0.0000785975745805697;
+		if (id == 48) return 0.0000785975745805697;
+		if (id == 49) return 0.00000404353462215176;
+		if (id == 50) return 0.0000785975745805697;
+		if (id == 51) return 0.00000404353462215176;
+		if (id == 52) return 0.000254627832132497;
+
 	}
 
 	using SG = StreamGrid<int, 3>;
@@ -430,6 +507,8 @@ struct D3Q53_KernelStruct
 	REAL fx = 0, fy = 0, fz = 0;
 	REAL vx = 0, vy = 0, vz = 0;
 	REAL rho = 1.0, lbmViscosity = 1.0;
+	REAL A = 1.0, B1 = 1.0 , B2 = 1.0, B3 = 1.0;
+	REAL alpha = 2.;
 };
 
 // KernelStruct - D3Q27

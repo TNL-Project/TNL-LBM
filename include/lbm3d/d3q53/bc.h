@@ -114,6 +114,31 @@ struct D3Q53_BC_All
 					TNL::swap(KS.f[id], KS.f[KS.flip_id(id)]);
 				}
 				break;
+
+			case GEO_SYM_BOTTOM: // z
+			case GEO_SYM_TOP: //z
+				#ifdef __CUDA_ARCH__
+				#pragma unroll
+				#endif
+				for(int id = 0; id < LBM_KS::Q; id++){
+					Coord c = LBM_KS::id_to_dv(id);
+					if(c.z < 0){// choose one to omit double swap
+						TNL::swap(KS.f[id], KS.f[KS.flip_id_z(id)]);
+					}
+				}
+				break;
+			case GEO_SYM_BACK: // y
+			case GEO_SYM_FRONT: //
+			#ifdef __CUDA_ARCH__
+				#pragma unroll
+				#endif
+				for(int id = 0; id < LBM_KS::Q; id++){
+					Coord c = LBM_KS::id_to_dv(id);
+					if(c.y < 0){// choose one to omit double swap
+						TNL::swap(KS.f[id], KS.f[KS.flip_id_y(id)]);
+					}
+				}
+				break;
 			default:
 				COLL::computeDensityAndVelocity(KS);
 				break;
