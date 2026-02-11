@@ -28,7 +28,6 @@ struct StateLocal : State<NSE>
 
 	real lbm_inflow_vx = 0;
 	real inflow_g = 0;
-	bool NoDV = 1;
 
 	void checkpointStateLocal(adios2::Mode mode) override
 	{
@@ -106,7 +105,7 @@ struct StateLocal : State<NSE>
 		const double visc = (double)nse.lat.physViscosity;
 		const double delta_x = (double)nse.lat.physDl;
 		// get LBM reference temperature (it is speed of sound)
-		const double T0 = NSE::LBM_KS::NoDV == 3  ? (double)0.6979533220196830882384091 : (double)1./3;
+		const double T0 = NSE::LBM_KS::T0;
 		real local_drag = 0;
 		// precalculate which macro to use and in which direction to add pressure
 		const int dirMacro = (dir==0) ? MACRO::e_vx : (dir==1) ? MACRO::e_vy : MACRO::e_vz;
@@ -223,7 +222,7 @@ struct StateLocal : State<NSE>
 		const double H = 0.1; // height of cylinder
 		const double L = 0.1; // length of cylinder
 		const double W = 0.41; // width of cylinder
-		const double Uoverline = 4./9*0.45; // average inflow velocity
+		const double Uoverline = 4./9*nse.lat.lbm2physVelocity(lbm_inflow_vx); // average inflow velocity
 		// DIFFERENT AXIS ORIENTATION
 		real C_D = 2.*integrate_stress_tensor_general([this](int ix,int iy,int iz){ return this->isObject(ix, iy, iz);},0)/(Uoverline*Uoverline)/(H*W);
 		real C_S = 2.*integrate_stress_tensor_general([this](int ix,int iy,int iz){ return this->isObject(ix, iy, iz);},1)/(Uoverline*Uoverline)/(L*H);
@@ -368,13 +367,11 @@ struct StateLocal : State<NSE>
 			block.data.inflow_vx = lbm_inflow_vx;
 			block.data.inflow_vy = 0;
 			block.data.inflow_vz = 0;
-			block.data.InitPoint = nse.lat.phys2lbmPoint(nse.lat.physOrigin);
+			block.data.InitPoint = nse.lat.physOrigin/nse.lat.physDl;
 			block.data.inflow_g = inflow_g;
 			block.data.inflow_y = nse.lat.global.y()-6;
 			block.data.inflow_z = nse.lat.global.z()-6;
-			if(NSE::LBM_KS::NoDV == 3){
-				block.data.no1oT0 = 1./0.6979533220196830882384091; // FOR D3Q343
-			}
+			block.data.no1oT0 = 1./NSE::LBM_KS::T0;
 		}
 	}
 
@@ -428,7 +425,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 
 	state.wallTime = 35000;
 	// add cuts
-	state.cnt[OUT2D].period = 10;
+	state.cnt[OUT2D].period = 0.1;
 	state.add2Dcut_X(X / 2, "cutsX/cut_X");
 	state.add2Dcut_Y(Y / 2, "cutsY/cut_Y");
 	state.add2Dcut_Z(Z / 2, "cutsZ/cut_Z");
@@ -462,7 +459,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	return 0;
 }
 
-template <typename TRAITS = TraitsSP>
+template <typename TRAITS = TraitsDP>
 void run(const std::string& adios_config, int resolution)
 {
 	// D3Q27
@@ -490,10 +487,10 @@ void run(const std::string& adios_config, int resolution)
 	//	D3Q343_MACRO_Default<TRAITS>>;
 
 	// D3Q53
-	using COLL = D3Q53_SRT<TRAITS, D3Q53_EQ<TRAITS>>;
+	using COLL = D3Q53_ELBM<TRAITS, D3Q53_EQ<TRAITS>>;
 	using NSE_CONFIG = LBM_CONFIG<
 		TRAITS,
-		D3Q53_KernelStruct,
+		D3Q53_KernelStruct_ELBM,
 		NSE_Data_DoubleParabolic<TRAITS>,
 		COLL,
 		typename COLL::EQ,

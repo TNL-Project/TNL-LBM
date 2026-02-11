@@ -3,7 +3,8 @@
 #include <utility>
 
 // As of now, enum and sync direction are specific for different models and need to be included before core!!!
-#include "lbm3d/d3q27/defs.h"
+//#include "lbm3d/d3q27/defs.h"
+#include "lbm3d/d3q53/defs.h"
 //#include "lbm3d/d3q343/defs.h"
 #include "lbm3d/core.h"
 
@@ -26,6 +27,7 @@ struct StateLocal : State<NSE>
 	using point_t = typename TRAITS::point_t;
 	using lat_t = Lattice<3, real, idx>;
 
+	real average_inflow = 0;
 	real lbm_inflow_vx = 0;
 	real inflow_g = 0;
 
@@ -37,9 +39,10 @@ struct StateLocal : State<NSE>
 	{
 		// Save/load the inflow velocity
 		checkpoint.saveLoadAttribute("lbm_inflow_vx", lbm_inflow_vx);
-		checkpoint.saveLoadAttribute("inflow_g", inflow_g);
 
 		// You can add any additional state data that needs to be saved/loaded here
+		checkpoint.saveLoadAttribute("average_inflow", average_inflow);
+		checkpoint.saveLoadAttribute("inflow_g", inflow_g);
 
 		if (mode == adios2::Mode::Read)
 			spdlog::info("Checkpoint loaded local state (mode: Read)");
@@ -95,7 +98,7 @@ struct StateLocal : State<NSE>
 		float xshift = x + 0.3*pow(sin(PI*y),4);
 		// Bump area
 		if(xshift > 0.3 && xshift  < 1.2){
-			float fxy = 1.*pow(sin(PI*xshift/0.9 - PI/3.),4); // Wall position
+			float fxy = 0.05*pow(sin(PI*xshift/0.9 - PI/3.),4); // Wall position
 			if(fxy > z){
 				return true;
 			}
@@ -104,7 +107,7 @@ struct StateLocal : State<NSE>
 	}
 
 	template<typename Filter>
-	double integrate_stress_tensor_general(Filter filter, int dir, const double ndc = 2.,const bool dynamicViscosity = true){
+	double integrate_stress_tensor_general(Filter filter, int dir, const double ndc = 4./3.,const bool dynamicViscosity = false){
 		// filter ... which nodes to check (set to desired object)
 		// dir ... in which direction to evaluate
 		// ndc ... normal derivative coefficient (2 for incompressible, 4/3 for compressible)
@@ -114,7 +117,7 @@ struct StateLocal : State<NSE>
 		const double visc = (double)nse.lat.physViscosity;
 		const double delta_x = (double)nse.lat.physDl;
 		// get LBM reference temperature (it is speed of sound)
-		const double T0 = NSE::LBM_KS::NoDV == 3  ? (double)0.6979533220196830882384091 : (double)1./3;
+		const double T0 = NSE::LBM_KS::T0;
 		real local_drag = 0;
 		// precalculate which macro to use and in which direction to add pressure
 		const int dirMacro = (dir==0) ? MACRO::e_vx : (dir==1) ? MACRO::e_vy : MACRO::e_vz;
@@ -231,7 +234,7 @@ struct StateLocal : State<NSE>
 		const double H = 1.; // height of bump, 0.05 in origin
 		const double L = 1.5; // length of bump
 		const double W = 0.5; // width of bump
-		const double Uoverline = 1; // average inflow velocity
+		const double Uoverline = average_inflow; // average inflow velocity
 		real C_D = 2.*integrate_stress_tensor_general([this](int ix,int iy,int iz){ return this->isObject(ix, iy, iz);},0)/(Uoverline*Uoverline)/(H*W);
 		real C_S = 2.*integrate_stress_tensor_general([this](int ix,int iy,int iz){ return this->isObject(ix, iy, iz);},1)/(Uoverline*Uoverline)/(L*H);
 		real C_L = 2.*integrate_stress_tensor_general([this](int ix,int iy,int iz){ return this->isObject(ix, iy, iz);},2)/(Uoverline*Uoverline)/(L*W);
@@ -275,7 +278,7 @@ struct StateLocal : State<NSE>
 		const double H = 1.; // height of bump, 0.05 in origin
 		//const double L = 1.5; // length of bump
 		//const double W = 0.5; // width of bump
-		const double Uoverline = 1; // average inflow velocity
+		const double Uoverline = average_inflow; // average inflow velocity
 		const double delta_x = (double)nse.lat.physDl;
 
 
@@ -334,7 +337,7 @@ struct StateLocal : State<NSE>
 	[[nodiscard]] std::vector<std::string> getOutputDataNames() const override
 	{
 		// return all quantity names used in outputData
-		return {"lbm_density", "lbm_density_fluctuation", "velocity_x", "velocity_y", "velocity_z"};
+		return {"lbm_density", "lbm_density_fluctuation", "velocity_x", "velocity_y", "velocity_z","mywall"};
 	}
 
 	void outputData(UniformDataWriter<TRAITS>& writer, const BLOCK& block, const idx3d& begin, const idx3d& end) override
@@ -376,6 +379,15 @@ struct StateLocal : State<NSE>
 			begin,
 			end
 		);
+		writer.write(
+			"mywall",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return (dreal)(nse.blocks.front().hmap(x, y, z));
+			},
+			begin,
+			end
+		);
 	}
 
 	void updateKernelVelocities() override
@@ -385,9 +397,7 @@ struct StateLocal : State<NSE>
 			block.data.inflow_vy = 0;
 			block.data.inflow_vz = 0;
 			block.data.inflow_g = inflow_g;
-			if(NSE::LBM_KS::NoDV == 3){
-				block.data.no1oT0 = 1./0.6979533220196830882384091; // FOR D3Q343
-			}
+			block.data.no1oT0 = 1./NSE::LBM_KS::T0;
 		}
 	}
 
@@ -409,15 +419,16 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	real PHYS_HEIGHT = 1.;		  // domain height (physical)
 	real PHYS_DEPTH = 0.5;		  // domain depth (physical)
 	// TODO: solve the rounding of pixels to have it precise
-	int X = floor(PHYS_LENGTH * RESOLUTION * block_size);  // width in pixels
-	int Y = floor(PHYS_DEPTH  * RESOLUTION * block_size);  // height in pixels --- top and bottom walls NoDV px
 	int Z = floor(PHYS_HEIGHT * RESOLUTION * block_size); // depth in pixels --- top and bottom walls  NoDV px
+	real PHYS_DL = PHYS_HEIGHT / ((real) Z - 6); // naive fullway bounce-back but everything is part of the domain
+
+	int X = floor(PHYS_LENGTH / PHYS_DL);  // width in pixels
+	int Y = floor(PHYS_DEPTH  / PHYS_DL);  // height in pixels --- top and bottom walls NoDV px
 	real LBM_VISCOSITY = 0.0001;
 	real PHYS_VISCOSITY = 1.e-3;
-	real PHYS_VELOCITY = 100.0;
-	real PHYS_DL = PHYS_HEIGHT / ((real) Z ); // naive fullway bounce-back but everything is part of the domain
+	real PHYS_VELOCITY = .1;
 	real PHYS_DT = LBM_VISCOSITY / PHYS_VISCOSITY * PHYS_DL * PHYS_DL;	//PHYS_HEIGHT/(real)LBM_HEIGHT;
-	point_t PHYS_ORIGIN = {-PHYS_LENGTH/2., -PHYS_DEPTH, 0.};
+	point_t PHYS_ORIGIN = {-PHYS_LENGTH/2., -PHYS_DEPTH, -PHYS_DL*5./2.};
 
 	// initialize the lattice
 	lat_t lat;
@@ -432,17 +443,18 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 
 	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat,adios_config);
 	//state.loadState();
-	state.wallTime = 20000;
+	state.wallTime = 36000;
 
 	// problem parameters
 	state.lbm_inflow_vx = lat.phys2lbmVelocity(PHYS_VELOCITY);
 	state.inflow_g = 0.0005656; // already in nondim
+	state.average_inflow = PHYS_VELOCITY;
 
 	state.nse.physFinalTime = 100;
 	state.cnt[PRINT].period = 0.1;
 
 	// add cuts
-	state.cnt[OUT2D].period = 10.;
+	state.cnt[OUT2D].period = 0.1;
 	state.add2Dcut_X(X / 2, "cutsX/cut_X");
 	state.add2Dcut_Y(Y / 2, "cutsY/cut_Y");
 	state.add2Dcut_Z(Z / 2, "cutsZ/cut_Z");
@@ -462,32 +474,44 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	return 0;
 }
 
-template <typename TRAITS = TraitsSP>
+template <typename TRAITS = TraitsDP>
 void run(const std::string& adios_config, int resolution)
 {
 	// D3Q27
-	using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
-	using NSE_CONFIG = LBM_CONFIG<
-		TRAITS,
-		D3Q27_KernelStruct,
-		NSE_Data_ConstInflow_PressureGradient<TRAITS>,
-		COLL,
-		typename COLL::EQ,
-		D3Q27_STREAMING<TRAITS>,
-		D3Q27_BC_All,
-		D3Q27_MACRO_Default<TRAITS>>;
+	//using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
+	//using NSE_CONFIG = LBM_CONFIG<
+	//	TRAITS,
+	//	D3Q27_KernelStruct,
+	//	NSE_Data_ConstInflow_PressureGradient<TRAITS>,
+	//	COLL,
+	//	typename COLL::EQ,
+	//	D3Q27_STREAMING<TRAITS>,
+	//	D3Q27_BC_All,
+	//	D3Q27_MACRO_Default<TRAITS>>;
 
 	// D3Q343
 	//using COLL = D3Q343_SRT<TRAITS, D3Q343_EQ<TRAITS>>;
 	//using NSE_CONFIG = LBM_CONFIG<
 	//	TRAITS,
 	//	D3Q343_KernelStruct,
-	//	NSE_Data_ConstInflow<TRAITS>,
+	//	NSE_Data_ConstInflow_PressureGradient<TRAITS>,
 	//	COLL,
 	//	typename COLL::EQ,
 	//	D3Q343_STREAMING<TRAITS>,
 	//	D3Q343_BC_All,
 	//	D3Q343_MACRO_Default<TRAITS>>;
+
+	// D3Q53
+	using COLL = D3Q53_SRT<TRAITS, D3Q53_EQ<TRAITS>>;
+	using NSE_CONFIG = LBM_CONFIG<
+		TRAITS,
+		D3Q53_KernelStruct_ELBM,
+		NSE_Data_ConstInflow_PressureGradient<TRAITS>,
+		COLL,
+		typename COLL::EQ,
+		D3Q53_STREAMING<TRAITS>,
+		D3Q53_BC_All,
+		D3Q53_MACRO_Default<TRAITS>>;
 
 	sim<NSE_CONFIG>(adios_config,resolution);
 }
