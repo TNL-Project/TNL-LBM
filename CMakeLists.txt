@@ -6,8 +6,7 @@ if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
 endif()
 
 project(TNL-LBM
-    # FIXME: C is needed only for Adios2 https://github.com/ornladios/ADIOS2/issues/4082
-    LANGUAGES CXX CUDA C
+    LANGUAGES CXX CUDA
 )
 
 # Declare all CMake options for the project
