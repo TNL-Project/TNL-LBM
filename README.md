@@ -109,6 +109,9 @@ project. Note that this is not an exhaustive list.
 If you use TNL-LBM in your scientific projects, please cite the following papers in
 your publications:
 
+- J. Klinkovský, P. Eichler, R. Straka, T. Oberhuber, R. Fučík,
+  [TNL-LBM: Scalable lattice Boltzmann method implementation based on Template Numerical Library](https://doi.org/10.1007/s11227-026-08292-0),
+  Journal of Supercomputing 82, 167 (2026).
 - R. Fučík, P. Eichler, R. Straka, P. Pauš, J. Klinkovský, and T. Oberhuber,
   [On optimal node spacing for immersed boundary–lattice Boltzmann method in 2D and 3D](https://doi.org/10.1016/j.camwa.2018.10.045),
   Computers & Mathematics with Applications 77.4 (2019), pages 1144–1162.
@@ -124,6 +127,9 @@ your publications:
 - M. Beneš, P. Eichler, R. Fučík, J. Hrdlička, J. Klinkovský, M. Kolář, T. Smejkal, P. Skopec, J. Solovský, P. Strachota, R. Straka, and A. Žák,
   [Experimental and numerical investigation of air flow through the distributor plate in a laboratory-scale model of a bubbling fluidized bed boiler](https://doi.org/10.1007/s13160-022-00518-x),
   Japan Journal of Industrial and Applied Mathematics 39.3 (2022), pages 943–958.
+- J. Klinkovský, A. C. Trautz, R. Fučík, T. H. Illangasekare,
+  [Lattice Boltzmann method–based efficient GPU simulator for vapor transport in the boundary layer over a moist soil: Development and experimental validation](https://doi.org/10.1016/j.camwa.2023.02.021),
+  Computers & Mathematics with Applications 138, 65-87 (2023).
 
 ## Authors
 
