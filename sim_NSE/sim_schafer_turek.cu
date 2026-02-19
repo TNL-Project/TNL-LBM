@@ -33,7 +33,7 @@ struct StateLocal : State<NSE>
 	{
 		// Save/load the inflow velocity
 		checkpoint.saveLoadAttribute("lbm_inflow_vx", lbm_inflow_vx);
-		checkpoint.saveLoadAttribute("lbm_inflow_vx", inflow_g);
+		checkpoint.saveLoadAttribute("inflow_g", inflow_g);
 
 		// You can add any additional state data that needs to be saved/loaded here
 
@@ -95,7 +95,7 @@ struct StateLocal : State<NSE>
 		return false;
 	}
 	template<typename Filter>
-	double integrate_stress_tensor_general(Filter filter, int dir, const double ndc = 2.,const bool dynamicViscosity = true){
+	double integrate_stress_tensor_general(Filter filter, int dir, const double ndc = 4./3.,const bool dynamicViscosity = false){
 		// filter ... which nodes to check (set to desired object)
 		// dir ... in which direction to evaluate
 		// ndc ... normal derivative coefficient (2 for incompressible, 4/3 for compressible)
@@ -215,6 +215,177 @@ struct StateLocal : State<NSE>
 		return delta_x*delta_x*drag; // multiply by lattice square size (here in 3D)
 	}
 
+	template<typename Filter>
+	double integrate_stress_tensor_general_only_pressure(Filter filter, int dir){
+		// filter ... which nodes to check (set to desired object)
+		// dir ... in which direction to evaluate
+
+		// access lattice parameters
+		const double visc = (double)nse.lat.physViscosity;
+		const double delta_x = (double)nse.lat.physDl;
+		// get LBM reference temperature (it is speed of sound)
+		const double T0 = NSE::LBM_KS::T0;
+		real local_drag = 0;
+		// precalculate which macro to use and in which direction to add pressure
+		const int dirMacro = (dir==0) ? MACRO::e_vx : (dir==1) ? MACRO::e_vy : MACRO::e_vz;
+		const int dirx = int(dir==0);
+		const int diry = int(dir==1);
+		const int dirz = int(dir==2);
+
+
+		for (int x = nse.blocks.front().offset.x() + 1; x < nse.blocks.front().offset.x() + nse.blocks.front().local.x() - 1; x++) {
+		for (int y = nse.blocks.front().offset.y() + 1; y < nse.blocks.front().offset.y() + nse.blocks.front().local.y() - 1; y++) {
+		for (int z = nse.blocks.front().offset.z() + 1; z < nse.blocks.front().offset.z() + nse.blocks.front().local.z() - 1; z++) {
+			if(nse.blocks.front().hmap(x, y, z) == BC::GEO_WALL && filter(x, y, z)){
+				// N_1 = (1,0,0)
+		 		if(nse.blocks.front().hmap(x+1, y, z) == BC::GEO_FLUID){
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x+1,y,z);
+					const double pressure =   nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
+					// pressure
+					local_drag -= dirx*pressure;
+				}
+				// N_2 = (-1,0,0)
+		 		if(nse.blocks.front().hmap(x-1, y, z) == BC::GEO_FLUID){
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x-1,y,z);
+					const double pressure = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
+					// pressure
+					local_drag += dirx*pressure;
+				}
+				// N_3 = (0,1,0)
+		 		if(nse.blocks.front().hmap(x, y+1, z) == BC::GEO_FLUID){
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x,y+1,z);
+					const double pressure = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
+					// pressure
+					local_drag -= diry*pressure;
+				}
+				// N_4 = (0,-1,0)
+		 		if(nse.blocks.front().hmap(x, y-1, z) == BC::GEO_FLUID){
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x,y-1,z);
+					const double pressure = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
+					// pressure
+					local_drag += diry*pressure;
+				}
+				// N_5 = (0,0,1)
+		 		if(nse.blocks.front().hmap(x, y, z+1) == BC::GEO_FLUID){
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x,y,z+1);
+					const double pressure = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
+					// pressure
+					local_drag -= dirz*pressure;
+				}
+				// N_6 = (0,0,-1)
+		 		if(nse.blocks.front().hmap(x, y, z-1) == BC::GEO_FLUID){
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x,y,z-1);
+					const double pressure = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
+					// pressure
+					local_drag += dirz*pressure;
+				}
+			}
+		}}}
+
+		real drag = TNL::MPI::reduce(local_drag, MPI_SUM, MPI_COMM_WORLD);
+		return delta_x*delta_x*drag; // multiply by lattice square size (here in 3D)
+	}
+
+	template<typename Filter>
+	double integrate_stress_tensor_general_only_viscous(Filter filter, int dir, const double ndc = 4./3.,const bool dynamicViscosity = false){
+		// filter ... which nodes to check (set to desired object)
+		// dir ... in which direction to evaluate
+		// ndc ... normal derivative coefficient (2 for incompressible, 4/3 for compressible)
+		// dynVisc .. dynamic viscosity - whether to use \nu or \nu * rho  = \mu <- dynamic viscosity \mu
+
+		// access lattice parameters
+		const double visc = (double)nse.lat.physViscosity;
+		const double delta_x = (double)nse.lat.physDl;
+		// get LBM reference temperature (it is speed of sound)
+		const double T0 = NSE::LBM_KS::T0;
+		real local_drag = 0;
+		// precalculate which macro to use and in which direction to add pressure
+		const int dirMacro = (dir==0) ? MACRO::e_vx : (dir==1) ? MACRO::e_vy : MACRO::e_vz;
+
+
+		for (int x = nse.blocks.front().offset.x() + 1; x < nse.blocks.front().offset.x() + nse.blocks.front().local.x() - 1; x++) {
+		for (int y = nse.blocks.front().offset.y() + 1; y < nse.blocks.front().offset.y() + nse.blocks.front().local.y() - 1; y++) {
+		for (int z = nse.blocks.front().offset.z() + 1; z < nse.blocks.front().offset.z() + nse.blocks.front().local.z() - 1; z++) {
+			if(nse.blocks.front().hmap(x, y, z) == BC::GEO_WALL && filter(x, y, z)){
+				// N_1 = (1,0,0)
+		 		if(nse.blocks.front().hmap(x+1, y, z) == BC::GEO_FLUID){
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x+1,y,z);
+					const double v = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(dirMacro,x+1,y,z));
+					// +T_(dir+1)1
+					const double dv = v/(delta_x/2);
+					if(dynamicViscosity){
+						local_drag += rho_lbm*ndc*visc*dv;
+					}else{
+						local_drag += ndc*visc*dv;
+					}
+				}
+				// N_2 = (-1,0,0)
+		 		if(nse.blocks.front().hmap(x-1, y, z) == BC::GEO_FLUID){
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x-1,y,z);
+					const double v = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(dirMacro,x-1,y,z));
+					// -T_(dir+1)1
+					const double dv = v/(delta_x/2);
+					if(dynamicViscosity){
+						local_drag += rho_lbm*ndc*visc*dv;
+					}else{
+						local_drag += ndc*visc*dv;
+					}
+				}
+				// N_3 = (0,1,0)
+		 		if(nse.blocks.front().hmap(x, y+1, z) == BC::GEO_FLUID){
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x,y+1,z);
+					const double v = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(dirMacro,x,y+1,z));
+					// T_(dir+1)2
+					const double dv = v/(delta_x/2);
+					if(dynamicViscosity){
+						local_drag += rho_lbm*ndc*visc*dv;
+					}else{
+						local_drag += ndc*visc*dv;
+					}
+				}
+				// N_4 = (0,-1,0)
+		 		if(nse.blocks.front().hmap(x, y-1, z) == BC::GEO_FLUID){
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x,y-1,z);
+					const double v = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(dirMacro,x,y-1,z));
+					// -T_(dir+1)2
+					const double dv = v/(delta_x/2);
+					if(dynamicViscosity){
+						local_drag += rho_lbm*ndc*visc*dv;
+					}else{
+						local_drag += ndc*visc*dv;
+					}
+				}
+				// N_5 = (0,0,1)
+		 		if(nse.blocks.front().hmap(x, y, z+1) == BC::GEO_FLUID){
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x,y,z+1);
+					const double v = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(dirMacro,x,y,z+1));
+					// T_(dir+1)3
+					const double dv = v/(delta_x/2);
+					if(dynamicViscosity){
+						local_drag += rho_lbm*ndc*visc*dv;
+					}else{
+						local_drag += ndc*visc*dv;
+					}
+				}
+				// N_6 = (0,0,-1)
+		 		if(nse.blocks.front().hmap(x, y, z-1) == BC::GEO_FLUID){
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x,y,z-1);
+					const double v = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(dirMacro,x,y,z-1));
+					// -T_(dir+1)3
+					const double dv = v/(delta_x/2);
+					if(dynamicViscosity){
+						local_drag += rho_lbm*ndc*visc*dv;
+					}else{
+						local_drag += ndc*visc*dv;
+					}
+				}
+			}
+		}}}
+
+		real drag = TNL::MPI::reduce(local_drag, MPI_SUM, MPI_COMM_WORLD);
+		return delta_x*delta_x*drag; // multiply by lattice square size (here in 3D)
+	}
+
 
 	bool firstrun = true;
 
@@ -225,6 +396,8 @@ struct StateLocal : State<NSE>
 		const double Uoverline = 4./9*nse.lat.lbm2physVelocity(lbm_inflow_vx); // average inflow velocity
 		// DIFFERENT AXIS ORIENTATION
 		real C_D = 2.*integrate_stress_tensor_general([this](int ix,int iy,int iz){ return this->isObject(ix, iy, iz);},0)/(Uoverline*Uoverline)/(H*W);
+		real C_D_P = 2.*integrate_stress_tensor_general_only_pressure([this](int ix,int iy,int iz){ return this->isObject(ix, iy, iz);},0)/(Uoverline*Uoverline)/(H*W);
+		real C_D_nu = 2.*integrate_stress_tensor_general_only_viscous([this](int ix,int iy,int iz){ return this->isObject(ix, iy, iz);},0)/(Uoverline*Uoverline)/(H*W);
 		real C_S = 2.*integrate_stress_tensor_general([this](int ix,int iy,int iz){ return this->isObject(ix, iy, iz);},1)/(Uoverline*Uoverline)/(L*H);
 		real C_L = 2.*integrate_stress_tensor_general([this](int ix,int iy,int iz){ return this->isObject(ix, iy, iz);},2)/(Uoverline*Uoverline)/(L*W);
 
@@ -240,6 +413,14 @@ struct StateLocal : State<NSE>
 			std::string str = fmt::format("{}/probe_cd", dir);
 			f = fopen(str.c_str(), iotype);
 			fprintf(f, "%e\t%e\n", nse.physTime(), C_D);
+			fclose(f);
+			str = fmt::format("{}/probe_cdP", dir);
+			f = fopen(str.c_str(), iotype);
+			fprintf(f, "%e\t%e\n", nse.physTime(), C_D_P);
+			fclose(f);
+			str = fmt::format("{}/probe_cdnu", dir);
+			f = fopen(str.c_str(), iotype);
+			fprintf(f, "%e\t%e\n", nse.physTime(), C_D_nu);
 			fclose(f);
 
 			str = fmt::format("{}/probe_cs", dir);
@@ -265,7 +446,7 @@ struct StateLocal : State<NSE>
 		bool firstrunProfile = true;
 	void dragprofile(){
 		const double H = 0.1;
-		const double Uoverline = 4./9.*0.45; // average inflow velocity
+		const double Uoverline = 4./9.*nse.lat.lbm2physVelocity(lbm_inflow_vx); // average inflow velocity
 		const double delta_x = (double)nse.lat.physDl;
 
 
@@ -316,7 +497,7 @@ struct StateLocal : State<NSE>
 	[[nodiscard]] std::vector<std::string> getOutputDataNames() const override
 	{
 		// return all quantity names used in outputData
-		return {"lbm_density", "lbm_density_fluctuation", "velocity_x", "velocity_y", "velocity_z"};
+		return {"lbm_density", "lbm_density_fluctuation", "velocity_x", "velocity_y", "velocity_z", "mywall"};
 	}
 
 
@@ -359,6 +540,15 @@ struct StateLocal : State<NSE>
 			begin,
 			end
 		);
+		writer.write(
+			"mywall",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return (dreal)(nse.blocks.front().hmap(x, y, z));
+			},
+			begin,
+			end
+		);
 	}
 
 	void updateKernelVelocities() override
@@ -397,10 +587,17 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	real PHYS_DL = PHYS_HEIGHT / ((real) Y - 6); // naive fullway bounce-back
 	int X = floor(PHYS_LENGTH/PHYS_DL);
 	int Z = Y;
-	real LBM_VISCOSITY = 0.001;
-	real PHYS_VISCOSITY = 0.001;
+
 	real PHYS_VELOCITY = 0.45;
-	real PHYS_DT = LBM_VISCOSITY / PHYS_VISCOSITY * PHYS_DL * PHYS_DL;	//PHYS_HEIGHT/(real)LBM_HEIGHT;
+	real PHYS_VISCOSITY = 0.001;
+	// Diffusive scaling
+	//real LBM_VISCOSITY = 0.001;
+	//real PHYS_DT = LBM_VISCOSITY / PHYS_VISCOSITY * PHYS_DL * PHYS_DL;	//PHYS_HEIGHT/(real)LBM_HEIGHT;
+	// Acoustic scaling
+	real LBM_VELOCITY = 0.1;
+	real PHYS_DT = PHYS_DL * LBM_VELOCITY/PHYS_VELOCITY;
+	real LBM_VISCOSITY = PHYS_VELOCITY * PHYS_DT / PHYS_DL /PHYS_DL;
+
 	point_t PHYS_ORIGIN = {0., -5./2*PHYS_DL, -5./2*PHYS_DL};
 
 	real g = PHYS_VISCOSITY*PHYS_VELOCITY/(PHYS_HEIGHT*PHYS_HEIGHT*0.25*0.5);
@@ -421,18 +618,20 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	state.inflow_g = lat.phys2lbmForce(g);
 
 	state.nse.physFinalTime = 100;
-	state.cnt[PRINT].period = 0.1;
+	state.cnt[PRINT].period = 1.;
 
-	state.wallTime = 35000;
+
+	state.cnt[SAVESTATE].period = -1.;
+	state.wallTime = 36000.;
 	// add cuts
-	state.cnt[OUT2D].period = 0.1;
+	state.cnt[OUT2D].period = 10.;
 	state.add2Dcut_X(X / 2, "cutsX/cut_X");
 	state.add2Dcut_Y(Y / 2, "cutsY/cut_Y");
 	state.add2Dcut_Z(Z / 2, "cutsZ/cut_Z");
 
-	state.cnt[OUT3D].period = 50;
-	state.cnt[OUT3DCUT].period = 50;
-	state.add3Dcut(X / 4, Y / 4, Z / 4, X / 2, Y / 2, Z / 2, "box");
+	state.cnt[OUT3D].period = 10;
+	//state.cnt[OUT3DCUT].period = 10;
+	//state.add3Dcut(X / 4, Y / 4, Z / 4, X / 2, Y / 2, Z / 2, "box");
 
 	state.cnt[PROBE1].period = 1.;
 
@@ -459,20 +658,31 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	return 0;
 }
 
-template <typename TRAITS = TraitsDP>
+template <typename TRAITS = TraitsSP>
 void run(const std::string& adios_config, int resolution)
 {
 	// D3Q27
-	//using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
-	//using NSE_CONFIG = LBM_CONFIG<
-	//	TRAITS,
-	//	D3Q27_KernelStruct,
-	//	NSE_Data_DoubleParabolic<TRAITS>,
-	//	COLL,
-	//	typename COLL::EQ,
-	//	D3Q27_STREAMING<TRAITS>,
-	//	D3Q27_BC_All,
-	//	D3Q27_MACRO_Default<TRAITS>>;
+	// using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
+	// using NSE_CONFIG = LBM_CONFIG<
+	// 	TRAITS,
+	// 	D3Q27_KernelStruct,
+	// 	NSE_Data_DoubleParabolic<TRAITS>,
+	// 	COLL,
+	// 	typename COLL::EQ,
+	// 	D3Q27_STREAMING<TRAITS>,
+	// 	D3Q27_BC_All,
+	// 	D3Q27_MACRO_Default<TRAITS>>;
+	// D3Q27
+	using COLL = D3Q27_GENERAL_SRT<TRAITS, D3Q27_EQ_ENTROPIC2<TRAITS>>;
+	using NSE_CONFIG = LBM_CONFIG<
+		TRAITS,
+		D3Q27_KernelStruct,
+		NSE_Data_DoubleParabolic<TRAITS>,
+		COLL,
+		typename COLL::EQ,
+		D3Q27_STREAMING<TRAITS>,
+		D3Q27_BC_All,
+		D3Q27_MACRO_Default<TRAITS>>;
 
 	// D3Q343
 	//using COLL = D3Q343_ELBM<TRAITS, D3Q343_EQ<TRAITS>>;
@@ -487,16 +697,16 @@ void run(const std::string& adios_config, int resolution)
 	//	D3Q343_MACRO_Default<TRAITS>>;
 
 	// D3Q53
-	using COLL = D3Q53_ELBM<TRAITS, D3Q53_EQ<TRAITS>>;
-	using NSE_CONFIG = LBM_CONFIG<
-		TRAITS,
-		D3Q53_KernelStruct_ELBM,
-		NSE_Data_DoubleParabolic<TRAITS>,
-		COLL,
-		typename COLL::EQ,
-		D3Q53_STREAMING<TRAITS>,
-		D3Q53_BC_All,
-		D3Q53_MACRO_Default<TRAITS>>;
+	// using COLL = D3Q53_SRT<TRAITS, D3Q53_EQ<TRAITS>>;
+	// using NSE_CONFIG = LBM_CONFIG<
+	// 	TRAITS,
+	// 	D3Q53_KernelStruct_ELBM,
+	// 	NSE_Data_DoubleParabolic<TRAITS>,
+	// 	COLL,
+	// 	typename COLL::EQ,
+	// 	D3Q53_STREAMING<TRAITS>,
+	// 	D3Q53_BC_All,
+	// 	D3Q53_MACRO_Default<TRAITS>>;
 
 	sim<NSE_CONFIG>(adios_config, resolution);
 }
