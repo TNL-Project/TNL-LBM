@@ -30,6 +30,7 @@ struct StateLocal : State<NSE>
 	real average_inflow = 0;
 	real lbm_inflow_vx = 0;
 	real inflow_g = 0;
+	real bump_height = 0.05;
 
 	// Refernce values for drag and lift
 	double H,L,W; // bump dimensions
@@ -43,6 +44,9 @@ struct StateLocal : State<NSE>
 		// You can add any additional state data that needs to be saved/loaded here
 		checkpoint.saveLoadAttribute("average_inflow", average_inflow);
 		checkpoint.saveLoadAttribute("inflow_g", inflow_g);
+		checkpoint.saveLoadAttribute("bump_height", bump_height);
+		checkpoint.saveLoadAttribute("firstrun",firstrun);
+		checkpoint.saveLoadAttribute("firstrunProfile",firstrunProfile);
 
 		if (mode == adios2::Mode::Read)
 			spdlog::info("Checkpoint loaded local state (mode: Read)");
@@ -67,18 +71,19 @@ struct StateLocal : State<NSE>
 		//nse.setBoundaryX(nse.lat.global.x() - 3, BC::GEO_PERIODIC);  // right
 
 		const int margin = 0;
-		nse.setBoundaryZ(1-1+margin,                      BC::GEO_SYM_TOP);						 // top
-		nse.setBoundaryZ(2-1+margin,                      BC::GEO_SYM_TOP);						 // top
-		nse.setBoundaryZ(3-1+margin,                      BC::GEO_SYM_TOP);						 // top
+		nse.setBoundaryZ(1-1+margin,                      BC::GEO_SYM_TOP   );						 // top
+		nse.setBoundaryZ(2-1+margin,                      BC::GEO_SYM_TOP   );						 // top
+		nse.setBoundaryZ(3-1+margin,                      BC::GEO_SYM_TOP   );						 // top
 		nse.setBoundaryZ(nse.lat.global.z() - 2+1-margin, BC::GEO_SYM_BOTTOM);	 // bottom
 		nse.setBoundaryZ(nse.lat.global.z() - 3+1-margin, BC::GEO_SYM_BOTTOM);	 // bottom
 		nse.setBoundaryZ(nse.lat.global.z() - 4+1-margin, BC::GEO_SYM_BOTTOM);	 // bottom
-		nse.setBoundaryY(1-1+margin, 					  BC::GEO_SYM_BACK);						 // back
-		nse.setBoundaryY(2-1+margin, 					  BC::GEO_SYM_BACK);						 // back
-		nse.setBoundaryY(3-1+margin, 					  BC::GEO_SYM_BACK);						 // back
-		nse.setBoundaryY(nse.lat.global.y() - 2+1-margin, BC::GEO_SYM_FRONT);	 // front
-		nse.setBoundaryY(nse.lat.global.y() - 3+1-margin, BC::GEO_SYM_FRONT);	 // front
-		nse.setBoundaryY(nse.lat.global.y() - 4+1-margin, BC::GEO_SYM_FRONT);	 // front
+		nse.setBoundaryY(1-1+margin, 					  BC::GEO_SYM_BACK  );						 // back
+		nse.setBoundaryY(2-1+margin, 					  BC::GEO_SYM_BACK  );						 // back
+		nse.setBoundaryY(3-1+margin, 					  BC::GEO_SYM_BACK  );						 // back
+		nse.setBoundaryY(nse.lat.global.y() - 2+1-margin, BC::GEO_SYM_FRONT );	 // front
+		nse.setBoundaryY(nse.lat.global.y() - 3+1-margin, BC::GEO_SYM_FRONT );	 // front
+		nse.setBoundaryY(nse.lat.global.y() - 4+1-margin, BC::GEO_SYM_FRONT );	 // front
+
 
 		for (int px = 0; px <= nse.lat.global.x(); px++){
 		for (int py = 0; py <= nse.lat.global.y(); py++){
@@ -98,7 +103,7 @@ struct StateLocal : State<NSE>
 		float xshift = x + 0.3*pow(sin(PI*y),4);
 		// Bump area
 		if(xshift > 0.3 && xshift  < 1.2){
-			float fxy = 0.05*pow(sin(PI*xshift/0.9 - PI/3.),4); // Wall position
+			float fxy = bump_height*pow(sin(PI*xshift/0.9 - PI/3.),4); // Wall position
 			if(fxy > z){
 				return true;
 			}
@@ -227,15 +232,188 @@ struct StateLocal : State<NSE>
 		return delta_x*delta_x*drag; // multiply by lattice square size (here in 3D)
 	}
 
+	template<typename Filter>
+	double integrate_stress_tensor_general_only_pressure(Filter filter, int dir){
+		// filter ... which nodes to check (set to desired object)
+		// dir ... in which direction to evaluate
+
+		// access lattice parameters
+		const double visc = (double)nse.lat.physViscosity;
+		const double delta_x = (double)nse.lat.physDl;
+		// get LBM reference temperature (it is speed of sound)
+		const double T0 = NSE::LBM_KS::T0;
+		real local_drag = 0;
+		// precalculate which macro to use and in which direction to add pressure
+		const int dirMacro = (dir==0) ? MACRO::e_vx : (dir==1) ? MACRO::e_vy : MACRO::e_vz;
+		const int dirx = int(dir==0);
+		const int diry = int(dir==1);
+		const int dirz = int(dir==2);
+
+
+		for (int x = nse.blocks.front().offset.x() + 1; x < nse.blocks.front().offset.x() + nse.blocks.front().local.x() - 1; x++) {
+		for (int y = nse.blocks.front().offset.y() + 1; y < nse.blocks.front().offset.y() + nse.blocks.front().local.y() - 1; y++) {
+		for (int z = nse.blocks.front().offset.z() + 1; z < nse.blocks.front().offset.z() + nse.blocks.front().local.z() - 1; z++) {
+			if(nse.blocks.front().hmap(x, y, z) == BC::GEO_WALL && filter(x, y, z)){
+				// N_1 = (1,0,0)
+		 		if(nse.blocks.front().hmap(x+1, y, z) == BC::GEO_FLUID){
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x+1,y,z);
+					const double pressure =   nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
+					// pressure
+					local_drag -= dirx*pressure;
+				}
+				// N_2 = (-1,0,0)
+		 		if(nse.blocks.front().hmap(x-1, y, z) == BC::GEO_FLUID){
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x-1,y,z);
+					const double pressure = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
+					// pressure
+					local_drag += dirx*pressure;
+				}
+				// N_3 = (0,1,0)
+		 		if(nse.blocks.front().hmap(x, y+1, z) == BC::GEO_FLUID){
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x,y+1,z);
+					const double pressure = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
+					// pressure
+					local_drag -= diry*pressure;
+				}
+				// N_4 = (0,-1,0)
+		 		if(nse.blocks.front().hmap(x, y-1, z) == BC::GEO_FLUID){
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x,y-1,z);
+					const double pressure = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
+					// pressure
+					local_drag += diry*pressure;
+				}
+				// N_5 = (0,0,1)
+		 		if(nse.blocks.front().hmap(x, y, z+1) == BC::GEO_FLUID){
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x,y,z+1);
+					const double pressure = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
+					// pressure
+					local_drag -= dirz*pressure;
+				}
+				// N_6 = (0,0,-1)
+		 		if(nse.blocks.front().hmap(x, y, z-1) == BC::GEO_FLUID){
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x,y,z-1);
+					const double pressure = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
+					// pressure
+					local_drag += dirz*pressure;
+				}
+			}
+		}}}
+
+		real drag = TNL::MPI::reduce(local_drag, MPI_SUM, MPI_COMM_WORLD);
+		return delta_x*delta_x*drag; // multiply by lattice square size (here in 3D)
+	}
+
+	template<typename Filter>
+	double integrate_stress_tensor_general_only_viscous(Filter filter, int dir, const double ndc = 4./3.,const bool dynamicViscosity = false){
+		// filter ... which nodes to check (set to desired object)
+		// dir ... in which direction to evaluate
+		// ndc ... normal derivative coefficient (2 for incompressible, 4/3 for compressible)
+		// dynVisc .. dynamic viscosity - whether to use \nu or \nu * rho  = \mu <- dynamic viscosity \mu
+
+		// access lattice parameters
+		const double visc = (double)nse.lat.physViscosity;
+		const double delta_x = (double)nse.lat.physDl;
+		// get LBM reference temperature (it is speed of sound)
+		const double T0 = NSE::LBM_KS::T0;
+		real local_drag = 0;
+		// precalculate which macro to use and in which direction to add pressure
+		const int dirMacro = (dir==0) ? MACRO::e_vx : (dir==1) ? MACRO::e_vy : MACRO::e_vz;
+
+
+		for (int x = nse.blocks.front().offset.x() + 1; x < nse.blocks.front().offset.x() + nse.blocks.front().local.x() - 1; x++) {
+		for (int y = nse.blocks.front().offset.y() + 1; y < nse.blocks.front().offset.y() + nse.blocks.front().local.y() - 1; y++) {
+		for (int z = nse.blocks.front().offset.z() + 1; z < nse.blocks.front().offset.z() + nse.blocks.front().local.z() - 1; z++) {
+			if(nse.blocks.front().hmap(x, y, z) == BC::GEO_WALL && filter(x, y, z)){
+				// N_1 = (1,0,0)
+		 		if(nse.blocks.front().hmap(x+1, y, z) == BC::GEO_FLUID){
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x+1,y,z);
+					const double v = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(dirMacro,x+1,y,z));
+					// +T_(dir+1)1
+					const double dv = v/(delta_x/2);
+					if(dynamicViscosity){
+						local_drag += rho_lbm*ndc*visc*dv;
+					}else{
+						local_drag += ndc*visc*dv;
+					}
+				}
+				// N_2 = (-1,0,0)
+		 		if(nse.blocks.front().hmap(x-1, y, z) == BC::GEO_FLUID){
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x-1,y,z);
+					const double v = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(dirMacro,x-1,y,z));
+					// -T_(dir+1)1
+					const double dv = v/(delta_x/2);
+					if(dynamicViscosity){
+						local_drag += rho_lbm*ndc*visc*dv;
+					}else{
+						local_drag += ndc*visc*dv;
+					}
+				}
+				// N_3 = (0,1,0)
+		 		if(nse.blocks.front().hmap(x, y+1, z) == BC::GEO_FLUID){
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x,y+1,z);
+					const double v = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(dirMacro,x,y+1,z));
+					// T_(dir+1)2
+					const double dv = v/(delta_x/2);
+					if(dynamicViscosity){
+						local_drag += rho_lbm*ndc*visc*dv;
+					}else{
+						local_drag += ndc*visc*dv;
+					}
+				}
+				// N_4 = (0,-1,0)
+		 		if(nse.blocks.front().hmap(x, y-1, z) == BC::GEO_FLUID){
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x,y-1,z);
+					const double v = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(dirMacro,x,y-1,z));
+					// -T_(dir+1)2
+					const double dv = v/(delta_x/2);
+					if(dynamicViscosity){
+						local_drag += rho_lbm*ndc*visc*dv;
+					}else{
+						local_drag += ndc*visc*dv;
+					}
+				}
+				// N_5 = (0,0,1)
+		 		if(nse.blocks.front().hmap(x, y, z+1) == BC::GEO_FLUID){
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x,y,z+1);
+					const double v = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(dirMacro,x,y,z+1));
+					// T_(dir+1)3
+					const double dv = v/(delta_x/2);
+					if(dynamicViscosity){
+						local_drag += rho_lbm*ndc*visc*dv;
+					}else{
+						local_drag += ndc*visc*dv;
+					}
+				}
+				// N_6 = (0,0,-1)
+		 		if(nse.blocks.front().hmap(x, y, z-1) == BC::GEO_FLUID){
+					const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x,y,z-1);
+					const double v = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(dirMacro,x,y,z-1));
+					// -T_(dir+1)3
+					const double dv = v/(delta_x/2);
+					if(dynamicViscosity){
+						local_drag += rho_lbm*ndc*visc*dv;
+					}else{
+						local_drag += ndc*visc*dv;
+					}
+				}
+			}
+		}}}
+
+		real drag = TNL::MPI::reduce(local_drag, MPI_SUM, MPI_COMM_WORLD);
+		return delta_x*delta_x*drag; // multiply by lattice square size (here in 3D)
+	}
+
 
 	bool firstrun = true;
 
 	void dragshiftlift() {
-		const double H = 1.; // height of bump, 0.05 in origin
+		const double H = bump_height; // height of bump, 0.05 in origin
 		const double L = 1.5; // length of bump
 		const double W = 0.5; // width of bump
 		const double Uoverline = average_inflow; // average inflow velocity
 		real C_D = 2.*integrate_stress_tensor_general([this](int ix,int iy,int iz){ return this->isObject(ix, iy, iz);},0)/(Uoverline*Uoverline)/(H*W);
+		real C_D_P = 2.*integrate_stress_tensor_general_only_pressure([this](int ix,int iy,int iz){ return this->isObject(ix, iy, iz);},0)/(Uoverline*Uoverline)/(H*W);
+		real C_D_nu = 2.*integrate_stress_tensor_general_only_viscous([this](int ix,int iy,int iz){ return this->isObject(ix, iy, iz);},0)/(Uoverline*Uoverline)/(H*W);
 		real C_S = 2.*integrate_stress_tensor_general([this](int ix,int iy,int iz){ return this->isObject(ix, iy, iz);},1)/(Uoverline*Uoverline)/(L*H);
 		real C_L = 2.*integrate_stress_tensor_general([this](int ix,int iy,int iz){ return this->isObject(ix, iy, iz);},2)/(Uoverline*Uoverline)/(L*W);
 
@@ -251,6 +429,14 @@ struct StateLocal : State<NSE>
 			std::string str = fmt::format("{}/probe_cd", dir);
 			f = fopen(str.c_str(), iotype);
 			fprintf(f, "%e\t%e\n", nse.physTime(), C_D);
+			fclose(f);
+			str = fmt::format("{}/probe_cdP", dir);
+			f = fopen(str.c_str(), iotype);
+			fprintf(f, "%e\t%e\n", nse.physTime(), C_D_P);
+			fclose(f);
+			str = fmt::format("{}/probe_cdnu", dir);
+			f = fopen(str.c_str(), iotype);
+			fprintf(f, "%e\t%e\n", nse.physTime(), C_D_nu);
 			fclose(f);
 
 			str = fmt::format("{}/probe_cs", dir);
@@ -275,7 +461,7 @@ struct StateLocal : State<NSE>
 	}
 	bool firstrunProfile = true;
 	void dragprofile(){
-		const double H = 1.; // height of bump, 0.05 in origin
+		const double H = bump_height; // height of bump, 0.05 in origin
 		//const double L = 1.5; // length of bump
 		//const double W = 0.5; // width of bump
 		const double Uoverline = average_inflow; // average inflow velocity
@@ -449,6 +635,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	state.lbm_inflow_vx = lat.phys2lbmVelocity(PHYS_VELOCITY);
 	state.inflow_g = 0.0005656; // already in nondim
 	state.average_inflow = PHYS_VELOCITY;
+	state.bump_height = 0.05;
 
 	state.nse.physFinalTime = 100;
 	state.cnt[PRINT].period = 0.1;
