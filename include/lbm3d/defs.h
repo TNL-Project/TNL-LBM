@@ -250,6 +250,21 @@ struct D3Q27_KernelStruct
 
 	__cuda_callable__ CONSTFUNC int flip_coord(int val){return ONE_SIZE-val-1;}
 	__cuda_callable__ CONSTFUNC int flip_id(int id){return Q - id - 1;}
+	__cuda_callable__ CONSTFUNC int flip_id_x(int id){
+		Coord c = id_to_coords(id);
+		int nx = flip_coord(c.x);
+		return coords_to_id(nx, c.y, c.z);
+	}
+	__cuda_callable__ CONSTFUNC int flip_id_y(int id){
+		Coord c = id_to_coords(id);
+		int ny = flip_coord(c.y);
+		return coords_to_id(c.x, ny, c.z);
+	}
+	__cuda_callable__ CONSTFUNC int flip_id_z(int id){
+		Coord c = id_to_coords(id);
+		int nz = flip_coord(c.z);
+		return coords_to_id(c.x, c.y, nz);
+	}
 
 	__cuda_callable__ CONSTFUNC Coord id_to_dv(int id){
 		int x = id / (ONE_SIZE * ONE_SIZE);

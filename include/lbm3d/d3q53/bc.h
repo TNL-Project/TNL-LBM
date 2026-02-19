@@ -116,28 +116,76 @@ struct D3Q53_BC_All
 				break;
 
 			case GEO_SYM_BOTTOM: // z
+				#ifdef __CUDA_ARCH__
+				#pragma unroll
+				#endif
+				for(int id = 0; id < LBM_KS::Q; id++){
+					Coord c = LBM_KS::id_to_dv(id);
+					if(c.z < 0){
+						KS.f[id] = KS.f[KS.dv_to_id(c.x,c.y,-c.z)];
+					}
+				}
+				COLL::computeDensityAndVelocity(KS);
+				break;
 			case GEO_SYM_TOP: //z
 				#ifdef __CUDA_ARCH__
 				#pragma unroll
 				#endif
 				for(int id = 0; id < LBM_KS::Q; id++){
 					Coord c = LBM_KS::id_to_dv(id);
-					if(c.z < 0){// choose one to omit double swap
-						TNL::swap(KS.f[id], KS.f[KS.flip_id_z(id)]);
+					if(c.z > 0){
+						KS.f[id] = KS.f[KS.dv_to_id(c.x,c.y,-c.z)];
 					}
 				}
+				COLL::computeDensityAndVelocity(KS);
 				break;
 			case GEO_SYM_BACK: // y
-			case GEO_SYM_FRONT: //
-			#ifdef __CUDA_ARCH__
+				#ifdef __CUDA_ARCH__
 				#pragma unroll
 				#endif
 				for(int id = 0; id < LBM_KS::Q; id++){
 					Coord c = LBM_KS::id_to_dv(id);
-					if(c.y < 0){// choose one to omit double swap
-						TNL::swap(KS.f[id], KS.f[KS.flip_id_y(id)]);
+					if(c.y > 0){
+						KS.f[id] = KS.f[KS.dv_to_id(c.x,-c.y,c.z)];
 					}
 				}
+				COLL::computeDensityAndVelocity(KS);
+				break;
+			case GEO_SYM_FRONT: // y
+				#ifdef __CUDA_ARCH__
+				#pragma unroll
+				#endif
+				for(int id = 0; id < LBM_KS::Q; id++){
+					Coord c = LBM_KS::id_to_dv(id);
+					if(c.y < 0){
+						KS.f[id] = KS.f[KS.dv_to_id(c.x,-c.y,c.z)];
+					}
+				}
+				COLL::computeDensityAndVelocity(KS);
+				break;
+			case GEO_SYM_LEFT: // x
+				#ifdef __CUDA_ARCH__
+				#pragma unroll
+				#endif
+				for(int id = 0; id < LBM_KS::Q; id++){
+					Coord c = LBM_KS::id_to_dv(id);
+					if(c.x < 0){
+						KS.f[id] = KS.f[KS.dv_to_id(-c.x,c.y,c.z)];
+					}
+				}
+				COLL::computeDensityAndVelocity(KS);
+				break;
+			case GEO_SYM_RIGHT: // x
+				#ifdef __CUDA_ARCH__
+				#pragma unroll
+				#endif
+				for(int id = 0; id < LBM_KS::Q; id++){
+					Coord c = LBM_KS::id_to_dv(id);
+					if(c.x > 0){
+						KS.f[id] = KS.f[KS.dv_to_id(-c.x,c.y,c.z)];
+					}
+				}
+				COLL::computeDensityAndVelocity(KS);
 				break;
 			default:
 				COLL::computeDensityAndVelocity(KS);

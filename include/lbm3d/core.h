@@ -32,6 +32,7 @@
 #include "d3q27/col_kbc_n.h"
 #include "d3q27/col_kbc_c.h"
 #include "d3q27/col_srt_modif_force.h"
+#include "d3q27/col_general_srt.h"
 
 #include "d3q27/col_srt_well.h"
 #include "d3q27/col_clbm_well.h"
