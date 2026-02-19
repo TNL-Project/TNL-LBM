@@ -34,6 +34,8 @@ struct StateLocal : State<NSE>
 		// Save/load the inflow velocity
 		checkpoint.saveLoadAttribute("lbm_inflow_vx", lbm_inflow_vx);
 		checkpoint.saveLoadAttribute("inflow_g", inflow_g);
+		checkpoint.saveLoadAttribute("firstrun",firstrun);
+		checkpoint.saveLoadAttribute("firstrunProfile",firstrunProfile);
 
 		// You can add any additional state data that needs to be saved/loaded here
 
