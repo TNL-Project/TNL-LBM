@@ -208,7 +208,7 @@ struct D3Q27_BC_All
 				STREAMING::streamingInterpRight(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				COLL::computeDensityAndVelocity(KS);
 				COLL::setEquilibriumDecomposition(KS, 1);
-				KS.rho = 1;
+				COLL::computeDensityAndVelocity(KS);
 				break;
 			case GEO_WALL:
 				// does not affect the computation, only the output

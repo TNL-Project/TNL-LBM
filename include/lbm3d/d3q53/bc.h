@@ -99,6 +99,14 @@ struct D3Q53_BC_All
 			case GEO_OUTFLOW_RIGHT:
 				COLL::computeDensityAndVelocity(KS);
 				KS.rho = 1;
+				COLL::setEquilibriumDecomposition(KS, 1);
+				COLL::computeDensityAndVelocity(KS);
+				break;
+			case GEO_OUTFLOW_RIGHT_INTERP:
+				STREAMING::streamingInterpRight(SD, KS, streamGrid);
+				COLL::computeDensityAndVelocity(KS);
+				COLL::setEquilibriumDecomposition(KS, 1);
+				COLL::computeDensityAndVelocity(KS);
 				break;
 			case GEO_WALL:
 				// does not affect the computation, only the output
