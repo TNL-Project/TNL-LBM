@@ -247,6 +247,7 @@ struct D3Q27_KernelStruct
 	static constexpr int NoDV = 1;
 	static constexpr int ONE_SIZE = 2*NoDV + 1;
 	static constexpr REAL T0 = 1./3;
+	static constexpr REAL cs = sqrt(T0);
 
 	__cuda_callable__ CONSTFUNC int flip_coord(int val){return ONE_SIZE-val-1;}
 	__cuda_callable__ CONSTFUNC int flip_id(int id){return Q - id - 1;}
@@ -318,6 +319,7 @@ struct D3Q343_KernelStruct
 	static constexpr int NoDV = 3;
 	static constexpr int ONE_SIZE = 2*NoDV + 1;
 	static constexpr REAL T0 = 0.6979533220196830882384091;
+	static constexpr REAL cs = sqrt(T0);
 
 	__cuda_callable__ CONSTFUNC int flip_coord(int val){return ONE_SIZE-val-1;}
 	__cuda_callable__ CONSTFUNC int flip_id(int id){return Q - id - 1;}
@@ -363,6 +365,7 @@ struct D3Q53_KernelStruct_ELBM
 	static constexpr int Qhalf = (Q-1)/2;
 	static constexpr int NoDV = 3;
 	static constexpr int ONE_SIZE = 2*NoDV + 1;
+	static constexpr REAL cs = sqrt(T0);
 
 	__cuda_callable__ CONSTFUNC int flip_coord(int val){return ONE_SIZE-val-1;}
 	__cuda_callable__ CONSTFUNC int flip_id(int id){return Q - id - 1;}

@@ -27,6 +27,7 @@ struct StateLocal : State<NSE>
 	using point_t = typename TRAITS::point_t;
 	using lat_t = Lattice<3, real, idx>;
 
+	real lbm_inflow_vx = 0;
 	real average_inflow = 0;
 	real lbm_inflow_vx = 0;
 	real inflow_g = 0;
@@ -45,8 +46,8 @@ struct StateLocal : State<NSE>
 		checkpoint.saveLoadAttribute("average_inflow", average_inflow);
 		checkpoint.saveLoadAttribute("inflow_g", inflow_g);
 		checkpoint.saveLoadAttribute("bump_height", bump_height);
-		checkpoint.saveLoadAttribute("firstrun",firstrun);
-		checkpoint.saveLoadAttribute("firstrunProfile",firstrunProfile);
+		//checkpoint.saveLoadAttribute("firstrun",firstrun);
+		//checkpoint.saveLoadAttribute("firstrunProfile",firstrunProfile);
 
 		if (mode == adios2::Mode::Read)
 			spdlog::info("Checkpoint loaded local state (mode: Read)");
