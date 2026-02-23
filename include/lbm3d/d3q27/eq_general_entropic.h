@@ -12,7 +12,7 @@ struct D3Q27_EQ_ENTROPIC2
 
 	static constexpr dreal w0 = 2./3;
 	static constexpr dreal w1 = 1./6;
-    __cuda_callable__ static dreal feq(dreal rho, int qx, int qy, int qz, dreal vx, dreal vy, dreal vz, int id){
+    __cuda_callable__ static dreal feq(int qx, int qy, int qz, dreal vx, dreal vy, dreal vz){
         static const dreal ws[2] = {w0,w1};
         const dreal Kx = (dreal)sqrt(1.+3.*vx*vx);
         const dreal Ky = (dreal)sqrt(1.+3.*vy*vy);
@@ -24,7 +24,7 @@ struct D3Q27_EQ_ENTROPIC2
 		const dreal Bz = (dreal)1.0*(2.*vz+Kz)/(1.-vz);
         const dreal Az = (dreal)1./(w0+w1*Bz+1.0*w1/Bz);
 
-        dreal result = (dreal)rho*Ax*Ay*Az*ws[abs(qx)]*ws[abs(qy)]*ws[abs(qz)];
+        dreal result = (dreal)Ax*Ay*Az*ws[abs(qx)]*ws[abs(qy)]*ws[abs(qz)];
         if(qx == -1){
             result /= Bx;
         }else if (qx == 1) {

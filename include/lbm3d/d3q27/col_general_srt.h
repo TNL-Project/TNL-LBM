@@ -20,7 +20,7 @@ struct D3Q27_GENERAL_SRT : D3Q27_COMMON_GENERAL<TRAITS, LBM_EQ>
 		#endif
 		for(int id = 0; id < LBM_KS::Q; id++){
 			const Coord c = LBM_KS::id_to_dv(id);
-            KS.f[id] += (LBM_EQ::feq(KS.rho,c.x,c.y,c.z,KS.vx,KS.vy,KS.vz,id) - KS.f[id])*beta1*2;
+            KS.f[id] += (KS.rho*LBM_EQ::feq(c.x,c.y,c.z,KS.vx,KS.vy,KS.vz) - KS.f[id])*beta1*2;
         }
 	}
 };

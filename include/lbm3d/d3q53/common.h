@@ -47,6 +47,18 @@ struct D3Q53_COMMON
 	}
 
 	template <typename LBM_KS>
+	__cuda_callable__ static void setEquilibriumDecomposition(LBM_KS& KS, dreal rho_out)
+	{
+		#ifdef __CUDA_ARCH__
+		#pragma unroll
+		#endif
+		for(int id = 0; id < LBM_KS::Q; id++){
+			const Coord c = LBM_KS::id_to_dv(id);
+            KS.f[id] += EQ::feq(rho_out,c.x,c.y,c.z,KS.vx,KS.vy,KS.vz,id) - EQ::feq(KS.rho,c.x,c.y,c.z,KS.vx,KS.vy,KS.vz,id);
+        }
+	}
+
+	template <typename LBM_KS>
 	__cuda_callable__ static void setEquilibrium(LBM_KS& KS)
 	{
 		#ifdef __CUDA_ARCH__
