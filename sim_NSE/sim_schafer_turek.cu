@@ -28,14 +28,16 @@ struct StateLocal : State<NSE>
 
 	real lbm_inflow_vx = 0;
 	real inflow_g = 0;
+	int probeCount = 0;
+	int probeCountProfile = 0;
 
 	void checkpointStateLocal(adios2::Mode mode) override
 	{
 		// Save/load the inflow velocity
 		checkpoint.saveLoadAttribute("lbm_inflow_vx", lbm_inflow_vx);
 		checkpoint.saveLoadAttribute("inflow_g", inflow_g);
-		//checkpoint.saveLoadAttribute("firstrun",firstrun);
-		//checkpoint.saveLoadAttribute("firstrunProfile",firstrunProfile);
+		checkpoint.saveLoadAttribute("probeCount",probeCount);
+		checkpoint.saveLoadAttribute("probeCountProfile",probeCountProfile);
 
 		// You can add any additional state data that needs to be saved/loaded here
 
@@ -85,13 +87,16 @@ struct StateLocal : State<NSE>
 	}
 
 	bool isObject(int ix, int iy, int iz){
+		if(iy < 3 || iy > nse.lat.global.y()-3 || iz < 3 || iz > nse.lat.global.z()-3){ // object is not on the edges
+			return false;
+		}
 		const float x = nse.lat.lbm2physX(ix);
 		const float y = nse.lat.lbm2physY(iy);
 		const float z = nse.lat.lbm2physZ(iz);
 		const float cx = 0.2;
-		const float cz = 0.2;
+		const float cy = 0.2;
 		const float R = 0.05;
-		if(pow(x-cx,2)+pow(z-cz,2)<pow(R,2)){
+		if(pow(x-cx,2)+pow(y-cy,2)<pow(R,2)){
 			return true;
 		}
 		return false;
@@ -389,7 +394,7 @@ struct StateLocal : State<NSE>
 	}
 
 
-	bool firstrun = true;
+
 
 	void dragshiftlift() {
 		const double H = 0.1; // height of cylinder
@@ -405,8 +410,8 @@ struct StateLocal : State<NSE>
 
 		if (nse.rank == 0){
 			// empty files
-			const char* iotype = (firstrun) ? "wt" : "at";
-			firstrun = false;
+			const char* iotype = (probeCount == 0) ? "wt" : "at";
+			probeCount += 1;
 			// output
 			FILE* f;
 			const std::string dir = fmt::format("results_{}/probes", id);
@@ -445,7 +450,7 @@ struct StateLocal : State<NSE>
 			);
 		}
 	}
-		bool firstrunProfile = true;
+
 	void dragprofile(){
 		const double H = 0.1;
 		const double Uoverline = 4./9.*nse.lat.lbm2physVelocity(lbm_inflow_vx); // average inflow velocity
@@ -454,8 +459,8 @@ struct StateLocal : State<NSE>
 
 		if (nse.rank == 0){
 			// empty file
-			const char* iotype = (firstrunProfile) ? "wt" : "at";
-			firstrunProfile = false;
+			const char* iotype = (probeCountProfile == 0) ? "wt" : "at";
+			probeCountProfile += 1;
 			FILE* f;
 			const std::string dir = fmt::format("results_{}/probes", id);
 			mkdir_p(dir.c_str(), 0755);
