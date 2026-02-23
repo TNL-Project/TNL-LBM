@@ -202,6 +202,7 @@ struct D3Q27_BC_All
 			case GEO_OUTFLOW_RIGHT:
 				COLL::computeDensityAndVelocity(KS);
 				KS.rho = 1;
+				COLL::setEquilibriumDecomposition(KS, 1);
 				break;
 			case GEO_OUTFLOW_RIGHT_INTERP:
 				STREAMING::streamingInterpRight(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
