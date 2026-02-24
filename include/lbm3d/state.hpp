@@ -242,9 +242,11 @@ void State<NSE>::writePoints(const char* name, real time, int cycle, const typen
 		dataManager.template defineData<idx>("number_of_points", fname);
 		dataManager.template defineData<real>("TIME", fname);
 	}
-	// Match previous behavior: reopen as Append after the first cycle
-	const auto mode = (cycle == 0) ? adios2::Mode::Write : adios2::Mode::Append;
-	dataManager.openEngine(fname, mode);
+	if (! dataManager.isEngineOpen(fname)) {
+		// Open as Append after the first cycle
+		const auto mode = (cycle == 0) ? adios2::Mode::Write : adios2::Mode::Append;
+		dataManager.openEngine(fname, mode);
+	}
 	dataManager.beginStep(fname);
 
 	UnstructuredPointsWriter<TRAITS> writer(dataManager, fname, coordinates_variable, connectivity_variable, cell_types_variable);
@@ -299,9 +301,11 @@ void State<NSE>::write3D()
 
 	dataManager.prepareIO(fname);
 	predefine3D(fname, nse.blocks.front());
-	// Match previous behavior: reopen as Append after the first cycle
-	const auto mode = (cnt[OUT3D].count == 0) ? adios2::Mode::Write : adios2::Mode::Append;
-	dataManager.openEngine(fname, mode);
+	if (! dataManager.isEngineOpen(fname)) {
+		// Open as Append after the first cycle
+		const auto mode = (cnt[OUT3D].count == 0) ? adios2::Mode::Write : adios2::Mode::Append;
+		dataManager.openEngine(fname, mode);
+	}
 	dataManager.beginStep(fname);
 
 	TNL::Timer timer;
@@ -478,9 +482,11 @@ void State<NSE>::write3Dcut()
 
 		dataManager.prepareIO(fname);
 		predefine3Dcut(fname, nse.blocks.front(), probevec);
-		// Match previous behavior: reopen as Append after the first cycle
-		const auto mode = (probevec.cycle == 0) ? adios2::Mode::Write : adios2::Mode::Append;
-		dataManager.openEngine(fname, mode);
+		if (! dataManager.isEngineOpen(fname)) {
+			// Open as Append after the first cycle
+			const auto mode = (probevec.cycle == 0) ? adios2::Mode::Write : adios2::Mode::Append;
+			dataManager.openEngine(fname, mode);
+		}
 		dataManager.beginStep(fname);
 
 		idx ox = probevec.ox;
@@ -596,9 +602,11 @@ void State<NSE>::write2D()
 
 		dataManager.prepareIO(fname);
 		predefine2D(fname, nse.blocks.front(), probevec.type);
-		// Match previous behavior: reopen as Append after the first cycle
-		const auto mode = (probevec.cycle == 0) ? adios2::Mode::Write : adios2::Mode::Append;
-		dataManager.openEngine(fname, mode);
+		if (! dataManager.isEngineOpen(fname)) {
+			// Open as Append after the first cycle
+			const auto mode = (probevec.cycle == 0) ? adios2::Mode::Write : adios2::Mode::Append;
+			dataManager.openEngine(fname, mode);
+		}
 		dataManager.beginStep(fname);
 
 		for (std::size_t i = 0; i < nse.blocks.size(); i++) {
