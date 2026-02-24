@@ -955,6 +955,7 @@ bool State<NSE>::estimateMemoryDemands()
 	long long memDFs = 0;
 	long long memMacro = 0;
 	long long memMap = 0;
+	long long memOutput = 0;
 	for (const auto& block : nse.blocks) {
 		const long long XYZ = block.local.x() * block.local.y() * block.local.z();
 		memDFs += XYZ * sizeof(dreal) * NSE::Q;
@@ -962,8 +963,19 @@ bool State<NSE>::estimateMemoryDemands()
 		memMap += XYZ * sizeof(map_t);
 	}
 
+	// OUT3D needs large buffers for each macroscopic quantity that is written
+	// (one array in TNL-LBM, another array in ADIOS2)
+	// TODO: ADIOS2 buffering may depend on the configured engine
+	if (cnt[OUT3D].period > 0) {
+		const std::size_t num_output_macros = getOutputDataNames().size();
+		for (const auto& block : nse.blocks) {
+			const long long XYZ = block.local.x() * block.local.y() * block.local.z();
+			memOutput += XYZ * sizeof(dreal) * num_output_macros * 2;
+		}
+	}
+
 	long long CPUavail = sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGE_SIZE);
-	long long CPUtotal = memMacro + memMap + DFMAX * memDFs;
+	long long CPUtotal = DFMAX * memDFs + memMacro + memMap + memOutput;
 	long long CPUDFs = DFMAX * memDFs;
 #ifdef USE_CUDA
 	long long GPUavail = 0;
@@ -984,6 +996,7 @@ bool State<NSE>::estimateMemoryDemands()
 	//	spdlog::info("CPU RAM for lat:   {:d} MiB", memDFs/1024/1024);
 	spdlog::info("CPU RAM for map:   {:d} MiB", memMap / 1024 / 1024);
 	spdlog::info("CPU RAM for macro: {:d} MiB", memMacro / 1024 / 1024);
+	spdlog::info("CPU RAM for 3D output buffers: {:d} MiB", memOutput / 1024 / 1024);
 	spdlog::info(
 		"TOTAL CPU RAM {:d} MiB estimated needed, {:d} MiB available ({:6.4f}%)",
 		CPUtotal / 1024 / 1024,
