@@ -606,8 +606,8 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	using lat_t = Lattice<3, real, idx>;
 
 	int block_size = 32;
-	real PHYS_LENGTH = 6.; // length in some units (NASA does not specify)
-	real PHYS_HEIGHT = 0.5;		  // domain height (physical)
+	real PHYS_LENGTH = 10.; // length in some units (NASA does not specify)
+	real PHYS_HEIGHT = 1.;		  // domain height (physical)
 	real PHYS_DEPTH = 0.5;		  // domain depth (physical) FIXED for sine to work correctly
 	// TODO: solve the rounding of pixels to have it precise
 	int Y = floor(PHYS_HEIGHT * RESOLUTION * block_size); // depth in pixels --- top and bottom walls  NoDV px
@@ -617,7 +617,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	int X = floor(PHYS_LENGTH / PHYS_DL);  // width in pixels
 	int Z = floor(PHYS_DEPTH  / PHYS_DL);  // height in pixels --- top and bottom walls NoDV px
 	real PHYS_VISCOSITY = 1.e-3;
-	real PHYS_VELOCITY = 1.;
+	real PHYS_VELOCITY = 1000.;
 
 
 
@@ -625,7 +625,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	//real LBM_VISCOSITY = 0.001;
 	//real PHYS_DT = LBM_VISCOSITY / PHYS_VISCOSITY * PHYS_DL * PHYS_DL;	//PHYS_HEIGHT/(real)LBM_HEIGHT;
 	// Acoustic scaling
-	real LBM_VELOCITY = 0.1;
+	real LBM_VELOCITY = 0.01;
 	real PHYS_DT = PHYS_DL * LBM_VELOCITY/PHYS_VELOCITY;
 	real LBM_VISCOSITY = PHYS_VELOCITY * PHYS_DT / PHYS_DL /PHYS_DL;
 
@@ -655,7 +655,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	std::cout << "Reynolds number: " << PHYS_VELOCITY*state.bump_height/PHYS_VISCOSITY << std::endl;;
 
 	state.nse.physFinalTime = 100;
-	state.rise_up_time = 50.;
+	state.rise_up_time = 1.;
 	state.cnt[PRINT].period = 0.1;
 
 	// add cuts

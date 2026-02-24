@@ -52,9 +52,9 @@ struct StateLocal : State<NSE>
 		nse.setBoundaryX(0, BC::GEO_INFLOW_LEFT_PRESSURE);						  // left
 		nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT_PRESSURE);						  // left
 		nse.setBoundaryX(2, BC::GEO_INFLOW_LEFT_PRESSURE);						  // left
-		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT);  // right
-		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT);  // right
-		nse.setBoundaryX(nse.lat.global.x() - 3, BC::GEO_OUTFLOW_RIGHT);  // right
+		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT_INTERP);  // right
+		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT_INTERP);  // right
+		nse.setBoundaryX(nse.lat.global.x() - 3, BC::GEO_OUTFLOW_RIGHT_INTERP);  // right
 
 		//nse.setBoundaryX(0,                      BC::GEO_PERIODIC);						  // left
 		//nse.setBoundaryX(1,                      BC::GEO_PERIODIC);						  // left
@@ -63,19 +63,18 @@ struct StateLocal : State<NSE>
 		//nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_PERIODIC);  // right
 		//nse.setBoundaryX(nse.lat.global.x() - 3, BC::GEO_PERIODIC);  // right
 
-		const int margin = 0;
-		nse.setBoundaryZ(1-1+margin,                      BC::GEO_WALL);						 // top
-		nse.setBoundaryZ(2-1+margin,                      BC::GEO_WALL);						 // top
-		nse.setBoundaryZ(3-1+margin,                      BC::GEO_WALL);						 // top
-		nse.setBoundaryZ(nse.lat.global.z() - 2+1-margin, BC::GEO_WALL);	 // bottom
-		nse.setBoundaryZ(nse.lat.global.z() - 3+1-margin, BC::GEO_WALL);	 // bottom
-		nse.setBoundaryZ(nse.lat.global.z() - 4+1-margin, BC::GEO_WALL);	 // bottom
-		nse.setBoundaryY(1-1+margin, 					  BC::GEO_WALL);						 // back
-		nse.setBoundaryY(2-1+margin, 					  BC::GEO_WALL);						 // back
-		nse.setBoundaryY(3-1+margin, 					  BC::GEO_WALL);						 // back
-		nse.setBoundaryY(nse.lat.global.y() - 2+1-margin, BC::GEO_WALL);	 // front
-		nse.setBoundaryY(nse.lat.global.y() - 3+1-margin, BC::GEO_WALL);	 // front
-		nse.setBoundaryY(nse.lat.global.y() - 4+1-margin, BC::GEO_WALL);	 // front
+		nse.setBoundaryZ(0,                      BC::GEO_WALL);						 // top
+		nse.setBoundaryZ(1,                      BC::GEO_WALL);						 // top
+		nse.setBoundaryZ(2,                      BC::GEO_WALL);						 // top
+		nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_WALL);	 // bottom
+		nse.setBoundaryZ(nse.lat.global.z() - 2, BC::GEO_WALL);	 // bottom
+		nse.setBoundaryZ(nse.lat.global.z() - 3, BC::GEO_WALL);	 // bottom
+		nse.setBoundaryY(0, 					  BC::GEO_WALL);						 // back
+		nse.setBoundaryY(1, 					  BC::GEO_WALL);						 // back
+		nse.setBoundaryY(2, 					  BC::GEO_WALL);						 // back
+		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_WALL);	 // front
+		nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_WALL);	 // front
+		nse.setBoundaryY(nse.lat.global.y() - 3, BC::GEO_WALL);	 // front
 
 		for (int px = 0; px <= nse.lat.global.x(); px++){
 		for (int py = 0; py <= nse.lat.global.y(); py++){
@@ -294,7 +293,7 @@ struct StateLocal : State<NSE>
 	}
 
 	template<typename Filter>
-	double integrate_stress_tensor_general_only_viscous(Filter filter, int dir, const double ndc = 4./3.,const bool dynamicViscosity = false){
+	double integrate_stress_tensor_general_only_viscous(Filter filter, int dir, const double ndc = 4./3., const bool dynamicViscosity = false){
 		// filter ... which nodes to check (set to desired object)
 		// dir ... in which direction to evaluate
 		// ndc ... normal derivative coefficient (2 for incompressible, 4/3 for compressible)
@@ -471,10 +470,10 @@ struct StateLocal : State<NSE>
 			//fprintf(f, "");
 			fclose(f);
 		}
-		double values[nse.lat.global.x()];
+		double values[nse.lat.global.z()];
 
-		for(int i = 0; i < nse.lat.global.y(); i++){
-			real C_D = 2.*integrate_stress_tensor_general([this,i](int ix,int iy,int iz){ return iy==i && this->isObject(ix, iy, iz);},0)/(Uoverline*Uoverline)/(H*delta_x);
+		for(int i = 0; i < nse.lat.global.z(); i++){
+			const real C_D = 2.*integrate_stress_tensor_general([this,i](int ix,int iy,int iz){ return iz==i && this->isObject(ix, iy, iz);},0)/(Uoverline*Uoverline)/(H*delta_x);
 			if(nse.rank == 0){
 				values[i] = C_D;
 			}
@@ -485,9 +484,9 @@ struct StateLocal : State<NSE>
 			const std::string dir = fmt::format("results_{}/probes", id);
 			std::string str = fmt::format("{}/probe_drag_profile", dir);
 			f = fopen(str.c_str(), "at");// always append
-			for(int i = 0; i < nse.lat.global.y(); i++){
+			for(int i = 0; i < nse.lat.global.z(); i++){
 				fprintf(f, "%e", values[i]);
-				if(i != nse.lat.global.y()){
+				if(i != nse.lat.global.z()){
 					fprintf(f, "\t");
 				}
 			}
@@ -498,6 +497,9 @@ struct StateLocal : State<NSE>
 
 	void probe1() override {
 		dragshiftlift();
+  	}
+
+	void probe2() override {
 		dragprofile();
   	}
 
@@ -625,13 +627,13 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	state.inflow_g = lat.phys2lbmForce(g);
 
 	state.nse.physFinalTime = 100;
-	state.cnt[PRINT].period = 1.;
+	state.cnt[PRINT].period = 0.1;
 
 
 	state.cnt[SAVESTATE].period = -1.;
-	state.wallTime = 36000.;
+	state.wallTime = 24.*3600.;
 	// add cuts
-	state.cnt[OUT2D].period = 10.;
+	state.cnt[OUT2D].period = 1.;
 	state.add2Dcut_X(X / 2, "cutsX/cut_X");
 	state.add2Dcut_Y(Y / 2, "cutsY/cut_Y");
 	state.add2Dcut_Z(Z / 2, "cutsZ/cut_Z");
@@ -641,6 +643,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	//state.add3Dcut(X / 4, Y / 4, Z / 4, X / 2, Y / 2, Z / 2, "box");
 
 	state.cnt[PROBE1].period = 1.;
+	state.cnt[PROBE2].period = -10.;
 
 	state.updateKernelData();
 	state.updateKernelVelocities();
