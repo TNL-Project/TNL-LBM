@@ -14,7 +14,7 @@ __cuda_callable__ void kernelInitIndices(
 )
 {
 	if (NSE::BC::isPeriodic(map)) {
-		#ifdef __CUDA_ARCH__
+		#if defined(__CUDA_ARCH__) && defined(UNROLL)
 		#pragma unroll
 		#endif
 		for(int i = -NSE::LBM_KS::NoDV; i <= NSE::LBM_KS::NoDV; i++){
@@ -41,7 +41,7 @@ __cuda_callable__ void kernelInitIndices(
 		streamGrid.x(NSE::LBM_KS::NoDV) = x;
 		streamGrid.y(NSE::LBM_KS::NoDV) = y;
 		streamGrid.z(NSE::LBM_KS::NoDV) = z;
-		#ifdef __CUDA_ARCH__
+		#if defined(__CUDA_ARCH__) && defined(UNROLL)
 		#pragma unroll
 		#endif
 		for(int i = 1; i <= NSE::LBM_KS::NoDV; i++){
