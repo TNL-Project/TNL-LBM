@@ -82,11 +82,11 @@ struct D3Q53_BC_All
 				SD.inflow(KS, x, y, z);
 			case GEO_INFLOW_LEFT_PRESSURE:
 				for(int i = 0; i < LBM_KS::ONE_SIZE; i++){
-					streamGrid.x(i)+=1;
+					streamGrid.x(i)+=3;
 				}
             	STREAMING::streaming(SD,KS,streamGrid);
 				for(int i = 0; i < LBM_KS::ONE_SIZE; i++){
-					streamGrid.x(i)-=1;
+					streamGrid.x(i)-=3;
 				}
 				COLL::computeDensityAndVelocity(KS);
 				SD.inflow(KS, x, y, z);
@@ -115,8 +115,8 @@ struct D3Q53_BC_All
 				KS.vy = 0;
 				KS.vz = 0;
 				// collision step: bounce-back
-				#ifdef __CUDA_ARCH__
-				#pragma unroll
+				#if defined(__CUDA_ARCH__) && defined(UNROLL)
+				#pragma unroll 2
 				#endif
 				for(int id = 0; id < LBM_KS::Qhalf; id++){
 					TNL::swap(KS.f[id], KS.f[KS.flip_id(id)]);
@@ -124,8 +124,8 @@ struct D3Q53_BC_All
 				break;
 
 			case GEO_SYM_BOTTOM: // z
-				#ifdef __CUDA_ARCH__
-				#pragma unroll
+				#if defined(__CUDA_ARCH__) && defined(UNROLL)
+				#pragma unroll 2
 				#endif
 				for(int id = 0; id < LBM_KS::Q; id++){
 					Coord c = LBM_KS::id_to_dv(id);
@@ -136,8 +136,8 @@ struct D3Q53_BC_All
 				COLL::computeDensityAndVelocity(KS);
 				break;
 			case GEO_SYM_TOP: //z
-				#ifdef __CUDA_ARCH__
-				#pragma unroll
+				#if defined(__CUDA_ARCH__) && defined(UNROLL)
+				#pragma unroll 2
 				#endif
 				for(int id = 0; id < LBM_KS::Q; id++){
 					Coord c = LBM_KS::id_to_dv(id);
@@ -148,8 +148,8 @@ struct D3Q53_BC_All
 				COLL::computeDensityAndVelocity(KS);
 				break;
 			case GEO_SYM_BACK: // y
-				#ifdef __CUDA_ARCH__
-				#pragma unroll
+				#if defined(__CUDA_ARCH__) && defined(UNROLL)
+				#pragma unroll 2
 				#endif
 				for(int id = 0; id < LBM_KS::Q; id++){
 					Coord c = LBM_KS::id_to_dv(id);
@@ -160,8 +160,8 @@ struct D3Q53_BC_All
 				COLL::computeDensityAndVelocity(KS);
 				break;
 			case GEO_SYM_FRONT: // y
-				#ifdef __CUDA_ARCH__
-				#pragma unroll
+				#if defined(__CUDA_ARCH__) && defined(UNROLL)
+				#pragma unroll 2
 				#endif
 				for(int id = 0; id < LBM_KS::Q; id++){
 					Coord c = LBM_KS::id_to_dv(id);
@@ -172,8 +172,8 @@ struct D3Q53_BC_All
 				COLL::computeDensityAndVelocity(KS);
 				break;
 			case GEO_SYM_LEFT: // x
-				#ifdef __CUDA_ARCH__
-				#pragma unroll
+				#if defined(__CUDA_ARCH__) && defined(UNROLL)
+				#pragma unroll 2
 				#endif
 				for(int id = 0; id < LBM_KS::Q; id++){
 					Coord c = LBM_KS::id_to_dv(id);
@@ -184,8 +184,8 @@ struct D3Q53_BC_All
 				COLL::computeDensityAndVelocity(KS);
 				break;
 			case GEO_SYM_RIGHT: // x
-				#ifdef __CUDA_ARCH__
-				#pragma unroll
+				#if defined(__CUDA_ARCH__) && defined(UNROLL)
+				#pragma unroll 2
 				#endif
 				for(int id = 0; id < LBM_KS::Q; id++){
 					Coord c = LBM_KS::id_to_dv(id);

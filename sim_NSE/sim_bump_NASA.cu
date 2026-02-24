@@ -720,7 +720,7 @@ void run(const std::string& adios_config, int resolution)
 	// using COLL = D3Q53_SRT<TRAITS, D3Q53_EQ<TRAITS>>;
 	// using NSE_CONFIG = LBM_CONFIG<
 	// 	TRAITS,
-	// 	D3Q53_KernelStruct_ELBM,
+	// 	D3Q53_KernelStruct,
 	// 	//NSE_Data_ConstInflow_PressureGradient<TRAITS>,
 	// 	NSE_Data_DoubleParabolic<TRAITS>,
 	// 	COLL,

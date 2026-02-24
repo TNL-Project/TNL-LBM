@@ -217,7 +217,7 @@ struct D3Q27_BC_All
 				KS.vy = 0;
 				KS.vz = 0;
 				// collision step: bounce-back
-				#ifdef __CUDA_ARCH__
+				#if defined(__CUDA_ARCH__) && defined(UNROLL)
 				#pragma unroll
 				#endif
 				for(int id = 0; id < LBM_KS::Qhalf; id++){
@@ -225,7 +225,7 @@ struct D3Q27_BC_All
 				}
 				break;
 			case GEO_SYM_BOTTOM: // z
-				#ifdef __CUDA_ARCH__
+				#if defined(__CUDA_ARCH__) && defined(UNROLL)
 				#pragma unroll
 				#endif
 				for(int id = 0; id < LBM_KS::Q; id++){
@@ -237,7 +237,7 @@ struct D3Q27_BC_All
 				COLL::computeDensityAndVelocity(KS);
 				break;
 			case GEO_SYM_TOP: //z
-				#ifdef __CUDA_ARCH__
+				#if defined(__CUDA_ARCH__) && defined(UNROLL)
 				#pragma unroll
 				#endif
 				for(int id = 0; id < LBM_KS::Q; id++){
@@ -249,7 +249,7 @@ struct D3Q27_BC_All
 				COLL::computeDensityAndVelocity(KS);
 				break;
 			case GEO_SYM_BACK: // y
-				#ifdef __CUDA_ARCH__
+				#if defined(__CUDA_ARCH__) && defined(UNROLL)
 				#pragma unroll
 				#endif
 				for(int id = 0; id < LBM_KS::Q; id++){
@@ -261,7 +261,7 @@ struct D3Q27_BC_All
 				COLL::computeDensityAndVelocity(KS);
 				break;
 			case GEO_SYM_FRONT: // y
-				#ifdef __CUDA_ARCH__
+				#if defined(__CUDA_ARCH__) && defined(UNROLL)
 				#pragma unroll
 				#endif
 				for(int id = 0; id < LBM_KS::Q; id++){

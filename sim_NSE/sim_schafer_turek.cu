@@ -1,6 +1,9 @@
 #include <argparse/argparse.hpp>
 #include <utility>
 
+//#define UNROLL
+
+
 // As of now, enum and sync direction are specific for different models and need to be included before core!!!
 //#include "lbm3d/d3q27/defs.h"
 #include "lbm3d/d3q53/defs.h"
@@ -52,9 +55,9 @@ struct StateLocal : State<NSE>
 		nse.setBoundaryX(0, BC::GEO_INFLOW_LEFT_PRESSURE);						  // left
 		nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT_PRESSURE);						  // left
 		nse.setBoundaryX(2, BC::GEO_INFLOW_LEFT_PRESSURE);						  // left
-		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT_INTERP);  // right
-		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT_INTERP);  // right
-		nse.setBoundaryX(nse.lat.global.x() - 3, BC::GEO_OUTFLOW_RIGHT_INTERP);  // right
+		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT);  // right
+		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT);  // right
+		nse.setBoundaryX(nse.lat.global.x() - 3, BC::GEO_OUTFLOW_RIGHT);  // right
 
 		//nse.setBoundaryX(0,                      BC::GEO_PERIODIC);						  // left
 		//nse.setBoundaryX(1,                      BC::GEO_PERIODIC);						  // left
@@ -592,8 +595,10 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	real PHYS_HEIGHT = 0.41;		  // domain height (physical)
 	real PHYS_DEPTH = 0.41;		  // domain depth (physical)
 	// TODO: solve the rounding of pixels to have it precise
+
+	int wallSize = 3;
 	int Y = block_size*RESOLUTION; // Number of points in Y direction
-	real PHYS_DL = PHYS_HEIGHT / ((real) Y - 6); // naive fullway bounce-back
+	real PHYS_DL = PHYS_HEIGHT / ((real) Y - 2*wallSize); // naive fullway bounce-back
 	int X = floor(PHYS_LENGTH/PHYS_DL);
 	int Z = Y;
 
@@ -607,7 +612,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	real PHYS_DT = PHYS_DL * LBM_VELOCITY/PHYS_VELOCITY;
 	real LBM_VISCOSITY = PHYS_VELOCITY * PHYS_DT / PHYS_DL /PHYS_DL;
 
-	point_t PHYS_ORIGIN = {0., -5./2*PHYS_DL, -5./2*PHYS_DL};
+	point_t PHYS_ORIGIN = {0., -(2.*wallSize-1)/2*PHYS_DL, -(2.*wallSize-1)/2*PHYS_DL};
 
 	real g = PHYS_VISCOSITY*PHYS_VELOCITY/(PHYS_HEIGHT*PHYS_HEIGHT*0.25*0.5);
 
@@ -683,16 +688,16 @@ void run(const std::string& adios_config, int resolution)
 	// 	D3Q27_BC_All,
 	// 	D3Q27_MACRO_Default<TRAITS>>;
 	// D3Q27
-	using COLL = D3Q27_GENERAL_SRT<TRAITS, D3Q27_EQ_ENTROPIC2<TRAITS>>;
-	using NSE_CONFIG = LBM_CONFIG<
-		TRAITS,
-		D3Q27_KernelStruct,
-		NSE_Data_DoubleParabolic<TRAITS>,
-		COLL,
-		typename COLL::EQ,
-		D3Q27_STREAMING<TRAITS>,
-		D3Q27_BC_All,
-		D3Q27_MACRO_Default<TRAITS>>;
+	// using COLL = D3Q27_GENERAL_SRT<TRAITS, D3Q27_EQ_ENTROPIC2<TRAITS>>;
+	// using NSE_CONFIG = LBM_CONFIG<
+	// 	TRAITS,
+	// 	D3Q27_KernelStruct,
+	// 	NSE_Data_DoubleParabolic<TRAITS>,
+	// 	COLL,
+	// 	typename COLL::EQ,
+	// 	D3Q27_STREAMING<TRAITS>,
+	// 	D3Q27_BC_All,
+	// 	D3Q27_MACRO_Default<TRAITS>>;
 
 	// D3Q343
 	//using COLL = D3Q343_ELBM<TRAITS, D3Q343_EQ<TRAITS>>;
@@ -707,16 +712,16 @@ void run(const std::string& adios_config, int resolution)
 	//	D3Q343_MACRO_Default<TRAITS>>;
 
 	// D3Q53
-	// using COLL = D3Q53_SRT<TRAITS, D3Q53_EQ<TRAITS>>;
-	// using NSE_CONFIG = LBM_CONFIG<
-	// 	TRAITS,
-	// 	D3Q53_KernelStruct_ELBM,
-	// 	NSE_Data_DoubleParabolic<TRAITS>,
-	// 	COLL,
-	// 	typename COLL::EQ,
-	// 	D3Q53_STREAMING<TRAITS>,
-	// 	D3Q53_BC_All,
-	// 	D3Q53_MACRO_Default<TRAITS>>;
+	using COLL = D3Q53_SRT<TRAITS, D3Q53_EQ<TRAITS>>;
+	using NSE_CONFIG = LBM_CONFIG<
+		TRAITS,
+		D3Q53_KernelStruct,
+		NSE_Data_DoubleParabolic<TRAITS>,
+		COLL,
+		typename COLL::EQ,
+		D3Q53_STREAMING<TRAITS>,
+		D3Q53_BC_All,
+		D3Q53_MACRO_Default<TRAITS>>;
 
 	sim<NSE_CONFIG>(adios_config, resolution);
 }

@@ -309,6 +309,103 @@ struct D3Q27_KernelStruct
 #endif
 };
 
+
+#ifdef __CUDACC__
+// lookup tables on device
+static __device__ __constant__ int   D3Q27_LOOKUP_XS_dev[27] = {0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,2,2,2,2,2,2,2,2,2};
+static __device__ __constant__ int   D3Q27_LOOKUP_YS_dev[27] = {0,0,0,1,1,1,2,2,2,0,0,0,1,1,1,2,2,2,0,0,0,1,1,1,2,2,2};
+static __device__ __constant__ int   D3Q27_LOOKUP_ZS_dev[27] = {0,1,2,0,1,2,0,1,2,0,1,2,0,1,2,0,1,2,0,1,2,0,1,2,0,1,2};
+static __device__ __constant__ float D3Q27_LOOKUP_WS_dev[27] = {0.00462962962962963,0.0185185185185185,0.00462962962962963,0.0185185185185185,0.0740740740740741,0.0185185185185185,0.00462962962962963,0.0185185185185185,0.00462962962962963,0.0185185185185185,0.0740740740740741,0.0185185185185185,0.0740740740740741,0.296296296296296,0.0740740740740741,0.0185185185185185,0.0740740740740741,0.0185185185185185,0.00462962962962963,0.0185185185185185,0.00462962962962963,0.0185185185185185,0.0740740740740741,0.0185185185185185,0.00462962962962963,0.0185185185185185,0.00462962962962963};
+#endif
+
+
+template <typename REAL>
+struct D3Q27_LOOKUP_KernelStruct
+{
+	static constexpr int D = 3;
+	static constexpr REAL T0 = 0.333333333333333;
+	static constexpr int Q = 27;
+	static constexpr int Qhalf = (Q-1)/2;
+	static constexpr int NoDV = 1;
+	static constexpr int ONE_SIZE = 2*NoDV + 1;
+	static constexpr REAL cs = 0.5773502691896257; // sqrt(T0)
+
+	__cuda_callable__ CONSTFUNC int flip_coord(int val){return ONE_SIZE-val-1;}
+	__cuda_callable__ CONSTFUNC int flip_id(int id){return Q - id - 1;}
+	__cuda_callable__ CONSTFUNC int flip_id_x(int id){
+		Coord c = id_to_coords(id);
+		int nx = flip_coord(c.x);
+		return coords_to_id(nx, c.y, c.z);
+	}
+	__cuda_callable__ CONSTFUNC int flip_id_y(int id){
+		Coord c = id_to_coords(id);
+		int ny = flip_coord(c.y);
+		return coords_to_id(c.x, ny, c.z);
+	}
+	__cuda_callable__ CONSTFUNC int flip_id_z(int id){
+		Coord c = id_to_coords(id);
+		int nz = flip_coord(c.z);
+		return coords_to_id(c.x, c.y, nz);
+	}
+
+	__cuda_callable__ CONSTFUNC Coord id_to_dv(int id){
+		Coord c = id_to_coords(id);
+		return {c.x-NoDV,c.y-NoDV,c.z-NoDV};
+	}
+
+
+	// lookup tables on host
+	static constexpr int XS[Q] = {0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,2,2,2,2,2,2,2,2,2};
+	static constexpr int YS[Q] = {0,0,0,1,1,1,2,2,2,0,0,0,1,1,1,2,2,2,0,0,0,1,1,1,2,2,2};
+	static constexpr int ZS[Q] = {0,1,2,0,1,2,0,1,2,0,1,2,0,1,2,0,1,2,0,1,2,0,1,2,0,1,2};
+
+	__cuda_callable__ CONSTFUNC Coord id_to_coords(int id){
+#ifdef __CUDACC__
+		return { D3Q27_LOOKUP_XS_dev[id], D3Q27_LOOKUP_YS_dev[id], D3Q27_LOOKUP_ZS_dev[id] };
+#else
+		return { XS[id], YS[id], ZS[id] };
+#endif
+	}
+
+	__cuda_callable__ CONSTFUNC int dv_to_id(int cx, int cy, int cz){
+		return coords_to_id(cx + NoDV, cy + NoDV, cz + NoDV);
+	}
+
+	__cuda_callable__ CONSTFUNC int coords_to_id(int cx, int cy, int cz){
+#ifdef __CUDACC__
+		for (int id = 0; id < Q; ++id){
+			if (D3Q27_LOOKUP_XS_dev[id] == cx && D3Q27_LOOKUP_YS_dev[id] == cy && D3Q27_LOOKUP_ZS_dev[id] == cz) return id;
+		}
+		return -1;
+#else
+		for (int id = 0; id < Q; ++id){
+			if (XS[id] == cx && YS[id] == cy && ZS[id] == cz) return id;
+		}
+		return -1;
+#endif
+	}
+
+	static constexpr REAL WS[Q] = {0.00462962962962963,0.0185185185185185,0.00462962962962963,0.0185185185185185,0.0740740740740741,0.0185185185185185,0.00462962962962963,0.0185185185185185,0.00462962962962963,0.0185185185185185,0.0740740740740741,0.0185185185185185,0.0740740740740741,0.296296296296296,0.0740740740740741,0.0185185185185185,0.0740740740740741,0.0185185185185185,0.00462962962962963,0.0185185185185185,0.00462962962962963,0.0185185185185185,0.0740740740740741,0.0185185185185185,0.00462962962962963,0.0185185185185185,0.00462962962962963};
+
+	__cuda_callable__ CONSTFUNC REAL id_to_weight(int id){
+#ifdef __CUDACC__
+		return (REAL)D3Q27_LOOKUP_WS_dev[id];
+#else
+		return WS[id];
+#endif
+	}
+
+	using SG = StreamGrid<int, 3>;
+
+	REAL f[Q];
+	REAL fx = 0, fy = 0, fz = 0;
+	REAL vx = 0, vy = 0, vz = 0;
+	REAL rho = 1.0, lbmViscosity = 1.0;
+	REAL A = 1.0, B1 = 1.0 , B2 = 1.0, B3 = 1.0;
+	REAL alpha = 2.;
+};
+
+
 // KernelStruct - D3Q343
 template <typename REAL>
 struct D3Q343_KernelStruct
@@ -351,13 +448,117 @@ struct D3Q343_KernelStruct
 	REAL fx = 0, fy = 0, fz = 0;
 	REAL vx = 0, vy = 0, vz = 0;
 	REAL rho = 1.0, lbmViscosity = 1.0;
-	// ELBM Lagrange multipliers
 	REAL A = 1.0, B1 = 1.0 , B2 = 1.0, B3 = 1.0;
 	REAL alpha = 2.0;
 };
 
+#ifdef __CUDACC__
+// lookup tables on device
+static __device__ __constant__ int D3Q53_LOOKUP_XS_dev[53] = {0,1,1,1,1,1,1,1,1,2,2,2,2,2,2,2,2,2,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,4,4,4,4,4,4,4,4,4,5,5,5,5,5,5,5,5,6};
+static __device__ __constant__ int D3Q53_LOOKUP_YS_dev[53] = {3,1,1,1,3,3,5,5,5,2,2,2,3,3,3,4,4,4,0,1,1,2,2,2,3,3,3,3,3,4,4,4,5,5,6,2,2,2,3,3,3,4,4,4,1,1,1,3,3,5,5,5,3};
+static __device__ __constant__ int D3Q53_LOOKUP_ZS_dev[53] = {3,1,3,5,1,5,1,3,5,2,3,4,2,3,4,2,3,4,3,1,5,2,3,4,0,2,3,4,6,2,3,4,1,5,3,2,3,4,2,3,4,2,3,4,1,3,5,1,5,1,3,5,3};
+static __device__ __constant__ float D3Q53_LOOKUP_WS_dev[53] = {
+	0.000254627832132497f,0.00000404353462215176f,0.0000785975745805697f,0.00000404353462215176f,0.0000785975745805697f,0.0000785975745805697f,0.00000404353462215176f,0.0000785975745805697f,0.00000404353462215176f,0.00623707839948299f,0.0209532136880463f,0.00623707839948299f,0.0209532136880463f,0.0742108949874377f,0.0209532136880463f,0.00623707839948299f,0.0209532136880463f,0.00623707839948299f,0.000254627832132497f,0.0000785975745805697f,0.0000785975745805697f,0.0209532136880463f,0.0742108949874377f,0.0209532136880463f,0.000254627832132497f,0.0742108949874377f,0.250896152458214f,0.0742108949874377f,0.000254627832132497f,0.0209532136880463f,0.0742108949874377f,0.0209532136880463f,0.0000785975745805697f,0.0000785975745805697f,0.000254627832132497f,0.00623707839948299f,0.0209532136880463f,0.00623707839948299f,0.0209532136880463f,0.0742108949874377f,0.0209532136880463f,0.00623707839948299f,0.0209532136880463f,0.00623707839948299f,0.00000404353462215176f,0.0000785975745805697f,0.00000404353462215176f,0.0000785975745805697f,0.0000785975745805697f,0.00000404353462215176f,0.0000785975745805697f,0.00000404353462215176f,0.000254627832132497f
+};
+#endif
+
+
 template <typename REAL>
-struct D3Q53_KernelStruct_ELBM
+struct D3Q53_LOOKUP_KernelStruct
+{
+	static constexpr int D = 3;
+	static constexpr REAL T0 = 1./2.67972986276583;
+	static constexpr int Q = 53;
+	static constexpr int Qhalf = (Q-1)/2;
+	static constexpr int NoDV = 3;
+	static constexpr int ONE_SIZE = 2*NoDV + 1;
+	static constexpr REAL cs = 0.6108780100379961; // sqrt(T0)
+
+	__cuda_callable__ CONSTFUNC int flip_coord(int val){return ONE_SIZE-val-1;}
+	__cuda_callable__ CONSTFUNC int flip_id(int id){return Q - id - 1;}
+	__cuda_callable__ CONSTFUNC int flip_id_x(int id){
+		Coord c = id_to_coords(id);
+		int nx = flip_coord(c.x);
+		return coords_to_id(nx, c.y, c.z);
+	}
+	__cuda_callable__ CONSTFUNC int flip_id_y(int id){
+		Coord c = id_to_coords(id);
+		int ny = flip_coord(c.y);
+		return coords_to_id(c.x, ny, c.z);
+	}
+	__cuda_callable__ CONSTFUNC int flip_id_z(int id){
+		Coord c = id_to_coords(id);
+		int nz = flip_coord(c.z);
+		return coords_to_id(c.x, c.y, nz);
+	}
+
+	__cuda_callable__ CONSTFUNC Coord id_to_dv(int id){
+		Coord c = id_to_coords(id);
+		return {c.x-NoDV,c.y-NoDV,c.z-NoDV};
+	}
+
+
+	// lookup tables on host
+	static constexpr int XS[Q] = {0,1,1,1,1,1,1,1,1,2,2,2,2,2,2,2,2,2,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,4,4,4,4,4,4,4,4,4,5,5,5,5,5,5,5,5,6};
+	static constexpr int YS[Q] = {3,1,1,1,3,3,5,5,5,2,2,2,3,3,3,4,4,4,0,1,1,2,2,2,3,3,3,3,3,4,4,4,5,5,6,2,2,2,3,3,3,4,4,4,1,1,1,3,3,5,5,5,3};
+	static constexpr int ZS[Q] = {3,1,3,5,1,5,1,3,5,2,3,4,2,3,4,2,3,4,3,1,5,2,3,4,0,2,3,4,6,2,3,4,1,5,3,2,3,4,2,3,4,2,3,4,1,3,5,1,5,1,3,5,3};
+
+	__cuda_callable__ CONSTFUNC Coord id_to_coords(int id){
+#ifdef __CUDACC__
+		return { D3Q53_LOOKUP_XS_dev[id], D3Q53_LOOKUP_YS_dev[id], D3Q53_LOOKUP_ZS_dev[id] };
+#else
+		return { XS[id], YS[id], ZS[id] };
+#endif
+	}
+
+	__cuda_callable__ CONSTFUNC int dv_to_id(int cx, int cy, int cz){
+#ifdef __CUDACC__
+		const int tx = cx + NoDV;
+		const int ty = cy + NoDV;
+		const int tz = cz + NoDV;
+		for (int id = 0; id < Q; ++id){
+			if (D3Q53_LOOKUP_XS_dev[id] == tx && D3Q53_LOOKUP_YS_dev[id] == ty && D3Q53_LOOKUP_ZS_dev[id] == tz) return id;
+		}
+		return -1;
+#else
+		const int tx = cx + NoDV;
+		const int ty = cy + NoDV;
+		const int tz = cz + NoDV;
+		for (int id = 0; id < Q; ++id){
+			if (XS[id] == tx && YS[id] == ty && ZS[id] == tz) return id;
+		}
+		return -1;
+#endif
+	}
+
+	__cuda_callable__ CONSTFUNC int coords_to_id(int cx, int cy, int cz){
+		return dv_to_id(cx-NoDV,cy-NoDV,cz-NoDV);
+	}
+
+	static constexpr REAL WS[Q] = {
+		(REAL)0.000254627832132497,(REAL)0.00000404353462215176,(REAL)0.0000785975745805697,(REAL)0.00000404353462215176,(REAL)0.0000785975745805697,(REAL)0.0000785975745805697,(REAL)0.00000404353462215176,(REAL)0.0000785975745805697,(REAL)0.00000404353462215176,(REAL)0.00623707839948299,(REAL)0.0209532136880463,(REAL)0.00623707839948299,(REAL)0.0209532136880463,(REAL)0.0742108949874377,(REAL)0.0209532136880463,(REAL)0.00623707839948299,(REAL)0.0209532136880463,(REAL)0.00623707839948299,(REAL)0.000254627832132497,(REAL)0.0000785975745805697,(REAL)0.0000785975745805697,(REAL)0.0209532136880463,(REAL)0.0742108949874377,(REAL)0.0209532136880463,(REAL)0.000254627832132497,(REAL)0.0742108949874377,(REAL)0.250896152458214,(REAL)0.0742108949874377,(REAL)0.000254627832132497,(REAL)0.0209532136880463,(REAL)0.0742108949874377,(REAL)0.0209532136880463,(REAL)0.0000785975745805697,(REAL)0.0000785975745805697,(REAL)0.000254627832132497,(REAL)0.00623707839948299,(REAL)0.0209532136880463,(REAL)0.00623707839948299,(REAL)0.0209532136880463,(REAL)0.0742108949874377,(REAL)0.0209532136880463,(REAL)0.00623707839948299,(REAL)0.0209532136880463,(REAL)0.00623707839948299,(REAL)0.00000404353462215176,(REAL)0.0000785975745805697,(REAL)0.00000404353462215176,(REAL)0.0000785975745805697,(REAL)0.0000785975745805697,(REAL)0.00000404353462215176,(REAL)0.0000785975745805697,(REAL)0.00000404353462215176,(REAL)0.000254627832132497
+	};
+
+	__cuda_callable__ CONSTFUNC REAL id_to_weight(int id){
+#ifdef __CUDACC__
+		return (REAL)D3Q53_LOOKUP_WS_dev[id];
+#else
+		return WS[id];
+#endif
+	}
+
+	using SG = StreamGrid<int, 3>;
+
+	REAL f[Q];
+	REAL fx = 0, fy = 0, fz = 0;
+	REAL vx = 0, vy = 0, vz = 0;
+	REAL rho = 1.0, lbmViscosity = 1.0;
+	REAL A = 1.0, B1 = 1.0 , B2 = 1.0, B3 = 1.0;
+	REAL alpha = 2.;
+};
+
+template <typename REAL>
+struct D3Q53_KernelStruct
 {
 	static constexpr int D = 3;
 	static constexpr REAL T0 = 1./2.67972986276583;

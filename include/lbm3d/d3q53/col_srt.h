@@ -23,7 +23,7 @@ struct D3Q53_SRT : D3Q53_COMMON<TRAITS, LBM_EQ>
 		#endif
 		for(int id = 0; id < LBM_KS::Q; id++){
 			const Coord c = LBM_KS::id_to_dv(id);
-            KS.f[id] += (KS.rho*LBM_EQ::feq(c.x,c.y,c.z,KS.vx,KS.vy,KS.vz,id) - KS.f[id])*beta1*2;
+            KS.f[id] += (KS.rho*LBM_EQ::feq(c.x,c.y,c.z,KS.vx,KS.vy,KS.vz,id) - KS.f[id])*beta1*2.;
         }
 	}
 };

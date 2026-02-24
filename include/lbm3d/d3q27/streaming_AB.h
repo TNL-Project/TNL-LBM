@@ -16,7 +16,7 @@ struct D3Q27_STREAMING
 	postCollisionStreaming(LBM_DATA& SD, LBM_KS& KS, typename LBM_KS::SG streamGrid)
 	{
 		// no streaming actually, write to the (x,y,z) site
-		#ifdef __CUDA_ARCH__
+		#if defined(__CUDA_ARCH__) && defined(UNROLL)
 		#pragma unroll
 		#endif
 		for (int i = 0; i < LBM_KS::Q; i++)
@@ -27,7 +27,7 @@ struct D3Q27_STREAMING
 	__cuda_callable__ static void
 	streaming(uint8_t type, LBM_DATA& SD, LBM_KS& KS, typename LBM_KS::SG streamGrid)
 	{
-		#ifdef __CUDA_ARCH__
+		#if defined(__CUDA_ARCH__) && defined(UNROLL)
 		#pragma unroll
 		#endif
 		for(int id = 0; id < LBM_KS::Q; id++){
