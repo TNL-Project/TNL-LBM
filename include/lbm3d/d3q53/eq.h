@@ -32,11 +32,11 @@ struct D3Q53_EQ
 	static constexpr dreal w_27 = 0.250896152458213;
 
 
-	__cuda_callable__ static dreal feq(dreal rho, int qx, int qy, int qz, dreal vx, dreal vy, dreal vz, int id){
+	__cuda_callable__ static dreal feq(int qx, int qy, int qz, dreal vx, dreal vy, dreal vz, int id){
 		const dreal ws[53] = {w_1,w_2,w_3,w_2,w_3,w_3,w_2,w_3,w_2,w_10,w_11,w_10,w_11,w_14,w_11,w_10,w_11,w_10,w_1,w_3,w_3,w_11,w_14,w_11,w_1,w_14,w_27,w_14,w_1,w_11,w_14,w_11,w_3,w_3,w_1,w_10,w_11,w_10,w_11,w_14,w_11,w_10,w_11,w_10,w_2,w_3,w_2,w_3,w_3,w_2,w_3,w_2,w_1};
 		const dreal eq = no1 - n1o2 * n1oT * (vx * vx + vy * vy + vz * vz) + n1oT * (qx * vx + qy * vy + qz * vz)
 		+ n1o2 * n1oT * n1oT * (qx * vx + qy * vy + qz * vz) * (qx * vx + qy * vy + qz * vz);
-		return ws[id]*rho*eq;
+		return ws[id]*eq;
 	}
 
 

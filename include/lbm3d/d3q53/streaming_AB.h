@@ -61,14 +61,21 @@ struct D3Q53_STREAMING
 	CUDA_HOSTDEV static void streamingInterpRight(LBM_DATA &SD, LBM_KS &KS, StreamGrid<int, LBM_KS::NoDV> streamGrid)
 	{
 		for(int id = 0; id < LBM_KS::Q; id++){
-			const int i = LBM_KS::id_to_coords(id).x;
-			const int j = LBM_KS::id_to_coords(id).y;
-			const dreal interCoeffX = MIN(LBM_KS::cs - KS.vx, LBM_KS::cs);
-			if(i >= LBM_KS::NoDV){
-				KS.f[id] = SD.cdf(id,streamGrid.x(KS.flip_coord(i)),streamGrid.y(KS.flip_coord(j)));
+			const Coord c = LBM_KS::id_to_coords(id);
+			const dreal interCoeffX = KS.vx < LBM_KS::cs ? LBM_KS::cs - KS.vx : LBM_KS::cs;
+			if(c.x >= LBM_KS::NoDV){
+				KS.f[id] = SD.df(df_cur,id,streamGrid.x(KS.flip_coord(c.x)),streamGrid.y(KS.flip_coord(c.y)),streamGrid.z(KS.flip_coord(c.z)));
 			}
 			else{
-				KS.f[id] = (  interCoeffX)*SD.cdf(id,streamGrid.x(LBM_KS::NoDV-1),streamGrid.y(KS.flip_coord(j))) +(1-interCoeffX)*SD.cdf(id,streamGrid.x(LBM_KS::NoDV),streamGrid.y(KS.flip_coord(j)));
+				KS.f[id] = (  interCoeffX)*SD.df(df_cur,id,
+					streamGrid.x(LBM_KS::NoDV-1),
+					streamGrid.y(KS.flip_coord(c.y)),
+					streamGrid.z(KS.flip_coord(c.z))
+				) +(1-interCoeffX)*SD.df(df_cur,id,
+					streamGrid.x(LBM_KS::NoDV),
+					streamGrid.y(KS.flip_coord(c.y)),
+					streamGrid.z(KS.flip_coord(c.z))
+				);
 			}
 		}
 	}

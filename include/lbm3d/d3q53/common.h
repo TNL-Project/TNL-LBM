@@ -54,7 +54,7 @@ struct D3Q53_COMMON
 		#endif
 		for(int id = 0; id < LBM_KS::Q; id++){
 			const Coord c = LBM_KS::id_to_dv(id);
-            KS.f[id] += EQ::feq(rho_out,c.x,c.y,c.z,KS.vx,KS.vy,KS.vz,id) - EQ::feq(KS.rho,c.x,c.y,c.z,KS.vx,KS.vy,KS.vz,id);
+            KS.f[id] += (rho_out - KS.rho)*EQ::feq(c.x,c.y,c.z,KS.vx,KS.vy,KS.vz,id);
         }
 	}
 
@@ -66,7 +66,7 @@ struct D3Q53_COMMON
 		#endif
 		for(int id = 0; id < LBM_KS::Q; id++){
 			const Coord c = LBM_KS::id_to_dv(id);
-			KS.f[id] = EQ::feq(KS.rho,c.x,c.y,c.z,KS.vx,KS.vy,KS.vz,id);
+			KS.f[id] = KS.rho*EQ::feq(c.x,c.y,c.z,KS.vx,KS.vy,KS.vz,id);
 		}
 	}
 
@@ -78,7 +78,7 @@ struct D3Q53_COMMON
 		#endif
 		for(int id = 0; id < LBM_KS::Q; id++){
 			const Coord c = LBM_KS::id_to_dv(id);
-            f(id,x,y,z) = EQ::feq(rho,c.x,c.y,c.z,vx,vy,vz,id);
+            f(id,x,y,z) = rho*EQ::feq(c.x,c.y,c.z,vx,vy,vz,id);
         }
 	}
 };
