@@ -18,9 +18,7 @@
 
 template <typename NSE>
 template <typename... ARGS>
-State<NSE>::State(
-	const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath, ARGS&&... args
-)
+State<NSE>::State(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath, ARGS&&... args)
 : id(id),
 #ifdef HAVE_MPI
   adios(adiosConfigPath, communicator),
@@ -52,16 +50,6 @@ State<NSE>::State(
 	if (dataManager.isPluginEngine()) {
 		dataManager.setPluginDataModelPath(fmt::format("results_{}/lbm-fides.json", id));
 	}
-
-	bool local_estimate = estimateMemoryDemands();
-	bool global_result = TNL::MPI::reduce(local_estimate, MPI_LAND, communicator);
-	if (! local_estimate)
-		spdlog::error("Not enough memory available (CPU or GPU). [disable this check in lbm3d/state.h -> State constructor]");
-	if (! global_result)
-		throw std::runtime_error("Not enough memory available (CPU or GPU).");
-
-	// Allocate host data after the estimate
-	nse.allocateHostData();
 
 	// Start the timer for the simulation
 	timer_total.start();
@@ -1062,6 +1050,16 @@ void State<NSE>::SimInit()
 	timer_wait_computation.reset();
 
 	timer_SimInit.start();
+
+	bool local_estimate = estimateMemoryDemands();
+	bool global_result = TNL::MPI::reduce(local_estimate, MPI_LAND, nse.communicator);
+	if (! local_estimate)
+		spdlog::error("Not enough memory available (CPU or GPU). [disable this check in lbm3d/state.h -> State constructor]");
+	if (! global_result)
+		throw std::runtime_error("Not enough memory available (CPU or GPU).");
+
+	// Allocate host data after the estimate
+	nse.allocateHostData();
 
 	spdlog::info(
 		"MPI info: rank={:d}, nproc={:d}, lat.global=[{:d},{:d},{:d}]",
