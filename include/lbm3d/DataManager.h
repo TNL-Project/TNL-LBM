@@ -105,9 +105,14 @@ public:
 		}
 	}
 
+	[[nodiscard]] bool isEngineOpen(const std::string& ioName) const
+	{
+		return engines_.count(ioName) > 0 && engines_.at(ioName);
+	}
+
 	adios2::Engine& getEngine(const std::string& ioName)
 	{
-		if (engines_.count(ioName) == 0 || ! engines_[ioName]) {
+		if (! isEngineOpen(ioName)) {
 			throw std::runtime_error(fmt::format("Engine for '{}' is not initialized", ioName));
 		}
 		return engines_[ioName];
@@ -115,7 +120,7 @@ public:
 
 	adios2::Mode getEngineMode(const std::string& ioName)
 	{
-		if (engines_.count(ioName) == 0 || ! engines_[ioName]) {
+		if (! isEngineOpen(ioName)) {
 			throw std::runtime_error(fmt::format("Engine for '{}' is not initialized", ioName));
 		}
 		return current_mode_[ioName];
@@ -125,7 +130,7 @@ public:
 	// NOTE: this is an MPI collective function
 	void closeEngine(const std::string& ioName)
 	{
-		if (engines_.count(ioName) > 0 && engines_[ioName]) {
+		if (isEngineOpen(ioName)) {
 			engines_[ioName].Close();
 			engines_.erase(ioName);
 			spdlog::debug("Closed engine for {}", ioName);
@@ -203,7 +208,7 @@ public:
 	template <typename T>
 	void outputData(const std::string& varName, const T& data, const std::string& ioName)
 	{
-		if (engines_.count(ioName) == 0 || ! engines_[ioName]) {
+		if (! isEngineOpen(ioName)) {
 			throw std::runtime_error(fmt::format("Engine for '{}' is not initialized", ioName));
 		}
 
@@ -224,7 +229,7 @@ public:
 	template <typename T>
 	void outputData(const std::string& varName, const T* data, const std::string& ioName)
 	{
-		if (engines_.count(ioName) == 0 || ! engines_[ioName]) {
+		if (! isEngineOpen(ioName)) {
 			throw std::runtime_error(fmt::format("Engine for '{}' is not initialized", ioName));
 		}
 
@@ -246,7 +251,7 @@ public:
 	template <typename T>
 	T readAttribute(const std::string& attrName, const std::string& ioName)
 	{
-		if (engines_.count(ioName) == 0 || ! engines_[ioName]) {
+		if (! isEngineOpen(ioName)) {
 			throw std::runtime_error(fmt::format("Engine for '{}' is not initialized", ioName));
 		}
 
@@ -265,7 +270,7 @@ public:
 	template <typename T>
 	std::vector<T> readAttributeArray(const std::string& attrName, const std::string& ioName)
 	{
-		if (engines_.count(ioName) == 0 || ! engines_[ioName]) {
+		if (! isEngineOpen(ioName)) {
 			throw std::runtime_error(fmt::format("Engine for '{}' is not initialized", ioName));
 		}
 
@@ -284,7 +289,7 @@ public:
 	template <typename T>
 	void readVariable(const std::string& varName, T* data, const std::string& ioName)
 	{
-		if (engines_.count(ioName) == 0 || ! engines_[ioName]) {
+		if (! isEngineOpen(ioName)) {
 			throw std::runtime_error(fmt::format("Engine for '{}' is not initialized", ioName));
 		}
 
@@ -304,7 +309,7 @@ public:
 	// NOTE: this is an MPI collective function
 	void beginStep(const std::string& ioName)
 	{
-		if (engines_.count(ioName) == 0 || ! engines_[ioName]) {
+		if (! isEngineOpen(ioName)) {
 			throw std::runtime_error(fmt::format("Engine for '{}' is not initialized", ioName));
 		}
 		engines_[ioName].BeginStep();
@@ -312,7 +317,7 @@ public:
 
 	void performPuts(const std::string& ioName)
 	{
-		if (engines_.count(ioName) == 0 || ! engines_[ioName]) {
+		if (! isEngineOpen(ioName)) {
 			throw std::runtime_error(fmt::format("Engine for '{}' is not initialized", ioName));
 		}
 
@@ -321,7 +326,7 @@ public:
 
 	void performGets(const std::string& ioName)
 	{
-		if (engines_.count(ioName) == 0 || ! engines_[ioName]) {
+		if (! isEngineOpen(ioName)) {
 			throw std::runtime_error(fmt::format("Engine for '{}' is not initialized", ioName));
 		}
 
@@ -331,7 +336,7 @@ public:
 	// NOTE: this is an MPI collective function
 	void endStep(const std::string& ioName)
 	{
-		if (engines_.count(ioName) == 0 || ! engines_[ioName]) {
+		if (! isEngineOpen(ioName)) {
 			throw std::runtime_error(fmt::format("Engine for '{}' is not initialized", ioName));
 		}
 		engines_[ioName].EndStep();
