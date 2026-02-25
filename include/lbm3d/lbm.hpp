@@ -186,7 +186,7 @@ void LBM<CONFIG>::copyDFsToDevice()
 
 #ifdef HAVE_MPI
 template <typename CONFIG>
-void LBM<CONFIG>::synchronizeDFsAndMacroDevice(uint8_t dftype)
+void LBM<CONFIG>::synchronizeDFsAndMacroDevice(uint8_t dftype, bool sync_macro)
 {
 	TNL::Timer t;
 	t.start();
@@ -195,7 +195,7 @@ void LBM<CONFIG>::synchronizeDFsAndMacroDevice(uint8_t dftype)
 	// stage 1: fill send buffers
 	for (auto& block : blocks) {
 		block.synchronizeDFsDevice_start(dftype);
-		if (MACRO::use_syncMacro)
+		if (sync_macro)
 			block.synchronizeMacroDevice_start();
 	}
 
@@ -203,7 +203,7 @@ void LBM<CONFIG>::synchronizeDFsAndMacroDevice(uint8_t dftype)
 	for (auto& block : blocks) {
 		for (int i = 0; i < CONFIG::Q; i++)
 			block.df_sync[i].stage_2();
-		if (MACRO::use_syncMacro)
+		if (sync_macro)
 			for (int i = 0; i < MACRO::N; i++)
 				block.macro_sync[i].stage_2();
 	}
@@ -212,7 +212,7 @@ void LBM<CONFIG>::synchronizeDFsAndMacroDevice(uint8_t dftype)
 	for (auto& block : blocks) {
 		for (int i = 0; i < CONFIG::Q; i++)
 			block.df_sync[i].stage_3();
-		if (MACRO::use_syncMacro)
+		if (sync_macro)
 			for (int i = 0; i < MACRO::N; i++)
 				block.macro_sync[i].stage_3();
 	}
@@ -221,7 +221,7 @@ void LBM<CONFIG>::synchronizeDFsAndMacroDevice(uint8_t dftype)
 	for (auto& block : blocks) {
 		for (int i = 0; i < CONFIG::Q; i++)
 			block.df_sync[i].stage_4();
-		if (MACRO::use_syncMacro)
+		if (sync_macro)
 			for (int i = 0; i < MACRO::N; i++)
 				block.macro_sync[i].stage_4();
 	}
@@ -242,7 +242,7 @@ void LBM<CONFIG>::synchronizeDFsAndMacroDevice(uint8_t dftype)
 				total_sent_messages += block.df_sync[i].sent_messages;
 				total_recv_messages += block.df_sync[i].recv_messages;
 			}
-			if (MACRO::use_syncMacro)
+			if (sync_macro)
 				for (int i = 0; i < MACRO::N; i++) {
 					total_sent_bytes += block.macro_sync[i].sent_bytes;
 					total_recv_bytes += block.macro_sync[i].recv_bytes;

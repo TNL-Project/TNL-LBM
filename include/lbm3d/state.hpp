@@ -1131,7 +1131,7 @@ void State<NSE>::SimInit()
 		if (nse.nproc > 1) {
 			// synchronize overlaps with MPI (initial synchronization can be synchronous)
 			nse.synchronizeMapDevice();
-			nse.synchronizeDFsAndMacroDevice(df_cur);
+			nse.synchronizeDFsAndMacroDevice(df_cur, true);
 		}
 #endif
 	}
@@ -1186,12 +1186,13 @@ void State<NSE>::SimUpdate()
 	nse.iterations++;
 
 	// determine if macroscopic quantities computed in the LBM kernel will be
-	// written in the dmacro array
-	bool compute_macro = NSE::MACRO::compute_in_each_iteration || NSE::MACRO::use_syncMacro;
+	// written in the dmacro array and synchronized on subdomain overlaps with MPI
+	bool sync_macro = NSE::MACRO::use_syncMacro;
 	for (int c = 0; c < MAX_COUNTER; c++)
 		if (c != PRINT && c != SAVESTATE)
 			if (cnt[c].action(nse.physTime()))
-				compute_macro = true;
+				sync_macro = true;
+	bool compute_macro = NSE::MACRO::compute_in_each_iteration || sync_macro;
 
 #ifdef HAVE_MPI
 	#ifdef AA_PATTERN
@@ -1278,7 +1279,7 @@ void State<NSE>::SimUpdate()
 		// exchange the latest DFs and dmacro on overlaps between blocks
 		// (it is important to wait for the communication before waiting for the computation, otherwise MPI won't progress)
 		timer_wait_communication.start();
-		nse.synchronizeDFsAndMacroDevice(output_df);
+		nse.synchronizeDFsAndMacroDevice(output_df, sync_macro);
 		timer_wait_communication.stop();
 
 		// wait for the computation on the interior to finish
@@ -1307,7 +1308,7 @@ void State<NSE>::SimUpdate()
 	if (nse.nproc > 1) {
 		// TODO: overlap computation with synchronization, just like above
 		timer_wait_communication.start();
-		nse.synchronizeDFsAndMacroDevice(output_df);
+		nse.synchronizeDFsAndMacroDevice(output_df, sync_macro);
 		timer_wait_communication.stop();
 	}
 	#endif

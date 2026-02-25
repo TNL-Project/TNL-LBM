@@ -82,13 +82,6 @@ __cuda_callable__ typename lat_t::PointType computeVorticity(
 	return vorticity;
 }
 
-template <typename TRAITS>
-struct D3Q27_MACRO_Sync : D3Q27_MACRO_Default<TRAITS>
-{
-	// needed for computing velocity gradient
-	static const bool use_syncMacro = true;
-};
-
 template <typename NSE>
 struct StateLocal : State<NSE>
 {
@@ -402,7 +395,7 @@ void run(const std::string& adios_config, int resolution, double Re, double lbm_
 		typename COLL::EQ,
 		D3Q27_STREAMING<TRAITS>,
 		D3Q27_BC_All,
-		D3Q27_MACRO_Sync<TRAITS>>;
+		D3Q27_MACRO_Default<TRAITS>>;
 
 	sim<NSE_CONFIG>(adios_config, resolution, Re, lbm_viscosity);
 }
