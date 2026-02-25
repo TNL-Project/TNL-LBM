@@ -27,6 +27,16 @@ protected:
 	// data variables recorded for output (mapping of name to dimension)
 	std::map<std::string, int> variables;
 
+	// plugin doesnt support now
+	// template <typename T>
+	// typename adios2::Variable<T>::Span newBuffer(const std::string& varName)
+	// {
+	// 	adios2::Engine& engine = dataManager->getEngine(ioName);
+	// 	adios2::Variable<T> var = dataManager->getVariable<T>(varName, ioName);
+	// 	typename adios2::Variable<T>::Span buffer = engine.Put(var);
+	// 	return buffer;
+	// }
+
 	template <typename T>
 	std::vector<T>& newBuffer(std::size_t reserve = 0)
 	{
@@ -36,7 +46,6 @@ protected:
 			buffer.reserve(reserve);
 		return buffer;
 	}
-
 	void recordVariable(const std::string& name, int dim)
 	{
 		if (variables.count(name) > 0)
@@ -60,6 +69,12 @@ protected:
 			addFidesAttributes();
 		}
 		dataManager->performPuts(ioName);
+
+		// Temporary solve, because plugin doesnt support adios2::Variable<T>::Span
+		for (auto& buf : buffers) {
+			dataManager->holdStepBuffer(std::move(buf));
+		}
+		buffers.clear();
 	}
 
 public:
