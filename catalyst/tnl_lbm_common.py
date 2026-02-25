@@ -149,7 +149,7 @@ def read_velocity(
     selection: PlaneSelection,
     vars_info: Mapping[str, Mapping[str, str]],
 ) -> np.ndarray:
-    suffixes = {"x": "X", "y": "Y", "z": "Z"}
+    suffixes = {"x": "_x", "y": "_y", "z": "_z"}
     comp = component.lower()
     if comp in suffixes:
         target = f"{base_name}{suffixes[comp]}"
@@ -157,12 +157,12 @@ def read_velocity(
             raise KeyError(f"Variable '{target}' not present in stream.")
         return read_scalar(fr_step, target, selection)
 
-    required = [f"{base_name}X", f"{base_name}Y", f"{base_name}Z"]
+    required = [f"{base_name}_x", f"{base_name}_y", f"{base_name}_z"]
     missing = [name for name in required if name not in vars_info]
     if missing:
         raise KeyError(f"Missing components for '{base_name}': {', '.join(missing)}")
     comps = [read_scalar(fr_step, name, selection) for name in required]
-    return np.sqrt(sum(np.square(comp.astype(np.float64)) for comp in comps))
+    return np.sqrt(sum(np.square(c.astype(np.float64)) for c in comps))
 
 
 __all__ = [

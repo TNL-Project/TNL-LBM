@@ -25,7 +25,7 @@ ADIOS2 stream SST or BP file and exports planar slices as images.
            --prefix sim1 \
            --plane xy \
            --varname velocity \
-           --component magnitude 
+           --component magnitude \
            --config 'adios2_sst.xml'
 
        # For BP file (static output):

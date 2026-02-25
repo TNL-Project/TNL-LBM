@@ -1,7 +1,9 @@
 #pragma once
 
+#include <any>
 #include <string>
 #include <map>
+#include <vector>
 #include <adios2.h>
 #include <stdexcept>
 #include <fmt/format.h>
@@ -108,6 +110,11 @@ public:
 	[[nodiscard]] bool isEngineOpen(const std::string& ioName) const
 	{
 		return engines_.count(ioName) > 0 && engines_.at(ioName);
+	}
+
+	void holdStepBuffer(std::any buffer)
+	{
+		stepBuffers_.push_back(std::move(buffer));
 	}
 
 	adios2::Engine& getEngine(const std::string& ioName)
@@ -340,6 +347,7 @@ public:
 			throw std::runtime_error(fmt::format("Engine for '{}' is not initialized", ioName));
 		}
 		engines_[ioName].EndStep();
+		stepBuffers_.clear();
 	}
 
 	template <typename T>
@@ -349,6 +357,16 @@ public:
 		return static_cast<bool>(var);
 	}
 
+	template <typename T>
+	adios2::Variable<T> getVariable(const std::string& varName, const std::string& ioName)
+	{
+		adios2::Variable<T> var = ios_.at(ioName).InquireVariable<T>(varName);
+		if (! var) {
+			throw std::runtime_error(fmt::format("Variable '{}' not found", varName));
+		}
+		return var;
+	}
+
 private:
 	adios2::ADIOS* adios;
 	std::map<std::string, adios2::IO> ios_;
@@ -356,4 +374,5 @@ private:
 	std::map<std::string, adios2::Engine> engines_;
 	std::map<std::string, adios2::Mode> current_mode_;	// Track if in read or write mode
 	std::string pluginDataModelPath_;
+	std::vector<std::any> stepBuffers_;
 };

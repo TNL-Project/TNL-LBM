@@ -63,16 +63,6 @@ def io_set_engine(io_handle, engine: str) -> None:
     raise AttributeError("Unable to set engine on ADIOS IO handle (missing set_engine/SetEngine method).")
 
 
-def _optional_float(value: str) -> Optional[float]:
-    lowered = value.strip().lower()
-    if lowered in {"none", "auto"}:
-        return None
-    try:
-        return float(value)
-    except ValueError as exc:
-        raise argparse.ArgumentTypeError(f"Expected a float or 'none', got '{value}'.") from exc
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--instream", "-i", required=True, help="Input stream or BP file to read (e.g. results_.../output_3D).")
@@ -199,14 +189,14 @@ def _consume_stream_once(
             vars_info = fr_step.available_variables()
             var_present = args.varname in vars_info
             velocity_present = any(
-                comp in vars_info for comp in (f"{args.varname}X", f"{args.varname}Y", f"{args.varname}Z")
+                comp in vars_info for comp in (f"{args.varname}_x", f"{args.varname}_y", f"{args.varname}_z")
             )
             if not var_present and not velocity_present:
                 raise KeyError(f"Variable '{args.varname}' not available in the stream.")
 
             global_shape = state.get("global_shape")
             if global_shape is None:
-                candidate_var = args.varname if var_present else f"{args.varname}X"
+                candidate_var = args.varname if var_present else f"{args.varname}_x"
                 shape_str_raw = vars_info[candidate_var]["Shape"]
                 shape_str = shape_str_raw.replace("{", "").replace("}", "")
                 dims = [int(dim.strip()) for dim in shape_str.split(",") if dim.strip()]
