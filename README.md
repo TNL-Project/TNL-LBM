@@ -106,12 +106,15 @@ project. Note that this is not an exhaustive list.
 
 ## Citing
 
-If you use TNL-LBM in your scientific projects, please cite the following papers in
-your publications:
+If you use TNL-LBM in your scientific projects, please cite the following paper
+in your publications:
 
 - J. Klinkovský, P. Eichler, R. Straka, T. Oberhuber, R. Fučík,
   [TNL-LBM: Scalable lattice Boltzmann method implementation based on Template Numerical Library](https://doi.org/10.1007/s11227-026-08292-0),
   Journal of Supercomputing 82, 167 (2026).
+
+For specific features, consider the following papers as well:
+
 - R. Fučík, P. Eichler, R. Straka, P. Pauš, J. Klinkovský, and T. Oberhuber,
   [On optimal node spacing for immersed boundary–lattice Boltzmann method in 2D and 3D](https://doi.org/10.1016/j.camwa.2018.10.045),
   Computers & Mathematics with Applications 77.4 (2019), pages 1144–1162.
