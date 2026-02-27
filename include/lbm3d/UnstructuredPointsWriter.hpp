@@ -102,10 +102,13 @@ void UnstructuredPointsWriter<TRAITS>::addFidesAttributes()
 			variable_associations.emplace_back("points");
 		}
 	}
-	this->dataManager->template defineAttribute<std::string>("Fides_Variable_List", variable_list.data(), variable_list.size(), this->ioName);
-	this->dataManager->template defineAttribute<std::string>(
-		"Fides_Variable_Associations", variable_associations.data(), variable_associations.size(), this->ioName
-	);
+	// avoid writing empty list attributes - fails with BP5 https://github.com/ornladios/ADIOS2/issues/4891
+	if (! variable_list.empty())
+		this->dataManager->template defineAttribute<std::string>("Fides_Variable_List", variable_list.data(), variable_list.size(), this->ioName);
+	if (! variable_associations.empty())
+		this->dataManager->template defineAttribute<std::string>(
+			"Fides_Variable_Associations", variable_associations.data(), variable_associations.size(), this->ioName
+		);
 	this->dataManager->template defineAttribute<std::string>("Fides_Time_Variable", "TIME", this->ioName);
 }
 
