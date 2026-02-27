@@ -111,10 +111,10 @@ struct State_NSE_ADE : State<NSE>
 		if (nse.nproc > 1) {
 			// synchronize overlaps with MPI (initial synchronization can be synchronous)
 			nse.synchronizeMapDevice();
-			nse.synchronizeDFsAndMacroDevice(df_cur);
+			nse.synchronizeDFsAndMacroDevice(df_cur, true);
 
 			ade.synchronizeMapDevice();
-			ade.synchronizeDFsAndMacroDevice(df_cur);
+			ade.synchronizeDFsAndMacroDevice(df_cur, true);
 		}
 #endif
 
@@ -165,13 +165,13 @@ struct State_NSE_ADE : State<NSE>
 		ade.iterations = nse.iterations;
 
 		// determine if macroscopic quantities computed in the LBM kernel will be
-		// written in the dmacro array
-		bool compute_macro =
-			NSE::MACRO::compute_in_each_iteration || ADE::MACRO::compute_in_each_iteration || NSE::MACRO::use_syncMacro || ADE::MACRO::use_syncMacro;
+		// written in the dmacro array and synchronized on subdomain overlaps with MPI
+		bool sync_macro = NSE::MACRO::use_syncMacro || ADE::MACRO::use_syncMacro;
 		for (int c = 0; c < MAX_COUNTER; c++)
 			if (c != PRINT && c != SAVESTATE)
 				if (cnt[c].action(nse.physTime()))
-					compute_macro = true;
+					sync_macro = true;
+		bool compute_macro = NSE::MACRO::compute_in_each_iteration || ADE::MACRO::compute_in_each_iteration || sync_macro;
 
 #ifdef HAVE_MPI
 	#ifdef AA_PATTERN
@@ -285,8 +285,8 @@ struct State_NSE_ADE : State<NSE>
 			// exchange the latest DFs and dmacro on overlaps between blocks
 			// (it is important to wait for the communication before waiting for the computation, otherwise MPI won't progress)
 			// TODO: merge the pipelining of the communication in the NSE and ADE into one
-			nse.synchronizeDFsAndMacroDevice(output_df);
-			ade.synchronizeDFsAndMacroDevice(output_df);
+			nse.synchronizeDFsAndMacroDevice(output_df, sync_macro);
+			ade.synchronizeDFsAndMacroDevice(output_df, sync_macro);
 
 			// wait for the computation on the interior to finish
 			for (auto& block : nse.blocks) {
@@ -310,8 +310,8 @@ struct State_NSE_ADE : State<NSE>
 		}
 	#ifdef HAVE_MPI
 		// TODO: overlap computation with synchronization, just like above
-		nse.synchronizeDFsAndMacroDevice(output_df);
-		ade.synchronizeDFsAndMacroDevice(output_df);
+		nse.synchronizeDFsAndMacroDevice(output_df, sync_macro);
+		ade.synchronizeDFsAndMacroDevice(output_df, sync_macro);
 	#endif
 #endif
 	}

@@ -34,7 +34,7 @@ struct LBM
 
 #ifdef HAVE_MPI
 	// synchronization methods
-	void synchronizeDFsAndMacroDevice(uint8_t dftype);
+	void synchronizeDFsAndMacroDevice(uint8_t dftype, bool sync_macro);
 	void synchronizeMapDevice();
 #endif
 

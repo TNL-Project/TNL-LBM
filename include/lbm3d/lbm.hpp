@@ -186,7 +186,7 @@ void LBM<CONFIG>::copyDFsToDevice()
 
 #ifdef HAVE_MPI
 template <typename CONFIG>
-void LBM<CONFIG>::synchronizeDFsAndMacroDevice(uint8_t dftype)
+void LBM<CONFIG>::synchronizeDFsAndMacroDevice(uint8_t dftype, bool sync_macro)
 {
 	TNL::Timer t;
 	t.start();
@@ -195,35 +195,35 @@ void LBM<CONFIG>::synchronizeDFsAndMacroDevice(uint8_t dftype)
 	// stage 1: fill send buffers
 	for (auto& block : blocks) {
 		block.synchronizeDFsDevice_start(dftype);
-		if (MACRO::use_syncMacro)
+		if (sync_macro)
 			block.synchronizeMacroDevice_start();
 	}
 
 	// stage 2: issue all send and receive async operations
 	for (auto& block : blocks) {
 		for (int i = 0; i < CONFIG::Q; i++)
-			block.dreal_sync[i].stage_2();
-		if (MACRO::use_syncMacro)
+			block.df_sync[i].stage_2();
+		if (sync_macro)
 			for (int i = 0; i < MACRO::N; i++)
-				block.dreal_sync[CONFIG::Q + i].stage_2();
+				block.macro_sync[i].stage_2();
 	}
 
 	// stage 3: copy data from receive buffers
 	for (auto& block : blocks) {
 		for (int i = 0; i < CONFIG::Q; i++)
-			block.dreal_sync[i].stage_3();
-		if (MACRO::use_syncMacro)
+			block.df_sync[i].stage_3();
+		if (sync_macro)
 			for (int i = 0; i < MACRO::N; i++)
-				block.dreal_sync[CONFIG::Q + i].stage_3();
+				block.macro_sync[i].stage_3();
 	}
 
 	// stage 4: ensure everything has finished
 	for (auto& block : blocks) {
 		for (int i = 0; i < CONFIG::Q; i++)
-			block.dreal_sync[i].stage_4();
-		if (MACRO::use_syncMacro)
+			block.df_sync[i].stage_4();
+		if (sync_macro)
 			for (int i = 0; i < MACRO::N; i++)
-				block.dreal_sync[CONFIG::Q + i].stage_4();
+				block.macro_sync[i].stage_4();
 	}
 
 	t.stop();
@@ -237,17 +237,17 @@ void LBM<CONFIG>::synchronizeDFsAndMacroDevice(uint8_t dftype)
 		std::size_t total_recv_messages = 0;
 		for (auto& block : blocks) {
 			for (int i = 0; i < CONFIG::Q; i++) {
-				total_sent_bytes += block.dreal_sync[i].sent_bytes;
-				total_recv_bytes += block.dreal_sync[i].recv_bytes;
-				total_sent_messages += block.dreal_sync[i].sent_messages;
-				total_recv_messages += block.dreal_sync[i].recv_messages;
+				total_sent_bytes += block.df_sync[i].sent_bytes;
+				total_recv_bytes += block.df_sync[i].recv_bytes;
+				total_sent_messages += block.df_sync[i].sent_messages;
+				total_recv_messages += block.df_sync[i].recv_messages;
 			}
-			if (MACRO::use_syncMacro)
+			if (sync_macro)
 				for (int i = 0; i < MACRO::N; i++) {
-					total_sent_bytes += block.dreal_sync[CONFIG::Q + i].sent_bytes;
-					total_recv_bytes += block.dreal_sync[CONFIG::Q + i].recv_bytes;
-					total_sent_messages += block.dreal_sync[CONFIG::Q + i].sent_messages;
-					total_recv_messages += block.dreal_sync[CONFIG::Q + i].recv_messages;
+					total_sent_bytes += block.macro_sync[i].sent_bytes;
+					total_recv_bytes += block.macro_sync[i].recv_bytes;
+					total_sent_messages += block.macro_sync[i].sent_messages;
+					total_recv_messages += block.macro_sync[i].recv_messages;
 				}
 		}
 

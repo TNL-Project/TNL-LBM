@@ -12,6 +12,8 @@ project(TNL-LBM
 # Declare all CMake options for the project
 option(TNL_LBM_EXPORT_INTERFACE_TARGETS "Instruct CMake to generate rules to export the interface target" ${PROJECT_IS_TOP_LEVEL})
 option(TNL_LBM_ENABLE_MPI "Enable MPI support, if available" ON)
+option(TNL_LBM_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
+option(TNL_LBM_BUILD_PYTHON "Build Python bindings" ON)
 
 # Require C++17, and disable compiler-specific extensions (if possible).
 foreach(lang CXX CUDA)
@@ -33,13 +35,17 @@ set(CMAKE_CUDA_FLAGS_RELEASE "-O3 -DNDEBUG")
 set(CMAKE_CUDA_FLAGS_RELWITHDEBINFO "${CMAKE_CUDA_FLAGS_RELEASE} ${CMAKE_CUDA_FLAGS_DEBUG}")
 
 # Enforce (more or less) warning-free builds
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wno-error=deprecated -Wno-error=deprecated-declarations -Wno-error=uninitialized")
+if(TNL_LBM_WARNINGS_AS_ERRORS)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wno-error=deprecated -Wno-error=deprecated-declarations -Wno-error=uninitialized")
+endif()
 
 if(CMAKE_CUDA_COMPILER_ID STREQUAL "NVIDIA")
     set(CMAKE_CUDA_FLAGS_RELWITHDEBINFO "${CMAKE_CUDA_FLAGS_RELWITHDEBINFO} --generate-line-info")
     if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
         # Enforce (more or less) warning-free builds for host code
-        set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler -Werror -Xcompiler -Wno-error=deprecated -Xcompiler -Wno-error=deprecated-declarations")
+        if(TNL_LBM_WARNINGS_AS_ERRORS)
+            set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler -Werror -Xcompiler -Wno-error=deprecated -Xcompiler -Wno-error=deprecated-declarations")
+        endif()
     endif()
     # Force colorized output for nvcc's host compiler (assuming it is GCC...)
     set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler -fdiagnostics-color")
@@ -47,7 +53,9 @@ endif()
 
 if(CMAKE_CUDA_COMPILER_ID STREQUAL "Clang")
     # Enforce (more or less) warning-free builds
-    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Werror -Wno-error=deprecated -Wno-error=deprecated-declarations -Wno-error=unknown-cuda-version")
+    if(TNL_LBM_WARNINGS_AS_ERRORS)
+        set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Werror -Wno-error=deprecated -Wno-error=deprecated-declarations -Wno-error=unknown-cuda-version")
+    endif()
     # workaround for Clang 15
     # https://github.com/llvm/llvm-project/issues/58491
     set(CMAKE_CUDA_FLAGS_DEBUG "-g -Xarch_device -g0")
@@ -173,6 +181,25 @@ FetchContent_Declare(TNL
 set(TNL_EXPORT_INTERFACE_TARGETS ON)  # needed for adding to the interface target
 FetchContent_MakeAvailable(TNL)
 
+if(TNL_LBM_BUILD_PYTHON)
+    FetchContent_Declare(nanobind
+        GIT_REPOSITORY https://github.com/wjakob/nanobind.git
+        GIT_TAG v2.10.2
+        SYSTEM
+        FIND_PACKAGE_ARGS
+    )
+    FetchContent_MakeAvailable(nanobind)
+
+    FetchContent_Declare(PyTNL
+        GIT_REPOSITORY https://gitlab.com/tnl-project/pytnl.git
+        GIT_TAG 0.0.10
+        SYSTEM
+        FIND_PACKAGE_ARGS
+    )
+    set(PyTNL_EXPORT_INTERFACE_TARGETS ON)  # needed for adding to the interface target
+    FetchContent_MakeAvailable(PyTNL)
+endif()
+
 find_package(PNG REQUIRED)
 find_package(OpenMP COMPONENTS CXX)
 find_package(MPI COMPONENTS CXX)
@@ -219,3 +246,6 @@ add_subdirectory(include)
 add_subdirectory(sim_adjoint)
 add_subdirectory(sim_NSE)
 add_subdirectory(sim_NSE_ADE)
+if(TNL_LBM_BUILD_PYTHON)
+    add_subdirectory(pytnl_lbm)
+endif()

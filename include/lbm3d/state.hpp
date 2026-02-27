@@ -313,9 +313,22 @@ void State<NSE>::write3D()
 	for (std::size_t i = 0; i < nse.blocks.size(); i++) {
 		const auto& block = nse.blocks[i];
 		const point_t origin = nse.lat.lbm2physPoint(0, 0, 0);
-		UniformDataWriter<TRAITS> writer(block.global, block.local, block.offset, origin, nse.lat.physDl, dataManager, fname);
+
+		// write 1 level of overlaps *between the subdomains* to avoid visual "gaps"
+		// for PointData between subdomains in Paraview
+		// https://github.com/ornladios/ADIOS2-Examples/issues/90#issuecomment-2640788765
+		idx3d overlap = {0, 0, 0};
+		if (block.is_distributed().x() && block.offset.x() + block.local.x() < nse.lat.global.x())
+			overlap.x() = 1;
+		if (block.is_distributed().y() && block.offset.y() + block.local.y() < nse.lat.global.y())
+			overlap.y() = 1;
+		if (block.is_distributed().z() && block.offset.z() + block.local.z() < nse.lat.global.z())
+			overlap.z() = 1;
+		idx3d local_size = block.local + overlap;
+
+		UniformDataWriter<TRAITS> writer(block.global, local_size, block.offset, origin, nse.lat.physDl, dataManager, fname);
 		idx3d begin = block.offset;
-		idx3d end = block.offset + block.local;
+		idx3d end = block.offset + local_size;
 		outputDataPhase1(writer, i, begin, end);
 	}
 
@@ -363,6 +376,18 @@ void State<NSE>::predefineOutputVariables(
 template <typename NSE>
 void State<NSE>::predefine3D(const std::string& ioName, const BLOCK_NSE& block)
 {
+	// write 1 level of overlaps *between the subdomains* to avoid visual "gaps"
+	// for PointData between subdomains in Paraview
+	// https://github.com/ornladios/ADIOS2-Examples/issues/90#issuecomment-2640788765
+	idx3d overlap = {0, 0, 0};
+	if (block.is_distributed().x() && block.offset.x() + block.local.x() < nse.lat.global.x())
+		overlap.x() = 1;
+	if (block.is_distributed().y() && block.offset.y() + block.local.y() < nse.lat.global.y())
+		overlap.y() = 1;
+	if (block.is_distributed().z() && block.offset.z() + block.local.z() < nse.lat.global.z())
+		overlap.z() = 1;
+	idx3d local_size = block.local + overlap;
+
 	const adios2::Dims shape{
 		static_cast<std::size_t>(block.global.z()), static_cast<std::size_t>(block.global.y()), static_cast<std::size_t>(block.global.x())
 	};
@@ -370,7 +395,7 @@ void State<NSE>::predefine3D(const std::string& ioName, const BLOCK_NSE& block)
 		static_cast<std::size_t>(block.offset.z()), static_cast<std::size_t>(block.offset.y()), static_cast<std::size_t>(block.offset.x())
 	};
 	const adios2::Dims count{
-		static_cast<std::size_t>(block.local.z()), static_cast<std::size_t>(block.local.y()), static_cast<std::size_t>(block.local.x())
+		static_cast<std::size_t>(local_size.z()), static_cast<std::size_t>(local_size.y()), static_cast<std::size_t>(local_size.x())
 	};
 
 	predefineOutputVariables(ioName, block, shape, start, count);
@@ -383,22 +408,34 @@ void State<NSE>::predefine2D(const std::string& ioName, const BLOCK_NSE& block, 
 	adios2::Dims start;
 	adios2::Dims count;
 
+	// write 1 level of overlaps *between the subdomains* to avoid visual "gaps"
+	// for PointData between subdomains in Paraview
+	// https://github.com/ornladios/ADIOS2-Examples/issues/90#issuecomment-2640788765
+	idx3d overlap = {0, 0, 0};
+	if (block.is_distributed().x() && block.offset.x() + block.local.x() < nse.lat.global.x())
+		overlap.x() = 1;
+	if (block.is_distributed().y() && block.offset.y() + block.local.y() < nse.lat.global.y())
+		overlap.y() = 1;
+	if (block.is_distributed().z() && block.offset.z() + block.local.z() < nse.lat.global.z())
+		overlap.z() = 1;
+	idx3d local_size = block.local + overlap;
+
 	// NOTE: ADIOS2 dims are in {Z, Y, X} order for ImageData writer
 	switch (cutType) {
 		case 0:	 // X cut (Y-Z plane)
 			shape = {static_cast<std::size_t>(block.global.z()), static_cast<std::size_t>(block.global.y()), static_cast<std::size_t>(1)};
 			start = {static_cast<std::size_t>(block.offset.z()), static_cast<std::size_t>(block.offset.y()), static_cast<std::size_t>(0)};
-			count = {static_cast<std::size_t>(block.local.z()), static_cast<std::size_t>(block.local.y()), static_cast<std::size_t>(1)};
+			count = {static_cast<std::size_t>(local_size.z()), static_cast<std::size_t>(local_size.y()), static_cast<std::size_t>(1)};
 			break;
 		case 1:	 // Y cut (X-Z plane)
 			shape = {static_cast<std::size_t>(block.global.z()), static_cast<std::size_t>(1), static_cast<std::size_t>(block.global.x())};
 			start = {static_cast<std::size_t>(block.offset.z()), static_cast<std::size_t>(0), static_cast<std::size_t>(block.offset.x())};
-			count = {static_cast<std::size_t>(block.local.z()), static_cast<std::size_t>(1), static_cast<std::size_t>(block.local.x())};
+			count = {static_cast<std::size_t>(local_size.z()), static_cast<std::size_t>(1), static_cast<std::size_t>(local_size.x())};
 			break;
 		case 2:	 // Z cut (X-Y plane)
 			shape = {static_cast<std::size_t>(1), static_cast<std::size_t>(block.global.y()), static_cast<std::size_t>(block.global.x())};
 			start = {static_cast<std::size_t>(0), static_cast<std::size_t>(block.offset.y()), static_cast<std::size_t>(block.offset.x())};
-			count = {static_cast<std::size_t>(1), static_cast<std::size_t>(block.local.y()), static_cast<std::size_t>(block.local.x())};
+			count = {static_cast<std::size_t>(1), static_cast<std::size_t>(local_size.y()), static_cast<std::size_t>(local_size.x())};
 			break;
 		default:
 			throw std::invalid_argument("predefine2D: invalid cut type");
@@ -414,31 +451,50 @@ void State<NSE>::predefine3Dcut(const std::string& ioName, const BLOCK_NSE& bloc
 	idx ox = probe.ox;
 	idx oy = probe.oy;
 	idx oz = probe.oz;
-	idx gx = probe.lx;
-	idx gy = probe.ly;
-	idx gz = probe.lz;
+	idx3d cut_global = {probe.lx, probe.ly, probe.lz};
 
-	const bool overlapT =
-		! (ox + gx <= block.offset.x() || block.offset.x() + block.local.x() <= ox || oy + gy <= block.offset.y()
-		   || block.offset.y() + block.local.y() <= oy || oz + gz <= block.offset.z() || block.offset.z() + block.local.z() <= oz);
-	if (! overlapT) {
+	const bool is_local =
+		! (ox + cut_global.x() <= block.offset.x() || block.offset.x() + block.local.x() <= ox	   //
+		   || oy + cut_global.y() <= block.offset.y() || block.offset.y() + block.local.y() <= oy  //
+		   || oz + cut_global.z() <= block.offset.z() || block.offset.z() + block.local.z() <= oz);
+	if (! is_local) {
 		// No data from this rank/block for this cut
 		return;
 	}
 
 	// intersection of the local domain with the box
-	idx lx = TNL::min(ox + gx, block.offset.x() + block.local.x()) - TNL::max(ox, block.offset.x());
-	idx ly = TNL::min(oy + gy, block.offset.y() + block.local.y()) - TNL::max(oy, block.offset.y());
-	idx lz = TNL::min(oz + gz, block.offset.z() + block.local.z()) - TNL::max(oz, block.offset.z());
+	idx3d cut_local;
+	cut_local.x() = TNL::min(ox + cut_global.x(), block.offset.x() + block.local.x()) - TNL::max(ox, block.offset.x());
+	cut_local.y() = TNL::min(oy + cut_global.y(), block.offset.y() + block.local.y()) - TNL::max(oy, block.offset.y());
+	cut_local.z() = TNL::min(oz + cut_global.z(), block.offset.z() + block.local.z()) - TNL::max(oz, block.offset.z());
 
-	idx oX = TNL::max(0, block.offset.x() - ox);
-	idx oY = TNL::max(0, block.offset.y() - oy);
-	idx oZ = TNL::max(0, block.offset.z() - oz);
+	idx3d cut_offset;
+	cut_offset.x() = TNL::max(0, block.offset.x() - ox);
+	cut_offset.y() = TNL::max(0, block.offset.y() - oy);
+	cut_offset.z() = TNL::max(0, block.offset.z() - oz);
+
+	// write 1 level of overlaps *between the subdomains* to avoid visual "gaps"
+	// for PointData between subdomains in Paraview
+	// https://github.com/ornladios/ADIOS2-Examples/issues/90#issuecomment-2640788765
+	idx3d overlap = {0, 0, 0};
+	if (block.is_distributed().x() && block.offset.x() + block.local.x() < nse.lat.global.x())
+		overlap.x() = 1;
+	if (block.is_distributed().y() && block.offset.y() + block.local.y() < nse.lat.global.y())
+		overlap.y() = 1;
+	if (block.is_distributed().z() && block.offset.z() + block.local.z() < nse.lat.global.z())
+		overlap.z() = 1;
+	cut_local += overlap;
 
 	// NOTE: ADIOS2 dims are in {Z, Y, X} order for ImageData writer
-	const adios2::Dims shape{static_cast<std::size_t>(gz), static_cast<std::size_t>(gy), static_cast<std::size_t>(gx)};
-	const adios2::Dims start{static_cast<std::size_t>(oZ), static_cast<std::size_t>(oY), static_cast<std::size_t>(oX)};
-	const adios2::Dims count{static_cast<std::size_t>(lz), static_cast<std::size_t>(ly), static_cast<std::size_t>(lx)};
+	const adios2::Dims shape{
+		static_cast<std::size_t>(cut_global.z()), static_cast<std::size_t>(cut_global.y()), static_cast<std::size_t>(cut_global.x())
+	};
+	const adios2::Dims start{
+		static_cast<std::size_t>(cut_offset.z()), static_cast<std::size_t>(cut_offset.y()), static_cast<std::size_t>(cut_offset.x())
+	};
+	const adios2::Dims count{
+		static_cast<std::size_t>(cut_local.z()), static_cast<std::size_t>(cut_local.y()), static_cast<std::size_t>(cut_local.x())
+	};
 
 	predefineOutputVariables(ioName, block, shape, start, count);
 }
@@ -492,33 +548,46 @@ void State<NSE>::write3Dcut()
 		idx ox = probevec.ox;
 		idx oy = probevec.oy;
 		idx oz = probevec.oz;
-		idx gx = probevec.lx;
-		idx gy = probevec.ly;
-		idx gz = probevec.lz;
+		idx3d cut_global = {probevec.lx, probevec.ly, probevec.lz};
 
 		for (std::size_t i = 0; i < nse.blocks.size(); i++) {
 			const auto& block = nse.blocks[i];
 
-			const bool overlapT =
-				! (ox + gx <= block.offset.x() || block.offset.x() + block.local.x() <= ox || oy + gy <= block.offset.y()
-				   || block.offset.y() + block.local.y() <= oy || oz + gz <= block.offset.z() || block.offset.z() + block.local.z() <= oz);
-			if (! overlapT)
+			const bool is_local =
+				! (ox + cut_global.x() <= block.offset.x() || block.offset.x() + block.local.x() <= ox	   //
+				   || oy + cut_global.y() <= block.offset.y() || block.offset.y() + block.local.y() <= oy  //
+				   || oz + cut_global.z() <= block.offset.z() || block.offset.z() + block.local.z() <= oz);
+			if (! is_local)
 				continue;
 
 			// intersection of the local domain with the box
-			idx lx = TNL::min(ox + gx, block.offset.x() + block.local.x()) - TNL::max(ox, block.offset.x());
-			idx ly = TNL::min(oy + gy, block.offset.y() + block.local.y()) - TNL::max(oy, block.offset.y());
-			idx lz = TNL::min(oz + gz, block.offset.z() + block.local.z()) - TNL::max(oz, block.offset.z());
+			idx3d cut_local;
+			cut_local.x() = TNL::min(ox + cut_global.x(), block.offset.x() + block.local.x()) - TNL::max(ox, block.offset.x());
+			cut_local.y() = TNL::min(oy + cut_global.y(), block.offset.y() + block.local.y()) - TNL::max(oy, block.offset.y());
+			cut_local.z() = TNL::min(oz + cut_global.z(), block.offset.z() + block.local.z()) - TNL::max(oz, block.offset.z());
 
-			idx oX = TNL::max(0, block.offset.x() - ox);
-			idx oY = TNL::max(0, block.offset.y() - oy);
-			idx oZ = TNL::max(0, block.offset.z() - oz);
+			idx3d cut_offset;
+			cut_offset.x() = TNL::max(0, block.offset.x() - ox);
+			cut_offset.y() = TNL::max(0, block.offset.y() - oy);
+			cut_offset.z() = TNL::max(0, block.offset.z() - oz);
+
+			// write 1 level of overlaps *between the subdomains* to avoid visual "gaps"
+			// for PointData between subdomains in Paraview
+			// https://github.com/ornladios/ADIOS2-Examples/issues/90#issuecomment-2640788765
+			idx3d overlap = {0, 0, 0};
+			if (block.is_distributed().x() && block.offset.x() + block.local.x() < nse.lat.global.x())
+				overlap.x() = 1;
+			if (block.is_distributed().y() && block.offset.y() + block.local.y() < nse.lat.global.y())
+				overlap.y() = 1;
+			if (block.is_distributed().z() && block.offset.z() + block.local.z() < nse.lat.global.z())
+				overlap.z() = 1;
+			cut_local += overlap;
 
 			const point_t origin = nse.lat.lbm2physPoint(ox, oy, oz);
-			UniformDataWriter<TRAITS> writer({gx, gy, gz}, {lx, ly, lz}, {oX, oY, oZ}, origin, nse.lat.physDl, dataManager, fname);
+			UniformDataWriter<TRAITS> writer(cut_global, cut_local, cut_offset, origin, nse.lat.physDl, dataManager, fname);
 
 			idx3d begin = {TNL::max(ox, block.offset.x()), TNL::max(oy, block.offset.y()), TNL::max(oz, block.offset.z())};
-			idx3d end = begin + idx3d{lx, ly, lz};
+			idx3d end = begin + cut_local;
 			outputDataPhase1(writer, i, begin, end);
 		}
 
@@ -619,36 +688,47 @@ void State<NSE>::write2D()
 			idx3d begin;
 			idx3d end;
 
+			// write 1 level of overlaps *between the subdomains* to avoid visual "gaps"
+			// for PointData between subdomains in Paraview
+			// https://github.com/ornladios/ADIOS2-Examples/issues/90#issuecomment-2640788765
+			idx3d overlap = {0, 0, 0};
+			if (block.is_distributed().x() && block.offset.x() + block.local.x() < nse.lat.global.x())
+				overlap.x() = 1;
+			if (block.is_distributed().y() && block.offset.y() + block.local.y() < nse.lat.global.y())
+				overlap.y() = 1;
+			if (block.is_distributed().z() && block.offset.z() + block.local.z() < nse.lat.global.z())
+				overlap.z() = 1;
+
 			switch (probevec.type) {
 				case 0:
 					if (! block.isLocalX(probevec.position))
 						continue;
 					cut_origin = nse.lat.lbm2physPoint(probevec.position, 0, 0);
 					cut_global = {1, block.global.y(), block.global.z()};
-					cut_local = {1, block.local.y(), block.local.z()};
+					cut_local = {1, block.local.y() + overlap.y(), block.local.z() + overlap.z()};
 					cut_offset = {0, block.offset.y(), block.offset.z()};
 					begin = {probevec.position, block.offset.y(), block.offset.z()};
-					end = begin + idx3d{1, block.local.y(), block.local.z()};
+					end = begin + cut_local;
 					break;
 				case 1:
 					if (! block.isLocalY(probevec.position))
 						continue;
 					cut_origin = nse.lat.lbm2physPoint(0, probevec.position, 0);
 					cut_global = {block.global.x(), 1, block.global.z()};
-					cut_local = {block.local.x(), 1, block.local.z()};
+					cut_local = {block.local.x() + overlap.x(), 1, block.local.z() + overlap.z()};
 					cut_offset = {block.offset.x(), 0, block.offset.z()};
 					begin = {block.offset.x(), probevec.position, block.offset.z()};
-					end = begin + idx3d{block.local.x(), 1, block.local.z()};
+					end = begin + cut_local;
 					break;
 				case 2:
 					if (! block.isLocalZ(probevec.position))
 						continue;
 					cut_origin = nse.lat.lbm2physPoint(0, 0, probevec.position);
 					cut_global = {block.global.x(), block.global.y(), 1};
-					cut_local = {block.local.x(), block.local.y(), 1};
+					cut_local = {block.local.x() + overlap.x(), block.local.y() + overlap.y(), 1};
 					cut_offset = {block.offset.x(), block.offset.y(), 0};
 					begin = {block.offset.x(), block.offset.y(), probevec.position};
-					end = begin + idx3d{block.local.x(), block.local.y(), 1};
+					end = begin + cut_local;
 					break;
 				default:
 					throw std::invalid_argument(fmt::format("Invalid 2D cut type: {}", probevec.type));
@@ -1131,7 +1211,7 @@ void State<NSE>::SimInit()
 		if (nse.nproc > 1) {
 			// synchronize overlaps with MPI (initial synchronization can be synchronous)
 			nse.synchronizeMapDevice();
-			nse.synchronizeDFsAndMacroDevice(df_cur);
+			nse.synchronizeDFsAndMacroDevice(df_cur, true);
 		}
 #endif
 	}
@@ -1186,12 +1266,13 @@ void State<NSE>::SimUpdate()
 	nse.iterations++;
 
 	// determine if macroscopic quantities computed in the LBM kernel will be
-	// written in the dmacro array
-	bool compute_macro = NSE::MACRO::compute_in_each_iteration || NSE::MACRO::use_syncMacro;
+	// written in the dmacro array and synchronized on subdomain overlaps with MPI
+	bool sync_macro = NSE::MACRO::use_syncMacro;
 	for (int c = 0; c < MAX_COUNTER; c++)
 		if (c != PRINT && c != SAVESTATE)
 			if (cnt[c].action(nse.physTime()))
-				compute_macro = true;
+				sync_macro = true;
+	bool compute_macro = NSE::MACRO::compute_in_each_iteration || sync_macro;
 
 #ifdef HAVE_MPI
 	#ifdef AA_PATTERN
@@ -1278,7 +1359,7 @@ void State<NSE>::SimUpdate()
 		// exchange the latest DFs and dmacro on overlaps between blocks
 		// (it is important to wait for the communication before waiting for the computation, otherwise MPI won't progress)
 		timer_wait_communication.start();
-		nse.synchronizeDFsAndMacroDevice(output_df);
+		nse.synchronizeDFsAndMacroDevice(output_df, sync_macro);
 		timer_wait_communication.stop();
 
 		// wait for the computation on the interior to finish
@@ -1307,7 +1388,7 @@ void State<NSE>::SimUpdate()
 	if (nse.nproc > 1) {
 		// TODO: overlap computation with synchronization, just like above
 		timer_wait_communication.start();
-		nse.synchronizeDFsAndMacroDevice(output_df);
+		nse.synchronizeDFsAndMacroDevice(output_df, sync_macro);
 		timer_wait_communication.stop();
 	}
 	#endif
