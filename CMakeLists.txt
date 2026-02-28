@@ -184,7 +184,7 @@ FetchContent_MakeAvailable(TNL)
 if(TNL_LBM_BUILD_PYTHON)
     FetchContent_Declare(nanobind
         GIT_REPOSITORY https://github.com/wjakob/nanobind.git
-        GIT_TAG v2.10.2
+        GIT_TAG v2.12.0
         SYSTEM
         FIND_PACKAGE_ARGS
     )
