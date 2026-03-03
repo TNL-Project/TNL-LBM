@@ -427,11 +427,11 @@ int sim(const std::string& adios_config, int RES, bool use_forcing, Scaling scal
 				analytical[k * state.nse.blocks.front().local.y() + j] =
 					state.analytical_ux(state.nse.blocks.front().offset.y() + j, state.nse.blocks.front().offset.z() + k);
 		// copy the analytical profile to the GPU
-		cudaMemcpy(
+		TNL::Backend::memcpy(
 			state.nse.blocks.front().data.vx_profile,
 			analytical.get(),
 			state.nse.blocks.front().local.y() * state.nse.blocks.front().local.z() * sizeof(dreal),
-			cudaMemcpyHostToDevice
+			TNL::Backend::MemcpyHostToDevice
 		);
 #else
 		for (int j = 0; j < state.nse.blocks.front().local.y(); j++)

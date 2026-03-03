@@ -31,7 +31,7 @@ using TNL::dim3;
 
 using TNLMPI_INIT = TNL::MPI::ScopedInitializer;
 
-#ifdef __CUDACC__
+#if defined(__CUDACC__) || defined(__HIP__)
 	#define CUDA_HOSTDEV __host__ __device__
 #else
 	#define CUDA_HOSTDEV
