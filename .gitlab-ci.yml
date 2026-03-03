@@ -33,7 +33,7 @@ typos:
   script:
     - typos --color always --sort
 
-build_Release:
+build_CUDA_Release:
   stage: build
   script:
     - cmake -B build -S . -G Ninja
@@ -47,12 +47,34 @@ build_Release:
     - docker
     - nvidia
 
-build_Debug:
+build_CUDA_Debug:
   stage: build
   script:
     - cmake -B build -S . -G Ninja
             -DCMAKE_BUILD_TYPE=Debug
             -DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCH}
+    - cmake --build build
+
+build_HIP_Release:
+  stage: build
+  image: "jlk.fjfi.cvut.cz:5000/fjfi-mmg/archlinux-tnl-rocm:latest"
+  tags:
+    - docker
+    - hip-rocm
+  script:
+    - cmake -B build -S . -G Ninja
+            -DCMAKE_BUILD_TYPE=Release
+    - cmake --build build
+
+build_HIP_Debug:
+  stage: build
+  image: "jlk.fjfi.cvut.cz:5000/fjfi-mmg/archlinux-tnl-rocm:latest"
+  tags:
+    - docker
+    - hip-rocm
+  script:
+    - cmake -B build -S . -G Ninja
+            -DCMAKE_BUILD_TYPE=Debug
     - cmake --build build
 
 build_without_MPI:
