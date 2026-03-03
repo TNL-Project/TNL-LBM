@@ -3,7 +3,11 @@ set(sources
 )
 
 foreach(source_file IN LISTS sources)
-    set_source_files_properties(${source_file} PROPERTIES LANGUAGE CUDA)
+    if(CMAKE_HIP_COMPILER)
+        set_source_files_properties(${source_file} PROPERTIES LANGUAGE HIP)
+    elseif(CMAKE_CUDA_COMPILER)
+        set_source_files_properties(${source_file} PROPERTIES LANGUAGE CUDA)
+    endif()
 endforeach(source_file)
 
 # Create the module

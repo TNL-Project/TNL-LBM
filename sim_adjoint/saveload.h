@@ -44,7 +44,6 @@ void loadPrimaryAndMeasuredMacro(State& state, const std::string& fname_primary,
 	using array4d_view = local_array4d_view;
 #endif
 	using SizesHolder = typename local_array4d_view::SizesHolderType;
-	using hmacro_array_t = typename State::BLOCK_NSE::hmacro_array_t;
 
 	adios2::Mode mode = adios2::Mode::Read;
 

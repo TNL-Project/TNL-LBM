@@ -1,12 +1,18 @@
 #pragma once
 
+#include <cmath>
+#include <cstdint>
+#include <fstream>
 #include <memory>
 #include <stdexcept>
 #include <string>
 
+#include <fmt/format.h>
+#include <TNL/Backend/Functions.h>
+
 #include "lbm_common/fileutils.h"
 
-enum class VelocityProfile : uint8_t
+enum class VelocityProfile : std::uint8_t
 {
 	zero,
 	flat,
@@ -129,10 +135,15 @@ void loadVelocityProfile(const std::string& dirname, double* velocityProfile, in
 }
 
 template <typename dreal, typename idx>
-void allocateCopyVelocityProfile(dreal** velocity, idx sizeY, idx sizeZ, idx offsetY, idx offsetZ, const double* velocityDes, int sizeYDes, int sizeZDes)
+void
+allocateCopyVelocityProfile(dreal** velocity, idx sizeY, idx sizeZ, idx offsetY, idx offsetZ, const double* velocityDes, int sizeYDes, int sizeZDes)
 {
 #ifdef USE_CUDA
-	cudaMalloc((void**) velocity, sizeY * sizeZ * sizeof(dreal));
+	#if defined(__CUDACC__)
+	TNL_BACKEND_SAFE_CALL(cudaMalloc((void**) velocity, sizeY * sizeZ * sizeof(dreal)));
+	#elif defined(__HIP__)
+	TNL_BACKEND_SAFE_CALL(hipMalloc((void**) velocity, sizeY * sizeZ * sizeof(dreal)));
+	#endif
 #else
 	*velocity = new dreal[sizeY * sizeZ];
 #endif
@@ -143,7 +154,7 @@ void allocateCopyVelocityProfile(dreal** velocity, idx sizeY, idx sizeZ, idx off
 	for (idx j = 0; j < sizeY; j++)
 		for (idx k = 0; k < sizeZ; k++)
 			velocityDesDreal[k * sizeY + j] = velocityDes[(offsetZ + k) * sizeYDes + (offsetY + j)];
-	cudaMemcpy(*velocity, velocityDesDreal.get(), sizeY * sizeZ * sizeof(dreal), cudaMemcpyHostToDevice);
+	TNL::Backend::memcpy(*velocity, velocityDesDreal.get(), sizeY * sizeZ * sizeof(dreal), TNL::Backend::MemcpyHostToDevice);
 #else
 	for (idx j = 0; j < sizeY; j++)
 		for (idx k = 0; k < sizeZ; k++)
@@ -155,7 +166,11 @@ template <typename dreal, typename idx>
 void allocateCopyGradientProfile(dreal** gradient, idx sizeY, idx sizeZ)
 {
 #ifdef USE_CUDA
-	cudaMalloc((void**) gradient, sizeY * sizeZ * sizeof(dreal));
+	#if defined(__CUDACC__)
+	TNL_BACKEND_SAFE_CALL(cudaMalloc((void**) gradient, sizeY * sizeZ * sizeof(dreal)));
+	#elif defined(__HIP__)
+	TNL_BACKEND_SAFE_CALL(hipMalloc((void**) gradient, sizeY * sizeZ * sizeof(dreal)));
+	#endif
 #else
 	*gradient = new dreal[sizeY * sizeZ];
 #endif
@@ -166,7 +181,7 @@ void allocateCopyGradientProfile(dreal** gradient, idx sizeY, idx sizeZ)
 	for (idx j = 0; j < sizeY; j++)
 		for (idx k = 0; k < sizeZ; k++)
 			gradientDreal[k * sizeY + j] = (dreal) 0;
-	cudaMemcpy(*gradient, gradientDreal.get(), sizeY * sizeZ * sizeof(dreal), cudaMemcpyHostToDevice);
+	TNL::Backend::memcpy(*gradient, gradientDreal.get(), sizeY * sizeZ * sizeof(dreal), TNL::Backend::MemcpyHostToDevice);
 #else
 	for (idx j = 0; j < sizeY; j++)
 		for (idx k = 0; k < sizeZ; k++)
@@ -180,7 +195,7 @@ void copyVelocityProfile(dreal* velocity, idx sizeY, idx sizeZ, idx offsetY, idx
 #ifdef USE_CUDA
 	// convert velocityDes solution from dreal to double
 	std::unique_ptr<dreal[]> velocityDouble{new dreal[sizeY * sizeZ]};
-	cudaMemcpy(velocityDouble.get(), velocity, sizeY * sizeZ * sizeof(dreal), cudaMemcpyDeviceToHost);
+	TNL::Backend::memcpy(velocityDouble.get(), velocity, sizeY * sizeZ * sizeof(dreal), TNL::Backend::MemcpyDeviceToHost);
 	for (idx j = 0; j < sizeY; j++)
 		for (idx k = 0; k < sizeZ; k++)
 			velocityDes[(offsetZ + k) * sizeYDes + (offsetY + j)] = (double) velocityDouble[k * sizeY + j];
@@ -196,7 +211,11 @@ void deallocateVelocityProfile(dreal** velocity)
 {
 	if (*velocity) {
 #ifdef USE_CUDA
-		cudaFree(*velocity);
+	#if defined(__CUDACC__)
+		TNL_BACKEND_SAFE_CALL(cudaFree(*velocity));
+	#elif defined(__HIP__)
+		TNL_BACKEND_SAFE_CALL(hipFree(*velocity));
+	#endif
 #else
 		delete[] (*velocity);
 #endif
@@ -208,7 +227,11 @@ void deallocateGradientProfile(dreal** gradient)
 {
 	if (*gradient) {
 #ifdef USE_CUDA
-		cudaFree(*gradient);
+	#if defined(__CUDACC__)
+		TNL_BACKEND_SAFE_CALL(cudaFree(*gradient));
+	#elif defined(__HIP__)
+		TNL_BACKEND_SAFE_CALL(hipFree(*gradient));
+	#endif
 #else
 		delete[] (*gradient);
 #endif

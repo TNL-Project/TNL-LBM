@@ -109,20 +109,24 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal k_m11 = (k_mp1 - k_mm1) - vy * k_m01;
 		const dreal k_z11 = (k_zp1 - k_zm1) - vy * k_z01;
 		const dreal k_p11 = (k_pp1 - k_pm1) - vy * k_p01;
+#ifdef USE_GEIER_CUM_2017
 		const dreal k_m12 = (k_mp2 - k_mm2) - vy * k_m02;
 		const dreal k_z12 = (k_zp2 - k_zm2) - vy * k_z02;
 		const dreal k_p12 = (k_pp2 - k_pm2) - vy * k_p02;
+#endif
 
 		// Eq 11
 		const dreal k_m20 = (k_mp0 + k_mm0) - no2 * vy * (k_mp0 - k_mm0) + vy_sqr * k_m00;
 		const dreal k_z20 = (k_zp0 + k_zm0) - no2 * vy * (k_zp0 - k_zm0) + vy_sqr * k_z00;
 		const dreal k_p20 = (k_pp0 + k_pm0) - no2 * vy * (k_pp0 - k_pm0) + vy_sqr * k_p00;
+#ifdef USE_GEIER_CUM_2017
 		const dreal k_m21 = (k_mp1 + k_mm1) - no2 * vy * (k_mp1 - k_mm1) + vy_sqr * k_m01;
 		const dreal k_z21 = (k_zp1 + k_zm1) - no2 * vy * (k_zp1 - k_zm1) + vy_sqr * k_z01;
 		const dreal k_p21 = (k_pp1 + k_pm1) - no2 * vy * (k_pp1 - k_pm1) + vy_sqr * k_p01;
 		const dreal k_m22 = (k_mp2 + k_mm2) - no2 * vy * (k_mp2 - k_mm2) + vy_sqr * k_m02;
 		const dreal k_z22 = (k_zp2 + k_zm2) - no2 * vy * (k_zp2 - k_zm2) + vy_sqr * k_z02;
 		const dreal k_p22 = (k_pp2 + k_pm2) - no2 * vy * (k_pp2 - k_pm2) + vy_sqr * k_p02;
+#endif
 
 		// Eq 12
 		const dreal k_000 = (k_p00 + k_m00) + k_z00;
@@ -130,24 +134,29 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal k_002 = (k_p02 + k_m02) + k_z02;
 		const dreal k_010 = (k_p10 + k_m10) + k_z10;
 		const dreal k_011 = (k_p11 + k_m11) + k_z11;
-		const dreal k_012 = (k_p12 + k_m12) + k_z12;
 		const dreal k_020 = (k_p20 + k_m20) + k_z20;
+#ifdef USE_GEIER_CUM_2017
+		const dreal k_012 = (k_p12 + k_m12) + k_z12;
 		const dreal k_021 = (k_p21 + k_m21) + k_z21;
 		const dreal k_022 = (k_p22 + k_m22) + k_z22;
+#endif
 
 		// Eq 13
 		const dreal k_100 = (k_p00 - k_m00) - vx * k_000;
 		const dreal k_101 = (k_p01 - k_m01) - vx * k_001;
-		const dreal k_102 = (k_p02 - k_m02) - vx * k_002;
 		const dreal k_110 = (k_p10 - k_m10) - vx * k_010;
+#ifdef USE_GEIER_CUM_2017
+		const dreal k_102 = (k_p02 - k_m02) - vx * k_002;
 		const dreal k_111 = (k_p11 - k_m11) - vx * k_011;
 		const dreal k_112 = (k_p12 - k_m12) - vx * k_012;
 		const dreal k_120 = (k_p20 - k_m20) - vx * k_020;
 		const dreal k_121 = (k_p21 - k_m21) - vx * k_021;
 		const dreal k_122 = (k_p22 - k_m22) - vx * k_022;
+#endif
 
 		// Eq 14
 		const dreal k_200 = (k_p00 + k_m00) - no2 * vx * (k_p00 - k_m00) + vx_sqr * k_000;
+#ifdef USE_GEIER_CUM_2017
 		const dreal k_201 = (k_p01 + k_m01) - no2 * vx * (k_p01 - k_m01) + vx_sqr * k_001;
 		const dreal k_202 = (k_p02 + k_m02) - no2 * vx * (k_p02 - k_m02) + vx_sqr * k_002;
 		const dreal k_210 = (k_p10 + k_m10) - no2 * vx * (k_p10 - k_m10) + vx_sqr * k_010;
@@ -180,6 +189,7 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 						  + (no16 * k_110 * k_101 * k_011 + no4 * (k_101 * k_101 * k_020 + k_011 * k_011 * k_200 + k_110 * k_110 * k_002)
 							 + no2 * k_200 * k_020 * k_002)
 								* rho_inv * rho_inv;
+#endif
 
 		// relaxation definitions
 		const dreal omega1 = no1 / (no3 * KS.lbmViscosity + n1o2);	// shear viscosity
@@ -237,10 +247,6 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal Dxu = 0;
 		const dreal Dyv = 0;
 		const dreal Dzw = 0;
-		// plus their combination: Eq 30 - 32
-		const dreal DxvDyu = 0;
-		const dreal DxwDzu = 0;
-		const dreal DywDzv = 0;
 #endif
 		// Eqs 33-35
 		const dreal Eq33RHS = (no1 - omega1) * (C_200 - C_020) - no3 * rho * (no1 - omega1 * n1o2) * (vx_sqr * Dxu - vy_sqr * Dyv);

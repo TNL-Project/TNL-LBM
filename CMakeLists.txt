@@ -5,9 +5,7 @@ if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
     set(CMAKE_CUDA_ARCHITECTURES "native")
 endif()
 
-project(TNL-LBM
-    LANGUAGES CXX CUDA
-)
+project(TNL-LBM LANGUAGES CXX)
 
 # Declare all CMake options for the project
 option(TNL_LBM_EXPORT_INTERFACE_TARGETS "Instruct CMake to generate rules to export the interface target" ${PROJECT_IS_TOP_LEVEL})
@@ -16,50 +14,15 @@ option(TNL_LBM_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 option(TNL_LBM_BUILD_PYTHON "Build Python bindings" ON)
 
 # Require C++17, and disable compiler-specific extensions (if possible).
-foreach(lang CXX CUDA)
-    set(CMAKE_${lang}_STANDARD 17)
-    set(CMAKE_${lang}_STANDARD_REQUIRED ON)
-    set(CMAKE_${lang}_EXTENSIONS OFF)
-endforeach()
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Set build flags for CXX
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Werror=vla")
 set(CMAKE_CXX_FLAGS_DEBUG "-g")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELEASE} ${CMAKE_CXX_FLAGS_DEBUG}")
-
-# Set build flags for CUDA
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Wall")
-set(CMAKE_CUDA_FLAGS_DEBUG "-g")
-set(CMAKE_CUDA_FLAGS_RELEASE "-O3 -DNDEBUG")
-set(CMAKE_CUDA_FLAGS_RELWITHDEBINFO "${CMAKE_CUDA_FLAGS_RELEASE} ${CMAKE_CUDA_FLAGS_DEBUG}")
-
-# Enforce (more or less) warning-free builds
-if(TNL_LBM_WARNINGS_AS_ERRORS)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wno-error=deprecated -Wno-error=deprecated-declarations -Wno-error=uninitialized")
-endif()
-
-if(CMAKE_CUDA_COMPILER_ID STREQUAL "NVIDIA")
-    set(CMAKE_CUDA_FLAGS_RELWITHDEBINFO "${CMAKE_CUDA_FLAGS_RELWITHDEBINFO} --generate-line-info")
-    if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
-        # Enforce (more or less) warning-free builds for host code
-        if(TNL_LBM_WARNINGS_AS_ERRORS)
-            set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler -Werror -Xcompiler -Wno-error=deprecated -Xcompiler -Wno-error=deprecated-declarations")
-        endif()
-    endif()
-    # Force colorized output for nvcc's host compiler (assuming it is GCC...)
-    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler -fdiagnostics-color")
-endif()
-
-if(CMAKE_CUDA_COMPILER_ID STREQUAL "Clang")
-    # Enforce (more or less) warning-free builds
-    if(TNL_LBM_WARNINGS_AS_ERRORS)
-        set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Werror -Wno-error=deprecated -Wno-error=deprecated-declarations -Wno-error=unknown-cuda-version")
-    endif()
-    # workaround for Clang 15
-    # https://github.com/llvm/llvm-project/issues/58491
-    set(CMAKE_CUDA_FLAGS_DEBUG "-g -Xarch_device -g0")
-endif()
 
 # Disable GCC's infamous warnings (they produce many false positives)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -79,6 +42,75 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR
        CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang" OR
        CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra-semi-stmt")
+    endif()
+endif()
+
+include(CheckLanguage)
+
+check_language(CUDA)
+if(CMAKE_CUDA_COMPILER)
+    enable_language(CUDA)
+
+    # Require C++17, and disable compiler-specific extensions (if possible).
+    set(CMAKE_CUDA_STANDARD 17)
+    set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+    set(CMAKE_CUDA_EXTENSIONS OFF)
+
+    # Set build flags for CUDA
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Wall")
+    set(CMAKE_CUDA_FLAGS_DEBUG "-g")
+    set(CMAKE_CUDA_FLAGS_RELEASE "-O3 -DNDEBUG")
+    set(CMAKE_CUDA_FLAGS_RELWITHDEBINFO "${CMAKE_CUDA_FLAGS_RELEASE} ${CMAKE_CUDA_FLAGS_DEBUG}")
+
+    # Enforce (more or less) warning-free builds
+    if(TNL_LBM_WARNINGS_AS_ERRORS)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wno-error=deprecated -Wno-error=deprecated-declarations -Wno-error=uninitialized")
+    endif()
+
+    if(CMAKE_CUDA_COMPILER_ID STREQUAL "NVIDIA")
+        set(CMAKE_CUDA_FLAGS_RELWITHDEBINFO "${CMAKE_CUDA_FLAGS_RELWITHDEBINFO} --generate-line-info")
+        if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
+            # Enforce (more or less) warning-free builds for host code
+            if(TNL_LBM_WARNINGS_AS_ERRORS)
+                set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler -Werror -Xcompiler -Wno-error=deprecated -Xcompiler -Wno-error=deprecated-declarations")
+            endif()
+        endif()
+        # Force colorized output for nvcc's host compiler (assuming it is GCC...)
+        set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler -fdiagnostics-color")
+    endif()
+
+    if(CMAKE_CUDA_COMPILER_ID STREQUAL "Clang")
+        # Enforce (more or less) warning-free builds
+        if(TNL_LBM_WARNINGS_AS_ERRORS)
+            set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Werror -Wno-error=deprecated -Wno-error=deprecated-declarations -Wno-error=unknown-cuda-version")
+        endif()
+        # workaround for Clang 15
+        # https://github.com/llvm/llvm-project/issues/58491
+        set(CMAKE_CUDA_FLAGS_DEBUG "-g -Xarch_device -g0")
+    endif()
+endif()
+
+check_language(HIP)
+if(CMAKE_HIP_COMPILER)
+    enable_language(HIP)
+
+    # Require C++17, and disable compiler-specific extensions (if possible).
+    set(CMAKE_HIP_STANDARD 17)
+    set(CMAKE_HIP_STANDARD_REQUIRED ON)
+    set(CMAKE_HIP_EXTENSIONS OFF)
+
+    # Set build flags for HIP
+    set(CMAKE_HIP_FLAGS "${CMAKE_HIP_FLAGS} -Wall")
+    # NOTE: cmake mirrors the hipcc.pl script and passes some flags to rocm-llvm
+    #       (--offload-arch=gfx803 -mllvm -amdgpu-early-inline-all=true -mllvm -amdgpu-function-calls=false)
+    #       which do not work with -O0 (leads to Memory access fault), hence -O1
+    set(CMAKE_HIP_FLAGS_DEBUG "-O1 -g -DHIP_ENABLE_PRINTF")
+    set(CMAKE_HIP_FLAGS_RELEASE "-O3 -DNDEBUG")
+    set(CMAKE_HIP_FLAGS_RELWITHDEBINFO "${CMAKE_HIP_FLAGS_RELEASE} -g")
+
+    # Enforce (more or less) warning-free builds
+    if(TNL_LBM_WARNINGS_AS_ERRORS)
+        set(CMAKE_HIP_FLAGS "${CMAKE_HIP_FLAGS} -Werror -Wno-error=deprecated -Wno-error=deprecated-declarations")
     endif()
 endif()
 

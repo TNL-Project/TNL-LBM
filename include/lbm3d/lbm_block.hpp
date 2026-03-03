@@ -128,7 +128,11 @@ void LBM_BLOCK<CONFIG>::setLatticeDecomposition(
 	// get the range of stream priorities for current GPU
 	int priority_high;
 	int priority_low;
-	cudaDeviceGetStreamPriorityRange(&priority_low, &priority_high);
+	#ifdef __CUDACC__
+	TNL_BACKEND_SAFE_CALL(cudaDeviceGetStreamPriorityRange(&priority_low, &priority_high));
+	#elif defined(__HIP__)
+	TNL_BACKEND_SAFE_CALL(hipDeviceGetStreamPriorityRange(&priority_low, &priority_high));
+	#endif
 	// low-priority stream for the interior
 	computeData.at(TNL::Containers::SyncDirection::None).stream = TNL::Backend::Stream::create(TNL::Backend::StreamNonBlocking, priority_low);
 	// high-priority streams for boundaries
