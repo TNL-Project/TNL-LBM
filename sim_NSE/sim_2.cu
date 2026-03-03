@@ -20,7 +20,7 @@ struct NSE_Data_XProfileInflow : NSE_Data<TRAITS>
 	using idx = typename TRAITS::idx;
 	using dreal = typename TRAITS::dreal;
 
-	dreal* vx_profile = NULL;
+	dreal* vx_profile = nullptr;
 	idx size_y = 0;
 
 	template <typename LBM_KS>
@@ -48,6 +48,9 @@ struct StateLocal : State<NSE>
 	using dreal = typename TRAITS::dreal;
 	using point_t = typename TRAITS::point_t;
 	using lat_t = Lattice<3, real, idx>;
+
+	// array for the inflow velocity profile (pointer is passed to the LBM kernel)
+	TNL::Containers::Array<dreal, DeviceType, idx> vx_profile;
 
 #ifdef HAVE_MPI
 	TNL::Containers::DistributedNDArray<typename TRAITS::template array3d<real, TNL::Devices::Host>> an_cache;
@@ -400,7 +403,7 @@ int sim(const std::string& adios_config, int RES, bool use_forcing, Scaling scal
 		state.nse.blocks.front().data.fx = state.nse.lat.phys2lbmForce(force);
 		state.nse.blocks.front().data.fy = 0;
 		state.nse.blocks.front().data.fz = 0;
-		state.nse.blocks.front().data.vx_profile = NULL;
+		state.nse.blocks.front().data.vx_profile = nullptr;
 	}
 	else {
 		// calculate analytical solution using forcing just like above
@@ -411,15 +414,10 @@ int sim(const std::string& adios_config, int RES, bool use_forcing, Scaling scal
 		// reset the forcing for the LBM simulation
 		state.nse.blocks.front().data.fx = 0;
 
-// allocate array for the inflow profile
-#ifdef USE_CUDA
-		cudaMalloc(
-			(void**) &state.nse.blocks.front().data.vx_profile,
-			state.nse.blocks.front().local.y() * state.nse.blocks.front().local.z() * sizeof(dreal)
-		);
-#else
-		state.nse.blocks.front().data.vx_profile = new dreal[state.nse.blocks.front().local.y() * state.nse.blocks.front().local.z()];
-#endif
+		// allocate array for the inflow profile
+		state.vx_profile.setSize(state.nse.blocks.front().local.y() * state.nse.blocks.front().local.z());
+		state.nse.blocks.front().data.vx_profile = state.vx_profile.getData();
+		state.nse.blocks.front().data.size_y = state.nse.blocks.front().local.y();
 
 #ifdef USE_CUDA
 		// convert analytical solution from double to float
@@ -441,7 +439,6 @@ int sim(const std::string& adios_config, int RES, bool use_forcing, Scaling scal
 				state.nse.blocks.front().data.vx_profile[k * state.nse.blocks.front().local.y() + j] =
 					state.analytical_ux(state.nse.blocks.front().offset.y() + j, state.nse.blocks.front().offset.z() + k);
 #endif
-		state.nse.blocks.front().data.size_y = state.nse.blocks.front().local.y();
 	}
 
 	state.cnt[PRINT].period = 10.0;
@@ -470,15 +467,6 @@ int sim(const std::string& adios_config, int RES, bool use_forcing, Scaling scal
 	//state.add2Dcut_Z(LBM_Z/2,"cut_Z");
 
 	execute(state);
-
-	// deallocate inflow data
-	if (state.nse.blocks.front().data.vx_profile) {
-#ifdef USE_CUDA
-		cudaFree(state.nse.blocks.front().data.vx_profile);
-#else
-		delete[] state.nse.blocks.front().data.vx_profile;
-#endif
-	}
 
 	return 0;
 }
