@@ -55,9 +55,9 @@ struct StateLocal : State<NSE>
 		nse.setBoundaryX(0, BC::GEO_INFLOW_LEFT_PRESSURE);						  // left
 		nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT_PRESSURE);						  // left
 		nse.setBoundaryX(2, BC::GEO_INFLOW_LEFT_PRESSURE);						  // left
-		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT);  // right
-		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT);  // right
-		nse.setBoundaryX(nse.lat.global.x() - 3, BC::GEO_OUTFLOW_RIGHT);  // right
+		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT_INTERP);  // right
+		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT_INTERP);  // right
+		nse.setBoundaryX(nse.lat.global.x() - 3, BC::GEO_OUTFLOW_RIGHT_INTERP);  // right
 
 		//nse.setBoundaryX(0,                      BC::GEO_PERIODIC);						  // left
 		//nse.setBoundaryX(1,                      BC::GEO_PERIODIC);						  // left
@@ -608,7 +608,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	//real LBM_VISCOSITY = 0.001;
 	//real PHYS_DT = LBM_VISCOSITY / PHYS_VISCOSITY * PHYS_DL * PHYS_DL;	//PHYS_HEIGHT/(real)LBM_HEIGHT;
 	// Acoustic scaling
-	real LBM_VELOCITY = 0.1;
+	real LBM_VELOCITY = 0.01;
 	real PHYS_DT = PHYS_DL * LBM_VELOCITY/PHYS_VELOCITY;
 	real LBM_VISCOSITY = PHYS_VELOCITY * PHYS_DT / PHYS_DL /PHYS_DL;
 
@@ -631,15 +631,15 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	state.lbm_inflow_vx = lat.phys2lbmVelocity(PHYS_VELOCITY);
 	state.inflow_g = lat.phys2lbmForce(g);
 
-	state.nse.physFinalTime = 100;
+	state.nse.physFinalTime = 50;
 	state.cnt[PRINT].period = 0.1;
 
 
-	state.cnt[SAVESTATE].period = -1.;
-	state.wallTime = 24.*3600.;
+	state.cnt[SAVESTATE].period = 6.*3600.;
+	state.wallTime = 23.*3600.;
 	// add cuts
 	state.cnt[OUT2D].period = 1.;
-	state.add2Dcut_X(X / 2, "cutsX/cut_X");
+	//state.add2Dcut_X(X / 2, "cutsX/cut_X");
 	state.add2Dcut_Y(Y / 2, "cutsY/cut_Y");
 	state.add2Dcut_Z(Z / 2, "cutsZ/cut_Z");
 
@@ -648,7 +648,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	//state.add3Dcut(X / 4, Y / 4, Z / 4, X / 2, Y / 2, Z / 2, "box");
 
 	state.cnt[PROBE1].period = 1.;
-	state.cnt[PROBE2].period = -10.;
+	state.cnt[PROBE2].period = 10.;
 
 	state.updateKernelData();
 	state.updateKernelVelocities();
