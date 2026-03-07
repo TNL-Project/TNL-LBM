@@ -34,7 +34,11 @@ struct D3Q53_BC_All
 		GEO_SYM_LEFT,
 		GEO_SYM_RIGHT,
 		GEO_SYM_BACK,
-		GEO_SYM_FRONT
+		GEO_SYM_FRONT,
+		GEO_SYM_TOP_BACK,
+		GEO_SYM_TOP_FRONT,
+		GEO_SYM_BOTTOM_BACK,
+		GEO_SYM_BOTTOM_FRONT
 	};
 
 	__cuda_callable__ static bool isPeriodic(map_t mapgi)
@@ -56,7 +60,6 @@ struct D3Q53_BC_All
 	__cuda_callable__ static void preCollision(DATA& SD, LBM_KS& KS, map_t mapgi, typename LBM_KS::SG streamGrid)
 	{
 		if (mapgi == GEO_NOTHING) {
-			// nema zadny vliv na vypocet, jen pro output
 			KS.rho = 1;
 			KS.vx = 0;
 			KS.vy = 0;
@@ -67,6 +70,13 @@ struct D3Q53_BC_All
 		int x  = streamGrid.x(LBM_KS::NoDV);
 		int y  = streamGrid.y(LBM_KS::NoDV);
 		int z  = streamGrid.z(LBM_KS::NoDV);
+
+		if (mapgi == GEO_OUTFLOW_RIGHT){
+			for(int i = 0; i < LBM_KS::NoDV; i++){
+				streamGrid.x(LBM_KS::NoDV+i) = streamGrid.x(LBM_KS::NoDV-1);
+			}
+		}
+
 
 		if (mapgi != GEO_OUTFLOW_RIGHT_INTERP)
 			STREAMING::streaming(SD, KS, streamGrid);
@@ -171,6 +181,55 @@ struct D3Q53_BC_All
 				}
 				COLL::computeDensityAndVelocity(KS);
 				break;
+			case GEO_SYM_TOP_BACK: //z
+				#if defined(__CUDA_ARCH__) && defined(UNROLL)
+				#pragma unroll 2
+				#endif
+				for(int id = 0; id < LBM_KS::Q; id++){
+					Coord c = LBM_KS::id_to_dv(id);
+					if(c.y > 0 && c.z > 0){
+						KS.f[id] = KS.f[KS.dv_to_id(c.x,-c.y,-c.z)];
+					}
+				}
+				COLL::computeDensityAndVelocity(KS);
+				break;
+			case GEO_SYM_TOP_FRONT:
+				#if defined(__CUDA_ARCH__) && defined(UNROLL)
+				#pragma unroll 2
+				#endif
+				for(int id = 0; id < LBM_KS::Q; id++){
+					Coord c = LBM_KS::id_to_dv(id);
+					if(c.y < 0 && c.z > 0){
+						KS.f[id] = KS.f[KS.dv_to_id(c.x,-c.y,-c.z)];
+					}
+				}
+				COLL::computeDensityAndVelocity(KS);
+				break;
+			case GEO_SYM_BOTTOM_BACK: //z
+				#if defined(__CUDA_ARCH__) && defined(UNROLL)
+				#pragma unroll 2
+				#endif
+				for(int id = 0; id < LBM_KS::Q; id++){
+					Coord c = LBM_KS::id_to_dv(id);
+					if(c.y > 0 && c.z < 0){
+						KS.f[id] = KS.f[KS.dv_to_id(c.x,-c.y,-c.z)];
+					}
+				}
+				COLL::computeDensityAndVelocity(KS);
+				break;
+			case GEO_SYM_BOTTOM_FRONT: //z
+				#if defined(__CUDA_ARCH__) && defined(UNROLL)
+				#pragma unroll 2
+				#endif
+				for(int id = 0; id < LBM_KS::Q; id++){
+					Coord c = LBM_KS::id_to_dv(id);
+					if(c.y < 0 && c.z < 0){
+						KS.f[id] = KS.f[KS.dv_to_id(c.x,-c.y,-c.z)];
+					}
+				}
+				COLL::computeDensityAndVelocity(KS);
+				break;
+
 			case GEO_SYM_LEFT: // x
 				#if defined(__CUDA_ARCH__) && defined(UNROLL)
 				#pragma unroll 2
