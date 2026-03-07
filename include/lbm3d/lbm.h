@@ -83,6 +83,7 @@ struct LBM
 	void setBoundaryX(idx x, map_t value);
 	void setBoundaryY(idx y, map_t value);
 	void setBoundaryZ(idx z, map_t value);
+	void setBoundaryYZ(idx y, idx z, map_t value);
 
 	void resetMap(map_t geo_type);
 	void setEquilibrium(real rho, real vx, real vy, real vz);

@@ -61,32 +61,54 @@ struct StateLocal : State<NSE>
 	void setupBoundaries() override
 	{
 		// Single-speed setup
-		nse.setBoundaryX(0, BC::GEO_INFLOW_LEFT_PRESSURE);						  // left
-		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT);  // right
-		nse.setBoundaryZ(0,                      BC::GEO_SYM_TOP   );						 // top
-		nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_SYM_BOTTOM);	 // bottom
-		nse.setBoundaryY(0, 					  BC::GEO_SYM_BACK  );						 // back
-		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_SYM_FRONT );	 // front
-		// Multi-speed setup
 		// nse.setBoundaryX(0, BC::GEO_INFLOW_LEFT_PRESSURE);						  // left
-		// nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT_PRESSURE);						  // left
-		// nse.setBoundaryX(2, BC::GEO_INFLOW_LEFT_PRESSURE);						  // left
 		// nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT);  // right
-		// nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT);  // right
-		// nse.setBoundaryX(nse.lat.global.x() - 3, BC::GEO_OUTFLOW_RIGHT);  // right
 		// nse.setBoundaryZ(0,                      BC::GEO_SYM_TOP   );						 // top
-		// nse.setBoundaryZ(1,                      BC::GEO_SYM_TOP   );						 // top
-		// nse.setBoundaryZ(2,                      BC::GEO_SYM_TOP   );						 // top
+		// nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_SYM_BOTTOM);	 // bottom
+		// nse.setBoundaryY(0, 					  BC::GEO_SYM_BACK  );						 // back
+		// nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_SYM_FRONT );	 // front
+		// Multi-speed setup
+
+
+
+		nse.setBoundaryX(0, BC::GEO_INFLOW_LEFT_PRESSURE);						  // left
+		nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT_PRESSURE);						  // left
+		nse.setBoundaryX(2, BC::GEO_INFLOW_LEFT_PRESSURE);						  // left
+		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT);  // right
+		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT);  // right
+		nse.setBoundaryX(nse.lat.global.x() - 3, BC::GEO_OUTFLOW_RIGHT);  // right
+		nse.setBoundaryZ(0,                      BC::GEO_WALL);						 // top
+		nse.setBoundaryZ(1,                      BC::GEO_WALL);						 // top
+		nse.setBoundaryZ(2,                      BC::GEO_WALL);						 // top
+		nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_WALL);	 // bottom
+		nse.setBoundaryZ(nse.lat.global.z() - 2, BC::GEO_WALL);	 // bottom
+		nse.setBoundaryZ(nse.lat.global.z() - 3, BC::GEO_WALL);	 // bottom
+		nse.setBoundaryY(0, 					 BC::GEO_WALL);						 // back
+		nse.setBoundaryY(1, 					 BC::GEO_WALL);						 // back
+		nse.setBoundaryY(2, 					 BC::GEO_WALL);						 // back
+		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_WALL);	 // front
+		nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_WALL);	 // front
+		nse.setBoundaryY(nse.lat.global.y() - 3, BC::GEO_WALL);	 // front
+		// nse.setBoundaryZ(0,                      BC::GEO_SYM_TOP);						 // top
+		// nse.setBoundaryZ(1,                      BC::GEO_SYM_TOP);						 // top
+		// nse.setBoundaryZ(2,                      BC::GEO_SYM_TOP);						 // top
 		// nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_SYM_BOTTOM);	 // bottom
 		// nse.setBoundaryZ(nse.lat.global.z() - 2, BC::GEO_SYM_BOTTOM);	 // bottom
 		// nse.setBoundaryZ(nse.lat.global.z() - 3, BC::GEO_SYM_BOTTOM);	 // bottom
-		// nse.setBoundaryY(0, 					  BC::GEO_SYM_BACK  );						 // back
-		// nse.setBoundaryY(1, 					  BC::GEO_SYM_BACK  );						 // back
-		// nse.setBoundaryY(2, 					  BC::GEO_SYM_BACK  );						 // back
-		// nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_SYM_FRONT );	 // front
-		// nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_SYM_FRONT );	 // front
-		// nse.setBoundaryY(nse.lat.global.y() - 3, BC::GEO_SYM_FRONT );	 // front
-
+		// nse.setBoundaryY(0, 					 BC::GEO_SYM_BACK);						 // back
+		// nse.setBoundaryY(1, 					 BC::GEO_SYM_BACK);						 // back
+		// nse.setBoundaryY(2, 					 BC::GEO_SYM_BACK);						 // back
+		// nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_SYM_FRONT);	 // front
+		// nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_SYM_FRONT);	 // front
+		// nse.setBoundaryY(nse.lat.global.y() - 3, BC::GEO_SYM_FRONT);	 // front
+		// for(int y = 0; y < 3; y++){
+		// for(int z = 0; z < 3; z++){
+		// 	nse.setBoundaryYZ(y,z,BC::GEO_SYM_TOP_BACK);
+		// 	nse.setBoundaryYZ(y,nse.lat.global.z()-1-z,BC::GEO_SYM_TOP_FRONT);
+		// 	nse.setBoundaryYZ(nse.lat.global.y()-1-y,z,BC::GEO_SYM_BOTTOM_BACK);
+		// 	nse.setBoundaryYZ(nse.lat.global.y()-1-y,nse.lat.global.z()-1-z,BC::GEO_SYM_BOTTOM_FRONT);
+		// }
+		// }
 
 		for (int px = 0; px <= nse.lat.global.x(); px++){
 		for (int py = 0; py <= nse.lat.global.y(); py++){
@@ -95,13 +117,12 @@ struct StateLocal : State<NSE>
 				nse.setMap(px, py, pz, BC::GEO_WALL);
 			}
 		}}}
-		// TODO: set the symmetric walls
 	}
 
 	bool isObject(int ix, int iy, int iz){
-		const float x = nse.lat.lbm2physX(ix);
-		const float y = nse.lat.lbm2physY(iy);
-		const float z = nse.lat.lbm2physZ(iz);
+		const float x = nse.lat.physOrigin.x() + (ix) * nse.lat.physDl;
+		const float y = nse.lat.physOrigin.y() + (iy) * nse.lat.physDl;
+		const float z = nse.lat.physOrigin.z() + (iz) * nse.lat.physDl;
 		// Shift the x for non-symmetric bump
 		float xshift = x + 0.3*pow(sin(PI*z),4);
 		// Bump area
@@ -509,6 +530,8 @@ struct StateLocal : State<NSE>
 
 	void probe1() override {
 		dragshiftlift();
+	}
+	void probe2() override {
 		dragprofile();
   	}
 
@@ -568,7 +591,7 @@ struct StateLocal : State<NSE>
 			"mywall",
 			[&](idx x, idx y, idx z) -> dreal
 			{
-				return (dreal)(nse.blocks.front().hmap(x, y, z));
+				return (dreal)(block.hmap(x, y, z));
 			},
 			begin,
 			end
@@ -579,11 +602,10 @@ struct StateLocal : State<NSE>
 	{
 		for (auto& block : nse.blocks) {
 			real rise_up_lbm_inflow_vx = nse.physTime()/rise_up_time;
-			if(rise_up_lbm_inflow_vx > 1){
-			block.data.inflow_vx = lbm_inflow_vx;
+			if(rise_up_lbm_inflow_vx > 1.){
+				block.data.inflow_vx = lbm_inflow_vx;
 			}else{
-				block.data.inflow_vx = rise_up_lbm_inflow_vx;
-
+				block.data.inflow_vx = rise_up_lbm_inflow_vx*lbm_inflow_vx;
 			}
 			block.data.inflow_vy = 0;
 			block.data.inflow_vz = 0;
@@ -606,18 +628,18 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	using lat_t = Lattice<3, real, idx>;
 
 	int block_size = 32;
-	real PHYS_LENGTH = 10.; // length in some units (NASA does not specify)
-	real PHYS_HEIGHT = 1.;		  // domain height (physical)
+	real PHYS_LENGTH = 8.; // length in some units (NASA does not specify)
+	real PHYS_HEIGHT = 0.5;		  // domain height (physical)
 	real PHYS_DEPTH = 0.5;		  // domain depth (physical) FIXED for sine to work correctly
 	// TODO: solve the rounding of pixels to have it precise
 	int Y = floor(PHYS_HEIGHT * RESOLUTION * block_size); // depth in pixels --- top and bottom walls  NoDV px
-	int wallSize = 1;
+	int wallSize = 3;
 	real PHYS_DL = PHYS_HEIGHT / ((real) Y - 2*wallSize); // naive fullway bounce-back but everything is part of the domain
 
 	int X = floor(PHYS_LENGTH / PHYS_DL);  // width in pixels
 	int Z = floor(PHYS_DEPTH  / PHYS_DL);  // height in pixels --- top and bottom walls NoDV px
-	real PHYS_VISCOSITY = 1.e-3;
-	real PHYS_VELOCITY = 1000.;
+	real PHYS_VISCOSITY = 1.e-4;
+	real PHYS_VELOCITY = 1.;
 
 
 
@@ -625,11 +647,11 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	//real LBM_VISCOSITY = 0.001;
 	//real PHYS_DT = LBM_VISCOSITY / PHYS_VISCOSITY * PHYS_DL * PHYS_DL;	//PHYS_HEIGHT/(real)LBM_HEIGHT;
 	// Acoustic scaling
-	real LBM_VELOCITY = 0.01;
+	real LBM_VELOCITY = 0.1;
 	real PHYS_DT = PHYS_DL * LBM_VELOCITY/PHYS_VELOCITY;
 	real LBM_VISCOSITY = PHYS_VELOCITY * PHYS_DT / PHYS_DL /PHYS_DL;
 
-	point_t PHYS_ORIGIN = {-PHYS_LENGTH/2., -PHYS_DL*(2.*wallSize)/2., -PHYS_DEPTH};
+	point_t PHYS_ORIGIN = {-PHYS_LENGTH/4., -PHYS_DL*(2.*wallSize-1)/2., -PHYS_DEPTH};
 
 	// initialize the lattice
 	lat_t lat;
@@ -644,7 +666,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 
 	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat,adios_config);
 	//state.loadState();
-	state.wallTime = 36000;
+	state.wallTime = 23*3600;
 
 	// problem parameters
 	state.lbm_inflow_vx = lat.phys2lbmVelocity(PHYS_VELOCITY);
@@ -660,15 +682,16 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 
 	// add cuts
 	state.cnt[OUT2D].period = 0.1;
-	state.add2Dcut_X(X / 2, "cutsX/cut_X");
+	//state.add2Dcut_X(X / 2, "cutsX/cut_X");
 	state.add2Dcut_Y(Y / 2, "cutsY/cut_Y");
 	state.add2Dcut_Z(Z / 2, "cutsZ/cut_Z");
 
-	state.cnt[OUT3D].period = 100.;
+	state.cnt[OUT3D].period = 10.;
 	state.cnt[OUT3DCUT].period = 100.;
 	state.add3Dcut(X / 4, Y / 4, Z / 4, X / 2, Y / 2, Z / 2, "box");
 
 	state.cnt[PROBE1].period = 1.;
+	state.cnt[PROBE2].period = -10.;
 
 	spdlog::info("Starting simulation with checkpointing. Wall time limit: {} seconds", state.wallTime);
 	spdlog::info("Creating checkpoints every {} seconds of wall time", state.cnt[SAVESTATE].period);
@@ -679,21 +702,21 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	return 0;
 }
 
-template <typename TRAITS = TraitsDP>
+template <typename TRAITS = TraitsSP>
 void run(const std::string& adios_config, int resolution)
 {
 	// D3Q27
-	using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
-	using NSE_CONFIG = LBM_CONFIG<
-		TRAITS,
-		D3Q27_KernelStruct,
-		NSE_Data_ConstInflow_PressureGradient<TRAITS>,
-		COLL,
-		typename COLL::EQ,
-		D3Q27_STREAMING<TRAITS>,
-		D3Q27_BC_All,
-		D3Q27_MACRO_Default<TRAITS>>;
-	// using COLL = D3Q27_GENERAL_SRT<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
+	// using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
+	// using NSE_CONFIG = LBM_CONFIG<
+	// 	TRAITS,
+	// 	D3Q27_KernelStruct,
+	// 	NSE_Data_ConstInflow_PressureGradient<TRAITS>,
+	// 	COLL,
+	// 	typename COLL::EQ,
+	// 	D3Q27_STREAMING<TRAITS>,
+	// 	D3Q27_BC_All,
+	// 	D3Q27_MACRO_Default<TRAITS>>;
+	// using COLL = D3Q27_GENERAL_SRT<TRAITS, D3Q27_EQ_ENTROPIC2<TRAITS>>;
 	// using NSE_CONFIG = LBM_CONFIG<
 	// 	TRAITS,
 	// 	D3Q27_KernelStruct,
@@ -717,17 +740,16 @@ void run(const std::string& adios_config, int resolution)
 	//	D3Q343_MACRO_Default<TRAITS>>;
 
 	// D3Q53
-	// using COLL = D3Q53_SRT<TRAITS, D3Q53_EQ<TRAITS>>;
-	// using NSE_CONFIG = LBM_CONFIG<
-	// 	TRAITS,
-	// 	D3Q53_KernelStruct,
-	// 	//NSE_Data_ConstInflow_PressureGradient<TRAITS>,
-	// 	NSE_Data_DoubleParabolic<TRAITS>,
-	// 	COLL,
-	// 	typename COLL::EQ,
-	// 	D3Q53_STREAMING<TRAITS>,
-	// 	D3Q53_BC_All,
-	// 	D3Q53_MACRO_Default<TRAITS>>;
+	using COLL = D3Q53_SRT<TRAITS, D3Q53_EQ<TRAITS>>;
+	using NSE_CONFIG = LBM_CONFIG<
+		TRAITS,
+		D3Q53_LOOKUP_KernelStruct,
+		NSE_Data_ConstInflow_PressureGradient<TRAITS>,
+		COLL,
+		typename COLL::EQ,
+		D3Q53_STREAMING<TRAITS>,
+		D3Q53_BC_All,
+		D3Q53_MACRO_Default<TRAITS>>;
 
 	sim<NSE_CONFIG>(adios_config,resolution);
 }

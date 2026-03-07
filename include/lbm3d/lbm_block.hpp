@@ -335,6 +335,14 @@ void LBM_BLOCK<CONFIG>::setBoundaryZ(idx z, map_t value)
 }
 
 template <typename CONFIG>
+void LBM_BLOCK<CONFIG>::setBoundaryYZ(idx y, idx z, map_t value)
+{
+	if (isLocalZ(z) && isLocalY(y))
+		for (idx x = offset.x(); x < offset.x() + local.x(); x++)
+			hmap(x, y, z) = value;
+}
+
+template <typename CONFIG>
 void LBM_BLOCK<CONFIG>::resetMap(map_t geo_type)
 {
 	hmap.setValue(geo_type);

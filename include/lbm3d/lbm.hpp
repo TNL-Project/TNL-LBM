@@ -108,6 +108,13 @@ void LBM<CONFIG>::setBoundaryZ(idx z, map_t value)
 }
 
 template <typename CONFIG>
+void LBM<CONFIG>::setBoundaryYZ(idx y, idx z, map_t value)
+{
+	for (auto& block : blocks)
+		block.setBoundaryYZ(y,z, value);
+}
+
+template <typename CONFIG>
 void LBM<CONFIG>::resetMap(map_t geo_type)
 {
 	for (auto& block : blocks)
