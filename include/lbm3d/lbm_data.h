@@ -111,7 +111,7 @@ struct NSE_Data_ConstInflow_PressureGradient : NSE_Data<TRAITS>
 	template <typename LBM_KS>
 	CUDA_HOSTDEV void inflow(LBM_KS& KS, idx x, idx y, idx z)
 	{
-		KS.rho += no1oT0*inflow_g;
+		KS.rho += no1oT0*inflow_g/LBM_KS::NoDV;
 		KS.vx = inflow_vx;
 		KS.vy = inflow_vy;
 		KS.vz = inflow_vz;
@@ -282,7 +282,7 @@ struct NSE_Data_DoubleParabolic : NSE_Data<TRAITS>
 	{
 		const dreal yc = (dreal)y + InitPoint[1];
 		const dreal zc = (dreal)z + InitPoint[2];
-		KS.rho +=  no1oT0*inflow_g*64./inflow_y/inflow_z/inflow_y/inflow_z*(yc*(yc-inflow_y)+zc*(zc-inflow_z)); // from the 2D laplacian using inflow_g definition from 2D
+		KS.rho +=  no1oT0*inflow_g*64./inflow_y/inflow_z/inflow_y/inflow_z*(yc*(yc-inflow_y)+zc*(zc-inflow_z))/LBM_KS::NoDV; // from the 2D laplacian using inflow_g definition from 2D
 		KS.vx  =   16.*inflow_vx*
 			(inflow_z*inflow_z*0.25-(zc-0.5*inflow_z)*(zc-0.5*inflow_z))/(inflow_z*inflow_z)*
 			(inflow_y*inflow_y*0.25-(yc-0.5*inflow_y)*(yc-0.5*inflow_y))/(inflow_y*inflow_y);

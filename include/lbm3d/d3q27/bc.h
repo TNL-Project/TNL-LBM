@@ -277,11 +277,11 @@ struct D3Q27_BC_All
 
 			case GEO_INFLOW_LEFT_PRESSURE:
 				for(int i = 0; i < LBM_KS::ONE_SIZE; i++){
-					streamGrid.x(i)++;
+					streamGrid.x(i)+=LBM_KS::NoDV;
 				}
             	STREAMING::streaming(SD,KS,streamGrid);
 				for(int i = 0; i < LBM_KS::ONE_SIZE; i++){
-					streamGrid.x(i)--;
+					streamGrid.x(i)-=LBM_KS::NoDV;
 				}
 				COLL::computeDensityAndVelocity(KS);
 				SD.inflow(KS, x, y, z);
