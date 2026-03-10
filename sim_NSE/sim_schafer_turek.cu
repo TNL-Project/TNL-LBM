@@ -5,7 +5,7 @@
 
 
 // As of now, enum and sync direction are specific for different models and need to be included before core!!!
-//#include "lbm3d/d3q27/defs.h"
+// #include "lbm3d/d3q27/defs.h"
 #include "lbm3d/d3q53/defs.h"
 //#include "lbm3d/d3q343/defs.h"
 #include "lbm3d/core.h"
@@ -103,6 +103,27 @@ struct StateLocal : State<NSE>
 		}
 		return false;
 	}
+
+	// double get_pressure_force(const int x, const int y, const int z, const int dirMacro, const double ndc, const double dynamicViscosity){
+	// 	const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x+1,y,z);
+	// 	const double v = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(dirMacro,x+1,y,z));
+	// 	const double pressure =   nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
+	// 	return pressure;;
+	// }
+
+	// double get_visc_force(const int x, const int y, const int z, const int dirMacro, const double ndc, const double dynamicViscosity){
+	// 	const double visc = (double)nse.lat.physViscosity;
+	// 	const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x+1,y,z);
+	// 	const double v = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(dirMacro,x+1,y,z));
+	// 	const double delta_x = (double)nse.lat.physDl;
+	// 	const double dv = v/(delta_x/2);
+	// 	if(dynamicViscosity){
+	// 		return rho_lbm*ndc*visc*dv;
+	// 	}else{
+	// 		return ndc*visc*dv;
+	// 	}
+	// }
+
 	template<typename Filter>
 	double integrate_stress_tensor_general(Filter filter, int dir, const double ndc = 4./3.,const bool dynamicViscosity = false){
 		// filter ... which nodes to check (set to desired object)
@@ -443,7 +464,7 @@ struct StateLocal : State<NSE>
 			fclose(f);
 
 			spdlog::info(
-				"at t={:1.2f}s, iterations={:d} drag={:e} shift?={:e} lift={:e}",
+				"at t={:1.2f}s, iterations={:d} drag={:e} lift={:e} shift?={:e}",
 				nse.physTime(),
 				nse.iterations,
 				C_D,
@@ -610,7 +631,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	// Acoustic scaling
 	real LBM_VELOCITY = 0.01;
 	real PHYS_DT = PHYS_DL * LBM_VELOCITY/PHYS_VELOCITY;
-	real LBM_VISCOSITY = PHYS_VELOCITY * PHYS_DT / PHYS_DL /PHYS_DL;
+	real LBM_VISCOSITY = PHYS_VISCOSITY * PHYS_DT / (PHYS_DL*PHYS_DL);
 
 	point_t PHYS_ORIGIN = {0., -(2.*wallSize-1)/2*PHYS_DL, -(2.*wallSize-1)/2*PHYS_DL};
 
@@ -626,6 +647,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 
 	const std::string state_id = fmt::format("sim_schafer_turek_res{:02d}_np{:03d}", RESOLUTION, TNL::MPI::GetSize(MPI_COMM_WORLD));
 	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, adios_config);
+
 
 	// problem parameters
 	state.lbm_inflow_vx = lat.phys2lbmVelocity(PHYS_VELOCITY);
@@ -688,7 +710,17 @@ void run(const std::string& adios_config, int resolution)
 	// 	D3Q27_BC_All,
 	// 	D3Q27_MACRO_Default<TRAITS>>;
 	// D3Q27
-	// using COLL = D3Q27_GENERAL_SRT<TRAITS, D3Q27_EQ_ENTROPIC2<TRAITS>>;
+	using COLL = D3Q27_GENERAL_SRT<TRAITS, D3Q27_EQ_ENTROPIC2<TRAITS>>;
+	using NSE_CONFIG = LBM_CONFIG<
+		TRAITS,
+		D3Q27_KernelStruct,
+		NSE_Data_DoubleParabolic<TRAITS>,
+		COLL,
+		typename COLL::EQ,
+		D3Q27_STREAMING<TRAITS>,
+		D3Q27_BC_All,
+		D3Q27_MACRO_Default<TRAITS>>;
+	// using COLL = D3Q27_SRT<TRAITS, D3Q27_EQ_ENTROPIC<TRAITS>>;
 	// using NSE_CONFIG = LBM_CONFIG<
 	// 	TRAITS,
 	// 	D3Q27_KernelStruct,
@@ -712,16 +744,16 @@ void run(const std::string& adios_config, int resolution)
 	//	D3Q343_MACRO_Default<TRAITS>>;
 
 	// D3Q53
-	using COLL = D3Q53_SRT<TRAITS, D3Q53_EQ<TRAITS>>;
-	using NSE_CONFIG = LBM_CONFIG<
-		TRAITS,
-		D3Q53_KernelStruct,
-		NSE_Data_DoubleParabolic<TRAITS>,
-		COLL,
-		typename COLL::EQ,
-		D3Q53_STREAMING<TRAITS>,
-		D3Q53_BC_All,
-		D3Q53_MACRO_Default<TRAITS>>;
+	// using COLL = D3Q53_SRT<TRAITS, D3Q53_EQ<TRAITS>>;
+	// using NSE_CONFIG = LBM_CONFIG<
+	// 	TRAITS,
+	// 	D3Q53_LOOKUP_KernelStruct,
+	// 	NSE_Data_DoubleParabolic<TRAITS>,
+	// 	COLL,
+	// 	typename COLL::EQ,
+	// 	D3Q53_STREAMING<TRAITS>,
+	// 	D3Q53_BC_All,
+	// 	D3Q53_MACRO_Default<TRAITS>>;
 
 	sim<NSE_CONFIG>(adios_config, resolution);
 }

@@ -77,38 +77,40 @@ struct StateLocal : State<NSE>
 		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT);  // right
 		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT);  // right
 		nse.setBoundaryX(nse.lat.global.x() - 3, BC::GEO_OUTFLOW_RIGHT);  // right
-		nse.setBoundaryZ(0,                      BC::GEO_WALL);						 // top
-		nse.setBoundaryZ(1,                      BC::GEO_WALL);						 // top
-		nse.setBoundaryZ(2,                      BC::GEO_WALL);						 // top
-		nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_WALL);	 // bottom
-		nse.setBoundaryZ(nse.lat.global.z() - 2, BC::GEO_WALL);	 // bottom
-		nse.setBoundaryZ(nse.lat.global.z() - 3, BC::GEO_WALL);	 // bottom
-		nse.setBoundaryY(0, 					 BC::GEO_WALL);						 // back
-		nse.setBoundaryY(1, 					 BC::GEO_WALL);						 // back
-		nse.setBoundaryY(2, 					 BC::GEO_WALL);						 // back
-		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_WALL);	 // front
-		nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_WALL);	 // front
-		nse.setBoundaryY(nse.lat.global.y() - 3, BC::GEO_WALL);	 // front
-		// nse.setBoundaryZ(0,                      BC::GEO_SYM_TOP);						 // top
-		// nse.setBoundaryZ(1,                      BC::GEO_SYM_TOP);						 // top
-		// nse.setBoundaryZ(2,                      BC::GEO_SYM_TOP);						 // top
-		// nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_SYM_BOTTOM);	 // bottom
-		// nse.setBoundaryZ(nse.lat.global.z() - 2, BC::GEO_SYM_BOTTOM);	 // bottom
-		// nse.setBoundaryZ(nse.lat.global.z() - 3, BC::GEO_SYM_BOTTOM);	 // bottom
-		// nse.setBoundaryY(0, 					 BC::GEO_SYM_BACK);						 // back
-		// nse.setBoundaryY(1, 					 BC::GEO_SYM_BACK);						 // back
-		// nse.setBoundaryY(2, 					 BC::GEO_SYM_BACK);						 // back
-		// nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_SYM_FRONT);	 // front
-		// nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_SYM_FRONT);	 // front
-		// nse.setBoundaryY(nse.lat.global.y() - 3, BC::GEO_SYM_FRONT);	 // front
-		// for(int y = 0; y < 3; y++){
-		// for(int z = 0; z < 3; z++){
-		// 	nse.setBoundaryYZ(y,z,BC::GEO_SYM_TOP_BACK);
-		// 	nse.setBoundaryYZ(y,nse.lat.global.z()-1-z,BC::GEO_SYM_TOP_FRONT);
-		// 	nse.setBoundaryYZ(nse.lat.global.y()-1-y,z,BC::GEO_SYM_BOTTOM_BACK);
-		// 	nse.setBoundaryYZ(nse.lat.global.y()-1-y,nse.lat.global.z()-1-z,BC::GEO_SYM_BOTTOM_FRONT);
-		// }
-		// }
+		// nse.setBoundaryZ(0,                      BC::GEO_WALL);						 // top
+		// nse.setBoundaryZ(1,                      BC::GEO_WALL);						 // top
+		// nse.setBoundaryZ(2,                      BC::GEO_WALL);						 // top
+		// nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_WALL);	 // bottom
+		// nse.setBoundaryZ(nse.lat.global.z() - 2, BC::GEO_WALL);	 // bottom
+		// nse.setBoundaryZ(nse.lat.global.z() - 3, BC::GEO_WALL);	 // bottom
+		// nse.setBoundaryY(0, 					 BC::GEO_WALL);						 // back
+		// nse.setBoundaryY(1, 					 BC::GEO_WALL);						 // back
+		// nse.setBoundaryY(2, 					 BC::GEO_WALL);						 // back
+		// nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_WALL);	 // front
+		// nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_WALL);	 // front
+		// nse.setBoundaryY(nse.lat.global.y() - 3, BC::GEO_WALL);	 // front
+
+
+		nse.setBoundaryZ(0,                      BC::GEO_SYM_TOP);						 // top
+		nse.setBoundaryZ(1,                      BC::GEO_SYM_TOP);						 // top
+		nse.setBoundaryZ(2,                      BC::GEO_SYM_TOP);						 // top
+		nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_SYM_BOTTOM);	 // bottom
+		nse.setBoundaryZ(nse.lat.global.z() - 2, BC::GEO_SYM_BOTTOM);	 // bottom
+		nse.setBoundaryZ(nse.lat.global.z() - 3, BC::GEO_SYM_BOTTOM);	 // bottom
+		nse.setBoundaryY(0, 					 BC::GEO_SYM_BACK);						 // back
+		nse.setBoundaryY(1, 					 BC::GEO_SYM_BACK);						 // back
+		nse.setBoundaryY(2, 					 BC::GEO_SYM_BACK);						 // back
+		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_SYM_FRONT);	 // front
+		nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_SYM_FRONT);	 // front
+		nse.setBoundaryY(nse.lat.global.y() - 3, BC::GEO_SYM_FRONT);	 // front
+		for(int y = 0; y < 3; y++){
+		for(int z = 0; z < 3; z++){
+			nse.setBoundaryYZ(y,z,BC::GEO_SYM_TOP_BACK);
+			nse.setBoundaryYZ(y,nse.lat.global.z()-1-z,BC::GEO_SYM_TOP_FRONT);
+			nse.setBoundaryYZ(nse.lat.global.y()-1-y,z,BC::GEO_SYM_BOTTOM_BACK);
+			nse.setBoundaryYZ(nse.lat.global.y()-1-y,nse.lat.global.z()-1-z,BC::GEO_SYM_BOTTOM_FRONT);
+		}
+		}
 
 		for (int px = 0; px <= nse.lat.global.x(); px++){
 		for (int py = 0; py <= nse.lat.global.y(); py++){
@@ -471,7 +473,7 @@ struct StateLocal : State<NSE>
 			fclose(f);
 
 			spdlog::info(
-				"at t={:1.2f}s, iterations={:d} drag={:e} shift?={:e} lift={:e}",
+				"at t={:1.2f}s, iterations={:d} drag={:e} lift={:e} shift?={:e}",
 				nse.physTime(),
 				nse.iterations,
 				C_D,
@@ -628,17 +630,17 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	using lat_t = Lattice<3, real, idx>;
 
 	int block_size = 32;
-	real PHYS_LENGTH = 8.; // length in some units (NASA does not specify)
-	real PHYS_HEIGHT = 0.5;		  // domain height (physical)
+	real PHYS_LENGTH = 4.; // length in some units (NASA does not specify)
+	real PHYS_HEIGHT = 0.2;		  // domain height (physical)
 	real PHYS_DEPTH = 0.5;		  // domain depth (physical) FIXED for sine to work correctly
 	// TODO: solve the rounding of pixels to have it precise
-	int Y = floor(PHYS_HEIGHT * RESOLUTION * block_size); // depth in pixels --- top and bottom walls  NoDV px
+	int Y = floor(RESOLUTION * block_size); // height in pixels --- top and bottom walls  NoDV px
 	int wallSize = 3;
 	real PHYS_DL = PHYS_HEIGHT / ((real) Y - 2*wallSize); // naive fullway bounce-back but everything is part of the domain
 
 	int X = floor(PHYS_LENGTH / PHYS_DL);  // width in pixels
-	int Z = floor(PHYS_DEPTH  / PHYS_DL);  // height in pixels --- top and bottom walls NoDV px
-	real PHYS_VISCOSITY = 1.e-4;
+	int Z = floor(PHYS_DEPTH  / PHYS_DL);  // depth in pixels --- top and bottom walls NoDV px
+	real PHYS_VISCOSITY = 1.e-3;
 	real PHYS_VELOCITY = 1.;
 
 
@@ -647,9 +649,9 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	//real LBM_VISCOSITY = 0.001;
 	//real PHYS_DT = LBM_VISCOSITY / PHYS_VISCOSITY * PHYS_DL * PHYS_DL;	//PHYS_HEIGHT/(real)LBM_HEIGHT;
 	// Acoustic scaling
-	real LBM_VELOCITY = 0.1;
+	real LBM_VELOCITY = 0.05;
 	real PHYS_DT = PHYS_DL * LBM_VELOCITY/PHYS_VELOCITY;
-	real LBM_VISCOSITY = PHYS_VELOCITY * PHYS_DT / PHYS_DL /PHYS_DL;
+	real LBM_VISCOSITY = PHYS_VISCOSITY * PHYS_DT / PHYS_DL /PHYS_DL;
 
 	point_t PHYS_ORIGIN = {-PHYS_LENGTH/4., -PHYS_DL*(2.*wallSize-1)/2., -PHYS_DEPTH};
 
