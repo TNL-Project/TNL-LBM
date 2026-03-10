@@ -224,7 +224,7 @@ if(TNL_LBM_BUILD_PYTHON)
 
     FetchContent_Declare(PyTNL
         GIT_REPOSITORY https://gitlab.com/tnl-project/pytnl.git
-        GIT_TAG 0.0.10
+        GIT_TAG 0.0.11
         SYSTEM
         FIND_PACKAGE_ARGS
     )
