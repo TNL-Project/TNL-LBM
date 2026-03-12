@@ -34,10 +34,46 @@ struct D3Q53_EQ
 
 	__cuda_callable__ static dreal feq(int qx, int qy, int qz, dreal vx, dreal vy, dreal vz, int id){
 		const dreal ws[53] = {w_1,w_2,w_3,w_2,w_3,w_3,w_2,w_3,w_2,w_10,w_11,w_10,w_11,w_14,w_11,w_10,w_11,w_10,w_1,w_3,w_3,w_11,w_14,w_11,w_1,w_14,w_27,w_14,w_1,w_11,w_14,w_11,w_3,w_3,w_1,w_10,w_11,w_10,w_11,w_14,w_11,w_10,w_11,w_10,w_2,w_3,w_2,w_3,w_3,w_2,w_3,w_2,w_1};
-		const dreal eq = no1 - n1o2 * n1oT * (vx * vx + vy * vy + vz * vz) + n1oT * (qx * vx + qy * vy + qz * vz)
-		+ n1o2 * n1oT * n1oT * (qx * vx + qy * vy + qz * vz) * (qx * vx + qy * vy + qz * vz);
-		return ws[id]*eq;
+		const dreal xiu = (qx * vx + qy * vy + qz * vz);
+		const dreal uu = (vx * vx + vy * vy + vz * vz);
+		const dreal eq = no1
+		- n1o2 * n1oT * uu + // u2/cs2
+		n1oT * xiu // cu/cs2
+		+ n1o2 * n1oT * n1oT * xiu * xiu// cu*cu/2cs4
+		+(xiu*xiu*xiu - 3.*xiu*uu*T)/6.*n1oT*n1oT*n1oT; // third term
+
+ 		return ws[id]*eq;
 	}
+
+// 	template<int Q, int D>
+// void equilibriumThirdOrder(
+// const std::array<std::array<double, D>, Q>& ci,
+// const std::array<double, Q>& wi,
+// double rho,
+// const std::array<double, D>& u,
+// double cs2,
+// std::array<double, Q>& feq)
+// {
+// double u2 = 0.0;
+// for (int d = 0; d < D; ++d)
+// u2 += u[d] * u[d];
+
+// double cs4 = cs2 * cs2;
+// double cs6 = cs4 * cs2;
+
+// for (int i = 0; i < Q; ++i)
+// {
+// double cu = 0.0;
+// for (int d = 0; d < D; ++d)
+// cu += ci[i][d] * u[d];
+
+// double term1 = cu / cs2;
+// double term2 = (cu*cu - cs2*u2) / (2.0*cs4);
+// double term3 = (cu*cu*cu - 3.0*cs2*cu*u2) / (6.0*cs6);
+
+// feq[i] = wi[i] * rho * (1.0 + term1 + term2 + term3);
+// }
+// }
 
 
 };

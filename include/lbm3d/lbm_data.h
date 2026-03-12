@@ -254,7 +254,7 @@ struct NSE_Data_Parabolic_yconst : NSE_Data<TRAITS>
 	template <typename LBM_KS>
 	CUDA_HOSTDEV void inflow(LBM_KS& KS, idx x, idx y, idx z)
 	{
-		KS.rho +=  no1oT0*inflow_g;
+		KS.rho +=  no1oT0*inflow_g/LBM_KS::NoDV;
 		KS.vx  =   4*inflow_vx*(inflow_z*inflow_z*0.25-((z + InitPoint[2])-0.5*inflow_z)*((z + InitPoint[2])-0.5*inflow_z))/(inflow_z*inflow_z);
 		KS.vy  =   0.;
 		KS.vz  =   0.;
