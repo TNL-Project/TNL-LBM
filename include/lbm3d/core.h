@@ -53,6 +53,9 @@
 #include "d3q53/col_srt.h"
 #include "d3q53/col_elbm.h"
 #include "d3q53/streaming_AB.h"
+#ifdef USE_DFMAX3
+#include "d3q53/streaming_AB_third_array.h"
+#endif
 #include "d3q53/macro.h"
 #include "d3q53/bc.h"
 

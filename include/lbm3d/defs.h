@@ -25,6 +25,7 @@
 	#define AB_PATTERN
 #endif
 
+
 #if ! defined(__CUDACC__) && ! defined(__HIP__)
 using TNL::dim3;
 #endif
@@ -50,7 +51,7 @@ enum : std::uint8_t
 {
 	df_cur,
 	df_out,
-	df_prev,
+	df_fullway,
 	DFMAX
 };
 #elif defined(AB_PATTERN)  // default 2 dfs
@@ -127,7 +128,73 @@ using TraitsDP = Traits<double>;
 
 struct Coord{
 	int x,y,z;
+	operator==(Coord other){
+		return self.x==other.x && self.y==other.y && self.z==other.z;
+	}
 };
+void swap(int &x, int &y){
+    int t = x; x = y; y = t;
+};
+__cuda_callable__ CONSTFUNC Coord dv_to_closer_dv(Coord c){
+		// Note quadrant
+		const bool mx = c.x < 0;
+		const bool my = c.y < 0;
+		const bool mz = c.z < 0;
+		// Move to first quadrant
+		c.x = mx ? -c.x : c.x;
+		c.y = my ? -c.y : c.y;
+		c.z = mz ? -c.z : c.z;
+		// Note order before c.x > c.y > c.z
+		Coord o = {2,1,0};
+		if(c.x < c.y){
+			swap(c.x, c.y);
+			swap(o.x, o.y);
+		}
+		if(c.x < c.z){
+			swap(c.x, c.z);
+			swap(o.x, o.z);
+		}
+		if(c.y < c.z){
+			swap(c.y, c.z);
+			swap(o.y, o.z);
+		}
+
+		//print_coord_transition(c, o);
+		//
+		if(c.x == c.y){
+			if(c.y == c.z){
+				if(c.x > 0){
+					c.x--;
+					c.y--;
+					c.z--;
+				}
+			}else{
+				c.x--;
+				c.y--;
+			}
+		}else{
+			c.x--;
+		}
+		//Permutate back
+		if(o.x < o.y){
+			swap(c.x, c.y);
+			swap(o.x, o.y);
+		}
+		if(o.x < o.z){
+			swap(c.x, c.z);
+			swap(o.x, o.z);
+		}
+		if(o.y < o.z){
+			swap(c.y, c.z);
+			swap(o.y, o.z);
+		}
+
+		// Move back
+		c.x = mx ? -c.x : c.x;
+		c.y = my ? -c.y : c.y;
+		c.z = mz ? -c.z : c.z;
+		return {c.x,c.y,c.z};
+}
 
 template < typename INDEX, int NoDV >
 struct StreamGrid
@@ -287,6 +354,8 @@ struct D3Q27_KernelStruct
 	__cuda_callable__ CONSTFUNC int coords_to_id(int cx, int cy, int cz){
 		return cx * ONE_SIZE * ONE_SIZE + cy * ONE_SIZE + cz;
 	}
+
+
 
 	using SG = StreamGrid<int, 1>;
 
