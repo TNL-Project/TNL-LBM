@@ -38,7 +38,8 @@ struct D3Q53_BC_All
 		GEO_SYM_TOP_BACK,
 		GEO_SYM_TOP_FRONT,
 		GEO_SYM_BOTTOM_BACK,
-		GEO_SYM_BOTTOM_FRONT
+		GEO_SYM_BOTTOM_FRONT,
+		GEO_NEXT_TO_WALL
 	};
 
 	__cuda_callable__ static bool isPeriodic(map_t mapgi)
@@ -48,12 +49,27 @@ struct D3Q53_BC_All
 
 	__cuda_callable__ static bool isFluid(map_t mapgi)
 	{
-		return mapgi == GEO_FLUID;
+		return mapgi == GEO_FLUID
+		#ifdef USE_DFMAX3
+		|| mapgi == GEO_NEXT_TO_WALL
+		#endif
+		;
 	}
 
 	__cuda_callable__ static bool isWall(map_t mapgi)
 	{
 		return mapgi == GEO_WALL;
+	}
+
+	template< typename DATA, typename LBM_KS>
+	__cuda_callable__ static bool findFirstWallSnake(DATA &SD, typename LBM_KS::SG &streamGrid, Coord &dv,  const map_t &wall_ref){
+		while(dv.x != 0 || dv.y != 0 || dv.z != 0){
+			if(SD.map(streamGrid.x(dv.x+LBM_KS::NoDV),streamGrid.y(dv.y+LBM_KS::NoDV),streamGrid.z(dv.z+LBM_KS::NoDV)) == wall_ref){
+				return true;
+			}
+			dv = dv_to_closer_dv(dv);
+		}
+		return false;
 	}
 
 	template <typename LBM_KS>
@@ -132,6 +148,21 @@ struct D3Q53_BC_All
 					TNL::swap(KS.f[id], KS.f[KS.flip_id(id)]);
 				}
 				break;
+			#ifdef USE_DFMAX3
+			case GEO_NEXT_TO_WALL:
+				//TODO
+				for(int id = 0; id < LBM_KS::Qhalf; id++){
+					Coord dv = LBM_KS::id_to_dv(id);
+					Coord c = LBM_KS::id_to_coords(id);//TODO
+					int flip_id = LBM_KS::flip_id(id);
+					if(findFirstWallSnake<DATA,LBM_KS>(SD,streamGrid,dv,GEO_WALL)){
+						SD.df(df_fullway,flip_id,streamGrid.x(c.x),streamGrid.y(c.y),streamGrid.z(c.z)) = SD.df(df_cur,flip_id,streamGrid.x(c.x),streamGrid.y(c.y),streamGrid.z(c.z));
+						KS.f[id] = SD.df(df_fullway,flip_id,streamGrid.x(c.x),streamGrid.y(c.y),streamGrid.z(c.z));
+					}
+				}
+				break;
+			#endif
+
 
 			case GEO_SYM_BOTTOM: // z
 				#if defined(__CUDA_ARCH__) && defined(UNROLL)
@@ -259,6 +290,8 @@ struct D3Q53_BC_All
 				break;
 		}
 	}
+
+
 
 	__cuda_callable__ static bool doCollision(map_t mapgi)
 	{

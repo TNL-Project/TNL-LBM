@@ -132,7 +132,7 @@ struct Coord{
 		return self.x==other.x && self.y==other.y && self.z==other.z;
 	}
 };
-void swap(int &x, int &y){
+__cuda_callable__ void swap(int &x, int &y){
     int t = x; x = y; y = t;
 };
 __cuda_callable__ CONSTFUNC Coord dv_to_closer_dv(Coord c){
@@ -378,7 +378,7 @@ struct D3Q27_KernelStruct
 #endif
 };
 
-
+#ifdef D3Q27_LOOKUP
 #ifdef __CUDACC__
 // lookup tables on device
 static __device__ __constant__ int   D3Q27_LOOKUP_XS_dev[27] = {0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,2,2,2,2,2,2,2,2,2};
@@ -473,7 +473,7 @@ struct D3Q27_LOOKUP_KernelStruct
 	REAL A = 1.0, B1 = 1.0 , B2 = 1.0, B3 = 1.0;
 	REAL alpha = 2.;
 };
-
+#endif
 
 // KernelStruct - D3Q343
 template <typename REAL>
