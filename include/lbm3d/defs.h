@@ -128,9 +128,9 @@ using TraitsDP = Traits<double>;
 
 struct Coord{
 	int x,y,z;
-	operator==(Coord other){
-		return self.x==other.x && self.y==other.y && self.z==other.z;
-	}
+	// inline bool operator==(const Coord& rhs) {
+	// 	return self.x==rhs.x && self.y==rhs.y && self.z==rhs.z;
+	// }
 };
 __cuda_callable__ void swap(int &x, int &y){
     int t = x; x = y; y = t;

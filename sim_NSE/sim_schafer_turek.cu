@@ -2,7 +2,7 @@
 #include <utility>
 
 //#define UNROLL
-
+//#define USE_FORCING
 
 // As of now, enum and sync direction are specific for different models and need to be included before core!!!
 // #include "lbm3d/d3q27/defs.h"
@@ -427,9 +427,6 @@ struct StateLocal : State<NSE>
 		return delta_x*delta_x*drag; // multiply by lattice square size (here in 3D)
 	}
 
-
-
-
 	void dragshiftlift() {
 		const double H = 0.1; // height of cylinder
 		const double L = 0.1; // length of cylinder
@@ -595,9 +592,14 @@ struct StateLocal : State<NSE>
 		);
 	}
 
+
+
 	void updateKernelVelocities() override
 	{
 		for (auto& block : nse.blocks) {
+			#ifdef USE_FORCING
+			block.data.fx = inflow_g;
+			#endif
 			block.data.inflow_vx = lbm_inflow_vx;
 			block.data.inflow_vy = 0;
 			block.data.inflow_vz = 0;
@@ -755,7 +757,7 @@ void run(const std::string& adios_config, int resolution)
 	//	D3Q343_MACRO_Default<TRAITS>>;
 
 	// D3Q53
-	using COLL = D3Q53_SRT<TRAITS, D3Q53_EQ<TRAITS>>;
+	using COLL = D3Q53_ELBM<TRAITS, D3Q53_EQ<TRAITS>>;
 	using NSE_CONFIG = LBM_CONFIG<
 		TRAITS,
 		D3Q53_LOOKUP_KernelStruct,
