@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <adios-config>
     <io name="Output">
-        <engine type="BP4">
+        <engine type="BP5">
             <!-- SST engine parameters -->
             <parameter key="RendezvousReaderCount" value="1"/>
             <parameter key="QueueLimit" value="1"/>
@@ -18,7 +18,7 @@
     </io>
 
     <io name="readerIO">
-        <engine type="BP4">
+        <engine type="BP5">
             <!-- BP4/SST engine parameters -->
             <parameter key="OpenTimeoutSecs" value="100.0"/>
             <parameter key="SubStreams" value="128"/>
