@@ -680,7 +680,8 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2, doub
 	real PHYS_LENGTH = 3.; // length in some units (NASA does not specify)
 	real PHYS_HEIGHT = 0.2;		  // domain height (physical)
 	real PHYS_DEPTH = 0.5;		  // domain depth (physical) FIXED for sine to work correctly
-	// TODO: solve the rounding of pixels to have it precise
+
+
 	int Y = floor(RESOLUTION * block_size); // height in pixels --- top and bottom walls  NoDV px
 	int wallSize = 3;
 	real PHYS_DL = PHYS_HEIGHT / ((real) Y - 2*wallSize); // naive fullway bounce-back but everything is part of the domain
@@ -700,7 +701,10 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2, doub
 	real PHYS_DT = PHYS_DL * LBM_VELOCITY/PHYS_VELOCITY;
 	real LBM_VISCOSITY = PHYS_VISCOSITY * PHYS_DT / PHYS_DL /PHYS_DL;
 
-	point_t PHYS_ORIGIN = {-PHYS_LENGTH/4., -PHYS_DL*(2.*wallSize-1)/2., -PHYS_DEPTH};
+	//
+	real XSHIFT_RATIO = 0.2;
+
+	point_t PHYS_ORIGIN = {-PHYS_LENGTH*XSHIFT_RATIO, -PHYS_DL*(2.*wallSize-1)/2., -PHYS_DEPTH};
 
 	// initialize the lattice
 	lat_t lat;
@@ -716,8 +720,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2, doub
 	const std::string state_id = fmt::format("sim_bump_NASA_res{:02d}_np{:03d}", RESOLUTION, TNL::MPI::GetSize(MPI_COMM_WORLD));
 	#endif
 	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat,adios_config);
-	//state.loadState();
-	state.wallTime = 23*3600;
+	state.wallTime = 12*3600;
 
 	// problem parameters
 	state.lbm_inflow_vx = lat.phys2lbmVelocity(PHYS_VELOCITY);
@@ -725,7 +728,8 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2, doub
 	state.average_inflow = PHYS_VELOCITY;
 	state.bump_height = 0.05;
 
-	std::cout << "Reynolds number: " << PHYS_VELOCITY*state.bump_height/PHYS_VISCOSITY << std::endl;;
+	std::cout << "Reynolds number: " << PHYS_VELOCITY*state.bump_height/PHYS_VISCOSITY << std::endl;
+	std::cout << "Reynolds based on unit length: " << PHYS_VELOCITY*1./PHYS_VISCOSITY << std::endl;
 
 	state.nse.physFinalTime = 50.;
 	state.rise_up_time = 1.;
@@ -733,7 +737,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2, doub
 
 	// add cuts
 	state.cnt[OUT2D].period = 1.;
-	//state.add2Dcut_X(X / 2, "cutsX/cut_X");
+	//state.add2Dcut_X(X / 2, "cutsX/cut_X"); // can be used due to bug with MPI
 	//state.add2Dcut_Y(Y / 2, "cutsY/cut_Y");
 	state.add2Dcut_Z(Z / 2, "cutsZ/cut_Z");
 

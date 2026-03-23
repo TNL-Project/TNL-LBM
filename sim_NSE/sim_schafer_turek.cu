@@ -642,6 +642,8 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, adios_config);
 
 
+	std::cout << "Reynolds number: " << PHYS_VELOCITY*state.bump_height/PHYS_VISCOSITY << std::endl;
+
 	// problem parameters
 	state.lbm_inflow_vx = lat.phys2lbmVelocity(PHYS_VELOCITY);
 	state.inflow_g = lat.phys2lbmForce(g);
@@ -651,8 +653,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 
 
 	state.cnt[SAVESTATE].period = 6.*3600.;
-	//state.wallTime = 16.*3600.; // stop early to ensure checkpoint save?
-	state.wallTime = 12.*3600; // DEBUG
+	state.wallTime = 12.*3600; // Stop super early to ensure checkpoint is not lost
 
 
 	// add cuts
@@ -675,15 +676,15 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	// Debug output of the inflow
 	//const std::string inflow_profile_output = fmt::format("{}/velocities.csv",state_id);
 	//FILE *fp = fopen(inflow_profile_output.c_str(), "w");
-	FILE *fp = fopen("velocities.csv", "w");
-	fprintf(fp, "y,z,vx\n");
-	for (int y = 0; y < Y; y++) {
-	    for (int z = 0; z < Z; z++) {
-	        state.nse.blocks[0].data.inflow(KS, 0, y, z);
-	        fprintf(fp, "%d,%d,%e\n", y, z, state.nse.lat.lbm2physVelocity(KS.vx));
-	    }
-	}
-	fclose(fp);
+	// FILE *fp = fopen("velocities.csv", "w");
+	// fprintf(fp, "y,z,vx\n");
+	// for (int y = 0; y < Y; y++) {
+	//     for (int z = 0; z < Z; z++) {
+	//         state.nse.blocks[0].data.inflow(KS, 0, y, z);
+	//         fprintf(fp, "%d,%d,%e\n", y, z, state.nse.lat.lbm2physVelocity(KS.vx));
+	//     }
+	// }
+	// fclose(fp);
 
 
 	execute(state);
