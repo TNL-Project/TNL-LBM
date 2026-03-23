@@ -148,18 +148,19 @@ struct D3Q53_BC_All
 					TNL::swap(KS.f[id], KS.f[KS.flip_id(id)]);
 				}
 				break;
+			// bounce-back on next to wall nodes is performed only when 3 DFs are used, has to be included in simulation file before including core.h
 			#ifdef USE_DFMAX3
 			case GEO_NEXT_TO_WALL:
 				//TODO
-				for(int id = 0; id < LBM_KS::Qhalf; id++){
+				for(int id = 0; id < LBM_KS::Q; id++){
 					Coord dv = LBM_KS::id_to_dv(id);
-					Coord c = LBM_KS::id_to_coords(id);//TODO
 					int flip_id = LBM_KS::flip_id(id);
 					if(findFirstWallSnake<DATA,LBM_KS>(SD,streamGrid,dv,GEO_WALL)){
-						SD.df(df_fullway,flip_id,streamGrid.x(c.x),streamGrid.y(c.y),streamGrid.z(c.z)) = SD.df(df_cur,flip_id,streamGrid.x(c.x),streamGrid.y(c.y),streamGrid.z(c.z));
-						KS.f[id] = SD.df(df_fullway,flip_id,streamGrid.x(c.x),streamGrid.y(c.y),streamGrid.z(c.z));
+						KS.f[flip_id] = TNL::Backend::ldg(SD.df(df_fullway,id,x,y,z));
+						SD.df(df_fullway,id,x,y,z) = TNL::Backend::ldg(SD.df(df_cur,id,x,y,z));
 					}
 				}
+				COLL::computeDensityAndVelocity(KS);
 				break;
 			#endif
 
@@ -212,7 +213,7 @@ struct D3Q53_BC_All
 				}
 				COLL::computeDensityAndVelocity(KS);
 				break;
-			case GEO_SYM_TOP_BACK: //z
+			case GEO_SYM_TOP_BACK: //yz
 				#if defined(__CUDA_ARCH__) && defined(UNROLL)
 				#pragma unroll 2
 				#endif
@@ -224,7 +225,7 @@ struct D3Q53_BC_All
 				}
 				COLL::computeDensityAndVelocity(KS);
 				break;
-			case GEO_SYM_TOP_FRONT:
+			case GEO_SYM_TOP_FRONT://yz
 				#if defined(__CUDA_ARCH__) && defined(UNROLL)
 				#pragma unroll 2
 				#endif
@@ -236,7 +237,7 @@ struct D3Q53_BC_All
 				}
 				COLL::computeDensityAndVelocity(KS);
 				break;
-			case GEO_SYM_BOTTOM_BACK: //z
+			case GEO_SYM_BOTTOM_BACK: //yz
 				#if defined(__CUDA_ARCH__) && defined(UNROLL)
 				#pragma unroll 2
 				#endif
@@ -248,7 +249,7 @@ struct D3Q53_BC_All
 				}
 				COLL::computeDensityAndVelocity(KS);
 				break;
-			case GEO_SYM_BOTTOM_FRONT: //z
+			case GEO_SYM_BOTTOM_FRONT: //yz
 				#if defined(__CUDA_ARCH__) && defined(UNROLL)
 				#pragma unroll 2
 				#endif
@@ -260,7 +261,6 @@ struct D3Q53_BC_All
 				}
 				COLL::computeDensityAndVelocity(KS);
 				break;
-
 			case GEO_SYM_LEFT: // x
 				#if defined(__CUDA_ARCH__) && defined(UNROLL)
 				#pragma unroll 2

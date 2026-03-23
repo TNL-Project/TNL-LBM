@@ -3,11 +3,10 @@
 
 //#define OVERLAP_3 // somehow works without overlap_width = 3
 
-// Fix streaming, try with all
-//
-
 // array of sync directions for the MPI synchronizer
-// (indexing must correspond to the enum above)
+// (indexing must correspond to the order in Kernelstruct)
+// This must be loaded before core in each simulation!
+
 inline constexpr TNL::Containers::SyncDirection df_sync_directions[53] = {
 TNL::Containers::SyncDirection::Left,
 TNL::Containers::SyncDirection::BackBottomLeft,

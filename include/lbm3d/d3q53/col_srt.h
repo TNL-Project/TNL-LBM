@@ -3,9 +3,6 @@
 #include "common.h"
 #include "eq.h"
 
-// improved BRK (SRT) model by Geier 2017
-// for standard DF (no well-conditioned)
-
 template <typename TRAITS, typename LBM_EQ = D3Q53_EQ<TRAITS>>
 struct D3Q53_SRT : D3Q53_COMMON<TRAITS, LBM_EQ>
 {

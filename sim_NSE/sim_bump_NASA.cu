@@ -62,58 +62,70 @@ struct StateLocal : State<NSE>
 
 	void setupBoundaries() override
 	{
-		// Single-speed setup
-		// nse.setBoundaryX(0, BC::GEO_INFLOW_LEFT_PRESSURE);						  // left
-		// nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT);  // right
-		// nse.setBoundaryZ(0,                      BC::GEO_SYM_TOP   );						 // top
-		// nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_SYM_BOTTOM);	 // bottom
-		// nse.setBoundaryY(0, 					  BC::GEO_SYM_BACK  );						 // back
-		// nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_SYM_FRONT );	 // front
-		// Multi-speed setup
+		// 1) Single-speed setup
+		// nse.setBoundaryX(0, BC::GEO_INFLOW_LEFT_PRESSURE);			    // left
+		// nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT); // right
 
-
-
-		nse.setBoundaryX(0, BC::GEO_INFLOW_LEFT_PRESSURE);						  // left
-		nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT_PRESSURE);						  // left
-		nse.setBoundaryX(2, BC::GEO_INFLOW_LEFT_PRESSURE);						  // left
-		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT);  // right
-		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT);  // right
-		nse.setBoundaryX(nse.lat.global.x() - 3, BC::GEO_OUTFLOW_RIGHT);  // right
-		nse.setBoundaryZ(0,                      BC::GEO_WALL);						 // top
-		nse.setBoundaryZ(1,                      BC::GEO_WALL);						 // top
-		nse.setBoundaryZ(2,                      BC::GEO_WALL);						 // top
-		nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_WALL);	 // bottom
-		nse.setBoundaryZ(nse.lat.global.z() - 2, BC::GEO_WALL);	 // bottom
-		nse.setBoundaryZ(nse.lat.global.z() - 3, BC::GEO_WALL);	 // bottom
-		nse.setBoundaryY(0, 					 BC::GEO_WALL);						 // back
-		nse.setBoundaryY(1, 					 BC::GEO_WALL);						 // back
-		nse.setBoundaryY(2, 					 BC::GEO_WALL);						 // back
-		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_WALL);	 // front
-		nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_WALL);	 // front
-		nse.setBoundaryY(nse.lat.global.y() - 3, BC::GEO_WALL);	 // front
-
-
-		// nse.setBoundaryZ(0,                      BC::GEO_SYM_TOP);						 // top
-		// nse.setBoundaryZ(1,                      BC::GEO_SYM_TOP);						 // top
-		// nse.setBoundaryZ(2,                      BC::GEO_SYM_TOP);						 // top
-		// nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_SYM_BOTTOM);	 // bottom
-		// nse.setBoundaryZ(nse.lat.global.z() - 2, BC::GEO_SYM_BOTTOM);	 // bottom
-		// nse.setBoundaryZ(nse.lat.global.z() - 3, BC::GEO_SYM_BOTTOM);	 // bottom
-		// nse.setBoundaryY(0, 					 BC::GEO_SYM_BACK);						 // back
-		// nse.setBoundaryY(1, 					 BC::GEO_SYM_BACK);						 // back
-		// nse.setBoundaryY(2, 					 BC::GEO_SYM_BACK);						 // back
-		// nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_SYM_FRONT);	 // front
-		// nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_SYM_FRONT);	 // front
-		// nse.setBoundaryY(nse.lat.global.y() - 3, BC::GEO_SYM_FRONT);	 // front
-		// for(int y = 0; y < 3; y++){
-		// for(int z = 0; z < 3; z++){
+		// nse.setBoundaryZ(0,                      BC::GEO_SYM_TOP   ); // top
+		// nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_SYM_BOTTOM); // bottom
+		// nse.setBoundaryY(0, 					    BC::GEO_SYM_BACK  ); // back
+		// nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_SYM_FRONT ); // front
+		// for(int y = 0; y < 1; y++){
+		// for(int z = 0; z < 1; z++){
 		// 	nse.setBoundaryYZ(y,z,BC::GEO_SYM_TOP_BACK);
 		// 	nse.setBoundaryYZ(y,nse.lat.global.z()-1-z,BC::GEO_SYM_TOP_FRONT);
 		// 	nse.setBoundaryYZ(nse.lat.global.y()-1-y,z,BC::GEO_SYM_BOTTOM_BACK);
 		// 	nse.setBoundaryYZ(nse.lat.global.y()-1-y,nse.lat.global.z()-1-z,BC::GEO_SYM_BOTTOM_FRONT);
 		// }
 		// }
+		// 2) Multi-speed setup
+		nse.setBoundaryX(0, BC::GEO_INFLOW_LEFT_PRESSURE);			      // left
+		nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT_PRESSURE);			      // left
+		nse.setBoundaryX(2, BC::GEO_INFLOW_LEFT_PRESSURE);			      // left
+		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT);  // right
+		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT);  // right
+		nse.setBoundaryX(nse.lat.global.x() - 3, BC::GEO_OUTFLOW_RIGHT);  // right
 
+
+		// 2a) wall boundaries on sides
+		// nse.setBoundaryZ(0,                      BC::GEO_WALL);	 // top
+		// nse.setBoundaryZ(1,                      BC::GEO_WALL);	 // top
+		// nse.setBoundaryZ(2,                      BC::GEO_WALL);	 // top
+		// nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_WALL);	 // bottom
+		// nse.setBoundaryZ(nse.lat.global.z() - 2, BC::GEO_WALL);	 // bottom
+		// nse.setBoundaryZ(nse.lat.global.z() - 3, BC::GEO_WALL);	 // bottom
+		// nse.setBoundaryY(0, 					    BC::GEO_WALL);	 // back
+		// nse.setBoundaryY(1, 					    BC::GEO_WALL);	 // back
+		// nse.setBoundaryY(2, 					    BC::GEO_WALL);	 // back
+		// nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_WALL);	 // front
+		// nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_WALL);	 // front
+		// nse.setBoundaryY(nse.lat.global.y() - 3, BC::GEO_WALL);	 // front
+
+		// 2b) symmetric condition
+		nse.setBoundaryZ(0,                      BC::GEO_SYM_TOP);		// top
+		nse.setBoundaryZ(1,                      BC::GEO_SYM_TOP);		// top
+		nse.setBoundaryZ(2,                      BC::GEO_SYM_TOP);		// top
+		nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_SYM_BOTTOM);	 // bottom
+		nse.setBoundaryZ(nse.lat.global.z() - 2, BC::GEO_SYM_BOTTOM);	 // bottom
+		nse.setBoundaryZ(nse.lat.global.z() - 3, BC::GEO_SYM_BOTTOM);	 // bottom
+		nse.setBoundaryY(0, 					 BC::GEO_SYM_BACK);		// back
+		nse.setBoundaryY(1, 					 BC::GEO_SYM_BACK);		// back
+		nse.setBoundaryY(2, 					 BC::GEO_SYM_BACK);		// back
+		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_SYM_FRONT);	 // front
+		nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_SYM_FRONT);	 // front
+		nse.setBoundaryY(nse.lat.global.y() - 3, BC::GEO_SYM_FRONT);	 // front
+		// Corner edges
+		for(int y = 0; y < 3; y++){
+		for(int z = 0; z < 3; z++){
+			nse.setBoundaryYZ(y,z,BC::GEO_SYM_TOP_BACK);
+			nse.setBoundaryYZ(y,nse.lat.global.z()-1-z,BC::GEO_SYM_TOP_FRONT);
+			nse.setBoundaryYZ(nse.lat.global.y()-1-y,z,BC::GEO_SYM_BOTTOM_BACK);
+			nse.setBoundaryYZ(nse.lat.global.y()-1-y,nse.lat.global.z()-1-z,BC::GEO_SYM_BOTTOM_FRONT);
+		}
+		}
+
+
+		// 3) BUMP
 		for (int px = 0; px <= nse.lat.global.x(); px++){
 		for (int py = 0; py <= nse.lat.global.y(); py++){
 		for (int pz = 0; pz <= nse.lat.global.z(); pz++){
@@ -122,6 +134,9 @@ struct StateLocal : State<NSE>
 			}
 		}}}
 
+
+		// 4) (Optional) Mark walls next to bump to performed third-array full-way bounce-back
+		// ! turn off for single-speed simulations
 		mark_next_to_wall();
 	}
 
@@ -574,13 +589,6 @@ struct StateLocal : State<NSE>
 		dragprofile();
   	}
 
-	//void startedAtCheckpoint() override {
-	//	firstrun = false;
-	//	firstrunProfile = false;
-	//	// TODO: known mistake that probes have to run at least one during first walltime run!!!, otherwise doesnt overwrite
-	//	// FIX: just delete simulation files before starting new simulation
-	//}
-
 	[[nodiscard]] std::vector<std::string> getOutputDataNames() const override
 	{
 		// return all quantity names used in outputData
@@ -658,8 +666,10 @@ struct StateLocal : State<NSE>
 	{}
 };
 
+#define OSCILLATION_ANALYSIS
+
 template <typename NSE>
-int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
+int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2, double viscosity = 1e-4)
 {
 	using idx = typename NSE::TRAITS::idx;
 	using real = typename NSE::TRAITS::real;
@@ -667,7 +677,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	using lat_t = Lattice<3, real, idx>;
 
 	int block_size = 32;
-	real PHYS_LENGTH = 4.; // length in some units (NASA does not specify)
+	real PHYS_LENGTH = 3.; // length in some units (NASA does not specify)
 	real PHYS_HEIGHT = 0.2;		  // domain height (physical)
 	real PHYS_DEPTH = 0.5;		  // domain depth (physical) FIXED for sine to work correctly
 	// TODO: solve the rounding of pixels to have it precise
@@ -677,7 +687,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 
 	int X = floor(PHYS_LENGTH / PHYS_DL);  // width in pixels
 	int Z = floor(PHYS_DEPTH  / PHYS_DL);  // depth in pixels --- top and bottom walls NoDV px
-	real PHYS_VISCOSITY = 1.e-4;
+	real PHYS_VISCOSITY = viscosity; // viscosity as input to analyze when oscillations happen
 	real PHYS_VELOCITY = 1.;
 
 
@@ -686,7 +696,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	//real LBM_VISCOSITY = 0.001;
 	//real PHYS_DT = LBM_VISCOSITY / PHYS_VISCOSITY * PHYS_DL * PHYS_DL;	//PHYS_HEIGHT/(real)LBM_HEIGHT;
 	// Acoustic scaling
-	real LBM_VELOCITY = 0.05;
+	real LBM_VELOCITY = 0.1;
 	real PHYS_DT = PHYS_DL * LBM_VELOCITY/PHYS_VELOCITY;
 	real LBM_VISCOSITY = PHYS_VISCOSITY * PHYS_DT / PHYS_DL /PHYS_DL;
 
@@ -700,9 +710,11 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	lat.physDt = PHYS_DT;
 	lat.physViscosity = PHYS_VISCOSITY;
 
-
+	#ifdef OSCILLATION_ANALYSIS
+	const std::string state_id = fmt::format("sim_bump_NASA_res{:02d}_visc{:07e}_np{:03d}", RESOLUTION, viscosity, TNL::MPI::GetSize(MPI_COMM_WORLD));
+	#else
 	const std::string state_id = fmt::format("sim_bump_NASA_res{:02d}_np{:03d}", RESOLUTION, TNL::MPI::GetSize(MPI_COMM_WORLD));
-
+	#endif
 	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat,adios_config);
 	//state.loadState();
 	state.wallTime = 23*3600;
@@ -715,14 +727,14 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 
 	std::cout << "Reynolds number: " << PHYS_VELOCITY*state.bump_height/PHYS_VISCOSITY << std::endl;;
 
-	state.nse.physFinalTime = 100;
+	state.nse.physFinalTime = 50.;
 	state.rise_up_time = 1.;
 	state.cnt[PRINT].period = 0.1;
 
 	// add cuts
-	state.cnt[OUT2D].period = 0.1;
+	state.cnt[OUT2D].period = 1.;
 	//state.add2Dcut_X(X / 2, "cutsX/cut_X");
-	state.add2Dcut_Y(Y / 2, "cutsY/cut_Y");
+	//state.add2Dcut_Y(Y / 2, "cutsY/cut_Y");
 	state.add2Dcut_Z(Z / 2, "cutsZ/cut_Z");
 
 	state.cnt[OUT3D].period = 10.;
@@ -741,8 +753,8 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	return 0;
 }
 
-template <typename TRAITS = TraitsSP>
-void run(const std::string& adios_config, int resolution)
+template <typename TRAITS = TraitsSP> // Change to TraitsDP for ELBM multi-speed
+void run(const std::string& adios_config, int resolution, double viscosity)
 {
 	// D3Q27
 	// using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
@@ -766,18 +778,6 @@ void run(const std::string& adios_config, int resolution)
 	// 	D3Q27_BC_All,
 	// 	D3Q27_MACRO_Default<TRAITS>>;
 
-	// D3Q343
-	//using COLL = D3Q343_SRT<TRAITS, D3Q343_EQ<TRAITS>>;
-	//using NSE_CONFIG = LBM_CONFIG<
-	//	TRAITS,
-	//	D3Q343_KernelStruct,
-	//	NSE_Data_ConstInflow_PressureGradient<TRAITS>,
-	//	COLL,
-	//	typename COLL::EQ,
-	//	D3Q343_STREAMING<TRAITS>,
-	//	D3Q343_BC_All,
-	//	D3Q343_MACRO_Default<TRAITS>>;
-
 	// D3Q53
 	using COLL = D3Q53_SRT<TRAITS, D3Q53_EQ<TRAITS>>;
 	using NSE_CONFIG = LBM_CONFIG<
@@ -790,7 +790,19 @@ void run(const std::string& adios_config, int resolution)
 		D3Q53_BC_All,
 		D3Q53_MACRO_Default<TRAITS>>;
 
-	sim<NSE_CONFIG>(adios_config,resolution);
+	// using COLL = D3Q53_ELBM<TRAITS, D3Q53_EQ<TRAITS>>;
+	// using NSE_CONFIG = LBM_CONFIG<
+	// 	TRAITS,
+	// 	D3Q53_LOOKUP_KernelStruct,
+	// 	NSE_Data_ConstInflow_PressureGradient<TRAITS>,
+	// 	COLL,
+	// 	typename COLL::EQ,
+	// 	D3Q53_STREAMING_THIRD_ARRAY<TRAITS>,
+	// 	D3Q53_BC_All,
+	// 	D3Q53_MACRO_Default<TRAITS>>;
+
+
+	sim<NSE_CONFIG>(adios_config,resolution,viscosity);
 }
 
 int main(int argc, char** argv)
@@ -801,6 +813,7 @@ int main(int argc, char** argv)
 	program.add_description("3D bump NASA modified simulation.");
 	program.add_argument("--adios-config").help("path to ADIOS2 configuration file").default_value(std::string("adios2.xml")).nargs(1);
 	program.add_argument("--resolution").help("resolution of the lattice").scan<'i', int>().default_value(1).nargs(1);
+	program.add_argument("--viscosity").help("the physical viscosity of the fluid").scan<'g', double>().default_value(1e-4).nargs(1);
 
 	try {
 		program.parse_args(argc, argv);
@@ -813,13 +826,14 @@ int main(int argc, char** argv)
 
 	const auto adios_config = program.get<std::string>("--adios-config");
 	const auto resolution = program.get<int>("--resolution");
+	const auto viscosity = program.get<double>("--viscosity");
 
 	if (resolution < 1) {
 		fmt::println(stderr, "CLI error: resolution must be at least 1");
 		return 1;
 	}
 
-	run(adios_config, resolution);
+	run(adios_config, resolution, viscosity);
 
 	return 0;
 }

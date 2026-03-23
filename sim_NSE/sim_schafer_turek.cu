@@ -5,7 +5,7 @@
 //#define USE_FORCING
 
 // As of now, enum and sync direction are specific for different models and need to be included before core!!!
-// #include "lbm3d/d3q27/defs.h"
+//#include "lbm3d/d3q27/defs.h"
 #include "lbm3d/d3q53/defs.h"
 //#include "lbm3d/d3q343/defs.h"
 #include "lbm3d/core.h"
@@ -103,26 +103,6 @@ struct StateLocal : State<NSE>
 		}
 		return false;
 	}
-
-	// double get_pressure_force(const int x, const int y, const int z, const int dirMacro, const double ndc, const double dynamicViscosity){
-	// 	const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x+1,y,z);
-	// 	const double v = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(dirMacro,x+1,y,z));
-	// 	const double pressure =   nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
-	// 	return pressure;;
-	// }
-
-	// double get_visc_force(const int x, const int y, const int z, const int dirMacro, const double ndc, const double dynamicViscosity){
-	// 	const double visc = (double)nse.lat.physViscosity;
-	// 	const double rho_lbm = (double)nse.blocks.front().hmacro(MACRO::e_rho,x+1,y,z);
-	// 	const double v = (double)nse.lat.lbm2physVelocity(nse.blocks.front().hmacro(dirMacro,x+1,y,z));
-	// 	const double delta_x = (double)nse.lat.physDl;
-	// 	const double dv = v/(delta_x/2);
-	// 	if(dynamicViscosity){
-	// 		return rho_lbm*ndc*visc*dv;
-	// 	}else{
-	// 		return ndc*visc*dv;
-	// 	}
-	// }
 
 	template<typename Filter>
 	double integrate_stress_tensor_general(Filter filter, int dir, const double ndc = 4./3.,const bool dynamicViscosity = false){
@@ -671,7 +651,10 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 
 
 	state.cnt[SAVESTATE].period = 6.*3600.;
-	state.wallTime = 23.*3600.;
+	//state.wallTime = 16.*3600.; // stop early to ensure checkpoint save?
+	state.wallTime = 12.*3600; // DEBUG
+
+
 	// add cuts
 	state.cnt[OUT2D].period = 1.;
 	//state.add2Dcut_X(X / 2, "cutsX/cut_X");
@@ -733,6 +716,7 @@ void run(const std::string& adios_config, int resolution)
 	// 	D3Q27_STREAMING<TRAITS>,
 	// 	D3Q27_BC_All,
 	// 	D3Q27_MACRO_Default<TRAITS>>;
+
 	// using COLL = D3Q27_SRT<TRAITS, D3Q27_EQ_ENTROPIC<TRAITS>>;
 	// using NSE_CONFIG = LBM_CONFIG<
 	// 	TRAITS,
@@ -744,19 +728,18 @@ void run(const std::string& adios_config, int resolution)
 	// 	D3Q27_BC_All,
 	// 	D3Q27_MACRO_Default<TRAITS>>;
 
-	// D3Q343
-	//using COLL = D3Q343_ELBM<TRAITS, D3Q343_EQ<TRAITS>>;
-	//using NSE_CONFIG = LBM_CONFIG<
-	//	TRAITS,
-	//	D3Q343_KernelStruct,
-	//	NSE_Data_DoubleParabolic<TRAITS>,
-	//	COLL,
-	//	typename COLL::EQ,
-	//	D3Q343_STREAMING<TRAITS>,
-	//	D3Q343_BC_All,
-	//	D3Q343_MACRO_Default<TRAITS>>;
-
 	// D3Q53
+	// using COLL = D3Q53_SRT<TRAITS, D3Q53_EQ<TRAITS>>;
+	// using NSE_CONFIG = LBM_CONFIG<
+	// 	TRAITS,
+	// 	D3Q53_LOOKUP_KernelStruct,
+	// 	NSE_Data_DoubleParabolic<TRAITS>,
+	// 	COLL,
+	// 	typename COLL::EQ,
+	// 	D3Q53_STREAMING<TRAITS>,
+	// 	D3Q53_BC_All,
+	// 	D3Q53_MACRO_Default<TRAITS>>;
+
 	using COLL = D3Q53_ELBM<TRAITS, D3Q53_EQ<TRAITS>>;
 	using NSE_CONFIG = LBM_CONFIG<
 		TRAITS,

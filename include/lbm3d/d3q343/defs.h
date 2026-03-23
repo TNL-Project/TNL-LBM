@@ -2,9 +2,6 @@
 
 #define OVERLAP_3 // somehow works without overlap_width = 3
 
-// Fix streaming, try with all
-//
-
 // array of sync directions for the MPI synchronizer
 // (indexing must correspond to the enum above)
 inline constexpr TNL::Containers::SyncDirection df_sync_directions[343] = {

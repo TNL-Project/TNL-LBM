@@ -4,7 +4,7 @@
 #include "../defs.h"
 #include <TNL/Backend/Macros.h>
 
-// pull-scheme
+
 template <typename TRAITS>
 struct D3Q53_STREAMING_THIRD_ARRAY
 {
@@ -43,10 +43,12 @@ struct D3Q53_STREAMING_THIRD_ARRAY
 		streaming(df_cur, SD, KS, streamGrid);
 	}
 
-	// streaming with bounce-back rule applied
+
+
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void streamingBounceBack(LBM_DATA& SD, LBM_KS& KS,typename LBM_KS::SG streamGrid)
 	{
+		// Unused in simulations, is performed directly in bc.h for NEXT_TO_wALL nodes
 		#ifdef __CUDA_ARCH__
 		#pragma unroll
 		#endif
@@ -60,10 +62,6 @@ struct D3Q53_STREAMING_THIRD_ARRAY
 			KS.f[id] = TNL::Backend::ldg(SD.df(df_fullway,flip_id,streamGrid.x(c.x),streamGrid.y(c.y),streamGrid.z(c.z)));
 		}
 	}
-
-
-
-
 
 	template < typename LBM_DATA, typename LBM_KS  >
 	CUDA_HOSTDEV static void streamingInterpRight(LBM_DATA &SD, LBM_KS &KS, StreamGrid<int, LBM_KS::NoDV> streamGrid)

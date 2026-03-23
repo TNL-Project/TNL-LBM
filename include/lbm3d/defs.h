@@ -126,12 +126,13 @@ struct Traits
 using TraitsSP = Traits<float>;	 //_dreal is float only
 using TraitsDP = Traits<double>;
 
+// Simplest coordinate struct for GPU
 struct Coord{
 	int x,y,z;
-	// inline bool operator==(const Coord& rhs) {
-	// 	return self.x==rhs.x && self.y==rhs.y && self.z==rhs.z;
-	// }
 };
+
+// Method for third-array full-way bounce-back
+#ifdef USE_DFMAX3
 __cuda_callable__ void swap(int &x, int &y){
     int t = x; x = y; y = t;
 };
@@ -195,7 +196,10 @@ __cuda_callable__ CONSTFUNC Coord dv_to_closer_dv(Coord c){
 		c.z = mz ? -c.z : c.z;
 		return {c.x,c.y,c.z};
 }
+#endif
 
+// StreamGrid is used to store indices of neighbouring lattices in each spatial direction
+// (x[NoDV],y[NoDV],z[NoDV]) are the coordinates of the active cell
 template < typename INDEX, int NoDV >
 struct StreamGrid
 {
@@ -209,7 +213,6 @@ struct StreamGrid
 template < typename REAL >
 struct D2Q9_KernelStruct
 {
-
 	static constexpr int NoDV = 1;
 	static constexpr int ONE_SIZE = 2*NoDV + 1;
 	static constexpr int Q = ONE_SIZE*ONE_SIZE;
@@ -305,6 +308,8 @@ struct D3Q7_KernelStruct
 };
 
 // KernelStruct - D3Q27
+// single-speed 3D model
+// DFs are sorted such that Q-i-1 index is has discrete velocity opposite to i
 template <typename REAL>
 struct D3Q27_KernelStruct
 {
@@ -378,6 +383,9 @@ struct D3Q27_KernelStruct
 #endif
 };
 
+
+// Experimental D3Q27 Kernelstruct with precomputed table
+// slows down simulation overall
 #ifdef D3Q27_LOOKUP
 #ifdef __CUDACC__
 // lookup tables on device
@@ -476,6 +484,7 @@ struct D3Q27_LOOKUP_KernelStruct
 #endif
 
 // KernelStruct - D3Q343
+// 
 template <typename REAL>
 struct D3Q343_KernelStruct
 {
@@ -532,6 +541,8 @@ static __device__ __constant__ float D3Q53_LOOKUP_WS_dev[53] = {
 #endif
 
 
+// Kernelstruct - D3Q53
+//
 template <typename REAL>
 struct D3Q53_LOOKUP_KernelStruct
 {
