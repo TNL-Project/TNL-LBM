@@ -112,6 +112,16 @@ public:
 		return engines_.count(ioName) > 0 && engines_.at(ioName);
 	}
 
+	template <typename T>
+	std::vector<T>& newStepBuffer(std::size_t reserve = 0)
+	{
+		std::any& any_buffer = stepBuffers_.emplace_back(std::make_any<std::vector<T>>());
+		std::vector<T>& buffer = std::any_cast<std::vector<T>&>(any_buffer);
+		if (reserve > 0)
+			buffer.reserve(reserve);
+		return buffer;
+	}
+
 	void holdStepBuffer(std::any buffer)
 	{
 		stepBuffers_.push_back(std::move(buffer));
