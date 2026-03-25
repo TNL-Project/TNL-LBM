@@ -86,9 +86,17 @@ example, to build and run `sim_1` as in the previous example:
 
     ./sim_NSE/run sim_1 4
 
+### Visualization
 
-Follow the [Catalyst Frame Exporter Guide](./catalyst/README.md) to generate PNG slices from ADIOS2 output for visualization and analysis.
+1. **Offline post-processing (PNG export from ADIOS2 output)**  
+  Follow the [Catalyst Frame Exporter Guide](./catalyst/README.md) to generate
+  planar PNG slices (`xy`, `xz`, `yz`) from ADIOS2 stream/BP output for
+  analysis and animation.
 
+2. **In-situ live visualization in ParaView**  
+  Follow the [ParaView Catalyst In-Situ Plugin Guide](./catalyst/plugin/README.md)
+  to connect ParaView Catalyst Live directly to a running simulation via
+  `adios2-inline-plugin.xml`.
 
 ## Getting involved
 
