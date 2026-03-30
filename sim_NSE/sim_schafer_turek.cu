@@ -642,7 +642,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, adios_config);
 
 
-	std::cout << "Reynolds number: " << PHYS_VELOCITY*state.bump_height/PHYS_VISCOSITY << std::endl;
+	std::cout << "Reynolds number: " << PHYS_VELOCITY*0.05/PHYS_VISCOSITY << std::endl;
 
 	// problem parameters
 	state.lbm_inflow_vx = lat.phys2lbmVelocity(PHYS_VELOCITY);

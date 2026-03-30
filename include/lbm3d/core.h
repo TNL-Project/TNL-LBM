@@ -42,12 +42,12 @@
 #include "d3q27/col_srt_adjoint.h"
 
 
-#include "d3q343/eq.h"
-#include "d3q343/col_srt.h"
-#include "d3q343/col_elbm.h"
-#include "d3q343/streaming_AB.h"
-#include "d3q343/macro.h"
-#include "d3q343/bc.h"
+//#include "d3q343/eq.h"
+//#include "d3q343/col_srt.h"
+//#include "d3q343/col_elbm.h"
+//#include "d3q343/streaming_AB.h"
+//#include "d3q343/macro.h"
+//#include "d3q343/bc.h"
 
 #include "d3q53/eq.h"
 #include "d3q53/col_srt.h"

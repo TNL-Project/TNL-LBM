@@ -35,6 +35,10 @@ struct D3Q27_BC_All
 		GEO_SYM_RIGHT,
 		GEO_SYM_BACK,
 		GEO_SYM_FRONT,
+		GEO_SYM_TOP_BACK,
+		GEO_SYM_TOP_FRONT,
+		GEO_SYM_BOTTOM_BACK,
+		GEO_SYM_BOTTOM_FRONT,
 		// Adjoint boundary conditions
 		GEO_ADJOINT_FLUID,
 		GEO_ADJOINT_FLUID_m,
@@ -226,55 +230,6 @@ struct D3Q27_BC_All
 					TNL::swap(KS.f[id], KS.f[KS.flip_id(id)]);
 				}
 				break;
-			case GEO_SYM_BOTTOM: // z
-				#if defined(__CUDA_ARCH__) && defined(UNROLL)
-				#pragma unroll
-				#endif
-				for(int id = 0; id < LBM_KS::Q; id++){
-					Coord c = LBM_KS::id_to_dv(id);
-					if(c.z < 0){
-						KS.f[id] = KS.f[KS.dv_to_id(c.x,c.y,-c.z)];
-					}
-				}
-				COLL::computeDensityAndVelocity(KS);
-				break;
-			case GEO_SYM_TOP: //z
-				#if defined(__CUDA_ARCH__) && defined(UNROLL)
-				#pragma unroll
-				#endif
-				for(int id = 0; id < LBM_KS::Q; id++){
-					Coord c = LBM_KS::id_to_dv(id);
-					if(c.z > 0){
-						KS.f[id] = KS.f[KS.dv_to_id(c.x,c.y,-c.z)];
-					}
-				}
-				COLL::computeDensityAndVelocity(KS);
-				break;
-			case GEO_SYM_BACK: // y
-				#if defined(__CUDA_ARCH__) && defined(UNROLL)
-				#pragma unroll
-				#endif
-				for(int id = 0; id < LBM_KS::Q; id++){
-					Coord c = LBM_KS::id_to_dv(id);
-					if(c.y > 0){
-						KS.f[id] = KS.f[KS.dv_to_id(c.x,-c.y,c.z)];
-					}
-				}
-				COLL::computeDensityAndVelocity(KS);
-				break;
-			case GEO_SYM_FRONT: // y
-				#if defined(__CUDA_ARCH__) && defined(UNROLL)
-				#pragma unroll
-				#endif
-				for(int id = 0; id < LBM_KS::Q; id++){
-					Coord c = LBM_KS::id_to_dv(id);
-					if(c.y < 0){
-						KS.f[id] = KS.f[KS.dv_to_id(c.x,-c.y,c.z)];
-					}
-				}
-				COLL::computeDensityAndVelocity(KS);
-				break;
-
 			case GEO_INFLOW_LEFT_PRESSURE:
 				for(int i = 0; i < LBM_KS::ONE_SIZE; i++){
 					streamGrid.x(i)+=LBM_KS::NoDV;
@@ -389,6 +344,128 @@ struct D3Q27_BC_All
 				}
 			case GEO_ADJOINT_OUTFLOW_RIGHT:
 				COLL::computeDensityAndVelocity_Wall(KS);  //! collision without drho (because K.rho = 1 always)
+				break;
+
+
+			case GEO_SYM_BOTTOM: // z
+				#if defined(__CUDA_ARCH__) && defined(UNROLL)
+				#pragma unroll 2
+				#endif
+				for(int id = 0; id < LBM_KS::Q; id++){
+					Coord c = LBM_KS::id_to_dv(id);
+					if(c.z < 0){
+						KS.f[id] = KS.f[KS.dv_to_id(c.x,c.y,-c.z)];
+					}
+				}
+				COLL::computeDensityAndVelocity(KS);
+				break;
+			case GEO_SYM_TOP: //z
+				#if defined(__CUDA_ARCH__) && defined(UNROLL)
+				#pragma unroll 2
+				#endif
+				for(int id = 0; id < LBM_KS::Q; id++){
+					Coord c = LBM_KS::id_to_dv(id);
+					if(c.z > 0){
+						KS.f[id] = KS.f[KS.dv_to_id(c.x,c.y,-c.z)];
+					}
+				}
+				COLL::computeDensityAndVelocity(KS);
+				break;
+			case GEO_SYM_BACK: // y
+				#if defined(__CUDA_ARCH__) && defined(UNROLL)
+				#pragma unroll 2
+				#endif
+				for(int id = 0; id < LBM_KS::Q; id++){
+					Coord c = LBM_KS::id_to_dv(id);
+					if(c.y > 0){
+						KS.f[id] = KS.f[KS.dv_to_id(c.x,-c.y,c.z)];
+					}
+				}
+				COLL::computeDensityAndVelocity(KS);
+				break;
+			case GEO_SYM_FRONT: // y
+				#if defined(__CUDA_ARCH__) && defined(UNROLL)
+				#pragma unroll 2
+				#endif
+				for(int id = 0; id < LBM_KS::Q; id++){
+					Coord c = LBM_KS::id_to_dv(id);
+					if(c.y < 0){
+						KS.f[id] = KS.f[KS.dv_to_id(c.x,-c.y,c.z)];
+					}
+				}
+				COLL::computeDensityAndVelocity(KS);
+				break;
+			case GEO_SYM_TOP_BACK: //yz
+				#if defined(__CUDA_ARCH__) && defined(UNROLL)
+				#pragma unroll 2
+				#endif
+				for(int id = 0; id < LBM_KS::Q; id++){
+					Coord c = LBM_KS::id_to_dv(id);
+					if(c.y > 0 && c.z > 0){
+						KS.f[id] = KS.f[KS.dv_to_id(c.x,-c.y,-c.z)];
+					}
+				}
+				COLL::computeDensityAndVelocity(KS);
+				break;
+			case GEO_SYM_TOP_FRONT://yz
+				#if defined(__CUDA_ARCH__) && defined(UNROLL)
+				#pragma unroll 2
+				#endif
+				for(int id = 0; id < LBM_KS::Q; id++){
+					Coord c = LBM_KS::id_to_dv(id);
+					if(c.y < 0 && c.z > 0){
+						KS.f[id] = KS.f[KS.dv_to_id(c.x,-c.y,-c.z)];
+					}
+				}
+				COLL::computeDensityAndVelocity(KS);
+				break;
+			case GEO_SYM_BOTTOM_BACK: //yz
+				#if defined(__CUDA_ARCH__) && defined(UNROLL)
+				#pragma unroll 2
+				#endif
+				for(int id = 0; id < LBM_KS::Q; id++){
+					Coord c = LBM_KS::id_to_dv(id);
+					if(c.y > 0 && c.z < 0){
+						KS.f[id] = KS.f[KS.dv_to_id(c.x,-c.y,-c.z)];
+					}
+				}
+				COLL::computeDensityAndVelocity(KS);
+				break;
+			case GEO_SYM_BOTTOM_FRONT: //yz
+				#if defined(__CUDA_ARCH__) && defined(UNROLL)
+				#pragma unroll 2
+				#endif
+				for(int id = 0; id < LBM_KS::Q; id++){
+					Coord c = LBM_KS::id_to_dv(id);
+					if(c.y < 0 && c.z < 0){
+						KS.f[id] = KS.f[KS.dv_to_id(c.x,-c.y,-c.z)];
+					}
+				}
+				COLL::computeDensityAndVelocity(KS);
+				break;
+			case GEO_SYM_LEFT: // x
+				#if defined(__CUDA_ARCH__) && defined(UNROLL)
+				#pragma unroll 2
+				#endif
+				for(int id = 0; id < LBM_KS::Q; id++){
+					Coord c = LBM_KS::id_to_dv(id);
+					if(c.x < 0){
+						KS.f[id] = KS.f[KS.dv_to_id(-c.x,c.y,c.z)];
+					}
+				}
+				COLL::computeDensityAndVelocity(KS);
+				break;
+			case GEO_SYM_RIGHT: // x
+				#if defined(__CUDA_ARCH__) && defined(UNROLL)
+				#pragma unroll 2
+				#endif
+				for(int id = 0; id < LBM_KS::Q; id++){
+					Coord c = LBM_KS::id_to_dv(id);
+					if(c.x > 0){
+						KS.f[id] = KS.f[KS.dv_to_id(-c.x,c.y,c.z)];
+					}
+				}
+				COLL::computeDensityAndVelocity(KS);
 				break;
 
 			default:

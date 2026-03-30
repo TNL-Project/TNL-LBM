@@ -61,6 +61,7 @@ struct D3Q53_BC_All
 		return mapgi == GEO_WALL;
 	}
 
+	#ifdef USE_DFMAX3
 	template< typename DATA, typename LBM_KS>
 	__cuda_callable__ static bool findFirstWallSnake(DATA &SD, typename LBM_KS::SG &streamGrid, Coord &dv,  const map_t &wall_ref){
 		while(dv.x != 0 || dv.y != 0 || dv.z != 0){
@@ -71,6 +72,7 @@ struct D3Q53_BC_All
 		}
 		return false;
 	}
+	#endif
 
 	template <typename LBM_KS>
 	__cuda_callable__ static void preCollision(DATA& SD, LBM_KS& KS, map_t mapgi, typename LBM_KS::SG streamGrid)
@@ -156,8 +158,8 @@ struct D3Q53_BC_All
 					Coord dv = LBM_KS::id_to_dv(id);
 					int flip_id = LBM_KS::flip_id(id);
 					if(findFirstWallSnake<DATA,LBM_KS>(SD,streamGrid,dv,GEO_WALL)){
-						KS.f[flip_id] = TNL::Backend::ldg(SD.df(df_fullway,id,x,y,z));
-						SD.df(df_fullway,id,x,y,z) = TNL::Backend::ldg(SD.df(df_cur,id,x,y,z));
+						KS.f[flip_id] = SD.df(df_fullway,id,x,y,z);
+						SD.df(df_fullway,id,x,y,z) = SD.df(df_cur,id,x,y,z);
 					}
 				}
 				COLL::computeDensityAndVelocity(KS);

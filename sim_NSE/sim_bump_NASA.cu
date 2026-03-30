@@ -2,11 +2,12 @@
 #include <cstdio>
 #include <utility>
 
-#define USE_DFMAX3
+//#define USE_DFMAX3
+//#define OSCILLATION_ANALYSIS
 
 // As of now, enum and sync direction are specific for different models and need to be included before core!!!
-//#include "lbm3d/d3q27/defs.h"
-#include "lbm3d/d3q53/defs.h"
+#include "lbm3d/d3q27/defs.h"
+//#include "lbm3d/d3q53/defs.h"
 //#include "lbm3d/d3q343/defs.h"
 #include "lbm3d/core.h"
 
@@ -125,7 +126,7 @@ struct StateLocal : State<NSE>
 		}
 
 
-		// 3) BUMP
+		// // 3) BUMP
 		for (int px = 0; px <= nse.lat.global.x(); px++){
 		for (int py = 0; py <= nse.lat.global.y(); py++){
 		for (int pz = 0; pz <= nse.lat.global.z(); pz++){
@@ -137,7 +138,10 @@ struct StateLocal : State<NSE>
 
 		// 4) (Optional) Mark walls next to bump to performed third-array full-way bounce-back
 		// ! turn off for single-speed simulations
-		mark_next_to_wall();
+		// does not work with MPI - crashes before simulation start
+		#ifdef USE_DFMAX3
+		mark_next_to_wall_mpi();
+		#endif
 	}
 
 	bool isObject(int ix, int iy, int iz){
@@ -156,25 +160,58 @@ struct StateLocal : State<NSE>
 		return false;
 	}
 
-	void mark_next_to_wall(){
-		for (int x = NSE::LBM_KS::NoDV; x <= nse.lat.global.x()-NSE::LBM_KS::NoDV; x++){
-		for (int y = NSE::LBM_KS::NoDV; y <= nse.lat.global.y()-NSE::LBM_KS::NoDV; y++){
-		for (int z = NSE::LBM_KS::NoDV; z <= nse.lat.global.z()-NSE::LBM_KS::NoDV; z++){
-			if(nse.blocks.front().hmap(x,y,z)!=BC::GEO_FLUID){continue;}
-			bool done = false;
-			for(int dx = - NSE::LBM_KS::NoDV; dx < NSE::LBM_KS::NoDV;dx ++){
-			for(int dy = - NSE::LBM_KS::NoDV; dy < NSE::LBM_KS::NoDV;dy ++){
-			for(int dz = - NSE::LBM_KS::NoDV; dz < NSE::LBM_KS::NoDV;dz ++){
-				if(nse.blocks.front().hmap(x+dx,y+dy,z+dz) == BC::GEO_WALL){
-					nse.setMap(x,y,z,BC::GEO_NEXT_TO_WALL);
-					done = true;
+	// void mark_next_to_wall(){
+	// 	for (int x = NSE::LBM_KS::NoDV; x < nse.lat.global.x()-NSE::LBM_KS::NoDV; x++){
+	// 	for (int y = NSE::LBM_KS::NoDV; y < nse.lat.global.y()-NSE::LBM_KS::NoDV; y++){
+	// 	for (int z = NSE::LBM_KS::NoDV; z < nse.lat.global.z()-NSE::LBM_KS::NoDV; z++){
+	// 		if (!isLocalIndex(x, y, z)) {continue;}
+
+
+	// 		if(nse.blocks.front().hmap(x,y,z)!=BC::GEO_FLUID){continue;}
+	// 		bool done = false;
+	// 		for(int dx = - NSE::LBM_KS::NoDV; dx <= NSE::LBM_KS::NoDV;dx ++){
+	// 		for(int dy = - NSE::LBM_KS::NoDV; dy <= NSE::LBM_KS::NoDV;dy ++){
+	// 		for(int dz = - NSE::LBM_KS::NoDV; dz <= NSE::LBM_KS::NoDV;dz ++){
+	// 			if(nse.blocks.front().hmap(x+dx,y+dy,z+dz) == BC::GEO_WALL){
+	// 				nse.setMap(x,y,z,BC::GEO_NEXT_TO_WALL);
+	// 				done = true;
+	// 			}
+	// 		}
+	// 		if(done){break;}
+	// 		}
+	// 		if(done){break;}
+	// 		}
+	// 	}}}
+	// 	printf("Initialization of next to wall was successful");
+	// }
+
+	void mark_next_to_wall_mpi(){
+		for (auto& block : nse.blocks) {
+			for (int x = NSE::LBM_KS::NoDV; x < nse.lat.global.x()-NSE::LBM_KS::NoDV; x++){
+				// TODO: optimize
+				for (int y = NSE::LBM_KS::NoDV; y < nse.lat.global.y()-NSE::LBM_KS::NoDV; y++){
+			for (int z = NSE::LBM_KS::NoDV; z < nse.lat.global.z()-NSE::LBM_KS::NoDV; z++){
+				if (!block.isLocalIndex(x, y, z)) {continue;}
+
+
+				if(block.hmap(x,y,z)!=BC::GEO_FLUID){continue;}
+				bool done = false;
+				for(int dx = - NSE::LBM_KS::NoDV; dx <= NSE::LBM_KS::NoDV;dx ++){
+				for(int dy = - NSE::LBM_KS::NoDV; dy <= NSE::LBM_KS::NoDV;dy ++){
+				for(int dz = - NSE::LBM_KS::NoDV; dz <= NSE::LBM_KS::NoDV;dz ++){
+					if (!block.isLocalIndex(x+dx, y+dy, z+dz)) {continue;}
+					if(block.hmap(x+dx,y+dy,z+dz) == BC::GEO_WALL){
+						nse.setMap(x,y,z,BC::GEO_NEXT_TO_WALL);
+						done = true;
+					}
 				}
-			}
-			if(done){break;}
-			}
-			if(done){break;}
-			}
-		}}}
+				if(done){break;}
+				}
+				if(done){break;}
+				}
+			}}}
+		}
+		printf("Initialization of next to wall was successful");
 	}
 
 	template<typename Filter>
@@ -666,10 +703,10 @@ struct StateLocal : State<NSE>
 	{}
 };
 
-#define OSCILLATION_ANALYSIS
+
 
 template <typename NSE>
-int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2, double viscosity = 1e-4)
+int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2, double viscosity = 1e-5)
 {
 	using idx = typename NSE::TRAITS::idx;
 	using real = typename NSE::TRAITS::real;
@@ -689,7 +726,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2, doub
 	int X = floor(PHYS_LENGTH / PHYS_DL);  // width in pixels
 	int Z = floor(PHYS_DEPTH  / PHYS_DL);  // depth in pixels --- top and bottom walls NoDV px
 	real PHYS_VISCOSITY = viscosity; // viscosity as input to analyze when oscillations happen
-	real PHYS_VELOCITY = 1.;
+	real PHYS_VELOCITY = 10.;
 
 
 
@@ -746,7 +783,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2, doub
 	state.add3Dcut(X / 4, Y / 4, Z / 4, X / 2, Y / 2, Z / 2, "box");
 
 	state.cnt[PROBE1].period = 1.;
-	state.cnt[PROBE2].period = -10.;
+	state.cnt[PROBE2].period = 10.;
 
 	spdlog::info("Starting simulation with checkpointing. Wall time limit: {} seconds", state.wallTime);
 	spdlog::info("Creating checkpoints every {} seconds of wall time", state.cnt[SAVESTATE].period);
@@ -761,7 +798,17 @@ template <typename TRAITS = TraitsSP> // Change to TraitsDP for ELBM multi-speed
 void run(const std::string& adios_config, int resolution, double viscosity)
 {
 	// D3Q27
-	// using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
+	using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
+	using NSE_CONFIG = LBM_CONFIG<
+		TRAITS,
+		D3Q27_KernelStruct,
+		NSE_Data_ConstInflow_PressureGradient<TRAITS>,
+		COLL,
+		typename COLL::EQ,
+		D3Q27_STREAMING<TRAITS>,
+		D3Q27_BC_All,
+		D3Q27_MACRO_Default<TRAITS>>;
+	// using COLL = D3Q27_GENERAL_SRT<TRAITS, D3Q27_EQ_ENTROPIC2<TRAITS>>;
 	// using NSE_CONFIG = LBM_CONFIG<
 	// 	TRAITS,
 	// 	D3Q27_KernelStruct,
@@ -771,28 +818,18 @@ void run(const std::string& adios_config, int resolution, double viscosity)
 	// 	D3Q27_STREAMING<TRAITS>,
 	// 	D3Q27_BC_All,
 	// 	D3Q27_MACRO_Default<TRAITS>>;
-	// using COLL = D3Q27_GENERAL_SRT<TRAITS, D3Q27_EQ_ENTROPIC2<TRAITS>>;
-	// using NSE_CONFIG = LBM_CONFIG<
-	// 	TRAITS,
-	// 	D3Q27_KernelStruct,
-	// 	NSE_Data_DoubleParabolic<TRAITS>,
-	// 	COLL,
-	// 	typename COLL::EQ,
-	// 	D3Q27_STREAMING<TRAITS>,
-	// 	D3Q27_BC_All,
-	// 	D3Q27_MACRO_Default<TRAITS>>;
 
 	// D3Q53
-	using COLL = D3Q53_SRT<TRAITS, D3Q53_EQ<TRAITS>>;
-	using NSE_CONFIG = LBM_CONFIG<
-		TRAITS,
-		D3Q53_LOOKUP_KernelStruct,
-		NSE_Data_ConstInflow_PressureGradient<TRAITS>,
-		COLL,
-		typename COLL::EQ,
-		D3Q53_STREAMING_THIRD_ARRAY<TRAITS>,
-		D3Q53_BC_All,
-		D3Q53_MACRO_Default<TRAITS>>;
+	// using COLL = D3Q53_SRT<TRAITS, D3Q53_EQ<TRAITS>>;
+	// using NSE_CONFIG = LBM_CONFIG<
+	// 	TRAITS,
+	// 	D3Q53_LOOKUP_KernelStruct,
+	// 	NSE_Data_ConstInflow_PressureGradient<TRAITS>,
+	// 	COLL,
+	// 	typename COLL::EQ,
+	// 	D3Q53_STREAMING_THIRD_ARRAY<TRAITS>,
+	// 	D3Q53_BC_All,
+	// 	D3Q53_MACRO_Default<TRAITS>>;
 
 	// using COLL = D3Q53_ELBM<TRAITS, D3Q53_EQ<TRAITS>>;
 	// using NSE_CONFIG = LBM_CONFIG<
