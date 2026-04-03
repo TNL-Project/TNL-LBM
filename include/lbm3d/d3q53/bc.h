@@ -39,7 +39,8 @@ struct D3Q53_BC_All
 		GEO_SYM_TOP_FRONT,
 		GEO_SYM_BOTTOM_BACK,
 		GEO_SYM_BOTTOM_FRONT,
-		GEO_NEXT_TO_WALL
+		GEO_NEXT_TO_WALL,
+		LINE_DEBUG
 	};
 
 	__cuda_callable__ static bool isPeriodic(map_t mapgi)

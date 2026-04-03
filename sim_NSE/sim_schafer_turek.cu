@@ -482,10 +482,12 @@ struct StateLocal : State<NSE>
 			//fprintf(f, "");
 			fclose(f);
 		}
-		double values[nse.lat.global.z()];
+		int SIZE = nse.lat.global.z();
+		double values[SIZE];
 
-		for(int i = 0; i < nse.lat.global.z(); i++){
-			const real C_D = 2.*integrate_stress_tensor_general([this,i](int ix,int iy,int iz){ return iz==i && this->isObject(ix, iy, iz);},0)/(Uoverline*Uoverline)/(H*delta_x);
+		for(int i = 0; i < SIZE; i++){
+			const real C_D = 2.*integrate_stress_tensor_general([this,i](int ix,int iy,int iz){ return iz==i && this->isObject(ix, iy, iz);},0)
+			                 /(Uoverline*Uoverline)/(H*delta_x);
 			if(nse.rank == 0){
 				values[i] = C_D;
 			}
@@ -496,9 +498,9 @@ struct StateLocal : State<NSE>
 			const std::string dir = fmt::format("results_{}/probes", id);
 			std::string str = fmt::format("{}/probe_drag_profile", dir);
 			f = fopen(str.c_str(), "at");// always append
-			for(int i = 0; i < nse.lat.global.z(); i++){
+			for(int i = 0; i < SIZE; i++){
 				fprintf(f, "%e", values[i]);
-				if(i != nse.lat.global.z()){
+				if(i != SIZE){
 					fprintf(f, "\t");
 				}
 			}
@@ -730,18 +732,7 @@ void run(const std::string& adios_config, int resolution)
 	// 	D3Q27_MACRO_Default<TRAITS>>;
 
 	// D3Q53
-	// using COLL = D3Q53_SRT<TRAITS, D3Q53_EQ<TRAITS>>;
-	// using NSE_CONFIG = LBM_CONFIG<
-	// 	TRAITS,
-	// 	D3Q53_LOOKUP_KernelStruct,
-	// 	NSE_Data_DoubleParabolic<TRAITS>,
-	// 	COLL,
-	// 	typename COLL::EQ,
-	// 	D3Q53_STREAMING<TRAITS>,
-	// 	D3Q53_BC_All,
-	// 	D3Q53_MACRO_Default<TRAITS>>;
-
-	using COLL = D3Q53_ELBM<TRAITS, D3Q53_EQ<TRAITS>>;
+	using COLL = D3Q53_SRT<TRAITS, D3Q53_EQ<TRAITS>>;
 	using NSE_CONFIG = LBM_CONFIG<
 		TRAITS,
 		D3Q53_LOOKUP_KernelStruct,
@@ -751,6 +742,17 @@ void run(const std::string& adios_config, int resolution)
 		D3Q53_STREAMING<TRAITS>,
 		D3Q53_BC_All,
 		D3Q53_MACRO_Default<TRAITS>>;
+
+	// using COLL = D3Q53_ELBM<TRAITS, D3Q53_EQ<TRAITS>>;
+	// using NSE_CONFIG = LBM_CONFIG<
+	// 	TRAITS,
+	// 	D3Q53_LOOKUP_KernelStruct,
+	// 	NSE_Data_DoubleParabolic<TRAITS>,
+	// 	COLL,
+	// 	typename COLL::EQ,
+	// 	D3Q53_STREAMING<TRAITS>,
+	// 	D3Q53_BC_All,
+	// 	D3Q53_MACRO_Default<TRAITS>>;
 
 	sim<NSE_CONFIG>(adios_config, resolution);
 }

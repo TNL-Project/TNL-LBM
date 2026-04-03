@@ -124,12 +124,12 @@ bool State<NSE>::canCompute()
 			spdlog::warn("Failed to lock the results_{} directory. Is there another instance of the solver running?", id);
 			result = false;
 		}
-		else if (flagExists("loadstate")) {
-			result = true;
-		}
 		else if (flagExists("finished")) {
 			spdlog::info("The simulation results directory is in finished state, there is nothing to compute.");
 			result = false;
+		}
+		else if (flagExists("loadstate")) {
+			result = true;
 		}
 		else if (flagExists("terminated")) {
 			spdlog::warn("The simulation results directory is in terminated state, there is nothing to compute.");

@@ -80,13 +80,14 @@ struct StateLocal : State<NSE>
 		// }
 		// }
 		// 2) Multi-speed setup
+
+
 		nse.setBoundaryX(0, BC::GEO_INFLOW_LEFT_PRESSURE);			      // left
 		nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT_PRESSURE);			      // left
 		nse.setBoundaryX(2, BC::GEO_INFLOW_LEFT_PRESSURE);			      // left
 		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT);  // right
 		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT);  // right
 		nse.setBoundaryX(nse.lat.global.x() - 3, BC::GEO_OUTFLOW_RIGHT);  // right
-
 
 		// 2a) wall boundaries on sides
 		// nse.setBoundaryZ(0,                      BC::GEO_WALL);	 // top
@@ -133,7 +134,11 @@ struct StateLocal : State<NSE>
 			if(isObject(px,py,pz)){
 				nse.setMap(px, py, pz, BC::GEO_WALL);
 			}
+			if(isThatLine(px,py,pz)){
+				nse.setMap(px, py, pz, BC::LINE_DEBUG);
+			}
 		}}}
+
 
 
 		// 4) (Optional) Mark walls next to bump to performed third-array full-way bounce-back
@@ -160,30 +165,15 @@ struct StateLocal : State<NSE>
 		return false;
 	}
 
-	// void mark_next_to_wall(){
-	// 	for (int x = NSE::LBM_KS::NoDV; x < nse.lat.global.x()-NSE::LBM_KS::NoDV; x++){
-	// 	for (int y = NSE::LBM_KS::NoDV; y < nse.lat.global.y()-NSE::LBM_KS::NoDV; y++){
-	// 	for (int z = NSE::LBM_KS::NoDV; z < nse.lat.global.z()-NSE::LBM_KS::NoDV; z++){
-	// 		if (!isLocalIndex(x, y, z)) {continue;}
-
-
-	// 		if(nse.blocks.front().hmap(x,y,z)!=BC::GEO_FLUID){continue;}
-	// 		bool done = false;
-	// 		for(int dx = - NSE::LBM_KS::NoDV; dx <= NSE::LBM_KS::NoDV;dx ++){
-	// 		for(int dy = - NSE::LBM_KS::NoDV; dy <= NSE::LBM_KS::NoDV;dy ++){
-	// 		for(int dz = - NSE::LBM_KS::NoDV; dz <= NSE::LBM_KS::NoDV;dz ++){
-	// 			if(nse.blocks.front().hmap(x+dx,y+dy,z+dz) == BC::GEO_WALL){
-	// 				nse.setMap(x,y,z,BC::GEO_NEXT_TO_WALL);
-	// 				done = true;
-	// 			}
-	// 		}
-	// 		if(done){break;}
-	// 		}
-	// 		if(done){break;}
-	// 		}
-	// 	}}}
-	// 	printf("Initialization of next to wall was successful");
-	// }
+	bool isThatLine(int ix, int iy, int iz){
+		const double z = nse.lat.physOrigin.z() + (iz) * nse.lat.physDl;
+		const double x=0.690420848175 + 0.3*(pow(sin(3.1415926*(double)z),4));
+		const int ixneeded = floor((x-nse.lat.physOrigin.x())/nse.lat.physDl);
+		if(x == ix){
+			return true;
+		}
+		return false;
+	}
 
 	void mark_next_to_wall_mpi(){
 		for (auto& block : nse.blocks) {
@@ -519,7 +509,7 @@ struct StateLocal : State<NSE>
 	}
 
 	void dragshiftlift() {
-		const double H = bump_height; // height of bump, 0.05 in origin
+		const double H = 1; //bump_height; // taken as 1 in article !!  // height of bump, 0.05 in origin
 		const double L = 1.5; // length of bump
 		const double W = 0.5; // width of bump
 		const double Uoverline = average_inflow; // average inflow velocity
@@ -572,45 +562,192 @@ struct StateLocal : State<NSE>
 		}
 	}
 	void dragprofile(){
-		const double H = bump_height; // height of bump, 0.05 in origin
+		const double H = bump_height; // taken as 1 in article !! // height of bump, 0.05 in origin
 		//const double L = 1.5; // length of bump
 		//const double W = 0.5; // width of bump
 		const double Uoverline = average_inflow; // average inflow velocity
 		const double delta_x = (double)nse.lat.physDl;
 
+		const int SIZE = nse.lat.global.x();
 
 		if (nse.rank == 0){
 			// empty file
 			const char* iotype = (probeCountProfile == 0) ? "wt" : "at";
-			probeCountProfile += 1;
+
 			FILE* f;
 			const std::string dir = fmt::format("results_{}/probes", id);
 			mkdir_p(dir.c_str(), 0755);
 
 			// write nothing to delete them?
-			std::string str = fmt::format("{}/probe_drag_profile", dir);
+			std::string str = fmt::format("{}/probe_drag_profile_x", dir);
 			f = fopen(str.c_str(), iotype);
+
+
+			if(probeCountProfile == 0){
+				for(int ix = 0; ix < SIZE; ix++){
+					fprintf(f, "%e", nse.lat.physOrigin.x() + (ix) * nse.lat.physDl);
+					if(ix != SIZE-1){
+						fprintf(f, ",");
+					}
+				}
+				fprintf(f, "\n");
+			}
+
+
 			//fprintf(f, "");
 			fclose(f);
+			probeCountProfile += 1;
 		}
-		double values[nse.lat.global.x()];
+		double values[SIZE];
 
-		for(int i = 0; i < nse.lat.global.y(); i++){
-			real C_D = 2.*integrate_stress_tensor_general([this,i](int ix,int iy,int iz){ return iy==i && this->isObject(ix, iy, iz);},0)/(Uoverline*Uoverline)/(H*delta_x);
+		for(int ix = 0; ix < SIZE; ix++){
+			const int ixneeded = ix;
+			real C_D = 2.*integrate_stress_tensor_general([this,ixneeded](int ix,int iy,int iz){ return iz==4 && ix==ixneeded && this->isObject(ix, iy, iz);},0)
+						/(Uoverline*Uoverline)/(1.*delta_x);
 			if(nse.rank == 0){
-				values[i] = C_D;
+				values[ix] = C_D;
 			}
 		}
 
 		if (nse.rank == 0){
 			FILE* f;
 			const std::string dir = fmt::format("results_{}/probes", id);
-			std::string str = fmt::format("{}/probe_drag_profile", dir);
+			std::string str = fmt::format("{}/probe_drag_profile_x", dir);
 			f = fopen(str.c_str(), "at");// always append
-			for(int i = 0; i < nse.lat.global.y(); i++){
+			for(int i = 0; i < SIZE; i++){
 				fprintf(f, "%e", values[i]);
-				if(i != nse.lat.global.y()){
-					fprintf(f, "\t");
+				if(i != SIZE-1){
+					fprintf(f, ",");
+				}
+			}
+			fprintf(f, "\n");
+			fclose(f);
+		}
+	}
+	void dragprofile_onaline(){
+		const double H = bump_height; // taken as 1 in article !! // height of bump, 0.05 in origin
+		//const double L = 1.5; // length of bump
+		//const double W = 0.5; // width of bump
+		const double Uoverline = average_inflow; // average inflow velocity
+		const double delta_x = (double)nse.lat.physDl;
+
+		const int SIZE = nse.lat.global.z();
+
+		if (nse.rank == 0){
+			// empty file
+			const char* iotype = (probeCountProfile == 0) ? "wt" : "at";
+
+			FILE* f;
+			const std::string dir = fmt::format("results_{}/probes", id);
+			mkdir_p(dir.c_str(), 0755);
+
+			// write nothing to delete them?
+			std::string str = fmt::format("{}/probe_drag_profile_line", dir);
+			f = fopen(str.c_str(), iotype);
+
+			if(probeCountProfile == 0){
+				for(int iz = 0; iz < SIZE; iz++){
+					fprintf(f, "%e", nse.lat.physOrigin.z() + (iz) * nse.lat.physDl);
+					if(iz != SIZE-1){
+						fprintf(f, ",");
+					}
+				}
+				fprintf(f, "\n");
+			}
+
+			//fprintf(f, "");
+			fclose(f);
+			probeCountProfile += 1;
+		}
+		double values[SIZE];
+
+		for(int iz = 0; iz < SIZE; iz++){
+			const double z = nse.lat.physOrigin.z() + (iz) * nse.lat.physDl;
+			const double x=0.690420848175 + 0.3*(pow(sin(3.1415926*(double)z),4));
+			const int ixneeded = floor((x-nse.lat.physOrigin.x())/nse.lat.physDl);
+			const int izneeded = iz;
+			real C_D = 2.*integrate_stress_tensor_general([this,izneeded,ixneeded](int ix,int iy,int iz){ return ix==ixneeded && iz==izneeded && this->isObject(ix, iy, iz);},0)
+						/(Uoverline*Uoverline)/(delta_x*delta_x);
+			if(nse.rank == 0){
+				values[iz] = C_D;
+			}
+		}
+
+		if (nse.rank == 0){
+			FILE* f;
+			const std::string dir = fmt::format("results_{}/probes", id);
+			std::string str = fmt::format("{}/probe_drag_profile_line", dir);
+			f = fopen(str.c_str(), "at");// always append
+			for(int i = 0; i < SIZE; i++){
+				fprintf(f, "%e", values[i]);
+				if(i != SIZE-1){
+					fprintf(f, ",");
+				}
+			}
+			fprintf(f, "\n");
+			fclose(f);
+		}
+	}
+
+	void dragprofile_verticalprofile(){
+		const double H = bump_height; // taken as 1 in article !! // height of bump, 0.05 in origin
+		//const double L = 1.5; // length of bump
+		//const double W = 0.5; // width of bump
+		const double Uoverline = average_inflow; // average inflow velocity
+		const double delta_x = (double)nse.lat.physDl;
+
+		const int SIZE = nse.lat.global.y(); // vertical => y (this axis is swapped with z)
+
+		if (nse.rank == 0){
+			// empty file
+			const char* iotype = (probeCountProfile == 0) ? "wt" : "at";
+
+			FILE* f;
+			const std::string dir = fmt::format("results_{}/probes", id);
+			mkdir_p(dir.c_str(), 0755);
+
+			// write nothing to delete them?
+			std::string str = fmt::format("{}/probe_drag_profile_vertical", dir);
+			f = fopen(str.c_str(), iotype);
+
+			if(probeCountProfile == 0){
+				for(int iy = 0; iy < SIZE; iy++){
+					fprintf(f, "%e", nse.lat.physOrigin.y() + (iy) * nse.lat.physDl);
+					if(iy != SIZE-1){
+						fprintf(f, ",");
+					}
+				}
+				fprintf(f, "\n");
+			}
+
+			//fprintf(f, "");
+			fclose(f);
+			probeCountProfile += 1;
+		}
+		double values[SIZE];
+		const double x =1.207912207;
+		const double z=-0.125;
+		const int ixneeded = floor((x-nse.lat.physOrigin.x())/nse.lat.physDl);
+		const int izneeded = floor((z-nse.lat.physOrigin.z())/nse.lat.physDl);
+
+		for(int iy = 0; iy < SIZE; iy++){
+			const int iyneeded = iy;
+			real C_D = 2.*integrate_stress_tensor_general([this,iyneeded,ixneeded,izneeded](int ix,int iy,int iz){ return ix==ixneeded && iz==izneeded && iy==iyneeded && this->isObject(ix, iy, iz);},0)
+						/(Uoverline*Uoverline)/(delta_x*delta_x);
+			if(nse.rank == 0){
+				values[iy] = C_D;
+			}
+		}
+
+		if (nse.rank == 0){
+			FILE* f;
+			const std::string dir = fmt::format("results_{}/probes", id);
+			std::string str = fmt::format("{}/probe_drag_profile_vertical", dir);
+			f = fopen(str.c_str(), "at");// always append
+			for(int i = 0; i < SIZE; i++){
+				fprintf(f, "%e", values[i]);
+				if(i != SIZE-1){
+					fprintf(f, ",");
 				}
 			}
 			fprintf(f, "\n");
@@ -624,17 +761,23 @@ struct StateLocal : State<NSE>
 	}
 	void probe2() override {
 		dragprofile();
+		dragprofile_onaline();
+		dragprofile_verticalprofile();
   	}
 
 	[[nodiscard]] std::vector<std::string> getOutputDataNames() const override
 	{
 		// return all quantity names used in outputData
-		return {"lbm_density", "lbm_density_fluctuation", "velocity_x", "velocity_y", "velocity_z","mywall"};
+		return {"lbm_density", "lbm_density_fluctuation", "velocity_x", "velocity_y", "velocity_z","velocity_x_mean", "velocity_y_mean", "velocity_z_mean","mywall"};
 	}
 
 	void outputData(UniformDataWriter<TRAITS>& writer, const BLOCK& block, const idx3d& begin, const idx3d& end) override
 	{
-		writer.write("lbm_density", getMacroView<TRAITS>(block.hmacro, MACRO::e_rho), begin, end);
+		writer.write("lbm_density", [&](idx x, idx y, idx z) -> dreal
+			{
+				return block.hmacro(MACRO::e_rho, x, y, z);
+			},
+			begin, end);
 		writer.write(
 			"lbm_density_fluctuation",
 			[&](idx x, idx y, idx z) -> dreal
@@ -672,6 +815,33 @@ struct StateLocal : State<NSE>
 			end
 		);
 		writer.write(
+			"velocity_x_mean",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vm_x, x, y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_y_mean",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vm_y, x, y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
+			"velocity_z_mean",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_vm_z, x, y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
 			"mywall",
 			[&](idx x, idx y, idx z) -> dreal
 			{
@@ -695,6 +865,9 @@ struct StateLocal : State<NSE>
 			block.data.inflow_vz = 0;
 			block.data.inflow_g = inflow_g;
 			block.data.no1oT0 = 1./NSE::LBM_KS::T0;
+
+			// TEST
+			block.data.stat_counter++;
 		}
 	}
 
@@ -706,7 +879,7 @@ struct StateLocal : State<NSE>
 
 
 template <typename NSE>
-int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2, double viscosity = 1e-5)
+int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2, double viscosity = 1e-5, const std::string& suffix = "")
 {
 	using idx = typename NSE::TRAITS::idx;
 	using real = typename NSE::TRAITS::real;
@@ -726,7 +899,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2, doub
 	int X = floor(PHYS_LENGTH / PHYS_DL);  // width in pixels
 	int Z = floor(PHYS_DEPTH  / PHYS_DL);  // depth in pixels --- top and bottom walls NoDV px
 	real PHYS_VISCOSITY = viscosity; // viscosity as input to analyze when oscillations happen
-	real PHYS_VELOCITY = 10.;
+	real PHYS_VELOCITY = 1.;
 
 
 
@@ -739,7 +912,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2, doub
 	real LBM_VISCOSITY = PHYS_VISCOSITY * PHYS_DT / PHYS_DL /PHYS_DL;
 
 	//
-	real XSHIFT_RATIO = 0.2;
+	real XSHIFT_RATIO = 0.05;
 
 	point_t PHYS_ORIGIN = {-PHYS_LENGTH*XSHIFT_RATIO, -PHYS_DL*(2.*wallSize-1)/2., -PHYS_DEPTH};
 
@@ -757,6 +930,10 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2, doub
 	const std::string state_id = fmt::format("sim_bump_NASA_res{:02d}_np{:03d}", RESOLUTION, TNL::MPI::GetSize(MPI_COMM_WORLD));
 	#endif
 	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat,adios_config);
+	if (! state.canCompute())
+		return 0;
+
+
 	state.wallTime = 12*3600;
 
 	// problem parameters
@@ -779,11 +956,11 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2, doub
 	state.add2Dcut_Z(Z / 2, "cutsZ/cut_Z");
 
 	state.cnt[OUT3D].period = 10.;
-	state.cnt[OUT3DCUT].period = 100.;
-	state.add3Dcut(X / 4, Y / 4, Z / 4, X / 2, Y / 2, Z / 2, "box");
+	//state.cnt[OUT3DCUT].period = 100.;
+	//state.add3Dcut(X / 4, Y / 4, Z / 4, X / 2, Y / 2, Z / 2, "box");
 
 	state.cnt[PROBE1].period = 1.;
-	state.cnt[PROBE2].period = 10.;
+	state.cnt[PROBE2].period = 1.;
 
 	spdlog::info("Starting simulation with checkpointing. Wall time limit: {} seconds", state.wallTime);
 	spdlog::info("Creating checkpoints every {} seconds of wall time", state.cnt[SAVESTATE].period);
@@ -807,17 +984,17 @@ void run(const std::string& adios_config, int resolution, double viscosity)
 		typename COLL::EQ,
 		D3Q27_STREAMING<TRAITS>,
 		D3Q27_BC_All,
-		D3Q27_MACRO_Default<TRAITS>>;
-	// using COLL = D3Q27_GENERAL_SRT<TRAITS, D3Q27_EQ_ENTROPIC2<TRAITS>>;
+		D3Q27_MACRO_Mean<TRAITS>>;
+	//using COLL = ;
 	// using NSE_CONFIG = LBM_CONFIG<
 	// 	TRAITS,
 	// 	D3Q27_KernelStruct,
 	// 	NSE_Data_ConstInflow_PressureGradient<TRAITS>,
-	// 	COLL,
-	// 	typename COLL::EQ,
+	// 	D3Q27_GENERAL_SRT<TRAITS, D3Q27_EQ_ENTROPIC2<TRAITS>>,
+	// 	D3Q27_EQ_ENTROPIC2<TRAITS>,
 	// 	D3Q27_STREAMING<TRAITS>,
 	// 	D3Q27_BC_All,
-	// 	D3Q27_MACRO_Default<TRAITS>>;
+	// 	D3Q27_MACRO_Mean<TRAITS>>;
 
 	// D3Q53
 	// using COLL = D3Q53_SRT<TRAITS, D3Q53_EQ<TRAITS>>;
@@ -829,7 +1006,7 @@ void run(const std::string& adios_config, int resolution, double viscosity)
 	// 	typename COLL::EQ,
 	// 	D3Q53_STREAMING_THIRD_ARRAY<TRAITS>,
 	// 	D3Q53_BC_All,
-	// 	D3Q53_MACRO_Default<TRAITS>>;
+	// 	D3Q53_MACRO_Mean<TRAITS>>;
 
 	// using COLL = D3Q53_ELBM<TRAITS, D3Q53_EQ<TRAITS>>;
 	// using NSE_CONFIG = LBM_CONFIG<
@@ -840,7 +1017,7 @@ void run(const std::string& adios_config, int resolution, double viscosity)
 	// 	typename COLL::EQ,
 	// 	D3Q53_STREAMING_THIRD_ARRAY<TRAITS>,
 	// 	D3Q53_BC_All,
-	// 	D3Q53_MACRO_Default<TRAITS>>;
+	// 	D3Q53_MACRO_Mean<TRAITS>>;
 
 
 	sim<NSE_CONFIG>(adios_config,resolution,viscosity);
