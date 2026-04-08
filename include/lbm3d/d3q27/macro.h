@@ -101,6 +101,7 @@ struct D3Q27_MACRO_Mean : D3Q27_MACRO_Base<TRAITS>
 		e_vm_x,
 		e_vm_y,
 		e_vm_z,
+		e_rhom, // TODO
 		// e_vm2_xx,
 		// e_vm2_yy,
 		// e_vm2_zz,
@@ -122,6 +123,15 @@ struct D3Q27_MACRO_Mean : D3Q27_MACRO_Base<TRAITS>
 		SD.macro(e_vy, x, y, z) = KS.vy;
 		SD.macro(e_vz, x, y, z) = KS.vz;
 
+
+		// For reseting at some iteration, when stat_counter is 0 -> reset to 0
+		if(SD.stat_counter == 0){
+			SD.macro(e_rhom, x, y, z) = 0.;
+			SD.macro(e_vm_x, x, y, z) = 0.;
+			SD.macro(e_vm_y, x, y, z) = 0.;
+			SD.macro(e_vm_z, x, y, z) = 0.;
+		}
+
 		// Mean quantities and (co)variance
 
 		// We use a simple moving average algorithm in the form of
@@ -136,6 +146,10 @@ struct D3Q27_MACRO_Mean : D3Q27_MACRO_Base<TRAITS>
 		const dreal vm_x_new = vm_x_old + delta_x * denominator;
 		const dreal vm_y_new = vm_y_old + delta_y * denominator;
 		const dreal vm_z_new = vm_z_old + delta_z * denominator;
+
+		const dreal rhom_old = SD.macro(e_rhom,x,y,z);
+		const dreal delta_rho = KS.rho - rhom_old;
+		const dreal rhom_new = rhom_old + delta_rho * denominator;
 
 		// We use a Welford-like online algorithm for computing the covariance
 		// based on https://doi.org/10.1145/3221269.3223036
@@ -161,6 +175,7 @@ struct D3Q27_MACRO_Mean : D3Q27_MACRO_Base<TRAITS>
 		SD.macro(e_vm_x, x, y, z) = vm_x_new;
 		SD.macro(e_vm_y, x, y, z) = vm_y_new;
 		SD.macro(e_vm_z, x, y, z) = vm_z_new;
+		SD.macro(e_rhom, x, y, z) = rhom_new;
 		// SD.macro(e_vm2_xx, x, y, z) = vm2_xx_new;
 		// SD.macro(e_vm2_yy, x, y, z) = vm2_yy_new;
 		// SD.macro(e_vm2_zz, x, y, z) = vm2_zz_new;

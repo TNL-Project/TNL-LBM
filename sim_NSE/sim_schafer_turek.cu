@@ -5,8 +5,8 @@
 //#define USE_FORCING
 
 // As of now, enum and sync direction are specific for different models and need to be included before core!!!
-//#include "lbm3d/d3q27/defs.h"
-#include "lbm3d/d3q53/defs.h"
+#include "lbm3d/d3q27/defs.h"
+// #include "lbm3d/d3q53/defs.h"
 //#include "lbm3d/d3q343/defs.h"
 #include "lbm3d/core.h"
 
@@ -131,7 +131,7 @@ struct StateLocal : State<NSE>
 		for (int x = offset.x() + 1; x < offset.x() + local.x() - 1; x++) {
 		for (int y = offset.y() + 1; y < offset.y() + local.y() - 1; y++) {
 		for (int z = offset.z() + 1; z < offset.z() + local.z() - 1; z++) {
-			if(block.hmap(x, y, z) == BC::GEO_WALL && filter(x, y, z)){
+			if(filter(x, y, z)){
 				// N_1 = (1,0,0)
 		 		if(BC::isFluid(block.hmap(x+1, y, z))){
 					const double rho_lbm = (double)block.hmacro(MACRO::e_rho,x+1,y,z);
@@ -254,7 +254,7 @@ struct StateLocal : State<NSE>
 		for (int x = offset.x() + 1; x < offset.x() + local.x() - 1; x++) {
 		for (int y = offset.y() + 1; y < offset.y() + local.y() - 1; y++) {
 		for (int z = offset.z() + 1; z < offset.z() + local.z() - 1; z++) {
-			if(block.hmap(x, y, z) == BC::GEO_WALL && filter(x, y, z)){
+			if(filter(x, y, z)){
 				// N_1 = (1,0,0)
 		 		if(BC::isFluid(block.hmap(x+1, y, z))){
 					const double rho_lbm = (double)block.hmacro(MACRO::e_rho,x+1,y,z);
@@ -327,7 +327,7 @@ struct StateLocal : State<NSE>
 		for (int x = offset.x() + 1; x < offset.x() + local.x() - 1; x++) {
 		for (int y = offset.y() + 1; y < offset.y() + local.y() - 1; y++) {
 		for (int z = offset.z() + 1; z < offset.z() + local.z() - 1; z++) {
-			if(block.hmap(x, y, z) == BC::GEO_WALL && filter(x, y, z)){
+			if(filter(x, y, z)){
 				// N_1 = (1,0,0)
 		 		if(BC::isFluid(block.hmap(x+1, y, z))){
 					const double rho_lbm = (double)block.hmacro(MACRO::e_rho,x+1,y,z);
@@ -468,40 +468,111 @@ struct StateLocal : State<NSE>
 		const double delta_x = (double)nse.lat.physDl;
 
 
+		int SIZE = nse.lat.global.z();
+
 		if (nse.rank == 0){
 			// empty file
 			const char* iotype = (probeCountProfile == 0) ? "wt" : "at";
-			probeCountProfile += 1;
 			FILE* f;
 			const std::string dir = fmt::format("results_{}/probes", id);
 			mkdir_p(dir.c_str(), 0755);
 
+
+
 			// write nothing to delete them?
+			// C_D
 			std::string str = fmt::format("{}/probe_drag_profile", dir);
 			f = fopen(str.c_str(), iotype);
-			//fprintf(f, "");
+			if(probeCountProfile == 0){
+				for(int iz = 0; iz < SIZE; iz++){
+					fprintf(f, "%e", nse.lat.physOrigin.z() + (iz) * nse.lat.physDl);
+					if(iz != SIZE-1){
+						fprintf(f, ",");
+					}
+				}
+				fprintf(f, "\n");
+			}
 			fclose(f);
+			// C_DP
+			str = fmt::format("{}/probe_drag_profile_cdp", dir);
+			f = fopen(str.c_str(), iotype);
+			if(probeCountProfile == 0){
+				for(int iz = 0; iz < SIZE; iz++){
+					fprintf(f, "%e", nse.lat.physOrigin.z() + (iz) * nse.lat.physDl);
+					if(iz != SIZE-1){
+						fprintf(f, ",");
+					}
+				}
+				fprintf(f, "\n");
+			}
+			fclose(f);
+			// C_Dnu
+			str = fmt::format("{}/probe_drag_profile_cdnu", dir);
+			f = fopen(str.c_str(), iotype);
+			if(probeCountProfile == 0){
+				for(int iz = 0; iz < SIZE; iz++){
+					fprintf(f, "%e", nse.lat.physOrigin.z() + (iz) * nse.lat.physDl);
+					if(iz != SIZE-1){
+						fprintf(f, ",");
+					}
+				}
+				fprintf(f, "\n");
+			}
+			fclose(f);
+			probeCountProfile += 1;
 		}
-		int SIZE = nse.lat.global.z();
-		double values[SIZE];
 
-		for(int i = 0; i < SIZE; i++){
-			const real C_D = 2.*integrate_stress_tensor_general([this,i](int ix,int iy,int iz){ return iz==i && this->isObject(ix, iy, iz);},0)
+		double values_cd[SIZE];
+		double values_cdP[SIZE];
+		double values_cdnu[SIZE];
+
+		for(int iz = 0; iz < SIZE; iz++){
+			const int izneeded = iz;
+			const real C_D = 2.*integrate_stress_tensor_general([this,izneeded](int ix,int iy,int iz){ return iz==izneeded && this->isObject(ix, iy, iz);},0)
+			                 /(Uoverline*Uoverline)/(H*delta_x);
+			const real C_DP = 2.*integrate_stress_tensor_general_only_pressure([this,izneeded](int ix,int iy,int iz){ return iz==izneeded && this->isObject(ix, iy, iz);},0)
+			                 /(Uoverline*Uoverline)/(H*delta_x);
+			const real C_Dnu = 2.*integrate_stress_tensor_general_only_viscous([this,izneeded](int ix,int iy,int iz){ return iz==izneeded && this->isObject(ix, iy, iz);},0)
 			                 /(Uoverline*Uoverline)/(H*delta_x);
 			if(nse.rank == 0){
-				values[i] = C_D;
+				values_cd[iz] = C_D;
+				values_cdP[iz] = C_DP;
+				values_cdnu[iz] = C_Dnu;
 			}
 		}
 
 		if (nse.rank == 0){
 			FILE* f;
 			const std::string dir = fmt::format("results_{}/probes", id);
+			//
 			std::string str = fmt::format("{}/probe_drag_profile", dir);
 			f = fopen(str.c_str(), "at");// always append
-			for(int i = 0; i < SIZE; i++){
-				fprintf(f, "%e", values[i]);
-				if(i != SIZE){
-					fprintf(f, "\t");
+			for(int iz = 0; iz < SIZE; iz++){
+				fprintf(f, "%e", values_cd[iz]);
+				if(iz != SIZE-1){
+					fprintf(f, ",");
+				}
+			}
+			fprintf(f, "\n");
+			fclose(f);
+			//
+			str = fmt::format("{}/probe_drag_profile_cdp", dir);
+			f = fopen(str.c_str(), "at");// always append
+			for(int iz = 0; iz < SIZE; iz++){
+				fprintf(f, "%e", values_cdP[iz]);
+				if(iz != SIZE-1){
+					fprintf(f, ",");
+				}
+			}
+			fprintf(f, "\n");
+			fclose(f);
+			//
+			str = fmt::format("{}/probe_drag_profile_cdnu", dir);
+			f = fopen(str.c_str(), "at");// always append
+			for(int iz = 0; iz < SIZE; iz++){
+				fprintf(f, "%e", values_cdnu[iz]);
+				if(iz != SIZE-1){
+					fprintf(f, ",");
 				}
 			}
 			fprintf(f, "\n");
@@ -643,6 +714,9 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	const std::string state_id = fmt::format("sim_schafer_turek_res{:02d}_np{:03d}", RESOLUTION, TNL::MPI::GetSize(MPI_COMM_WORLD));
 	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, adios_config);
 
+	if (! state.canCompute())
+		return 0;
+
 
 	std::cout << "Reynolds number: " << PHYS_VELOCITY*0.05/PHYS_VISCOSITY << std::endl;
 
@@ -669,7 +743,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	//state.add3Dcut(X / 4, Y / 4, Z / 4, X / 2, Y / 2, Z / 2, "box");
 
 	state.cnt[PROBE1].period = 1.;
-	state.cnt[PROBE2].period = 10.;
+	state.cnt[PROBE2].period = 1.;
 
 	state.updateKernelData();
 	state.updateKernelVelocities();
@@ -694,7 +768,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	return 0;
 }
 
-template <typename TRAITS = TraitsDP>
+template <typename TRAITS = TraitsSP>
 void run(const std::string& adios_config, int resolution)
 {
 	// D3Q27
@@ -709,16 +783,16 @@ void run(const std::string& adios_config, int resolution)
 	// 	D3Q27_BC_All,
 	// 	D3Q27_MACRO_Default<TRAITS>>;
 	// D3Q27
-	// using COLL = D3Q27_GENERAL_SRT<TRAITS, D3Q27_EQ_ENTROPIC2<TRAITS>>;
-	// using NSE_CONFIG = LBM_CONFIG<
-	// 	TRAITS,
-	// 	D3Q27_KernelStruct,
-	// 	NSE_Data_DoubleParabolic<TRAITS>,
-	// 	COLL,
-	// 	typename COLL::EQ,
-	// 	D3Q27_STREAMING<TRAITS>,
-	// 	D3Q27_BC_All,
-	// 	D3Q27_MACRO_Default<TRAITS>>;
+	using COLL = D3Q27_GENERAL_SRT<TRAITS, D3Q27_EQ_ENTROPIC2<TRAITS>>;
+	using NSE_CONFIG = LBM_CONFIG<
+		TRAITS,
+		D3Q27_KernelStruct,
+		NSE_Data_DoubleParabolic<TRAITS>,
+		COLL,
+		typename COLL::EQ,
+		D3Q27_STREAMING<TRAITS>,
+		D3Q27_BC_All,
+		D3Q27_MACRO_Default<TRAITS>>;
 
 	// using COLL = D3Q27_SRT<TRAITS, D3Q27_EQ_ENTROPIC<TRAITS>>;
 	// using NSE_CONFIG = LBM_CONFIG<
@@ -732,16 +806,16 @@ void run(const std::string& adios_config, int resolution)
 	// 	D3Q27_MACRO_Default<TRAITS>>;
 
 	// D3Q53
-	using COLL = D3Q53_SRT<TRAITS, D3Q53_EQ<TRAITS>>;
-	using NSE_CONFIG = LBM_CONFIG<
-		TRAITS,
-		D3Q53_LOOKUP_KernelStruct,
-		NSE_Data_DoubleParabolic<TRAITS>,
-		COLL,
-		typename COLL::EQ,
-		D3Q53_STREAMING<TRAITS>,
-		D3Q53_BC_All,
-		D3Q53_MACRO_Default<TRAITS>>;
+	// using COLL = D3Q53_SRT<TRAITS, D3Q53_EQ<TRAITS>>;
+	// using NSE_CONFIG = LBM_CONFIG<
+	// 	TRAITS,
+	// 	D3Q53_LOOKUP_KernelStruct,
+	// 	NSE_Data_DoubleParabolic<TRAITS>,
+	// 	COLL,
+	// 	typename COLL::EQ,
+	// 	D3Q53_STREAMING<TRAITS>,
+	// 	D3Q53_BC_All,
+	// 	D3Q53_MACRO_Default<TRAITS>>;
 
 	// using COLL = D3Q53_ELBM<TRAITS, D3Q53_EQ<TRAITS>>;
 	// using NSE_CONFIG = LBM_CONFIG<

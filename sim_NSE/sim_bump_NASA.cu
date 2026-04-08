@@ -2,12 +2,13 @@
 #include <cstdio>
 #include <utility>
 
-//#define USE_DFMAX3
+// #define USE_DFMAX3
 //#define OSCILLATION_ANALYSIS
+#define STRESS_TENSOR_FROM_MEAN
 
 // As of now, enum and sync direction are specific for different models and need to be included before core!!!
-#include "lbm3d/d3q27/defs.h"
-//#include "lbm3d/d3q53/defs.h"
+// #include "lbm3d/d3q27/defs.h"
+#include "lbm3d/d3q53/defs.h"
 //#include "lbm3d/d3q343/defs.h"
 #include "lbm3d/core.h"
 
@@ -36,7 +37,10 @@ struct StateLocal : State<NSE>
 	real inflow_g = 0;
 	real bump_height = 0.05;
 	int probeCount = 0;
-	int probeCountProfile = 0;
+	int probeCountProfile1 = 0;
+	int probeCountProfile2 = 0;
+	int probeCountProfile3 = 0;
+	int avg_start_iteration = 0;
 
 	// Refernce values for drag and lift
 	double H,L,W; // bump dimensions
@@ -53,7 +57,10 @@ struct StateLocal : State<NSE>
 		checkpoint.saveLoadAttribute("inflow_g", inflow_g);
 		checkpoint.saveLoadAttribute("bump_height", bump_height);
 		checkpoint.saveLoadAttribute("probeCount",probeCount);
-		checkpoint.saveLoadAttribute("probeCountProfile",probeCountProfile);
+		checkpoint.saveLoadAttribute("probeCountProfile1",probeCountProfile1);
+		checkpoint.saveLoadAttribute("probeCountProfile2",probeCountProfile2);
+		checkpoint.saveLoadAttribute("probeCountProfile3",probeCountProfile3);
+		checkpoint.saveLoadAttribute("avg_start_iteration",avg_start_iteration);
 
 		if (mode == adios2::Mode::Read)
 			spdlog::info("Checkpoint loaded local state (mode: Read)");
@@ -85,9 +92,9 @@ struct StateLocal : State<NSE>
 		nse.setBoundaryX(0, BC::GEO_INFLOW_LEFT_PRESSURE);			      // left
 		nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT_PRESSURE);			      // left
 		nse.setBoundaryX(2, BC::GEO_INFLOW_LEFT_PRESSURE);			      // left
-		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT);  // right
-		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT);  // right
-		nse.setBoundaryX(nse.lat.global.x() - 3, BC::GEO_OUTFLOW_RIGHT);  // right
+		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT_INTERP);  // right
+		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT_INTERP);  // right
+		nse.setBoundaryX(nse.lat.global.x() - 3, BC::GEO_OUTFLOW_RIGHT_INTERP);  // right
 
 		// 2a) wall boundaries on sides
 		// nse.setBoundaryZ(0,                      BC::GEO_WALL);	 // top
@@ -134,10 +141,11 @@ struct StateLocal : State<NSE>
 			if(isObject(px,py,pz)){
 				nse.setMap(px, py, pz, BC::GEO_WALL);
 			}
-			if(isThatLine(px,py,pz)){
-				nse.setMap(px, py, pz, BC::LINE_DEBUG);
-			}
+			//if(isThatLine(px,py,pz)){
+			//	nse.setMap(px, py, pz, BC::LINE_DEBUG);
+			//}
 		}}}
+
 
 
 
@@ -167,9 +175,9 @@ struct StateLocal : State<NSE>
 
 	bool isThatLine(int ix, int iy, int iz){
 		const double z = nse.lat.physOrigin.z() + (iz) * nse.lat.physDl;
-		const double x=0.690420848175 + 0.3*(pow(sin(3.1415926*(double)z),4));
+		const double x = 0.690420848175 + 0.3*(pow(sin(PI*z),4));
 		const int ixneeded = floor((x-nse.lat.physOrigin.x())/nse.lat.physDl);
-		if(x == ix){
+		if(ixneeded == ix){
 			return true;
 		}
 		return false;
@@ -218,7 +226,11 @@ struct StateLocal : State<NSE>
 		const double T0 = NSE::LBM_KS::T0;
 		real local_drag = 0;
 		// precalculate which macro to use and in which direction to add pressure
+		#ifdef STRESS_TENSOR_FROM_MEAN
+		const int dirMacro = (dir==0) ? MACRO::e_vm_x : (dir==1) ? MACRO::e_vm_y : MACRO::e_vm_z;
+		#else
 		const int dirMacro = (dir==0) ? MACRO::e_vx : (dir==1) ? MACRO::e_vy : MACRO::e_vz;
+		#endif
 		const int dirx = int(dir==0);
 		const int diry = int(dir==1);
 		const int dirz = int(dir==2);
@@ -231,10 +243,14 @@ struct StateLocal : State<NSE>
 		for (int x = offset.x() + 1; x < offset.x() + local.x() - 1; x++) {
 		for (int y = offset.y() + 1; y < offset.y() + local.y() - 1; y++) {
 		for (int z = offset.z() + 1; z < offset.z() + local.z() - 1; z++) {
-			if(block.hmap(x, y, z) == BC::GEO_WALL && filter(x, y, z)){
+			if(filter(x, y, z)){//block.hmap(x, y, z) == BC::GEO_WALL && filter(x, y, z)
 				// N_1 = (1,0,0)
 		 		if(BC::isFluid(block.hmap(x+1, y, z))){
+					#ifdef STRESS_TENSOR_FROM_MEAN
+					const double rho_lbm = (double)block.hmacro(MACRO::e_rhom,x+1,y,z);
+					#else
 					const double rho_lbm = (double)block.hmacro(MACRO::e_rho,x+1,y,z);
+					#endif
 					const double v = (double)nse.lat.lbm2physVelocity(block.hmacro(dirMacro,x+1,y,z));
 					const double pressure =   nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
 					// pressure
@@ -249,7 +265,11 @@ struct StateLocal : State<NSE>
 				}
 				// N_2 = (-1,0,0)
 		 		if(BC::isFluid(block.hmap(x-1, y, z))){
+					#ifdef STRESS_TENSOR_FROM_MEAN
+					const double rho_lbm = (double)block.hmacro(MACRO::e_rhom,x-1,y,z);
+					#else
 					const double rho_lbm = (double)block.hmacro(MACRO::e_rho,x-1,y,z);
+					#endif
 					const double v = (double)nse.lat.lbm2physVelocity(block.hmacro(dirMacro,x-1,y,z));
 					const double pressure = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
 					// pressure
@@ -264,7 +284,11 @@ struct StateLocal : State<NSE>
 				}
 				// N_3 = (0,1,0)
 		 		if(BC::isFluid(block.hmap(x, y+1, z))){
+					#ifdef STRESS_TENSOR_FROM_MEAN
+					const double rho_lbm = (double)block.hmacro(MACRO::e_rhom,x,y+1,z);
+					#else
 					const double rho_lbm = (double)block.hmacro(MACRO::e_rho,x,y+1,z);
+					#endif
 					const double v = (double)nse.lat.lbm2physVelocity(block.hmacro(dirMacro,x,y+1,z));
 					const double pressure = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
 					// pressure
@@ -279,7 +303,11 @@ struct StateLocal : State<NSE>
 				}
 				// N_4 = (0,-1,0)
 		 		if(BC::isFluid(block.hmap(x, y-1, z))){
+					#ifdef STRESS_TENSOR_FROM_MEAN
+					const double rho_lbm = (double)block.hmacro(MACRO::e_rhom,x,y-1,z);
+					#else
 					const double rho_lbm = (double)block.hmacro(MACRO::e_rho,x,y-1,z);
+					#endif
 					const double v = (double)nse.lat.lbm2physVelocity(block.hmacro(dirMacro,x,y-1,z));
 					const double pressure = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
 					// pressure
@@ -294,7 +322,11 @@ struct StateLocal : State<NSE>
 				}
 				// N_5 = (0,0,1)
 		 		if(BC::isFluid(block.hmap(x, y-1, z+1))){
+					#ifdef STRESS_TENSOR_FROM_MEAN
+					const double rho_lbm = (double)block.hmacro(MACRO::e_rhom,x,y,z+1);
+					#else
 					const double rho_lbm = (double)block.hmacro(MACRO::e_rho,x,y,z+1);
+					#endif
 					const double v = (double)nse.lat.lbm2physVelocity(block.hmacro(dirMacro,x,y,z+1));
 					const double pressure = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
 					// pressure
@@ -309,7 +341,11 @@ struct StateLocal : State<NSE>
 				}
 				// N_6 = (0,0,-1)
 		 		if(block.hmap(x, y, z-1) == BC::GEO_FLUID){
+					#ifdef STRESS_TENSOR_FROM_MEAN
+					const double rho_lbm = (double)block.hmacro(MACRO::e_rhom,x,y,z-1);
+					#else
 					const double rho_lbm = (double)block.hmacro(MACRO::e_rho,x,y,z-1);
+					#endif
 					const double v = (double)nse.lat.lbm2physVelocity(block.hmacro(dirMacro,x,y,z-1));
 					const double pressure = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
 					// pressure
@@ -341,7 +377,11 @@ struct StateLocal : State<NSE>
 		const double T0 = NSE::LBM_KS::T0;
 		real local_drag = 0;
 		// precalculate which macro to use and in which direction to add pressure
+		#ifdef STRESS_TENSOR_FROM_MEAN
+		const int dirMacro = (dir==0) ? MACRO::e_vm_x : (dir==1) ? MACRO::e_vm_y : MACRO::e_vm_z;
+		#else
 		const int dirMacro = (dir==0) ? MACRO::e_vx : (dir==1) ? MACRO::e_vy : MACRO::e_vz;
+		#endif
 		const int dirx = int(dir==0);
 		const int diry = int(dir==1);
 		const int dirz = int(dir==2);
@@ -354,45 +394,69 @@ struct StateLocal : State<NSE>
 		for (int x = offset.x() + 1; x < offset.x() + local.x() - 1; x++) {
 		for (int y = offset.y() + 1; y < offset.y() + local.y() - 1; y++) {
 		for (int z = offset.z() + 1; z < offset.z() + local.z() - 1; z++) {
-			if(block.hmap(x, y, z) == BC::GEO_WALL && filter(x, y, z)){
+			if(filter(x, y, z)){
 				// N_1 = (1,0,0)
 		 		if(BC::isFluid(block.hmap(x+1, y, z))){
+					#ifdef STRESS_TENSOR_FROM_MEAN
+					const double rho_lbm = (double)block.hmacro(MACRO::e_rhom,x+1,y,z);
+					#else
 					const double rho_lbm = (double)block.hmacro(MACRO::e_rho,x+1,y,z);
+					#endif
 					const double pressure =   nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
 					// pressure
 					local_drag -= dirx*pressure;
 				}
 				// N_2 = (-1,0,0)
 		 		if(BC::isFluid(block.hmap(x-1, y, z))){
+					#ifdef STRESS_TENSOR_FROM_MEAN
+					const double rho_lbm = (double)block.hmacro(MACRO::e_rhom,x-1,y,z);
+					#else
 					const double rho_lbm = (double)block.hmacro(MACRO::e_rho,x-1,y,z);
+					#endif
 					const double pressure = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
 					// pressure
 					local_drag += dirx*pressure;
 				}
 				// N_3 = (0,1,0)
 		 		if(BC::isFluid(block.hmap(x, y+1, z))){
+					#ifdef STRESS_TENSOR_FROM_MEAN
+					const double rho_lbm = (double)block.hmacro(MACRO::e_rhom,x,y+1,z);
+					#else
 					const double rho_lbm = (double)block.hmacro(MACRO::e_rho,x,y+1,z);
+					#endif
 					const double pressure = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
 					// pressure
 					local_drag -= diry*pressure;
 				}
 				// N_4 = (0,-1,0)
 		 		if(BC::isFluid(block.hmap(x, y-1, z))){
+					#ifdef STRESS_TENSOR_FROM_MEAN
+					const double rho_lbm = (double)block.hmacro(MACRO::e_rhom,x,y-1,z);
+					#else
 					const double rho_lbm = (double)block.hmacro(MACRO::e_rho,x,y-1,z);
+					#endif
 					const double pressure = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
 					// pressure
 					local_drag += diry*pressure;
 				}
 				// N_5 = (0,0,1)
 		 		if(BC::isFluid(block.hmap(x, y-1, z+1))){
+					#ifdef STRESS_TENSOR_FROM_MEAN
+					const double rho_lbm = (double)block.hmacro(MACRO::e_rhom,x,y,z+1);
+					#else
 					const double rho_lbm = (double)block.hmacro(MACRO::e_rho,x,y,z+1);
+					#endif
 					const double pressure = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
 					// pressure
 					local_drag -= dirz*pressure;
 				}
 				// N_6 = (0,0,-1)
 		 		if(block.hmap(x, y, z-1) == BC::GEO_FLUID){
+					#ifdef STRESS_TENSOR_FROM_MEAN
+					const double rho_lbm = (double)block.hmacro(MACRO::e_rhom,x,y,z-1);
+					#else
 					const double rho_lbm = (double)block.hmacro(MACRO::e_rho,x,y,z-1);
+					#endif
 					const double pressure = nse.lat.lbm2physVelocity(nse.lat.lbm2physVelocity(T0*(rho_lbm-1)));
 					// pressure
 					local_drag += dirz*pressure;
@@ -428,7 +492,7 @@ struct StateLocal : State<NSE>
 		for (int x = offset.x() + 1; x < offset.x() + local.x() - 1; x++) {
 		for (int y = offset.y() + 1; y < offset.y() + local.y() - 1; y++) {
 		for (int z = offset.z() + 1; z < offset.z() + local.z() - 1; z++) {
-			if(block.hmap(x, y, z) == BC::GEO_WALL && filter(x, y, z)){
+			if(filter(x, y, z)){
 				// N_1 = (1,0,0)
 		 		if(BC::isFluid(block.hmap(x+1, y, z))){
 					const double rho_lbm = (double)block.hmacro(MACRO::e_rho,x+1,y,z);
@@ -561,10 +625,8 @@ struct StateLocal : State<NSE>
 			);
 		}
 	}
+
 	void dragprofile(){
-		const double H = bump_height; // taken as 1 in article !! // height of bump, 0.05 in origin
-		//const double L = 1.5; // length of bump
-		//const double W = 0.5; // width of bump
 		const double Uoverline = average_inflow; // average inflow velocity
 		const double delta_x = (double)nse.lat.physDl;
 
@@ -572,18 +634,16 @@ struct StateLocal : State<NSE>
 
 		if (nse.rank == 0){
 			// empty file
-			const char* iotype = (probeCountProfile == 0) ? "wt" : "at";
+			const char* iotype = (probeCountProfile1 == 0) ? "wt" : "at";
 
 			FILE* f;
 			const std::string dir = fmt::format("results_{}/probes", id);
 			mkdir_p(dir.c_str(), 0755);
 
 			// write nothing to delete them?
-			std::string str = fmt::format("{}/probe_drag_profile_x", dir);
+			std::string str = fmt::format("{}/probe_drag_profile_x_cd", dir);
 			f = fopen(str.c_str(), iotype);
-
-
-			if(probeCountProfile == 0){
+			if(probeCountProfile1 == 0){
 				for(int ix = 0; ix < SIZE; ix++){
 					fprintf(f, "%e", nse.lat.physOrigin.x() + (ix) * nse.lat.physDl);
 					if(ix != SIZE-1){
@@ -592,30 +652,84 @@ struct StateLocal : State<NSE>
 				}
 				fprintf(f, "\n");
 			}
-
-
-			//fprintf(f, "");
 			fclose(f);
-			probeCountProfile += 1;
+			// CdP
+			str = fmt::format("{}/probe_drag_profile_x_cdP", dir);
+			f = fopen(str.c_str(), iotype);
+			if(probeCountProfile1 == 0){
+				for(int ix = 0; ix < SIZE; ix++){
+					fprintf(f, "%e", nse.lat.physOrigin.x() + (ix) * nse.lat.physDl);
+					if(ix != SIZE-1){
+						fprintf(f, ",");
+					}
+				}
+				fprintf(f, "\n");
+			}
+			fclose(f);
+			// Cdnu
+			str = fmt::format("{}/probe_drag_profile_x_cdnu", dir);
+			f = fopen(str.c_str(), iotype);
+			if(probeCountProfile1 == 0){
+				for(int ix = 0; ix < SIZE; ix++){
+					fprintf(f, "%e", nse.lat.physOrigin.x() + (ix) * nse.lat.physDl);
+					if(ix != SIZE-1){
+						fprintf(f, ",");
+					}
+				}
+				fprintf(f, "\n");
+			}
+			fclose(f);
+			probeCountProfile1 += 1;
 		}
-		double values[SIZE];
+		double values_cd[SIZE];
+		double values_cdP[SIZE];
+		double values_cdnu[SIZE];
 
 		for(int ix = 0; ix < SIZE; ix++){
 			const int ixneeded = ix;
-			real C_D = 2.*integrate_stress_tensor_general([this,ixneeded](int ix,int iy,int iz){ return iz==4 && ix==ixneeded && this->isObject(ix, iy, iz);},0)
+			const real C_D = 2.*integrate_stress_tensor_general([this,ixneeded](int ix,int iy,int iz){ return ix==ixneeded && this->isObject(ix, iy, iz);},0)
 						/(Uoverline*Uoverline)/(1.*delta_x);
+			const real C_DP = 2.*integrate_stress_tensor_general_only_pressure([this,ixneeded](int ix,int iy,int iz){ return ix==ixneeded && this->isObject(ix, iy, iz);},0)
+			                 /(Uoverline*Uoverline)/(1.*delta_x);
+			const real C_Dnu = 2.*integrate_stress_tensor_general_only_viscous([this,ixneeded](int ix,int iy,int iz){ return ix==ixneeded && this->isObject(ix, iy, iz);},0)
+			                 /(Uoverline*Uoverline)/(1.*delta_x);
 			if(nse.rank == 0){
-				values[ix] = C_D;
+				values_cd[ix] = C_D;
+				values_cdP[ix] = C_DP;
+				values_cdnu[ix] = C_Dnu;
 			}
 		}
 
 		if (nse.rank == 0){
 			FILE* f;
 			const std::string dir = fmt::format("results_{}/probes", id);
-			std::string str = fmt::format("{}/probe_drag_profile_x", dir);
+
+			std::string str = fmt::format("{}/probe_drag_profile_x_cd", dir);
 			f = fopen(str.c_str(), "at");// always append
 			for(int i = 0; i < SIZE; i++){
-				fprintf(f, "%e", values[i]);
+				fprintf(f, "%e", values_cd[i]);
+				if(i != SIZE-1){
+					fprintf(f, ",");
+				}
+			}
+			fprintf(f, "\n");
+			fclose(f);
+
+			str = fmt::format("{}/probe_drag_profile_x_cdP", dir);
+			f = fopen(str.c_str(), "at");// always append
+			for(int i = 0; i < SIZE; i++){
+				fprintf(f, "%e", values_cdP[i]);
+				if(i != SIZE-1){
+					fprintf(f, ",");
+				}
+			}
+			fprintf(f, "\n");
+			fclose(f);
+
+			str = fmt::format("{}/probe_drag_profile_x_cdnu", dir);
+			f = fopen(str.c_str(), "at");// always append
+			for(int i = 0; i < SIZE; i++){
+				fprintf(f, "%e", values_cdnu[i]);
 				if(i != SIZE-1){
 					fprintf(f, ",");
 				}
@@ -635,7 +749,7 @@ struct StateLocal : State<NSE>
 
 		if (nse.rank == 0){
 			// empty file
-			const char* iotype = (probeCountProfile == 0) ? "wt" : "at";
+			const char* iotype = (probeCountProfile2 == 0) ? "wt" : "at";
 
 			FILE* f;
 			const std::string dir = fmt::format("results_{}/probes", id);
@@ -645,7 +759,7 @@ struct StateLocal : State<NSE>
 			std::string str = fmt::format("{}/probe_drag_profile_line", dir);
 			f = fopen(str.c_str(), iotype);
 
-			if(probeCountProfile == 0){
+			if(probeCountProfile2 == 0){
 				for(int iz = 0; iz < SIZE; iz++){
 					fprintf(f, "%e", nse.lat.physOrigin.z() + (iz) * nse.lat.physDl);
 					if(iz != SIZE-1){
@@ -657,7 +771,7 @@ struct StateLocal : State<NSE>
 
 			//fprintf(f, "");
 			fclose(f);
-			probeCountProfile += 1;
+			probeCountProfile2 += 1;
 		}
 		double values[SIZE];
 
@@ -666,7 +780,8 @@ struct StateLocal : State<NSE>
 			const double x=0.690420848175 + 0.3*(pow(sin(3.1415926*(double)z),4));
 			const int ixneeded = floor((x-nse.lat.physOrigin.x())/nse.lat.physDl);
 			const int izneeded = iz;
-			real C_D = 2.*integrate_stress_tensor_general([this,izneeded,ixneeded](int ix,int iy,int iz){ return ix==ixneeded && iz==izneeded && this->isObject(ix, iy, iz);},0)
+			// CHANGED TO ONLY PRESSURE AS IN BUMP-IN-CHANNEL
+			real C_D = 2.*integrate_stress_tensor_general_only_pressure([this,izneeded,ixneeded](int ix,int iy,int iz){ return ix==ixneeded && iz==izneeded && this->isObject(ix, iy, iz);},0)
 						/(Uoverline*Uoverline)/(delta_x*delta_x);
 			if(nse.rank == 0){
 				values[iz] = C_D;
@@ -700,17 +815,16 @@ struct StateLocal : State<NSE>
 
 		if (nse.rank == 0){
 			// empty file
-			const char* iotype = (probeCountProfile == 0) ? "wt" : "at";
+			const char* iotype = (probeCountProfile3 == 0) ? "wt" : "at";
 
 			FILE* f;
 			const std::string dir = fmt::format("results_{}/probes", id);
 			mkdir_p(dir.c_str(), 0755);
 
 			// write nothing to delete them?
-			std::string str = fmt::format("{}/probe_drag_profile_vertical", dir);
+			std::string str = fmt::format("{}/probe_drag_profile_vertical_cd", dir);
 			f = fopen(str.c_str(), iotype);
-
-			if(probeCountProfile == 0){
+			if(probeCountProfile3 == 0){
 				for(int iy = 0; iy < SIZE; iy++){
 					fprintf(f, "%e", nse.lat.physOrigin.y() + (iy) * nse.lat.physDl);
 					if(iy != SIZE-1){
@@ -719,33 +833,61 @@ struct StateLocal : State<NSE>
 				}
 				fprintf(f, "\n");
 			}
-
-			//fprintf(f, "");
 			fclose(f);
-			probeCountProfile += 1;
+			//
+			str = fmt::format("{}/probe_drag_profile_vertical_cdp", dir);
+			f = fopen(str.c_str(), iotype);
+			if(probeCountProfile3 == 0){
+				for(int iy = 0; iy < SIZE; iy++){
+					fprintf(f, "%e", nse.lat.physOrigin.y() + (iy) * nse.lat.physDl);
+					if(iy != SIZE-1){
+						fprintf(f, ",");
+					}
+				}
+				fprintf(f, "\n");
+			}
+			fclose(f);
+
+			probeCountProfile3 += 1;
 		}
 		double values[SIZE];
-		const double x =1.207912207;
-		const double z=-0.125;
+		double values_cdp[SIZE];
+		const double x = 1.207912207;
+		const double z = -0.125;
 		const int ixneeded = floor((x-nse.lat.physOrigin.x())/nse.lat.physDl);
 		const int izneeded = floor((z-nse.lat.physOrigin.z())/nse.lat.physDl);
 
 		for(int iy = 0; iy < SIZE; iy++){
 			const int iyneeded = iy;
-			real C_D = 2.*integrate_stress_tensor_general([this,iyneeded,ixneeded,izneeded](int ix,int iy,int iz){ return ix==ixneeded && iz==izneeded && iy==iyneeded && this->isObject(ix, iy, iz);},0)
-						/(Uoverline*Uoverline)/(delta_x*delta_x);
+			const real C_D = 2.*integrate_stress_tensor_general([this,iyneeded,ixneeded,izneeded](int ix,int iy,int iz){ return ix==ixneeded && iz==izneeded && iy==iyneeded;},0)
+			/(Uoverline*Uoverline)/(delta_x*delta_x);
+			const real C_DP = 2.*integrate_stress_tensor_general_only_pressure([this,iyneeded,ixneeded,izneeded](int ix,int iy,int iz){ return ix==ixneeded && iz==izneeded && iy==iyneeded;},0)
+				/(Uoverline*Uoverline)/(delta_x*delta_x);
 			if(nse.rank == 0){
 				values[iy] = C_D;
+				values_cdp[iy] = C_DP;
 			}
 		}
 
 		if (nse.rank == 0){
 			FILE* f;
 			const std::string dir = fmt::format("results_{}/probes", id);
-			std::string str = fmt::format("{}/probe_drag_profile_vertical", dir);
+
+			std::string str = fmt::format("{}/probe_drag_profile_vertical_cd", dir);
 			f = fopen(str.c_str(), "at");// always append
 			for(int i = 0; i < SIZE; i++){
 				fprintf(f, "%e", values[i]);
+				if(i != SIZE-1){
+					fprintf(f, ",");
+				}
+			}
+			fprintf(f, "\n");
+			fclose(f);
+
+			str = fmt::format("{}/probe_drag_profile_vertical_cdp", dir);
+			f = fopen(str.c_str(), "at");// always append
+			for(int i = 0; i < SIZE; i++){
+				fprintf(f, "%e", values_cdp[i]);
 				if(i != SIZE-1){
 					fprintf(f, ",");
 				}
@@ -815,6 +957,15 @@ struct StateLocal : State<NSE>
 			end
 		);
 		writer.write(
+			"lbm_density_mean",
+			[&](idx x, idx y, idx z) -> dreal
+			{
+				return nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_rhom, x, y, z));
+			},
+			begin,
+			end
+		);
+		writer.write(
 			"velocity_x_mean",
 			[&](idx x, idx y, idx z) -> dreal
 			{
@@ -868,6 +1019,12 @@ struct StateLocal : State<NSE>
 
 			// TEST
 			block.data.stat_counter++;
+
+
+			if(nse.iterations == avg_start_iteration){
+				block.data.stat_counter = 0;
+			}
+
 		}
 	}
 
@@ -899,7 +1056,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2, doub
 	int X = floor(PHYS_LENGTH / PHYS_DL);  // width in pixels
 	int Z = floor(PHYS_DEPTH  / PHYS_DL);  // depth in pixels --- top and bottom walls NoDV px
 	real PHYS_VISCOSITY = viscosity; // viscosity as input to analyze when oscillations happen
-	real PHYS_VELOCITY = 1.;
+	real PHYS_VELOCITY = 10.;
 
 
 
@@ -935,6 +1092,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2, doub
 
 
 	state.wallTime = 12*3600;
+	state.avg_start_iteration = (int)(0.1/PHYS_DT);
 
 	// problem parameters
 	state.lbm_inflow_vx = lat.phys2lbmVelocity(PHYS_VELOCITY);
@@ -946,7 +1104,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2, doub
 	std::cout << "Reynolds based on unit length: " << PHYS_VELOCITY*1./PHYS_VISCOSITY << std::endl;
 
 	state.nse.physFinalTime = 50.;
-	state.rise_up_time = 1.;
+	state.rise_up_time = 0.1;
 	state.cnt[PRINT].period = 0.1;
 
 	// add cuts
@@ -955,7 +1113,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2, doub
 	//state.add2Dcut_Y(Y / 2, "cutsY/cut_Y");
 	state.add2Dcut_Z(Z / 2, "cutsZ/cut_Z");
 
-	state.cnt[OUT3D].period = 10.;
+	state.cnt[OUT3D].period = 1.;
 	//state.cnt[OUT3DCUT].period = 100.;
 	//state.add3Dcut(X / 4, Y / 4, Z / 4, X / 2, Y / 2, Z / 2, "box");
 
@@ -971,20 +1129,20 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2, doub
 	return 0;
 }
 
-template <typename TRAITS = TraitsSP> // Change to TraitsDP for ELBM multi-speed
+template <typename TRAITS = TraitsDP> // Change to TraitsDP for ELBM multi-speed
 void run(const std::string& adios_config, int resolution, double viscosity)
 {
 	// D3Q27
-	using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
-	using NSE_CONFIG = LBM_CONFIG<
-		TRAITS,
-		D3Q27_KernelStruct,
-		NSE_Data_ConstInflow_PressureGradient<TRAITS>,
-		COLL,
-		typename COLL::EQ,
-		D3Q27_STREAMING<TRAITS>,
-		D3Q27_BC_All,
-		D3Q27_MACRO_Mean<TRAITS>>;
+	// using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
+	// using NSE_CONFIG = LBM_CONFIG<
+	// 	TRAITS,
+	// 	D3Q27_KernelStruct,
+	// 	NSE_Data_ConstInflow_PressureGradient<TRAITS>,
+	// 	COLL,
+	// 	typename COLL::EQ,
+	// 	D3Q27_STREAMING<TRAITS>,
+	// 	D3Q27_BC_All,
+	// 	D3Q27_MACRO_Mean<TRAITS>>;
 	//using COLL = ;
 	// using NSE_CONFIG = LBM_CONFIG<
 	// 	TRAITS,
@@ -997,16 +1155,16 @@ void run(const std::string& adios_config, int resolution, double viscosity)
 	// 	D3Q27_MACRO_Mean<TRAITS>>;
 
 	// D3Q53
-	// using COLL = D3Q53_SRT<TRAITS, D3Q53_EQ<TRAITS>>;
-	// using NSE_CONFIG = LBM_CONFIG<
-	// 	TRAITS,
-	// 	D3Q53_LOOKUP_KernelStruct,
-	// 	NSE_Data_ConstInflow_PressureGradient<TRAITS>,
-	// 	COLL,
-	// 	typename COLL::EQ,
-	// 	D3Q53_STREAMING_THIRD_ARRAY<TRAITS>,
-	// 	D3Q53_BC_All,
-	// 	D3Q53_MACRO_Mean<TRAITS>>;
+	using COLL = D3Q53_SRT<TRAITS, D3Q53_EQ<TRAITS>>;
+	using NSE_CONFIG = LBM_CONFIG<
+		TRAITS,
+		D3Q53_LOOKUP_KernelStruct,
+		NSE_Data_ConstInflow_PressureGradient<TRAITS>,
+		COLL,
+		typename COLL::EQ,
+		D3Q53_STREAMING_THIRD_ARRAY<TRAITS>,
+		D3Q53_BC_All,
+		D3Q27_MACRO_Mean<TRAITS>>;
 
 	// using COLL = D3Q53_ELBM<TRAITS, D3Q53_EQ<TRAITS>>;
 	// using NSE_CONFIG = LBM_CONFIG<
@@ -1017,10 +1175,10 @@ void run(const std::string& adios_config, int resolution, double viscosity)
 	// 	typename COLL::EQ,
 	// 	D3Q53_STREAMING_THIRD_ARRAY<TRAITS>,
 	// 	D3Q53_BC_All,
-	// 	D3Q53_MACRO_Mean<TRAITS>>;
+	// 	D3Q27_MACRO_Mean<TRAITS>>;
 
 
-	sim<NSE_CONFIG>(adios_config,resolution,viscosity);
+	sim<NSE_CONFIG>(adios_config,resolution,viscosity,"test");
 }
 
 int main(int argc, char** argv)
