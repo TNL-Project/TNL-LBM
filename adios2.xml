@@ -16,7 +16,7 @@
             <!-- BP5 engine parameters -->
             <parameter key="AggregationType" value="TwoLevelShm"/>
             <parameter key="MaxShmSize" value="4GB"/>
-            <parameter key="AsyncWrite" value="false"/>
+            <parameter key="AsyncWrite" value="true"/>
         </engine>
     </io>
 </adios-config>
