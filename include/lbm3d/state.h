@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <future>
 #include <vector>
 #include <string>
 
@@ -110,9 +111,13 @@ struct State
 	int glups_prev_iterations = 0;
 	double glups_prev_time = 0;
 
+	// Pending async I/O from AfterSimUpdate (single-process overlap with SimUpdate)
+	std::future<void> pendingIO_;
+	void waitForPendingIO();
+
 	// Timers for profiling
 	TNL::Timer timer_SimInit, timer_SimUpdate, timer_AfterSimUpdate, timer_compute, timer_compute_overlaps, timer_wait_communication,
-		timer_wait_computation;
+		timer_wait_computation, timer_wait_io;
 
 	// Constructors
 	State() = delete;

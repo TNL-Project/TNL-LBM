@@ -402,7 +402,7 @@ void run(const std::string& adios_config, int resolution, double Re, double lbm_
 
 int main(int argc, char** argv)
 {
-	TNLMPI_INIT mpi(argc, argv);
+	TNLMPI_INIT mpi(argc, argv, MPI_THREAD_SERIALIZED);
 
 	argparse::ArgumentParser program("sim_1");
 	program.add_description("3D Taylor-Green vortex simulation using incompressible Navier-Stokes equations.");

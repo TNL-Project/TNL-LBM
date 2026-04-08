@@ -1149,6 +1149,7 @@ void State<NSE>::SimInit()
 	timer_compute_overlaps.reset();
 	timer_wait_communication.reset();
 	timer_wait_computation.reset();
+	timer_wait_io.reset();
 
 	timer_SimInit.start();
 
@@ -1398,6 +1399,13 @@ void State<NSE>::SimUpdate()
 }
 
 template <typename NSE>
+void State<NSE>::waitForPendingIO()
+{
+	if (pendingIO_.valid())
+		pendingIO_.get();
+}
+
+template <typename NSE>
 void State<NSE>::AfterSimUpdate()
 {
 	timer_AfterSimUpdate.start();
@@ -1407,7 +1415,13 @@ void State<NSE>::AfterSimUpdate()
 		if (c != PRINT && c != SAVESTATE)
 			if (cnt[c].action(nse.physTime()))
 				copy_macro = true;
+
+	// Wait for any pending async I/O before overwriting hmacro
 	if (copy_macro) {
+		timer_wait_io.start();
+		waitForPendingIO();
+		timer_wait_io.stop();
+
 		nse.copyMacroToHost();
 	}
 
@@ -1449,49 +1463,62 @@ void State<NSE>::AfterSimUpdate()
 		}
 	}
 
-	if (cnt[OUT2D].action(nse.physTime()) || cnt[OUT3D].action(nse.physTime()) || cnt[OUT3DCUT].action(nse.physTime())
-		|| cnt[PROBE1].action(nse.physTime()) || cnt[PROBE2].action(nse.physTime()) || cnt[PROBE3].action(nse.physTime()) || nan_detected)
-	{
-		// probe1
-		if (cnt[PROBE1].action(nse.physTime())) {
-			probe1();
+	const bool do_probe1 = cnt[PROBE1].action(nse.physTime());
+	const bool do_probe2 = cnt[PROBE2].action(nse.physTime());
+	const bool do_probe3 = cnt[PROBE3].action(nse.physTime());
+	const bool do_write3D = cnt[OUT3D].action(nse.physTime()) || nan_detected;
+	const bool do_write3Dcut = cnt[OUT3DCUT].action(nse.physTime());
+	const bool do_write2D = cnt[OUT2D].action(nse.physTime()) || nan_detected;
+
+	if (do_probe1 || do_probe2 || do_probe3 || do_write3D || do_write3Dcut || do_write2D) {
+		auto io_work = [this, do_probe1, do_probe2, do_probe3, do_write3D, do_write3Dcut, do_write2D]()
+		{
+			if (do_probe1)
+				probe1();
+			if (do_probe2)
+				probe2();
+			if (do_probe3)
+				probe3();
+
+			if (do_write3D)
+				write3D();
+			if (do_write3Dcut)
+				write3Dcut();
+			if (do_write2D)
+				write2D();
+		};
+
+		if (nse.nproc == 1) {
+			pendingIO_ = std::async(std::launch::async, io_work);
+		}
+		else {
+			io_work();
+		}
+
+		if (do_probe1)
 			cnt[PROBE1].count++;
-		}
-		// probe2
-		if (cnt[PROBE2].action(nse.physTime())) {
-			probe2();
+		if (do_probe2)
 			cnt[PROBE2].count++;
-		}
-		// probe3
-		if (cnt[PROBE3].action(nse.physTime())) {
-			probe3();
+		if (do_probe3)
 			cnt[PROBE3].count++;
-		}
-		// 3D output
-		if (cnt[OUT3D].action(nse.physTime()) || nan_detected) {
-			write3D();
+		if (do_write3D)
 			cnt[OUT3D].count++;
-		}
-		// 3D cut output
-		if (cnt[OUT3DCUT].action(nse.physTime())) {
-			write3Dcut();
+		if (do_write3Dcut)
 			cnt[OUT3DCUT].count++;
-		}
-		// 2D output
-		if (cnt[OUT2D].action(nse.physTime()) || nan_detected) {
-			write2D();
+		if (do_write2D)
 			cnt[OUT2D].count++;
-		}
 	}
 
 	// statReset is called after all probes and output methods
 	// copy macro from host to device after reset
 	if (cnt[STAT_RESET].action(nse.physTime())) {
+		waitForPendingIO();
 		statReset();
 		nse.copyMacroToDevice();
 		cnt[STAT_RESET].count++;
 	}
 	if (cnt[STAT2_RESET].action(nse.physTime())) {
+		waitForPendingIO();
 		stat2Reset();
 		nse.copyMacroToDevice();
 		cnt[STAT2_RESET].count++;
@@ -1549,11 +1576,13 @@ void State<NSE>::AfterSimFinished()
 				timer_AfterSimUpdate.getRealTime()
 			);
 			spdlog::info(
-				"compute time: {:.1f} s, compute overlaps time: {:.1f} s, wait for communication time: {:.1f} s, wait for computation time: {:.1f} s",
+				"compute time: {:.1f} s, compute overlaps time: {:.1f} s, wait for communication time: {:.1f} s, wait for computation time: {:.1f} "
+				"s, wait for async I/O time: {:.1f} s",
 				timer_compute.getRealTime(),
 				timer_compute_overlaps.getRealTime(),
 				timer_wait_communication.getRealTime(),
-				timer_wait_computation.getRealTime()
+				timer_wait_computation.getRealTime(),
+				timer_wait_io.getRealTime()
 			);
 			const double avgLUPS = nse.lat.global.x() * nse.lat.global.y() * nse.lat.global.z()
 								 * (iterations / (timer_SimUpdate.getRealTime() + timer_AfterSimUpdate.getRealTime()));

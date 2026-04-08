@@ -66,6 +66,7 @@ void execute(STATE& state)
 		// check wall time
 		// (Note that state.wallTimeReached() must be called exactly once per iteration!)
 		if (state.wallTimeReached()) {
+			state.waitForPendingIO();
 			// copy all LBM quantities from device to host
 			state.copyAllToHost();
 
@@ -76,6 +77,7 @@ void execute(STATE& state)
 		}
 		// check savestate
 		else if (state.cnt[SAVESTATE].action(state.getWallTime(true))) {
+			state.waitForPendingIO();
 			// copy all LBM quantities from device to host
 			state.copyAllToHost();
 
@@ -105,5 +107,6 @@ void execute(STATE& state)
 		quit = TNL::MPI::reduce(quit, MPI_LOR, MPI_COMM_WORLD);
 	}
 
+	state.waitForPendingIO();
 	state.AfterSimFinished();
 }
