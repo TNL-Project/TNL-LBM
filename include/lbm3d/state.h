@@ -91,6 +91,9 @@ struct State
 
 	std::string id;
 
+#ifdef HAVE_MPI
+	TNL::MPI::Comm adiosCommunicator;
+#endif
 	adios2::ADIOS adios;
 	DataManager dataManager;
 	CheckpointManager checkpoint;
@@ -113,6 +116,9 @@ struct State
 
 	// Pending async I/O from AfterSimUpdate (single-process overlap with SimUpdate)
 	std::future<void> pendingIO_;
+	bool asyncIOAllowed = true;
+	real outputTime = 0;
+	int output3DCycle = 0;
 	void waitForPendingIO();
 
 	// Timers for profiling

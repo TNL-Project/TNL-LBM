@@ -63,6 +63,7 @@ void execute(STATE& state)
 		// post-processing: snapshots etc.
 		state.AfterSimUpdate();
 
+
 		// check wall time
 		// (Note that state.wallTimeReached() must be called exactly once per iteration!)
 		if (state.wallTimeReached()) {

@@ -388,7 +388,7 @@ struct State_NSE_ADE : State<NSE>
 
 	void outputDataPhase1(UniformDataWriter<TRAITS>& writer, std::size_t block_index, const idx3d& begin, const idx3d& end) override
 	{
-		writer.write("TIME", nse.physTime());
+		writer.write("TIME", this->outputTime);
 		writer.write("wall_nse", nse.blocks[block_index].hmap, begin, end);
 		this->outputData(writer, nse.blocks[block_index], begin, end);
 		writer.write("wall_ade", ade.blocks[block_index].hmap, begin, end);
