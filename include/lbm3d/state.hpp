@@ -1471,8 +1471,10 @@ void State<NSE>::AfterSimUpdate()
 	const bool do_write2D = cnt[OUT2D].action(nse.physTime()) || nan_detected;
 
 	if (do_probe1 || do_probe2 || do_probe3 || do_write3D || do_write3Dcut || do_write2D) {
-		auto io_work = [this, do_probe1, do_probe2, do_probe3, do_write3D, do_write3Dcut, do_write2D]()
+		const int gpu_id = TNL::Backend::getDevice();
+		auto io_work = [this, do_probe1, do_probe2, do_probe3, do_write3D, do_write3Dcut, do_write2D, gpu_id]()
 		{
+			TNL::Backend::setDevice(gpu_id);
 			if (do_probe1)
 				probe1();
 			if (do_probe2)
@@ -1486,27 +1488,21 @@ void State<NSE>::AfterSimUpdate()
 				write3Dcut();
 			if (do_write2D)
 				write2D();
+			if (do_probe1)
+				cnt[PROBE1].count++;
+			if (do_probe2)
+				cnt[PROBE2].count++;
+			if (do_probe3)
+				cnt[PROBE3].count++;
+			if (do_write3D)
+				cnt[OUT3D].count++;
+			if (do_write3Dcut)
+				cnt[OUT3DCUT].count++;
+			if (do_write2D)
+				cnt[OUT2D].count++;
 		};
 
-		if (nse.nproc == 1) {
-			pendingIO_ = std::async(std::launch::async, io_work);
-		}
-		else {
-			io_work();
-		}
-
-		if (do_probe1)
-			cnt[PROBE1].count++;
-		if (do_probe2)
-			cnt[PROBE2].count++;
-		if (do_probe3)
-			cnt[PROBE3].count++;
-		if (do_write3D)
-			cnt[OUT3D].count++;
-		if (do_write3Dcut)
-			cnt[OUT3DCUT].count++;
-		if (do_write2D)
-			cnt[OUT2D].count++;
+		pendingIO_ = std::async(std::launch::async, io_work);
 	}
 
 	// statReset is called after all probes and output methods

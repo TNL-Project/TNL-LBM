@@ -51,6 +51,7 @@ void execute(STATE& state)
 
 	// make snapshot for the initial condition
 	state.AfterSimUpdate();
+	state.waitForPendingIO();
 
 	bool quit = false;
 	while (! quit) {
@@ -62,6 +63,8 @@ void execute(STATE& state)
 
 		// post-processing: snapshots etc.
 		state.AfterSimUpdate();
+
+		state.waitForPendingIO();
 
 		// check wall time
 		// (Note that state.wallTimeReached() must be called exactly once per iteration!)
