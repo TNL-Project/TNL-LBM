@@ -400,9 +400,9 @@ void run(const std::string& adios_config, int resolution, double Re, double lbm_
 
 int main(int argc, char** argv)
 {
-	TNLMPI_INIT mpi(argc, argv, MPI_THREAD_SERIALIZED);
+	TNLMPI_INIT mpi(argc, argv, MPI_THREAD_MULTIPLE);
 
-	argparse::ArgumentParser program("sim_1");
+	argparse::ArgumentParser program("sim_4");
 	program.add_description("3D Taylor-Green vortex simulation using incompressible Navier-Stokes equations.");
 	program.add_argument("--adios-config").help("path to ADIOS2 configuration file").default_value(std::string("adios2.xml")).nargs(1);
 	program.add_argument("--resolution").help("resolution of the lattice").scan<'i', int>().default_value(1);

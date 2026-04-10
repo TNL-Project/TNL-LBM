@@ -21,7 +21,8 @@ template <typename... ARGS>
 State<NSE>::State(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath, ARGS&&... args)
 : id(id),
 #ifdef HAVE_MPI
-  adios(adiosConfigPath, communicator),
+  adiosCommunicator(communicator.duplicate()),
+  adios(adiosConfigPath, adiosCommunicator),
 #else
   adios(adiosConfigPath),
 #endif
@@ -45,6 +46,17 @@ State<NSE>::State(const std::string& id, const TNL::MPI::Comm& communicator, lat
 	// to log files opened by another instance)
 	if (have_lock)
 		init_logging(id, communicator);
+
+#ifdef HAVE_MPI
+	int mpi_thread_support = MPI_THREAD_SINGLE;
+	MPI_Query_thread(&mpi_thread_support);
+	asyncIOAllowed = mpi_thread_support >= MPI_THREAD_MULTIPLE;
+	if (TNL::MPI::GetRank(communicator) == 0) {
+		spdlog::info("MPI thread support provided: {} (MPI_THREAD_MULTIPLE={})", mpi_thread_support, static_cast<int>(MPI_THREAD_MULTIPLE));
+		if (! asyncIOAllowed)
+			spdlog::warn("Disabling std::async I/O because MPI did not provide MPI_THREAD_MULTIPLE.");
+	}
+#endif
 
 	if (dataManager.isPluginEngine()) {
 		dataManager.setPluginDataModelPath(fmt::format("results_{}/lbm-fides.json", id));
@@ -287,7 +299,7 @@ void State<NSE>::writePoints(const char* name, real time, int cycle, const typen
 template <typename NSE>
 void State<NSE>::outputDataPhase1(UniformDataWriter<TRAITS>& writer, std::size_t block_index, const idx3d& begin, const idx3d& end)
 {
-	writer.write("TIME", nse.physTime());
+	writer.write("TIME", outputTime);
 	writer.write("wall", nse.blocks[block_index].hmap, begin, end);
 	this->outputData(writer, nse.blocks[block_index], begin, end);
 }
@@ -302,7 +314,7 @@ void State<NSE>::write3D()
 	predefine3D(fname, nse.blocks.front());
 	if (! dataManager.isEngineOpen(fname)) {
 		// Open as Append after the first cycle
-		const auto mode = (cnt[OUT3D].count == 0) ? adios2::Mode::Write : adios2::Mode::Append;
+		const auto mode = (output3DCycle == 0) ? adios2::Mode::Write : adios2::Mode::Append;
 		dataManager.openEngine(fname, mode);
 	}
 	dataManager.beginStep(fname);
@@ -332,7 +344,7 @@ void State<NSE>::write3D()
 	}
 
 	dataManager.endStep(fname);
-	spdlog::info("Output {} written, time {:f}, cycle {:d}", fname, nse.physTime(), cnt[OUT3D].count);
+	spdlog::info("Output {} written, time {:f}, cycle {:d}", fname, outputTime, output3DCycle);
 
 	timer.stop();
 	spdlog::info("write3D saved in: {:.2f} seconds", timer.getRealTime());
@@ -591,7 +603,7 @@ void State<NSE>::write3Dcut()
 		}
 
 		dataManager.endStep(fname);
-		spdlog::info("Output {} written, time {:f}, cycle {:d}", fname, nse.physTime(), probevec.cycle);
+		spdlog::info("Output {} written, time {:f}, cycle {:d}", fname, outputTime, probevec.cycle);
 		probevec.cycle++;
 	}
 }
@@ -738,7 +750,7 @@ void State<NSE>::write2D()
 		}
 
 		dataManager.endStep(fname);
-		spdlog::info("Output {} written, time {:f}, cycle {:d}", fname, nse.physTime(), probevec.cycle);
+		spdlog::info("Output {} written, time {:f}, cycle {:d}", fname, outputTime, probevec.cycle);
 		probevec.cycle++;
 	}
 }
@@ -1468,44 +1480,41 @@ void State<NSE>::AfterSimUpdate()
 	const bool do_write3D = cnt[OUT3D].action(nse.physTime()) || nan_detected;
 	const bool do_write3Dcut = cnt[OUT3DCUT].action(nse.physTime());
 	const bool do_write2D = cnt[OUT2D].action(nse.physTime()) || nan_detected;
+	if (do_write3D || do_write3Dcut || do_write2D)
+		outputTime = nse.physTime();
 
-	if (do_probe1 || do_probe2 || do_probe3 || do_write3D || do_write3Dcut || do_write2D) {
-		auto io_work = [this, do_probe1, do_probe2, do_probe3, do_write3D, do_write3Dcut, do_write2D]()
+	if (do_probe1) {
+		probe1();
+		cnt[PROBE1].count++;
+	}
+	if (do_probe2) {
+		probe2();
+		cnt[PROBE2].count++;
+	}
+	if (do_probe3) {
+		probe3();
+		cnt[PROBE3].count++;
+	}
+	if (do_write3Dcut) {
+		write3Dcut();
+		cnt[OUT3DCUT].count++;
+	}
+	if (do_write2D) {
+		write2D();
+		cnt[OUT2D].count++;
+	}
+	if (do_write3D) {
+		const int gpu_id = TNL::Backend::getDevice();
+		output3DCycle = cnt[OUT3D].count++;
+		auto io_work = [this, gpu_id]()
 		{
-			if (do_probe1)
-				probe1();
-			if (do_probe2)
-				probe2();
-			if (do_probe3)
-				probe3();
-
-			if (do_write3D)
-				write3D();
-			if (do_write3Dcut)
-				write3Dcut();
-			if (do_write2D)
-				write2D();
+			TNL::Backend::setDevice(gpu_id);
+			write3D();
 		};
-
-		if (nse.nproc == 1) {
+		if (asyncIOAllowed)
 			pendingIO_ = std::async(std::launch::async, io_work);
-		}
-		else {
+		else
 			io_work();
-		}
-
-		if (do_probe1)
-			cnt[PROBE1].count++;
-		if (do_probe2)
-			cnt[PROBE2].count++;
-		if (do_probe3)
-			cnt[PROBE3].count++;
-		if (do_write3D)
-			cnt[OUT3D].count++;
-		if (do_write3Dcut)
-			cnt[OUT3DCUT].count++;
-		if (do_write2D)
-			cnt[OUT2D].count++;
 	}
 
 	// statReset is called after all probes and output methods
