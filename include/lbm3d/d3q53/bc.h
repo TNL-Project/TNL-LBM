@@ -127,7 +127,6 @@ struct D3Q53_BC_All
 				break;
 			case GEO_OUTFLOW_RIGHT:
 				COLL::computeDensityAndVelocity(KS);
-				KS.rho = 1;
 				COLL::setEquilibriumDecomposition(KS, 1);
 				COLL::computeDensityAndVelocity(KS);
 				break;

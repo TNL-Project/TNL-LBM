@@ -2,13 +2,27 @@
 #include <cstdio>
 #include <utility>
 
+// Change model: change this, and precision at the end
+#define ELBM_D3Q53
+// #define D3Q53
+// #define ELBM_D3Q27
+// #define CLBM_D3Q27
+
+
+
+// #if defined(ELBM_D3Q53) || defined(D3Q53)
 // #define USE_DFMAX3
+// #endif
 //#define OSCILLATION_ANALYSIS
 #define STRESS_TENSOR_FROM_MEAN
 
 // As of now, enum and sync direction are specific for different models and need to be included before core!!!
-// #include "lbm3d/d3q27/defs.h"
+#if defined(ELBM_D3Q27) || defined(CLBM_D3Q27)
+#include "lbm3d/d3q27/defs.h"
+#endif
+#if defined(ELBM_D3Q53) || defined(D3Q53)
 #include "lbm3d/d3q53/defs.h"
+#endif
 //#include "lbm3d/d3q343/defs.h"
 #include "lbm3d/core.h"
 
@@ -580,8 +594,8 @@ struct StateLocal : State<NSE>
 		real C_D = 2.*integrate_stress_tensor_general([this](int ix,int iy,int iz){ return this->isObject(ix, iy, iz);},0)/(Uoverline*Uoverline)/(H*W);
 		real C_D_P = 2.*integrate_stress_tensor_general_only_pressure([this](int ix,int iy,int iz){ return this->isObject(ix, iy, iz);},0)/(Uoverline*Uoverline)/(H*W);
 		real C_D_nu = 2.*integrate_stress_tensor_general_only_viscous([this](int ix,int iy,int iz){ return this->isObject(ix, iy, iz);},0)/(Uoverline*Uoverline)/(H*W);
-		real C_S = 2.*integrate_stress_tensor_general([this](int ix,int iy,int iz){ return this->isObject(ix, iy, iz);},1)/(Uoverline*Uoverline)/(L*H);
-		real C_L = 2.*integrate_stress_tensor_general([this](int ix,int iy,int iz){ return this->isObject(ix, iy, iz);},2)/(Uoverline*Uoverline)/(L*W);
+		real C_S = 2.*integrate_stress_tensor_general([this](int ix,int iy,int iz){ return this->isObject(ix, iy, iz);},2)/(Uoverline*Uoverline)/(L*H);
+		real C_L = 2.*integrate_stress_tensor_general([this](int ix,int iy,int iz){ return this->isObject(ix, iy, iz);},1)/(Uoverline*Uoverline)/(L*W);
 
 		if (nse.rank == 0){
 			// empty files
@@ -620,8 +634,8 @@ struct StateLocal : State<NSE>
 				nse.physTime(),
 				nse.iterations,
 				C_D,
-				C_S,
-				C_L
+				C_L,
+				C_S
 			);
 		}
 	}
@@ -910,7 +924,7 @@ struct StateLocal : State<NSE>
 	[[nodiscard]] std::vector<std::string> getOutputDataNames() const override
 	{
 		// return all quantity names used in outputData
-		return {"lbm_density", "lbm_density_fluctuation", "velocity_x", "velocity_y", "velocity_z","velocity_x_mean", "velocity_y_mean", "velocity_z_mean","mywall"};
+		return {"lbm_density", "lbm_density_fluctuation", "velocity_x", "velocity_y", "velocity_z","lbm_density_mean","velocity_x_mean", "velocity_y_mean", "velocity_z_mean","mywall"};
 	}
 
 	void outputData(UniformDataWriter<TRAITS>& writer, const BLOCK& block, const idx3d& begin, const idx3d& end) override
@@ -960,7 +974,7 @@ struct StateLocal : State<NSE>
 			"lbm_density_mean",
 			[&](idx x, idx y, idx z) -> dreal
 			{
-				return nse.lat.lbm2physVelocity(block.hmacro(MACRO::e_rhom, x, y, z));
+				return block.hmacro(MACRO::e_rhom, x, y, z);
 			},
 			begin,
 			end
@@ -1006,25 +1020,17 @@ struct StateLocal : State<NSE>
 	void updateKernelVelocities() override
 	{
 		for (auto& block : nse.blocks) {
-			real rise_up_lbm_inflow_vx = nse.physTime()/rise_up_time;
-			if(rise_up_lbm_inflow_vx > 1.){
-				block.data.inflow_vx = lbm_inflow_vx;
-			}else{
-				block.data.inflow_vx = rise_up_lbm_inflow_vx*lbm_inflow_vx;
-			}
+			real riseUpCoefficient = nse.physTime()/rise_up_time;
+			if(riseUpCoefficient > 1.){	riseUpCoefficient = 1.;}
+			riseUpCoefficient = riseUpCoefficient*exp(1-riseUpCoefficient)*0.99+0.01; // better interpolation
+			block.data.inflow_vx = riseUpCoefficient*lbm_inflow_vx;
 			block.data.inflow_vy = 0;
 			block.data.inflow_vz = 0;
 			block.data.inflow_g = inflow_g;
 			block.data.no1oT0 = 1./NSE::LBM_KS::T0;
 
 			// TEST
-			block.data.stat_counter++;
-
-
-			if(nse.iterations == avg_start_iteration){
-				block.data.stat_counter = 0;
-			}
-
+			block.data.stat_counter = nse.iterations - avg_start_iteration;
 		}
 	}
 
@@ -1056,7 +1062,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2, doub
 	int X = floor(PHYS_LENGTH / PHYS_DL);  // width in pixels
 	int Z = floor(PHYS_DEPTH  / PHYS_DL);  // depth in pixels --- top and bottom walls NoDV px
 	real PHYS_VISCOSITY = viscosity; // viscosity as input to analyze when oscillations happen
-	real PHYS_VELOCITY = 10.;
+	real PHYS_VELOCITY = 1.;
 
 
 
@@ -1092,7 +1098,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2, doub
 
 
 	state.wallTime = 12*3600;
-	state.avg_start_iteration = (int)(0.1/PHYS_DT);
+	state.avg_start_iteration = (int)(10./PHYS_DT); // Start averaging after 10 seconds
 
 	// problem parameters
 	state.lbm_inflow_vx = lat.phys2lbmVelocity(PHYS_VELOCITY);
@@ -1103,8 +1109,8 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2, doub
 	std::cout << "Reynolds number: " << PHYS_VELOCITY*state.bump_height/PHYS_VISCOSITY << std::endl;
 	std::cout << "Reynolds based on unit length: " << PHYS_VELOCITY*1./PHYS_VISCOSITY << std::endl;
 
-	state.nse.physFinalTime = 50.;
-	state.rise_up_time = 0.1;
+	state.nse.physFinalTime = 100.;
+	state.rise_up_time = 1.;
 	state.cnt[PRINT].period = 0.1;
 
 	// add cuts
@@ -1113,7 +1119,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2, doub
 	//state.add2Dcut_Y(Y / 2, "cutsY/cut_Y");
 	state.add2Dcut_Z(Z / 2, "cutsZ/cut_Z");
 
-	state.cnt[OUT3D].period = 1.;
+	state.cnt[OUT3D].period = 5.;
 	//state.cnt[OUT3DCUT].period = 100.;
 	//state.add3Dcut(X / 4, Y / 4, Z / 4, X / 2, Y / 2, Z / 2, "box");
 
@@ -1133,28 +1139,34 @@ template <typename TRAITS = TraitsDP> // Change to TraitsDP for ELBM multi-speed
 void run(const std::string& adios_config, int resolution, double viscosity)
 {
 	// D3Q27
-	// using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
-	// using NSE_CONFIG = LBM_CONFIG<
-	// 	TRAITS,
-	// 	D3Q27_KernelStruct,
-	// 	NSE_Data_ConstInflow_PressureGradient<TRAITS>,
-	// 	COLL,
-	// 	typename COLL::EQ,
-	// 	D3Q27_STREAMING<TRAITS>,
-	// 	D3Q27_BC_All,
-	// 	D3Q27_MACRO_Mean<TRAITS>>;
+	#ifdef CLBM_D3Q27
+	using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
+	using NSE_CONFIG = LBM_CONFIG<
+		TRAITS,
+		D3Q27_KernelStruct,
+		NSE_Data_ConstInflow_PressureGradient<TRAITS>,
+		COLL,
+		typename COLL::EQ,
+		D3Q27_STREAMING<TRAITS>,
+		D3Q27_BC_All,
+		D3Q27_MACRO_Mean<TRAITS>>;
+	#endif
 	//using COLL = ;
-	// using NSE_CONFIG = LBM_CONFIG<
-	// 	TRAITS,
-	// 	D3Q27_KernelStruct,
-	// 	NSE_Data_ConstInflow_PressureGradient<TRAITS>,
-	// 	D3Q27_GENERAL_SRT<TRAITS, D3Q27_EQ_ENTROPIC2<TRAITS>>,
-	// 	D3Q27_EQ_ENTROPIC2<TRAITS>,
-	// 	D3Q27_STREAMING<TRAITS>,
-	// 	D3Q27_BC_All,
-	// 	D3Q27_MACRO_Mean<TRAITS>>;
+	#ifdef ELBM_D3Q27
+	using NSE_CONFIG = LBM_CONFIG<
+		TRAITS,
+		D3Q27_KernelStruct,
+		NSE_Data_ConstInflow_PressureGradient<TRAITS>,
+		D3Q27_GENERAL_SRT<TRAITS, D3Q27_EQ_ENTROPIC2<TRAITS>>,
+		D3Q27_EQ_ENTROPIC2<TRAITS>,
+		D3Q27_STREAMING<TRAITS>,
+		D3Q27_BC_All,
+		D3Q27_MACRO_Mean<TRAITS>>;
+	#endif
 
 	// D3Q53
+
+	#ifdef D3Q53
 	using COLL = D3Q53_SRT<TRAITS, D3Q53_EQ<TRAITS>>;
 	using NSE_CONFIG = LBM_CONFIG<
 		TRAITS,
@@ -1162,20 +1174,31 @@ void run(const std::string& adios_config, int resolution, double viscosity)
 		NSE_Data_ConstInflow_PressureGradient<TRAITS>,
 		COLL,
 		typename COLL::EQ,
+		#ifdef USE_DFMAX3
 		D3Q53_STREAMING_THIRD_ARRAY<TRAITS>,
+		#else
+		D3Q53_STREAMING<TRAITS>,
+		#endif
 		D3Q53_BC_All,
 		D3Q27_MACRO_Mean<TRAITS>>;
+	#endif
 
-	// using COLL = D3Q53_ELBM<TRAITS, D3Q53_EQ<TRAITS>>;
-	// using NSE_CONFIG = LBM_CONFIG<
-	// 	TRAITS,
-	// 	D3Q53_LOOKUP_KernelStruct,
-	// 	NSE_Data_ConstInflow_PressureGradient<TRAITS>,
-	// 	COLL,
-	// 	typename COLL::EQ,
-	// 	D3Q53_STREAMING_THIRD_ARRAY<TRAITS>,
-	// 	D3Q53_BC_All,
-	// 	D3Q27_MACRO_Mean<TRAITS>>;
+	#ifdef ELBM_D3Q53
+	using COLL = D3Q53_ELBM<TRAITS, D3Q53_EQ<TRAITS>>;
+	using NSE_CONFIG = LBM_CONFIG<
+		TRAITS,
+		D3Q53_LOOKUP_KernelStruct,
+		NSE_Data_ConstInflow_PressureGradient<TRAITS>,
+		COLL,
+		typename COLL::EQ,
+		#ifdef USE_DFMAX3
+		D3Q53_STREAMING_THIRD_ARRAY<TRAITS>,
+		#else
+		D3Q53_STREAMING<TRAITS>,
+		#endif
+		D3Q53_BC_All,
+		D3Q27_MACRO_Mean<TRAITS>>;
+	#endif
 
 
 	sim<NSE_CONFIG>(adios_config,resolution,viscosity,"test");

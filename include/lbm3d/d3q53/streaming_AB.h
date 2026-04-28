@@ -63,7 +63,7 @@ struct D3Q53_STREAMING
 		for(int id = 0; id < LBM_KS::Q; id++){
 			const Coord c = LBM_KS::id_to_coords(id);
 			const dreal interCoeffX = LBM_KS::cs; // low LBM velocity approximation
-			if(c.x >= LBM_KS::NoDV){
+			if(c.x >= LBM_KS::cs){
 				KS.f[id] = SD.df(df_cur,id,streamGrid.x(KS.flip_coord(c.x)),streamGrid.y(KS.flip_coord(c.y)),streamGrid.z(KS.flip_coord(c.z)));
 			}
 			else{

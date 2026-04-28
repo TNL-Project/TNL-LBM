@@ -101,7 +101,7 @@ struct D3Q27_MACRO_Mean : D3Q27_MACRO_Base<TRAITS>
 		e_vm_x,
 		e_vm_y,
 		e_vm_z,
-		e_rhom, // TODO
+		e_rhom,
 		// e_vm2_xx,
 		// e_vm2_yy,
 		// e_vm2_zz,
@@ -125,11 +125,15 @@ struct D3Q27_MACRO_Mean : D3Q27_MACRO_Base<TRAITS>
 
 
 		// For reseting at some iteration, when stat_counter is 0 -> reset to 0
-		if(SD.stat_counter == 0){
+		if(SD.stat_counter <= 0){
 			SD.macro(e_rhom, x, y, z) = 0.;
 			SD.macro(e_vm_x, x, y, z) = 0.;
 			SD.macro(e_vm_y, x, y, z) = 0.;
 			SD.macro(e_vm_z, x, y, z) = 0.;
+		}
+
+		if(SD.stat_counter < 0){
+			return;
 		}
 
 		// Mean quantities and (co)variance
