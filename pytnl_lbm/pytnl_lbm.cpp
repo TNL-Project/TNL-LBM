@@ -22,6 +22,15 @@ NB_MODULE(pytnl_lbm, m)
 	nb::module_::import_("pytnl._containers_cuda");
 #endif
 
+#ifdef HAVE_MPI
+	nb::module_::import_("mpi4py.MPI");
+	// Importing mpi4py.MPI does MPI_Init, but it does not handle GPU selection.
+	// Calling selectGPU() from the module initialization ensures the same behavior
+	// as the TNL::MPI::Initialize wrapper function.
+	if (TNL::MPI::isInitialized())
+		TNL::MPI::selectGPU();
+#endif
+
 	export_Lattice<3, float, int>(m, "Lattice_3_float_int");
 	export_Lattice<3, float, long int>(m, "Lattice_3_float_long");
 	export_Lattice<3, double, int>(m, "Lattice_3_double_int");
