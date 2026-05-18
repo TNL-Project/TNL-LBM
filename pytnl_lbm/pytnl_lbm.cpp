@@ -47,6 +47,7 @@ NB_MODULE(pytnl_lbm, m)
 	export_UniformDataWriter<TRAITS>(m, "UniformDataWriter");
 
 	m.def("execute", execute<State<SP_D3Q27_CUM_ConstInflow>>);
+	m.def("getMacroView", getMacroView<SP_D3Q27_CUM_ConstInflow::TRAITS, SP_D3Q27_CUM_ConstInflow::TRAITS::hmacro_array_t>);
 
 	using macro_indexer_t = typename SP_D3Q27_CUM_ConstInflow::TRAITS::__hmacro_array_t::IndexerType;
 	using local_hmacro_array_t = typename SP_D3Q27_CUM_ConstInflow::TRAITS::__hmacro_array_t;
@@ -62,5 +63,11 @@ NB_MODULE(pytnl_lbm, m)
 	using dmacro_array_t = typename SP_D3Q27_CUM_ConstInflow::TRAITS::dmacro_array_t;
 	export_DistributedNDArray<hmacro_array_t>(m, "dist_hmacro_array_SP_D3Q27_CUM_ConstInflow");
 	export_DistributedNDArray<dmacro_array_t>(m, "dist_dmacro_array_SP_D3Q27_CUM_ConstInflow");
+
+	// special subarray view used in outputData
+	using special_macro_view_t = decltype(getMacroView<SP_D3Q27_CUM_ConstInflow::TRAITS, SP_D3Q27_CUM_ConstInflow::TRAITS::hmacro_array_t>(
+		SP_D3Q27_CUM_ConstInflow::TRAITS::hmacro_array_t(), 0
+	));
+	export_DistributedNDArray<special_macro_view_t>(m, "macro_view_SP_D3Q27_CUM_ConstInflow");
 #endif
 }
