@@ -7,6 +7,7 @@ from mpi4py import MPI
 
 PROJECT_DIR = Path(__file__).parent.parent
 
+sys.path.append(str(PROJECT_DIR / "build/_deps/pytnl-build/src"))
 sys.path.append(str(PROJECT_DIR / "build/pytnl_lbm/"))
 
 from pytnl_lbm import (  # noqa: E402
