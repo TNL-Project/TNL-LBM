@@ -89,7 +89,7 @@ example, to build and run `sim_1` as in the previous example:
 ### Visualization
 
 1. **Offline post-processing (PNG export from ADIOS2 output)**  
-  Follow the [Catalyst Frame Exporter Guide](./catalyst/README.md) to generate
+  Follow the [ADIOS2 Frame Exporter Guide](./catalyst/README.md) to generate
   planar PNG slices (`xy`, `xz`, `yz`) from ADIOS2 stream/BP output for
   analysis and animation.
 

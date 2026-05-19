@@ -21,8 +21,7 @@ template <typename... ARGS>
 State<NSE>::State(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath, ARGS&&... args)
 : id(id),
 #ifdef HAVE_MPI
-  adiosCommunicator(communicator.duplicate()),
-  adios(adiosConfigPath, adiosCommunicator),
+  adios(adiosConfigPath, communicator),
 #else
   adios(adiosConfigPath),
 #endif
@@ -315,7 +314,7 @@ void State<NSE>::write3D()
 	predefine3D(fname, nse.blocks.front());
 	if (! dataManager.isEngineOpen(fname)) {
 		// Open as Append after the first cycle
-		const auto mode = (output3DCycle == 0) ? adios2::Mode::Write : adios2::Mode::Append;
+		const auto mode = (cnt[OUT3D].count == 0) ? adios2::Mode::Write : adios2::Mode::Append;
 		dataManager.openEngine(fname, mode);
 	}
 	dataManager.beginStep(fname);
@@ -345,7 +344,8 @@ void State<NSE>::write3D()
 	}
 
 	dataManager.endStep(fname);
-	spdlog::info("Output {} written, time {:f}, cycle {:d}", fname, outputTime, output3DCycle);
+	spdlog::info("Output {} written, time {:f}, cycle {:d}", fname, outputTime, cnt[OUT3D].count);
+	cnt[OUT3D].count++;
 
 	timer.stop();
 	spdlog::info("write3D saved in: {:.2f} seconds", timer.getRealTime());
@@ -1422,18 +1422,17 @@ void State<NSE>::AfterSimUpdate()
 {
 	timer_AfterSimUpdate.start();
 
+	timer_wait_io.start();
+	waitForPendingIO();
+	timer_wait_io.stop();
+
 	bool copy_macro = false;
 	for (int c = 0; c < MAX_COUNTER; c++)
 		if (c != PRINT && c != SAVESTATE)
 			if (cnt[c].action(nse.physTime()))
 				copy_macro = true;
 
-	// Wait for any pending async I/O before overwriting hmacro
 	if (copy_macro) {
-		timer_wait_io.start();
-		waitForPendingIO();
-		timer_wait_io.stop();
-
 		nse.copyMacroToHost();
 	}
 
@@ -1506,7 +1505,6 @@ void State<NSE>::AfterSimUpdate()
 	}
 	if (do_write3D) {
 		const int gpu_id = TNL::Backend::getDevice();
-		output3DCycle = cnt[OUT3D].count++;
 		auto io_work = [this, gpu_id]()
 		{
 			TNL::Backend::setDevice(gpu_id);
