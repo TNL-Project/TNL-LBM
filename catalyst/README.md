@@ -1,8 +1,9 @@
-# Catalyst Frame Exporter Guide
+# ADIOS2 Frame Exporter Guide
 
-This guide explains how to turn the ADIOS2 output simulations in this repository into PNG frames for post-processing. The
+This guide explains how to turn ADIOS2 simulation output from this repository into PNG frames for post-processing. The
 `tnl_lbm_export_frames.py` script reads velocity, lbm_density, and other fields from an
-ADIOS2 stream SST or BP file and exports planar slices as images.
+ADIOS2 SST stream or BP file and exports planar slices as images. It is an offline
+ADIOS2 reader/exporter; it does not use ParaView Catalyst.
 
 ## Quick start
 
@@ -20,9 +21,9 @@ ADIOS2 stream SST or BP file and exports planar slices as images.
 
        # For ADIOS2 stream directory (SST):
        python3 catalyst/tnl_lbm_export_frames.py \
-           --instream results_sim_1_res04_np001/output_3D \
-           --outdir frames/velocity \
-           --prefix sim1 \
+           --instream results_sim_4_float_np002/res=04_Re=1600_nu=1.000000e-04/output_3D \
+           --outdir frames \
+           --prefix sim4 \
            --plane xy \
            --varname velocity \
            --component magnitude \

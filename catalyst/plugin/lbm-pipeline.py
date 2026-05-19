@@ -10,9 +10,6 @@ options.EnableCatalystLive = 1
 options.CatalystLiveTrigger = "TimeStep"
 
 
-# ---------------------------------------------------------------------------
-#  Render view
-# ---------------------------------------------------------------------------
 def SetupRenderView():
     view = CreateView("RenderView")
     try:
@@ -36,10 +33,6 @@ def SetupCatalystProducer():
     producer = TrivialProducer(registrationName="fides")
     return producer
 
-
-# ---------------------------------------------------------------------------
-#  Visualization pipeline
-# ---------------------------------------------------------------------------
 
 def SetupVisPipeline(producer, view):
     producerDisplay = Show(producer, view, 'GeometryRepresentation')
@@ -128,11 +121,6 @@ def _set_slice_origin_to_center(source, slice_filter):
     except Exception:
         pass
 
-
-# ---------------------------------------------------------------------------
-#  Catalyst execution callback
-# ---------------------------------------------------------------------------
-
 pipeline_filters = None
 
 def catalyst_execute(info):
@@ -159,8 +147,5 @@ def catalyst_execute(info):
     print_info("catalyst_execute  cycle=%d  time=%.6f", info.cycle, info.time)
 
 
-# ---------------------------------------------------------------------------
-#  Initialize for Catalyst inline mode
-# ---------------------------------------------------------------------------
 view = SetupRenderView()
 producer = SetupCatalystProducer()
