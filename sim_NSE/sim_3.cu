@@ -28,6 +28,10 @@ struct StateLocal : State<NSE>
 	real ball_diameter = 0;
 	point_t ball_c;
 
+	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath = "adios2.xml")
+	: State<NSE>(id, communicator, std::move(lat), adiosConfigPath)
+	{}
+
 	void setupBoundaries() override
 	{
 		nse.setBoundaryX(0, BC::GEO_INFLOW_LEFT);								 // left
@@ -105,10 +109,6 @@ struct StateLocal : State<NSE>
 			block.data.inflow_vz = 0;
 		}
 	}
-
-	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath = "adios2.xml")
-	: State<NSE>(id, communicator, std::move(lat), adiosConfigPath)
-	{}
 };
 
 template <typename NSE>

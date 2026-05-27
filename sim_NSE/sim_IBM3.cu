@@ -80,6 +80,20 @@ struct StateLocal : State<NSE>
 	real ball_diameter = 0.01;
 	point_t ball_c;
 
+	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath = "adios2.xml")
+	: State<NSE>(id, communicator, std::move(lat), adiosConfigPath)
+	{}
+
+	void setupBoundaries() override
+	{
+		nse.setBoundaryX(0, BC::GEO_INFLOW_LEFT);					   // left
+		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_EQ);  // right
+		nse.setBoundaryY(0, BC::GEO_INFLOW);						   // back
+		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_INFLOW);	   // front
+		nse.setBoundaryZ(0, BC::GEO_INFLOW);						   // top
+		nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_INFLOW);	   // bottom
+	}
+
 	[[nodiscard]] std::vector<std::string> getOutputDataNames() const override
 	{
 		// return all quantity names used in outputData
@@ -183,20 +197,6 @@ struct StateLocal : State<NSE>
 			block.data.inflow_vz = 0;
 		}
 	}
-
-	void setupBoundaries() override
-	{
-		nse.setBoundaryX(0, BC::GEO_INFLOW_LEFT);					   // left
-		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_EQ);  // right
-		nse.setBoundaryY(0, BC::GEO_INFLOW);						   // back
-		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_INFLOW);	   // front
-		nse.setBoundaryZ(0, BC::GEO_INFLOW);						   // top
-		nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_INFLOW);	   // bottom
-	}
-
-	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath = "adios2.xml")
-	: State<NSE>(id, communicator, std::move(lat), adiosConfigPath)
-	{}
 };
 
 template <typename NSE>

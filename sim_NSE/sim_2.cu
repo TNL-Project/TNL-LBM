@@ -63,6 +63,22 @@ struct StateLocal : State<NSE>
 	real* l1errors;
 	int error_idx = 0;
 
+	StateLocal(
+		const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, bool periodic_lattice, const std::string& adiosConfigPath = "adios2.xml"
+	)
+	: State<NSE>(id, communicator, std::move(lat), adiosConfigPath, periodic_lattice)
+	{
+		errors_count = 10;
+		l1errors = new real[errors_count];
+		for (int i = 0; i < errors_count; i++)
+			l1errors[i] = 1;
+	}
+
+	~StateLocal() override
+	{
+		delete[] l1errors;
+	}
+
 	real raw_analytical_ux(int n, idx lbm_y, idx lbm_z)
 	{
 		if (lbm_y == 0 || lbm_y == nse.lat.global.y() - 1 || lbm_z == 0 || lbm_z == nse.lat.global.z() - 1)
@@ -304,22 +320,6 @@ struct StateLocal : State<NSE>
 				l2error_phys,
 				stopping
 			);
-	}
-
-	StateLocal(
-		const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, bool periodic_lattice, const std::string& adiosConfigPath = "adios2.xml"
-	)
-	: State<NSE>(id, communicator, std::move(lat), adiosConfigPath, periodic_lattice)
-	{
-		errors_count = 10;
-		l1errors = new real[errors_count];
-		for (int i = 0; i < errors_count; i++)
-			l1errors[i] = 1;
-	}
-
-	~StateLocal() override
-	{
-		delete[] l1errors;
 	}
 };
 

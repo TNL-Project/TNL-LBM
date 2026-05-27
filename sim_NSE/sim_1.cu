@@ -23,19 +23,9 @@ struct StateLocal : State<NSE>
 
 	real lbm_inflow_vx = 0;
 
-	// Override checkpointStateLocal to save/load additional state data
-	void checkpointStateLocal(adios2::Mode mode) override
-	{
-		// Save/load the inflow velocity
-		checkpoint.saveLoadAttribute("lbm_inflow_vx", lbm_inflow_vx);
-
-		// You can add any additional state data that needs to be saved/loaded here
-
-		if (mode == adios2::Mode::Read)
-			spdlog::info("Checkpoint loaded local state (mode: Read)");
-		else
-			spdlog::info("Checkpoint saved local state (mode: Write)");
-	}
+	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath = "adios2.xml")
+	: State<NSE>(id, communicator, std::move(lat), adiosConfigPath)
+	{}
 
 	void setupBoundaries() override
 	{
@@ -122,9 +112,19 @@ struct StateLocal : State<NSE>
 		}
 	}
 
-	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath = "adios2.xml")
-	: State<NSE>(id, communicator, std::move(lat), adiosConfigPath)
-	{}
+	// Override checkpointStateLocal to save/load additional state data
+	void checkpointStateLocal(adios2::Mode mode) override
+	{
+		// Save/load the inflow velocity
+		checkpoint.saveLoadAttribute("lbm_inflow_vx", lbm_inflow_vx);
+
+		// You can add any additional state data that needs to be saved/loaded here
+
+		if (mode == adios2::Mode::Read)
+			spdlog::info("Checkpoint loaded local state (mode: Read)");
+		else
+			spdlog::info("Checkpoint saved local state (mode: Write)");
+	}
 };
 
 template <typename NSE>

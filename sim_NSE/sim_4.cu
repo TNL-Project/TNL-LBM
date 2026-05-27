@@ -107,6 +107,10 @@ struct StateLocal : State<NSE>
 
 	std::shared_ptr<spdlog::logger> kinetic_energy_logger = nullptr;
 
+	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath, std::vector<BLOCK>&& blocks)
+	: State<NSE>(id, communicator, std::move(lat), adiosConfigPath, std::move(blocks))
+	{}
+
 	void setupBoundaries() override
 	{
 		nse.setBoundaryX(0, BC::GEO_PERIODIC);						 // left
@@ -301,10 +305,6 @@ struct StateLocal : State<NSE>
 			kinetic_energy_logger->flush();
 		}
 	}
-
-	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath, std::vector<BLOCK>&& blocks)
-	: State<NSE>(id, communicator, std::move(lat), adiosConfigPath, std::move(blocks))
-	{}
 };
 
 template <typename NSE>
