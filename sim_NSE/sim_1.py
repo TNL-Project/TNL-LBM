@@ -108,7 +108,7 @@ class StateLocal(State):
 
 
 # Define the simulation function in Python
-def sim(RESOLUTION: int = 2, adiosConfigPath: str = "adios2.xml") -> None:
+def sim(adiosConfigPath: str = "adios2.xml", RESOLUTION: int = 2) -> None:
     point_t = State.point_t
     lat_t = State.lat_t
 
@@ -124,7 +124,7 @@ def sim(RESOLUTION: int = 2, adiosConfigPath: str = "adios2.xml") -> None:
     PHYS_DT = LBM_VISCOSITY / PHYS_VISCOSITY * PHYS_DL * PHYS_DL
     PHYS_ORIGIN = point_t((0.0, 0.0, 0.0))
 
-    # initialize the lattice
+    # Initialize the lattice
     lat = lat_t()
     lat.global_ = lat_t.CoordinatesType((X, Y, Z))
     lat.physOrigin = PHYS_ORIGIN
@@ -138,13 +138,13 @@ def sim(RESOLUTION: int = 2, adiosConfigPath: str = "adios2.xml") -> None:
     if not state.canCompute():
         return
 
-    # problem parameters
+    # Problem parameters
     state.lbm_inflow_vx = lat.phys2lbmVelocity(PHYS_VELOCITY)
 
     state.nse.physFinalTime = 1.0
     state.cnt[PRINT].period = 0.001
 
-    # add cuts
+    # Add visualization cuts
     state.cnt[OUT2D].period = 0.001
     state.add2Dcut_X(X // 2, "cutsX/cut_X")
     state.add2Dcut_Y(Y // 2, "cutsY/cut_Y")
@@ -163,23 +163,23 @@ def main() -> None:
         description="Simple incompressible Navier-Stokes simulation example."
     )
     parser.add_argument(
+        "--adios-config",
+        type=str,
+        default="adios2.xml",
+        help="path to ADIOS2 configuration file (default: %(default)s)",
+    )
+    parser.add_argument(
         "--resolution",
         type=int,
         default=1,
         help="resolution of the lattice (default: %(default)s)",
-    )
-    parser.add_argument(
-        "--adios-config",
-        type=str,
-        default="adios2.xml",
-        help="path to adios2.xml configuration file",
     )
     args = parser.parse_args()
 
     if args.resolution < 1:
         raise ValueError("CLI error: resolution must be at least 1")
 
-    sim(args.resolution, args.adios_config)
+    sim(args.adios_config, args.resolution)
 
 
 if __name__ == "__main__":
