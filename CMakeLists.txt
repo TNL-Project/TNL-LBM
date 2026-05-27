@@ -214,6 +214,9 @@ set(TNL_EXPORT_INTERFACE_TARGETS ON)  # needed for adding to the interface targe
 FetchContent_MakeAvailable(TNL)
 
 if(TNL_LBM_BUILD_PYTHON)
+    # this must be called before find_package(nanobind)
+    find_package(Python COMPONENTS Interpreter Development REQUIRED)
+
     FetchContent_Declare(nanobind
         GIT_REPOSITORY https://github.com/wjakob/nanobind.git
         GIT_TAG v2.12.0

@@ -7,6 +7,7 @@ from mpi4py import MPI
 
 PROJECT_DIR = Path(__file__).parent.parent
 
+sys.path.append(str(PROJECT_DIR / "build/_deps/pytnl-build/src"))
 sys.path.append(str(PROJECT_DIR / "build/pytnl_lbm/"))
 
 from pytnl_lbm import (  # noqa: E402
@@ -16,6 +17,7 @@ from pytnl_lbm import (  # noqa: E402
     PRINT,
     UniformDataWriter,
     execute,
+    getMacroView,
 )
 from pytnl_lbm import State_SP_D3Q27_CUM_ConstInflow as State  # noqa: E402
 
@@ -81,20 +83,22 @@ class StateLocal(State):
         end: State.idx3d,
     ) -> None:
         if hasattr(block.hmacro, "getLocalView"):
-            hmacro_np = np.from_dlpack(block.hmacro.getLocalView())
+            # DistributedNDArray: cannot use NumPy's array directly because it
+            # does not work with overlaps. Note that UniformDataWriter may write
+            # data from overlaps to hide visual gaps between blocks in ParaView.
+            def get_macro_view(macro: int) -> np.ndarray:
+                return getMacroView(block.hmacro, int(macro))
         else:
+            # Non-distributed computing: use NumPy's array directly
             hmacro_np = np.from_dlpack(block.hmacro)
-        # convert global begin and end to local coordinates so we can pass them along
-        # with a local ndarray to the writer.write function
-        begin -= block.offset
-        end -= block.offset
-        # NOTE: output is in lattice units
-        writer.write(
-            "lbm_density", hmacro_np[self.nse.MACRO.e_rho, :, :, :], begin, end
-        )
-        writer.write("velocity_x", hmacro_np[self.nse.MACRO.e_vx, :, :, :], begin, end)
-        writer.write("velocity_y", hmacro_np[self.nse.MACRO.e_vy, :, :, :], begin, end)
-        writer.write("velocity_z", hmacro_np[self.nse.MACRO.e_vz, :, :, :], begin, end)
+
+            def get_macro_view(macro: int) -> np.ndarray:
+                return hmacro_np[macro, :, :, :]
+
+        writer.write("lbm_density", get_macro_view(self.nse.MACRO.e_rho), begin, end)
+        writer.write("velocity_x", get_macro_view(self.nse.MACRO.e_vx), begin, end)
+        writer.write("velocity_y", get_macro_view(self.nse.MACRO.e_vy), begin, end)
+        writer.write("velocity_z", get_macro_view(self.nse.MACRO.e_vz), begin, end)
 
     def updateKernelVelocities(self) -> None:
         for block in self.nse.blocks:

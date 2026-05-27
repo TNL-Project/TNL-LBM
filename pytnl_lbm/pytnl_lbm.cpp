@@ -22,6 +22,15 @@ NB_MODULE(pytnl_lbm, m)
 	nb::module_::import_("pytnl._containers_cuda");
 #endif
 
+#ifdef HAVE_MPI
+	nb::module_::import_("mpi4py.MPI");
+	// Importing mpi4py.MPI does MPI_Init, but it does not handle GPU selection.
+	// Calling selectGPU() from the module initialization ensures the same behavior
+	// as the TNL::MPI::Initialize wrapper function.
+	if (TNL::MPI::isInitialized())
+		TNL::MPI::selectGPU();
+#endif
+
 	export_Lattice<3, float, int>(m, "Lattice_3_float_int");
 	export_Lattice<3, float, long int>(m, "Lattice_3_float_long");
 	export_Lattice<3, double, int>(m, "Lattice_3_double_int");
@@ -38,6 +47,7 @@ NB_MODULE(pytnl_lbm, m)
 	export_UniformDataWriter<TRAITS>(m, "UniformDataWriter");
 
 	m.def("execute", execute<State<SP_D3Q27_CUM_ConstInflow>>);
+	m.def("getMacroView", getMacroView<SP_D3Q27_CUM_ConstInflow::TRAITS, SP_D3Q27_CUM_ConstInflow::TRAITS::hmacro_array_t>);
 
 	using macro_indexer_t = typename SP_D3Q27_CUM_ConstInflow::TRAITS::__hmacro_array_t::IndexerType;
 	using local_hmacro_array_t = typename SP_D3Q27_CUM_ConstInflow::TRAITS::__hmacro_array_t;
@@ -53,5 +63,11 @@ NB_MODULE(pytnl_lbm, m)
 	using dmacro_array_t = typename SP_D3Q27_CUM_ConstInflow::TRAITS::dmacro_array_t;
 	export_DistributedNDArray<hmacro_array_t>(m, "dist_hmacro_array_SP_D3Q27_CUM_ConstInflow");
 	export_DistributedNDArray<dmacro_array_t>(m, "dist_dmacro_array_SP_D3Q27_CUM_ConstInflow");
+
+	// special subarray view used in outputData
+	using special_macro_view_t = decltype(getMacroView<SP_D3Q27_CUM_ConstInflow::TRAITS, SP_D3Q27_CUM_ConstInflow::TRAITS::hmacro_array_t>(
+		SP_D3Q27_CUM_ConstInflow::TRAITS::hmacro_array_t(), 0
+	));
+	export_DistributedNDArray<special_macro_view_t>(m, "macro_view_SP_D3Q27_CUM_ConstInflow");
 #endif
 }
