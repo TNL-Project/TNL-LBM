@@ -324,7 +324,7 @@ struct StateLocal : State<NSE>
 };
 
 template <typename NSE>
-int sim(const std::string& adios_config, int RES, bool use_forcing, Scaling scaling, double final_time)
+void sim(const std::string& adios_config, int RES, bool use_forcing, Scaling scaling, double final_time)
 {
 	using idx = typename NSE::TRAITS::idx;
 	using real = typename NSE::TRAITS::real;
@@ -371,11 +371,11 @@ int sim(const std::string& adios_config, int RES, bool use_forcing, Scaling scal
 	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, use_forcing, adios_config);
 
 	if (! state.canCompute())
-		return 0;
+		return;
 
 	if (state.nse.blocks.front().local.x() <= 2) {
 		std::cout << "Local block size " << state.nse.blocks.front().local.x() << " is too small, skipping this resolution." << std::endl;
-		return 0;
+		return;
 	}
 
 	// NOTE: this is for NSE_Data_ConstInflow
@@ -467,8 +467,6 @@ int sim(const std::string& adios_config, int RES, bool use_forcing, Scaling scal
 	//state.add2Dcut_Z(LBM_Z/2,"cut_Z");
 
 	execute(state);
-
-	return 0;
 }
 
 template <typename TRAITS = TraitsSP>

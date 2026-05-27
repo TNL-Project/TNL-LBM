@@ -200,7 +200,7 @@ struct StateLocal : State<NSE>
 };
 
 template <typename NSE>
-int
+void
 sim(const std::string& adios_config, int RES, double Re, double discretization_ratio, IbmCompute computeVariant, int dirac, IbmMethod methodVariant)
 {
 	using idx = typename NSE::TRAITS::idx;
@@ -256,7 +256,7 @@ sim(const std::string& adios_config, int RES, double Re, double discretization_r
 	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, adios_config);
 
 	//if (!state.canCompute())
-	//	return 0;
+	//	return;
 
 	state.lbm_inflow_vx = i_LBM_VELOCITY;
 	state.nse.physCharLength = BALL_DIAMETER;  // [m]
@@ -290,8 +290,6 @@ sim(const std::string& adios_config, int RES, double Re, double discretization_r
 	state.ibm.mtx_output = true;
 
 	execute(state);
-
-	return 0;
 }
 
 template <typename TRAITS = TraitsSP>

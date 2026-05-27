@@ -112,7 +112,7 @@ struct StateLocal : State<NSE>
 };
 
 template <typename NSE>
-int sim(const std::string& adios_config, int RES, double Re)
+void sim(const std::string& adios_config, int RES, double Re)
 {
 	using idx = typename NSE::TRAITS::idx;
 	using real = typename NSE::TRAITS::real;
@@ -150,7 +150,7 @@ int sim(const std::string& adios_config, int RES, double Re)
 	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, adios_config);
 
 	if (! state.canCompute())
-		return 0;
+		return;
 
 	// set problem parameters
 	state.ball_c[0] = 2 * ball_diameter;		 // [m]
@@ -177,8 +177,6 @@ int sim(const std::string& adios_config, int RES, double Re)
 	state.add2Dcut_Z(LBM_Z / 2, "cut_Z");
 
 	execute(state);
-
-	return 0;
 }
 
 template <typename TRAITS = TraitsSP>

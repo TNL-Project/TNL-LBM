@@ -128,7 +128,7 @@ struct StateLocal : State<NSE>
 };
 
 template <typename NSE>
-int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
+void sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 {
 	using idx = typename NSE::TRAITS::idx;
 	using real = typename NSE::TRAITS::real;
@@ -159,7 +159,7 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, adios_config);
 
 	if (! state.canCompute())
-		return 0;
+		return;
 
 	// Problem parameters
 	state.lbm_inflow_vx = lat.phys2lbmVelocity(PHYS_VELOCITY);
@@ -188,8 +188,6 @@ int sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	spdlog::info("Creating checkpoints every {} seconds of wall time", state.cnt[SAVESTATE].period);
 
 	execute(state);
-
-	return 0;
 }
 
 template <typename TRAITS = TraitsSP>

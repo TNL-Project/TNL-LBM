@@ -308,7 +308,7 @@ struct StateLocal : State<NSE>
 };
 
 template <typename NSE>
-int sim(
+void sim(
 	const std::string& adios_config = "adios2.xml",
 	int RESOLUTION = 2,
 	double Re = 1600,			 // [-] Reynolds number
@@ -360,7 +360,7 @@ int sim(
 	spdlog::info("Physical parameters: L={}, V_0={}, Re={}, nu={}, dl={}, dt={}", L, V_0, Re, PHYS_VISCOSITY, PHYS_DL, PHYS_DT);
 
 	if (! state.canCompute())
-		return 0;
+		return;
 
 	state.nse.physFinalTime = 20 * convective_time;
 	state.cnt[PRINT].period = state.nse.physFinalTime / 1000;
@@ -378,8 +378,6 @@ int sim(
 	state.cnt[OUT3D].period = state.nse.physFinalTime / 10;
 
 	execute(state);
-
-	return 0;
 }
 
 template <typename TRAITS = TraitsSP>
