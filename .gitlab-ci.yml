@@ -1,6 +1,6 @@
 default:
   interruptible: true
-  image: "jlk.fjfi.cvut.cz:5000/fjfi-mmg/archlinux-tnl-cuda:latest"
+  image: "registry.gitlab.com/tnl-project/container-images/archlinux-tnl-cuda:latest"
   before_script:
     # make sure that $PATH and other essential variables are set correctly
     - source /etc/profile
@@ -57,7 +57,7 @@ build_CUDA_Debug:
 
 build_HIP_Release:
   stage: build
-  image: "jlk.fjfi.cvut.cz:5000/fjfi-mmg/archlinux-tnl-rocm:latest"
+  image: "registry.gitlab.com/tnl-project/container-images/archlinux-tnl-rocm:latest"
   tags:
     - docker
     - hip-rocm
@@ -68,7 +68,7 @@ build_HIP_Release:
 
 build_HIP_Debug:
   stage: build
-  image: "jlk.fjfi.cvut.cz:5000/fjfi-mmg/archlinux-tnl-rocm:latest"
+  image: "registry.gitlab.com/tnl-project/container-images/archlinux-tnl-rocm:latest"
   tags:
     - docker
     - hip-rocm
@@ -88,7 +88,7 @@ build_without_MPI:
 
 build_subproject:
   stage: build
-  image: "jlk.fjfi.cvut.cz:5000/fjfi-mmg/archlinux-cuda:latest"
+  image: "registry.gitlab.com/tnl-project/container-images/archlinux-cuda:latest"
   script:
     - pacman -Syu --needed --noconfirm cmake ninja git libpng fmt spdlog adios2
     - cd tests/subproject
