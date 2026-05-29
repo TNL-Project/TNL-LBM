@@ -439,7 +439,7 @@ void Lagrange3D<LBM>::constructMatricesGPU()
 	// Calculate row capacities of matrix M
 	TNL::Backend::LaunchConfiguration dM_config;
 	dM_config.blockSize.x = 256;
-	dM_config.gridSize.x = TNL::roundUpDivision(m, dM_config.blockSize.x);
+	dM_config.gridSize.x = TNL::roundUpDivision(m, static_cast<idx>(dM_config.blockSize.x));
 	TNL::Backend::launchKernelSync(
 		dM_row_capacities_kernel<LBM>, dM_config, dLL_lat.getView(), dM_row_capacities.getView(), lbm.blocks.front().local, diracDeltaTypeEL
 	);
@@ -454,7 +454,7 @@ void Lagrange3D<LBM>::constructMatricesGPU()
 	// Construct the matrix M
 	TNL::Backend::LaunchConfiguration dM_config_build;
 	dM_config_build.blockSize.x = 256;
-	dM_config_build.gridSize.x = TNL::roundUpDivision(m, dM_config_build.blockSize.x);
+	dM_config_build.gridSize.x = TNL::roundUpDivision(m, static_cast<idx>(dM_config_build.blockSize.x));
 
 	TNL::Backend::launchKernelSync(
 		dM_construction_kernel<LBM>,
@@ -485,7 +485,7 @@ void Lagrange3D<LBM>::constructMatricesGPU()
 	// Calculate row capacities of matrix A
 	TNL::Backend::LaunchConfiguration dA_config;
 	dA_config.blockSize.x = 256;
-	dA_config.gridSize.x = TNL::roundUpDivision(m, dA_config.blockSize.x);
+	dA_config.gridSize.x = TNL::roundUpDivision(m, static_cast<idx>(dA_config.blockSize.x));
 	TNL::Backend::launchKernelSync(
 		dA_row_capacities_kernel<LBM>,
 		dA_config,
@@ -505,7 +505,7 @@ void Lagrange3D<LBM>::constructMatricesGPU()
 	// Construct the matrix A
 	TNL::Backend::LaunchConfiguration dA_construct_config;
 	dA_construct_config.blockSize.x = 256;
-	dA_construct_config.gridSize.x = TNL::roundUpDivision(m, dA_construct_config.blockSize.x);
+	dA_construct_config.gridSize.x = TNL::roundUpDivision(m, static_cast<idx>(dA_construct_config.blockSize.x));
 	TNL::Backend::launchKernelSync(
 		dA_construction_kernel<LBM>,
 		dA_construct_config,
