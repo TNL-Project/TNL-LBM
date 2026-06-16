@@ -232,15 +232,15 @@ dim3 LBM_BLOCK<CONFIG>::getCudaGridSize(const idx3d& local_size, const dim3& blo
 	if (x > 0)
 		gridSize.x = x;
 	else
-		gridSize.x = TNL::roundUpDivision(local_size.x(), block_size.x);
+		gridSize.x = TNL::roundUpDivision(local_size.x(), static_cast<idx>(block_size.x));
 	if (y > 0)
 		gridSize.y = y;
 	else
-		gridSize.y = TNL::roundUpDivision(local_size.y(), block_size.y);
+		gridSize.y = TNL::roundUpDivision(local_size.y(), static_cast<idx>(block_size.y));
 	if (z > 0)
 		gridSize.z = z;
 	else
-		gridSize.z = TNL::roundUpDivision(local_size.z(), block_size.z);
+		gridSize.z = TNL::roundUpDivision(local_size.z(), static_cast<idx>(block_size.z));
 	return gridSize;
 }
 

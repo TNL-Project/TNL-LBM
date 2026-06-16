@@ -206,7 +206,7 @@ FetchContent_MakeAvailable(magic_enum)
 
 FetchContent_Declare(TNL
     GIT_REPOSITORY https://gitlab.com/tnl-project/tnl.git
-    GIT_TAG 0.2.0
+    GIT_TAG 0.4.0
     SYSTEM
     EXCLUDE_FROM_ALL
 )
@@ -227,7 +227,7 @@ if(TNL_LBM_BUILD_PYTHON)
 
     FetchContent_Declare(PyTNL
         GIT_REPOSITORY https://gitlab.com/tnl-project/pytnl.git
-        GIT_TAG 0.0.11
+        GIT_TAG 0.0.12
         SYSTEM
         FIND_PACKAGE_ARGS
     )
