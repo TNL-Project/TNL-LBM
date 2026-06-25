@@ -386,9 +386,9 @@ struct State_NSE_ADE : State<NSE>
 		this->ensureFidesJsonModel(dimsVariable, fidesFields);
 	}
 
-	void outputDataPhase1(UniformDataWriter<TRAITS>& writer, std::size_t block_index, const idx3d& begin, const idx3d& end) override
+	void outputDataPhase1(UniformDataWriter<TRAITS>& writer, std::size_t block_index, const idx3d& begin, const idx3d& end, real time) override
 	{
-		writer.write("TIME", this->outputTime);
+		writer.write("TIME", time);
 		writer.write("wall_nse", nse.blocks[block_index].hmap, begin, end);
 		this->outputData(writer, nse.blocks[block_index], begin, end);
 		writer.write("wall_ade", ade.blocks[block_index].hmap, begin, end);

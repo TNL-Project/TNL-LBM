@@ -114,7 +114,7 @@ struct State
 	// Pending async I/O from AfterSimUpdate (single-process overlap with SimUpdate)
 	std::future<void> pendingIO_;
 	bool asyncIOAllowed = true;
-	real outputTime = 0;
+	bool probe_needs_macro_on_host = true;
 	void waitForPendingIO();
 
 	// Timers for profiling
@@ -141,7 +141,7 @@ struct State
 	virtual void stat2Reset() {}
 
 	// data output
-	void write2D();
+	void write2D(real time, int cycle);
 	template <typename... ARGS>
 	void add2Dcut_X(idx x, const char* fmt, ARGS... args);
 	template <typename... ARGS>
@@ -149,7 +149,7 @@ struct State
 	template <typename... ARGS>
 	void add2Dcut_Z(idx z, const char* fmt, ARGS... args);
 
-	void write3D();
+	void write3D(real time, int cycle);
 
 	virtual void predefineOutputVariables(
 		const std::string& ioName, const BLOCK_NSE& block, const adios2::Dims& shape, const adios2::Dims& start, const adios2::Dims& count
@@ -161,12 +161,12 @@ struct State
 	void ensureFidesJsonModel(const std::string& dimsVariable, const std::vector<std::string>& fields);
 
 	// 3D cuts
-	void write3Dcut();
+	void write3Dcut(real time, int cycle);
 	template <typename... ARGS>
 	void add3Dcut(idx ox, idx oy, idx oz, idx lx, idx ly, idx lz, const char* fmt, ARGS... args);
 
 	// "internal" method which outputs implicit variables (e.g. TIME and wall)
-	virtual void outputDataPhase1(UniformDataWriter<TRAITS>& writer, std::size_t block_index, const idx3d& begin, const idx3d& end);
+	virtual void outputDataPhase1(UniformDataWriter<TRAITS>& writer, std::size_t block_index, const idx3d& begin, const idx3d& end, real time);
 
 	// main entry points for extending in derived classes
 	[[nodiscard]] virtual std::vector<std::string> getOutputDataNames() const
