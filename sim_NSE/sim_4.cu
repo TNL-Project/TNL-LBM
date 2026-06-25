@@ -109,7 +109,9 @@ struct StateLocal : State<NSE>
 
 	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath, std::vector<BLOCK>&& blocks)
 	: State<NSE>(id, communicator, std::move(lat), adiosConfigPath, std::move(blocks))
-	{}
+	{
+		this->probe_needs_macro_on_host = false;
+	}
 
 	void setupBoundaries() override
 	{
