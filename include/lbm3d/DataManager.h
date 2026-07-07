@@ -85,7 +85,6 @@ public:
 			filename += ".bp";
 		}
 
-		spdlog::info("Opening engine '{}' (after variable definitions)", ioName);
 		engines_[ioName] = io_ref.Open(filename, mode);
 		current_mode_[ioName] = mode;
 	}

@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<adios-config>
+    <io name="Output">
+        <engine type="plugin">
+            <parameter key="PluginName" value="fides"/>
+            <parameter key="PluginLibrary" value="ParaViewADIOSInSituEngine"/>
+            <parameter key="Script" value="tests/lbm-pipeline-test.py"/>
+        </engine>
+    </io>
+</adios-config>

@@ -38,6 +38,10 @@ build_CUDA_Release:
     - docker
     - nvidia
   script:
+    # ParaView provides the libcatalyst-paraview.so implementation required by the inline Catalyst plugin test.
+    # --overwrite is needed because the NVIDIA CDI runtime creates a symlink for libGLX_indirect.so.0 to libGLX_nvidia.so,
+    # which otherwise conflicts with the mesa dependency of paraview.
+    - pacman -Suy --needed --noconfirm --overwrite 'usr/lib/libGLX_indirect.so*' paraview
     - cmake -B build -S . -G Ninja
             -DCMAKE_BUILD_TYPE=Release
             -DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCH}
@@ -45,6 +49,8 @@ build_CUDA_Release:
     # regression tests for LBM-IBM
     - ./tests/compare-IBM-matrices.sh CPU
     - ./tests/compare-IBM-matrices.sh GPU
+    # end-to-end output-data test
+    - ./tests/compare-outputdata.sh
   variables:
     # CUDA builds run on runners with GPU passthrough
     OMPI_MCA_accelerator: "cuda"
