@@ -40,7 +40,7 @@ struct StateLocal : State<NSE>
 
 	void setupBoundaries() override
 	{
-		nse.setBoundaryX(0, BC::GEO_INFLOW_BB_LEFT);  // left
+		nse.setBoundaryX(0, BC::GEO_INFLOW_BOUNCEBACK);  // left
 
 		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_WALL);	 // right
 		nse.setBoundaryZ(0, BC::GEO_WALL);						 // top
