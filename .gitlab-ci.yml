@@ -17,6 +17,8 @@ default:
     - pacman -Suy --needed --noconfirm python-mpi4py
 
 variables:
+  # avoid Open MPI abort on dual-accelerator hosts (both CUDA and ROCm detected)
+  OMPI_MCA_accelerator: "null"
 
 stages:
   - lint
@@ -32,6 +34,9 @@ typos:
 
 build_CUDA_Release:
   stage: build
+  tags:
+    - docker
+    - nvidia
   script:
     - cmake -B build -S . -G Ninja
             -DCMAKE_BUILD_TYPE=Release
@@ -40,17 +45,23 @@ build_CUDA_Release:
     # regression tests for LBM-IBM
     - ./tests/compare-IBM-matrices.sh CPU
     - ./tests/compare-IBM-matrices.sh GPU
-  tags:
-    - docker
-    - nvidia
+  variables:
+    # CUDA builds run on runners with GPU passthrough
+    OMPI_MCA_accelerator: "cuda"
 
 build_CUDA_Debug:
   stage: build
+  tags:
+    - docker
+    - nvidia
   script:
     - cmake -B build -S . -G Ninja
             -DCMAKE_BUILD_TYPE=Debug
             -DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCH}
     - cmake --build build
+  variables:
+    # CUDA builds run on runners with GPU passthrough
+    OMPI_MCA_accelerator: "cuda"
 
 build_HIP_Release:
   stage: build
@@ -62,6 +73,9 @@ build_HIP_Release:
     - cmake -B build -S . -G Ninja
             -DCMAKE_BUILD_TYPE=Release
     - cmake --build build
+  variables:
+    # ROCm builds run on runners with AMD GPU passthrough
+    OMPI_MCA_accelerator: "rocm"
 
 build_HIP_Debug:
   stage: build
@@ -73,6 +87,9 @@ build_HIP_Debug:
     - cmake -B build -S . -G Ninja
             -DCMAKE_BUILD_TYPE=Debug
     - cmake --build build
+  variables:
+    # ROCm builds run on runners with AMD GPU passthrough
+    OMPI_MCA_accelerator: "rocm"
 
 build_without_MPI:
   stage: build
