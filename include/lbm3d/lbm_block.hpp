@@ -293,8 +293,13 @@ void LBM_BLOCK<CONFIG>::computeInitialMacro()
 		{
 			const auto& [y, z, x] = yzx;
 			typename CONFIG::template KernelStruct<dreal> KS;
+#ifdef AA_PATTERN
+			for (int i = 0; i < CONFIG::Q; i++)
+				KS.f[i] = SD.df(df_cur, opposite_direction(i), x, y, z);
+#else
 			for (int i = 0; i < CONFIG::Q; i++)
 				KS.f[i] = SD.df(df_cur, i, x, y, z);
+#endif
 
 			CONFIG::MACRO::copyQuantities(SD, KS, x, y, z);
 			CONFIG::MACRO::zeroForcesInKS(KS);
