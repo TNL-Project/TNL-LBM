@@ -349,6 +349,13 @@ enum : std::uint8_t
 	mpp = 26,
 };
 
+// opposite direction index: the D3Q27 enum pairs each direction with its
+// opposite as consecutive values (1↔2, 3↔4, ..., 25↔26), with zzz=0 self-opposite.
+constexpr int opposite_direction(int dir)
+{
+	return dir == 0 ? 0 : (dir & 1) ? dir + 1 : dir - 1;
+}
+
 // array of sync directions for the MPI synchronizer
 // (indexing must correspond to the enum above)
 inline constexpr TNL::Containers::SyncDirection df_sync_directions[27] = {

@@ -308,7 +308,17 @@ void LBM<CONFIG>::updateKernelData()
 {
 	for (auto& block : blocks) {
 		// needed for A-A pattern
-		block.data.even_iter = (iterations % 2) == 0;
+		// The A-A cycle must start with the spatial sub-step (even_iter == false), not the reflect sub-step.
+		// The spatial sub-step reads A[opposite(i)](x - c_i), which performs streaming from the twisted array;
+		// the reflect sub-step reads A[i](x), an identity read with no streaming.
+		// If reflect runs first, it collides the initial state without streaming, whereas the A-B pattern streams before its first collision.
+		// This would produce a systematic error that propagates through the entire simulation.
+		// Starting with the spatial sub-step, with DFs initialized in twisted orientation (A[opposite(i)] = eq_i via setEquilibriumLat),
+		// makes the first read A[opposite(i)](x - c_i) = eq_i(x - c_i), matching A-B's streamed pull exactly.
+		// updateKernelData is called before SimUpdate increments iterations,
+		// so even_iter is based on the pre-increment counter.
+		// iterations == 0 → even_iter = false → spatial sub-step first.
+		block.data.even_iter = (iterations % 2) == 1;
 
 		// rotation (no-op for A-A pattern ... DFMAX=1)
 		int i = iterations % DFMAX;	 // i = 0, 1, 2, ... DMAX-1
