@@ -22,12 +22,14 @@ ADIOS2 reader/exporter; it does not use ParaView Catalyst.
        # For ADIOS2 stream directory (SST):
        python3 catalyst/tnl_lbm_export_frames.py \
            --instream results_sim_4_float_np002/res=04_Re=1600_nu=1.000000e-04/output_3D \
-           --outdir frames \
            --prefix sim4 \
            --plane xy \
            --varname velocity \
            --component magnitude \
            --config 'adios2_sst.xml'
+
+       # Frames are written by default next to the input stream, in:
+       # results_sim_4_float_np002/res=04_Re=1600_nu=1.000000e-04/frames
 
        # For BP file (static output):
        python3 catalyst/tnl_lbm_export_frames.py \
@@ -46,7 +48,7 @@ catalyst/tnl_lbm_export_frames.py --help` for the complete list.
 | Option | Description |
 | --- | --- |
 | `--instream` / `-i` | Path to the ADIOS2 stream directory or `.bp` file. **Required.** |
-| `--outdir` | Directory where PNG files will be saved (created if missing). |
+| `--outdir` | Directory where PNG files will be saved. By default, a `frames` directory is created next to `--instream`. |
 | `--prefix` | Prefix used in generated filenames. |
 | `--plane` | Slice orientation: `xy`, `xz`, `yz`, or `all` (exports each plane). |
 | `--plane-index` | Override plane indices, e.g. `--plane-index yz=mid` or `--plane-index xy=75%`. Supports multiple values. |

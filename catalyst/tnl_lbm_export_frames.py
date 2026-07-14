@@ -4,7 +4,7 @@ Export ADIOS2 slices to PNG frames.
 
 Example:
     python3 catalyst/tnl_lbm_export_frames.py \
-        --instream results_sim_1_res04_np001/output_3D --outdir frames --prefix sim1 --plane yz \
+        --instream results_sim_1_res04_np001/output_3D --prefix sim1 --plane yz \
         --varname velocity --component magnitude
 """
 
@@ -68,7 +68,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--instream", "-i", required=True, help="Input stream or BP file to read (e.g. results_.../output_3D).")
     parser.add_argument("--config", "-c", default="adios2.xml", help="Path to ADIOS2 configuration file (default: %(default)s).")
     parser.add_argument("--io-name", default="Output", help="Name of the IO object in the config (default: %(default)s).")
-    parser.add_argument("--outdir", default="frames", help="Directory to store generated images (default: %(default)s).")
+    parser.add_argument(
+        "--outdir",
+        default=None,
+        help="Directory to store generated images (default: a 'frames' directory next to --instream).",
+    )
     parser.add_argument("--prefix", default="frame", help="Filename prefix for saved images (default: %(default)s).")
     parser.add_argument("--plane", choices=["xy", "xz", "yz", "all"], default="xy", help="Plane(s) to export (default: %(default)s).")
     parser.add_argument(
@@ -121,6 +125,12 @@ def parse_args() -> argparse.Namespace:
 
 def ensure_outdir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
+
+
+def resolve_outdir(instream: str, outdir: Optional[str]) -> Path:
+    if outdir is not None:
+        return Path(outdir)
+    return Path(instream).parent / "frames"
 
 
 def export_frame(
@@ -269,7 +279,7 @@ def main() -> None:
     logger = logging.getLogger("tnl_lbm_export_frames")
 
     figsize = parse_figsize(args.figsize)
-    outdir = Path(args.outdir)
+    outdir = resolve_outdir(args.instream, args.outdir)
     ensure_outdir(outdir)
 
     mpi = setup_mpi(args.nompi)
