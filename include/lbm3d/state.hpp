@@ -32,9 +32,8 @@ State<NSE>::State(const std::string& id, const TNL::MPI::Comm& communicator, lat
 {
 	// Try to lock the results directory
 	if (nse.rank == 0) {
-		const std::string dir = fmt::format("results_{}", id);
-		mkdir(dir.c_str(), 0777);
 		const std::string lock_filename = fmt::format("results_{}/lock", id);
+		create_parent_directories(lock_filename.c_str());
 		lock_fd = tryLockFile(lock_filename.c_str());
 	}
 
