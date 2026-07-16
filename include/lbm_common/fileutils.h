@@ -49,7 +49,7 @@ static int mkdir_p(const char* path, mode_t mode)
 		}
 	}
 
-	if (mkdir(_path, S_IRWXU) != 0) {
+	if (mkdir(_path, mode) != 0) {
 		if (errno != EEXIST)
 			return -1;
 	}
