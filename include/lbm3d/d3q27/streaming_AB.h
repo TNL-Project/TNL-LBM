@@ -57,7 +57,10 @@ struct D3Q27_STREAMING
 		streaming(df_cur, SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 	}
 
-	// streaming with bounce-back rule applied
+	// Bounce-back streaming for the non-Newtonian kernel's wall cells.
+	// Performs pull-scheme streaming and then swaps all 13 opposite DF pairs,
+	// which is the same effect as the GEO_WALL bounce-back collision.
+	// The result is KS.f[opp(dir)] = pre-stream[dir] from the neighbor in dir.
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void streamingBounceBack(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
@@ -90,6 +93,12 @@ struct D3Q27_STREAMING
 		KS.f[mmm] = TNL::Backend::ldg(SD.df(df_cur, ppp, xm, ym, zm));
 	}
 
+	// Computes the post-stream density at position P = (xp, y, z) — the first
+	// fluid cell to the right of the inflow boundary.  Used by the non-Newtonian
+	// kernel to set KS.rho for inflow cells before calling setEquilibrium.
+	//
+	// Pull-scheme formula:  rho(P) = sum_dir df_cur[dir, P - vel(dir)]
+	// The x-offsets xp+1 / xp / x arise from P - vel_x(dir) = xp - {-1,0,+1}.
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void streamingRho(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
@@ -125,10 +134,16 @@ struct D3Q27_STREAMING
 		// clang-format on
 	}
 
+	// Computes the post-stream x-velocity at position P = (xm, y, z) — the first
+	// fluid cell to the left of the outflow boundary.  Used by the non-Newtonian
+	// kernel to set KS.vx for outflow cells.
+	//
+	// Pull-scheme: vx(P) = sum_{p-dir} df_cur[dir, P - vel(dir)]
+	//                       - sum_{m-dir} df_cur[dir, P - vel(dir)]
+	// The x-offsets xm-1 / xm / x arise from P - vel_x(dir) = xm - {+1,0,-1}.
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void streamingVx(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
-		// (KS.f[pz] + KS.f[pm] + KS.f[pp] - KS.f[mz] - KS.f[mm] - KS.f[mp] + n1o2*KS.fx)/KS.rho;
 		// clang-format off
 		KS.vx =
 			  TNL::Backend::ldg(SD.df(df_cur,pmm,xm-1,yp,zp))
@@ -152,10 +167,15 @@ struct D3Q27_STREAMING
 		// clang-format on
 	}
 
+	// Computes the post-stream y-velocity at position P = (xm, y, z) — the first
+	// fluid cell to the left of the outflow boundary.  Used by the non-Newtonian
+	// kernel to set KS.vy for outflow cells.
+	//
+	// Pull-scheme: vy(P) = sum_{p_y-dir} df_cur[dir, P - vel(dir)]
+	//                       - sum_{m_y-dir} df_cur[dir, P - vel(dir)]
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void streamingVy(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
-		// (KS.f[pz] + KS.f[pm] + KS.f[pp] - KS.f[mz] - KS.f[mm] - KS.f[mp] + n1o2*KS.fx)/KS.rho;
 		// clang-format off
 		KS.vy =
 			  TNL::Backend::ldg(SD.df(df_cur,mpm,x   ,ym,zp))
@@ -179,10 +199,15 @@ struct D3Q27_STREAMING
 		// clang-format on
 	}
 
+	// Computes the post-stream z-velocity at position P = (xm, y, z) — the first
+	// fluid cell to the left of the outflow boundary.  Used by the non-Newtonian
+	// kernel to set KS.vz for outflow cells.
+	//
+	// Pull-scheme: vz(P) = sum_{p_z-dir} df_cur[dir, P - vel(dir)]
+	//                       - sum_{m_z-dir} df_cur[dir, P - vel(dir)]
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void streamingVz(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
-		// (KS.f[pz] + KS.f[pm] + KS.f[pp] - KS.f[mz] - KS.f[mm] - KS.f[mp] + n1o2*KS.fx)/KS.rho;
 		// clang-format off
 		KS.vz =
 			  TNL::Backend::ldg(SD.df(df_cur,mmp,x   ,yp,zm))
@@ -242,40 +267,41 @@ struct D3Q27_STREAMING
 	}
 
 	// ADJOINT -- "reversed" streaming
-	template < typename LBM_DATA, typename LBM_KS >
-	CUDA_HOSTDEV static void streamingAdjoint(uint8_t type, LBM_DATA &SD, LBM_KS &KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
+	template <typename LBM_DATA, typename LBM_KS>
+	CUDA_HOSTDEV static void
+	streamingAdjoint(uint8_t type, LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
-		KS.f[mmm] = TNL::Backend::ldg(SD.df(type,mmm,xm,ym,zm));
-		KS.f[mmz] = TNL::Backend::ldg(SD.df(type,mmz,xm,ym, z));
-		KS.f[mmp] = TNL::Backend::ldg(SD.df(type,mmp,xm,ym,zp));
-		KS.f[mzm] = TNL::Backend::ldg(SD.df(type,mzm,xm, y,zm));
-		KS.f[mzz] = TNL::Backend::ldg(SD.df(type,mzz,xm, y, z));
-		KS.f[mzp] = TNL::Backend::ldg(SD.df(type,mzp,xm, y,zp));
-		KS.f[mpm] = TNL::Backend::ldg(SD.df(type,mpm,xm,yp,zm));
-		KS.f[mpz] = TNL::Backend::ldg(SD.df(type,mpz,xm,yp, z));
-		KS.f[mpp] = TNL::Backend::ldg(SD.df(type,mpp,xm,yp,zp));
-		KS.f[zmm] = TNL::Backend::ldg(SD.df(type,zmm, x,ym,zm));
-		KS.f[zmz] = TNL::Backend::ldg(SD.df(type,zmz, x,ym, z));
-		KS.f[zmp] = TNL::Backend::ldg(SD.df(type,zmp, x,ym,zp));
-		KS.f[zzm] = TNL::Backend::ldg(SD.df(type,zzm, x, y,zm));
-		KS.f[zzz] = TNL::Backend::ldg(SD.df(type,zzz, x, y, z));
-		KS.f[zzp] = TNL::Backend::ldg(SD.df(type,zzp, x, y,zp));
-		KS.f[zpm] = TNL::Backend::ldg(SD.df(type,zpm, x,yp,zm));
-		KS.f[zpz] = TNL::Backend::ldg(SD.df(type,zpz, x,yp, z));
-		KS.f[zpp] = TNL::Backend::ldg(SD.df(type,zpp, x,yp,zp));
-		KS.f[pmm] = TNL::Backend::ldg(SD.df(type,pmm,xp,ym,zm));
-		KS.f[pmz] = TNL::Backend::ldg(SD.df(type,pmz,xp,ym, z));
-		KS.f[pmp] = TNL::Backend::ldg(SD.df(type,pmp,xp,ym,zp));
-		KS.f[pzm] = TNL::Backend::ldg(SD.df(type,pzm,xp, y,zm));
-		KS.f[pzz] = TNL::Backend::ldg(SD.df(type,pzz,xp, y, z));
-		KS.f[pzp] = TNL::Backend::ldg(SD.df(type,pzp,xp, y,zp));
-		KS.f[ppm] = TNL::Backend::ldg(SD.df(type,ppm,xp,yp,zm));
-		KS.f[ppz] = TNL::Backend::ldg(SD.df(type,ppz,xp,yp, z));
-		KS.f[ppp] = TNL::Backend::ldg(SD.df(type,ppp,xp,yp,zp));
+		KS.f[mmm] = TNL::Backend::ldg(SD.df(type, mmm, xm, ym, zm));
+		KS.f[mmz] = TNL::Backend::ldg(SD.df(type, mmz, xm, ym, z));
+		KS.f[mmp] = TNL::Backend::ldg(SD.df(type, mmp, xm, ym, zp));
+		KS.f[mzm] = TNL::Backend::ldg(SD.df(type, mzm, xm, y, zm));
+		KS.f[mzz] = TNL::Backend::ldg(SD.df(type, mzz, xm, y, z));
+		KS.f[mzp] = TNL::Backend::ldg(SD.df(type, mzp, xm, y, zp));
+		KS.f[mpm] = TNL::Backend::ldg(SD.df(type, mpm, xm, yp, zm));
+		KS.f[mpz] = TNL::Backend::ldg(SD.df(type, mpz, xm, yp, z));
+		KS.f[mpp] = TNL::Backend::ldg(SD.df(type, mpp, xm, yp, zp));
+		KS.f[zmm] = TNL::Backend::ldg(SD.df(type, zmm, x, ym, zm));
+		KS.f[zmz] = TNL::Backend::ldg(SD.df(type, zmz, x, ym, z));
+		KS.f[zmp] = TNL::Backend::ldg(SD.df(type, zmp, x, ym, zp));
+		KS.f[zzm] = TNL::Backend::ldg(SD.df(type, zzm, x, y, zm));
+		KS.f[zzz] = TNL::Backend::ldg(SD.df(type, zzz, x, y, z));
+		KS.f[zzp] = TNL::Backend::ldg(SD.df(type, zzp, x, y, zp));
+		KS.f[zpm] = TNL::Backend::ldg(SD.df(type, zpm, x, yp, zm));
+		KS.f[zpz] = TNL::Backend::ldg(SD.df(type, zpz, x, yp, z));
+		KS.f[zpp] = TNL::Backend::ldg(SD.df(type, zpp, x, yp, zp));
+		KS.f[pmm] = TNL::Backend::ldg(SD.df(type, pmm, xp, ym, zm));
+		KS.f[pmz] = TNL::Backend::ldg(SD.df(type, pmz, xp, ym, z));
+		KS.f[pmp] = TNL::Backend::ldg(SD.df(type, pmp, xp, ym, zp));
+		KS.f[pzm] = TNL::Backend::ldg(SD.df(type, pzm, xp, y, zm));
+		KS.f[pzz] = TNL::Backend::ldg(SD.df(type, pzz, xp, y, z));
+		KS.f[pzp] = TNL::Backend::ldg(SD.df(type, pzp, xp, y, zp));
+		KS.f[ppm] = TNL::Backend::ldg(SD.df(type, ppm, xp, yp, zm));
+		KS.f[ppz] = TNL::Backend::ldg(SD.df(type, ppz, xp, yp, z));
+		KS.f[ppp] = TNL::Backend::ldg(SD.df(type, ppp, xp, yp, zp));
 	}
 
-	template < typename LBM_DATA, typename LBM_KS >
-	CUDA_HOSTDEV static void streamingAdjoint(LBM_DATA &SD, LBM_KS &KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
+	template <typename LBM_DATA, typename LBM_KS>
+	CUDA_HOSTDEV static void streamingAdjoint(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
 		streamingAdjoint(df_cur, SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 	}
