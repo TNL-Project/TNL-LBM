@@ -73,6 +73,7 @@ enum Actions : std::uint8_t
 template <typename NSE>
 struct State
 {
+	using NSE_type = NSE;
 	using TRAITS = typename NSE::TRAITS;
 	using BLOCK_NSE = LBM_BLOCK<NSE>;
 	using Lagrange3D = ::Lagrange3D<LBM<NSE>>;
