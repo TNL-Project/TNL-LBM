@@ -57,6 +57,31 @@ struct D3Q27_BC_All
 		return mapgi == GEO_WALL;
 	}
 
+	__cuda_callable__ static bool isStreaming(map_t mapgi)
+	{
+		return isFluid(mapgi) || isPeriodic(mapgi);
+	}
+
+	__cuda_callable__ static bool isInflow(map_t mapgi)
+	{
+		return mapgi == GEO_INFLOW || mapgi == GEO_INFLOW_LEFT || mapgi == GEO_INFLOW_BOUNCEBACK || mapgi == GEO_INFLOW_EQ_LEFT;
+	}
+
+	__cuda_callable__ static bool isOutflowR(map_t mapgi)
+	{
+		return mapgi == GEO_OUTFLOW_RIGHT || mapgi == GEO_OUTFLOW_RIGHT_INTERP || mapgi == GEO_OUTFLOW_EQ;
+	}
+
+	__cuda_callable__ static bool isNotFluid(map_t mapgi)
+	{
+		return ! isFluid(mapgi) && ! isPeriodic(mapgi);
+	}
+
+	__cuda_callable__ static bool isComputeDensityAndVelocity(map_t mapgi)
+	{
+		return isFluid(mapgi) || isPeriodic(mapgi);
+	}
+
 	template <typename LBM_KS>
 	__cuda_callable__ static void preCollision(DATA& SD, LBM_KS& KS, map_t mapgi, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
