@@ -215,10 +215,17 @@ void LBMKernelCheckVelocity(
 
 template <typename NSE>
 #ifdef USE_CUDA
-__global__ void cudaLBMKernelVelocity(typename NSE::DATA SD, short int nproc, typename NSE::TRAITS::idx3d offset, typename NSE::TRAITS::idx3d end)
+__global__ void cudaLBMKernelVelocity(
+	typename NSE::DATA SD, typename NSE::TRAITS::bool3d distributed, typename NSE::TRAITS::idx3d offset, typename NSE::TRAITS::idx3d end
+)
 #else
-CUDA_HOSTDEV void
-LBMKernelVelocity(typename NSE::DATA SD, typename NSE::TRAITS::idx x, typename NSE::TRAITS::idx y, typename NSE::TRAITS::idx z, short int nproc)
+CUDA_HOSTDEV void LBMKernelVelocity(
+	typename NSE::DATA SD,
+	typename NSE::TRAITS::idx x,
+	typename NSE::TRAITS::idx y,
+	typename NSE::TRAITS::idx z,
+	typename NSE::TRAITS::bool3d distributed
+)
 #endif
 {
 	using dreal = typename NSE::TRAITS::dreal;
@@ -242,7 +249,7 @@ LBMKernelVelocity(typename NSE::DATA SD, typename NSE::TRAITS::idx x, typename N
 	NSE::MACRO::copyQuantities(SD, KS, x, y, z);
 
 	idx xp, xm, yp, ym, zp, zm;
-	kernelInitIndices<NSE>(SD, gi_map, nproc, x, y, z, xp, xm, yp, ym, zp, zm);
+	kernelInitIndices<NSE>(SD, gi_map, distributed, x, y, z, xp, xm, yp, ym, zp, zm);
 
 	NSE::MACRO::getForce(SD, KS, x, y, z);
 
@@ -273,10 +280,17 @@ LBMKernelVelocity(typename NSE::DATA SD, typename NSE::TRAITS::idx x, typename N
 
 template <typename NSE>
 #ifdef USE_CUDA
-__global__ void cudaLBMKernelStress(typename NSE::DATA SD, short int nproc, typename NSE::TRAITS::idx3d offset, typename NSE::TRAITS::idx3d end)
+__global__ void cudaLBMKernelStress(
+	typename NSE::DATA SD, typename NSE::TRAITS::bool3d distributed, typename NSE::TRAITS::idx3d offset, typename NSE::TRAITS::idx3d end
+)
 #else
-CUDA_HOSTDEV void
-LBMKernelStress(typename NSE::DATA SD, typename NSE::TRAITS::idx x, typename NSE::TRAITS::idx y, typename NSE::TRAITS::idx z, short int nproc)
+CUDA_HOSTDEV void LBMKernelStress(
+	typename NSE::DATA SD,
+	typename NSE::TRAITS::idx x,
+	typename NSE::TRAITS::idx y,
+	typename NSE::TRAITS::idx z,
+	typename NSE::TRAITS::bool3d distributed
+)
 #endif
 {
 	using dreal = typename NSE::TRAITS::dreal;
@@ -302,7 +316,7 @@ LBMKernelStress(typename NSE::DATA SD, typename NSE::TRAITS::idx x, typename NSE
 	NSE::MACRO::copyQuantities(SD, KS, x, y, z);
 
 	idx xp, xm, yp, ym, zp, zm;
-	kernelInitIndices<NSE>(SD, gi_map, nproc, x, y, z, xp, xm, yp, ym, zp, zm);
+	kernelInitIndices<NSE>(SD, gi_map, distributed, x, y, z, xp, xm, yp, ym, zp, zm);
 
 	NSE::MACRO::getMacro(SD, KSxp, xp, y, z);
 	NSE::MACRO::getMacro(SD, KSxm, xm, y, z);
@@ -393,8 +407,8 @@ LBMKernelStress(typename NSE::DATA SD, typename NSE::TRAITS::idx x, typename NSE
 template <typename STATE>
 void computeNonNewtonianKernels(STATE& state)
 {
-	using NSE = typename STATE::NSE;
-	using TRAITS = typename NSE::TRAITS;
+	using NSE = typename STATE::NSE_type;
+	using TRAITS = typename STATE::TRAITS;
 
 	using idx = typename TRAITS::idx;
 	using idx3d = typename TRAITS::idx3d;
@@ -420,7 +434,7 @@ void computeNonNewtonianKernels(STATE& state)
 				const cudaStream_t stream = block.computeData.at(direction).stream;
 				const idx3d offset = block.computeData.at(direction).offset;
 				const idx3d size = block.computeData.at(direction).size;
-				cudaLBMKernelVelocity<NSE><<<gridSize, blockSize, 0, stream>>>(block.data, nse.total_blocks, offset, offset + size);
+				cudaLBMKernelVelocity<NSE><<<gridSize, blockSize, 0, stream>>>(block.data, block.is_distributed(), offset, offset + size);
 			}
 	}
 
@@ -432,7 +446,7 @@ void computeNonNewtonianKernels(STATE& state)
 		const cudaStream_t stream = block.computeData.at(direction).stream;
 		const idx3d offset = block.computeData.at(direction).offset;
 		const idx3d size = block.computeData.at(direction).size;
-		cudaLBMKernelVelocity<NSE><<<gridSize, blockSize, 0, stream>>>(block.data, nse.total_blocks, offset, offset + size);
+		cudaLBMKernelVelocity<NSE><<<gridSize, blockSize, 0, stream>>>(block.data, block.is_distributed(), offset, offset + size);
 	}
 
 	// wait for the computations on boundaries to finish
@@ -442,7 +456,10 @@ void computeNonNewtonianKernels(STATE& state)
 
 	// exchange macroscopic quantities on overlaps between blocks
 	// TODO: avoid communication of DFs here
-	nse.synchronizeDFsAndMacroDevice(df_out);
+#ifdef HAVE_MPI
+	if (nse.nproc > 1)
+		nse.synchronizeDFsAndMacroDevice(df_cur, true);
+#endif
 
 	// wait for the computation on the interior to finish
 	for (auto& block : nse.blocks) {
@@ -480,7 +497,7 @@ void computeNonNewtonianKernels(STATE& state)
 				const cudaStream_t stream = block.computeData.at(direction).stream;
 				const idx3d offset = block.computeData.at(direction).offset;
 				const idx3d size = block.computeData.at(direction).size;
-				cudaLBMKernelStress<NSE><<<gridSize, blockSize, 0, stream>>>(block.data, nse.total_blocks, offset, offset + size);
+				cudaLBMKernelStress<NSE><<<gridSize, blockSize, 0, stream>>>(block.data, block.is_distributed(), offset, offset + size);
 			}
 	}
 
@@ -492,7 +509,7 @@ void computeNonNewtonianKernels(STATE& state)
 		const cudaStream_t stream = block.computeData.at(direction).stream;
 		const idx3d offset = block.computeData.at(direction).offset;
 		const idx3d size = block.computeData.at(direction).size;
-		cudaLBMKernelStress<NSE><<<gridSize, blockSize, 0, stream>>>(block.data, nse.total_blocks, offset, offset + size);
+		cudaLBMKernelStress<NSE><<<gridSize, blockSize, 0, stream>>>(block.data, block.is_distributed(), offset, offset + size);
 	}
 
 	// wait for the computations on boundaries to finish
@@ -502,7 +519,10 @@ void computeNonNewtonianKernels(STATE& state)
 
 	// exchange macroscopic quantities on overlaps between blocks
 	// TODO: avoid communication of DFs here
-	nse.synchronizeDFsAndMacroDevice(df_out);
+#ifdef HAVE_MPI
+	if (nse.nproc > 1)
+		nse.synchronizeDFsAndMacroDevice(df_cur, true);
+#endif
 
 	// wait for the computation on the interior to finish
 	for (auto& block : nse.blocks) {
