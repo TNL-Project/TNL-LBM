@@ -3,6 +3,10 @@ set(TARGETS
         sim_2
         sim_3
         sim_4
+        sim_nonnewtonian_poiseuille
+        sim_nonnewtonian_poiseuille_AA
+        sim_nonnewtonian_poiseuille_CY
+        sim_nonnewtonian_poiseuille_Casson
         sim_IBM1
         sim_IBM2
         sim_IBM3

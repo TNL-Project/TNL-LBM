@@ -130,10 +130,19 @@ CUDA_HOSTDEV void LBMKernelStress(
 	map_t gi_map_zp = SD.map(x, y, zp);
 	map_t gi_map_zm = SD.map(x, y, zm);
 
-	if (NSE::BC::isFluid(gi_map)) {
-		//derivation in x-direction
-		if (NSE::BC::isNotFluid(gi_map_xm)) {
-			if (NSE::BC::isNotFluid(gi_map_xp)) {
+	// Inflow cells have velocity imposed by SD.inflow().
+	// Wall cells have no-slip velocity (=0) but using them in central
+	// differences at wall-adjacent fluid cells degrades accuracy.
+	// GEO_NOTHING cells (outer ghost) have no meaningful velocity.
+	auto velocityUnknown = [](map_t m)
+	{
+		return NSE::BC::isNotFluid(m) && ! NSE::BC::isInflow(m);
+	};
+
+	if (NSE::BC::isFluid(gi_map) || NSE::BC::isPeriodic(gi_map)) {
+		// derivative in x-direction
+		if (velocityUnknown(gi_map_xm)) {
+			if (velocityUnknown(gi_map_xp)) {
 				KS.S11 = 0.;
 			}
 			else {
@@ -142,7 +151,7 @@ CUDA_HOSTDEV void LBMKernelStress(
 				KS.S13 += n1o2 * (KSxp.vz - KS.vz);
 			}
 		}
-		else if (NSE::BC::isNotFluid(gi_map_xp)) {
+		else if (velocityUnknown(gi_map_xp)) {
 			KS.S11 = (KS.vx - KSxm.vx);
 			KS.S12 += n1o2 * (KS.vy - KSxm.vy);
 			KS.S13 += n1o2 * (KS.vz - KSxm.vz);
@@ -153,9 +162,9 @@ CUDA_HOSTDEV void LBMKernelStress(
 			KS.S13 += n1o4 * (KSxp.vz - KSxm.vz);
 		}
 
-		//derivation in y-direction
-		if (NSE::BC::isNotFluid(gi_map_ym)) {
-			if (NSE::BC::isNotFluid(gi_map_yp)) {
+		// derivative in y-direction
+		if (velocityUnknown(gi_map_ym)) {
+			if (velocityUnknown(gi_map_yp)) {
 				KS.S22 = 0.;
 			}
 			else {
@@ -164,7 +173,7 @@ CUDA_HOSTDEV void LBMKernelStress(
 				KS.S32 += n1o2 * (KSyp.vz - KS.vz);
 			}
 		}
-		else if (NSE::BC::isNotFluid(gi_map_yp)) {
+		else if (velocityUnknown(gi_map_yp)) {
 			KS.S22 = (KS.vy - KSym.vy);
 			KS.S12 += n1o2 * (KS.vx - KSym.vx);
 			KS.S32 += n1o2 * (KS.vz - KSym.vz);
@@ -175,9 +184,9 @@ CUDA_HOSTDEV void LBMKernelStress(
 			KS.S32 += n1o4 * (KSyp.vz - KSym.vz);
 		}
 
-		//derivation in z-direction
-		if (NSE::BC::isNotFluid(gi_map_zm)) {
-			if (NSE::BC::isNotFluid(gi_map_zp)) {
+		// derivative in z-direction
+		if (velocityUnknown(gi_map_zm)) {
+			if (velocityUnknown(gi_map_zp)) {
 				KS.S33 = 0.;
 			}
 			else {
@@ -186,7 +195,7 @@ CUDA_HOSTDEV void LBMKernelStress(
 				KS.S32 += n1o2 * (KSzp.vy - KS.vy);
 			}
 		}
-		else if (NSE::BC::isNotFluid(gi_map_zp)) {
+		else if (velocityUnknown(gi_map_zp)) {
 			KS.S33 = (KS.vz - KSzm.vz);
 			KS.S13 += n1o2 * (KS.vx - KSzm.vx);
 			KS.S32 += n1o2 * (KS.vy - KSzm.vy);
@@ -335,9 +344,12 @@ struct LBM_Data_NonNewtonian : NSE_Data<TRAITS>
 {
 	using dreal = typename TRAITS::dreal;
 
-	// Non-Newtonian parameters (only dummy values here -- they have to be initialized from sim)
-#if defined(USE_CYMODEL)
-	dreal lbm_nu0;
+	// Parameters for non-Newtonian models (must be initialized from sim)
+#if defined(USE_POWERLAW)
+	dreal lbm_K;
+	dreal lbm_n;
+#elif defined(USE_CYMODEL)
+	dreal lbm_nu_inf;
 	dreal lbm_lambda;
 	dreal lbm_a;
 	dreal lbm_n;
@@ -442,16 +454,6 @@ struct MacroNonNewtonianDefault : D3Q27_MACRO_Default<TRAITS>
 		KS.fx = SD.fx;
 		KS.fy = SD.fy;
 		KS.fz = SD.fz;
-
-#if defined(USE_CYMODEL)
-		KS.lbm_nu0 = SD.lbm_nu0;
-		KS.lbm_lambda = SD.lbm_lambda;
-		KS.lbm_a = SD.lbm_a;
-		KS.lbm_n = SD.lbm_n;
-#elif defined(USE_CASSON)
-		KS.lbm_k0 = SD.lbm_k0;
-		KS.lbm_k1 = SD.lbm_k1;
-#endif
 	}
 
 	template <typename LBM_BC, typename LBM_DATA, typename LBM_KS>
@@ -479,89 +481,121 @@ struct MacroNonNewtonianDefault : D3Q27_MACRO_Default<TRAITS>
 		dreal F2 = 0;
 		dreal F3 = 0;
 
-		if (LBM_BC::isFluid(gi_map)) {
-			// derivative in x-direction
+		if (LBM_BC::isFluid(gi_map) || LBM_BC::isPeriodic(gi_map)) {
+			// div((nu-nu0)*S) via product rule: differencing (nu-nu0)*S at neighbors.
+			// This naturally includes the grad(nu-nu0)·S term via the product rule of
+			// finite differences, which the pointwise (nu-nu0)*div(S) form would miss.
+			dreal nu0 = KS.lbmViscosity;
+			auto compute_dnu = [&](dreal s11, dreal s22, dreal s33, dreal s12, dreal s13, dreal s32) -> dreal
+			{
+				dreal D_D = s11 * s11 + s22 * s22 + s33 * s33 + no2 * (s12 * s12 + s13 * s13 + s32 * s32);
+				dreal gamma_sq = no2 * D_D;
+				dreal nu;
+#if defined(USE_POWERLAW)
+				// Smooth regularization: gd_reg = gd + floor^2/(gd + floor).
+				// C^inf smooth (no kink in grad(dnu)), exact for gd >> floor (modification is O(floor^2/gd)),
+				// clamps to floor as gd→0. floor set above FP32 noise level.
+				dreal gd_floor = (dreal) 1e-10;
+				dreal gamma_sq_reg = gamma_sq + gd_floor * gd_floor / (gamma_sq + gd_floor);
+				// The power-law formula uses K_lbm (lattice consistency index) rather than nu0.
+				// nu0 is subtracted below since the forcing computes div((nu - nu0)·S).
+				nu = SD.lbm_K * TNL::pow(gamma_sq_reg, (SD.lbm_n - no1) * n1o2);
+#elif defined(USE_CYMODEL)
+				dreal gamma = TNL::sqrt(gamma_sq);
+				nu = SD.lbm_nu_inf + (nu0 - SD.lbm_nu_inf) * TNL::pow(no1 + TNL::pow(gamma * SD.lbm_lambda, SD.lbm_a), (SD.lbm_n - no1) / SD.lbm_a);
+#elif defined(USE_CASSON)
+				// Standard Casson: eta = (k0 + k1*sqrt(gamma))^2 / gamma, where gamma = |W'|.
+				// Regularization: clamp gamma to >= 1e-10 so eta stays bounded at the plug.
+				dreal gamma = TNL::sqrt(gamma_sq);
+				dreal gamma_cap = TNL::max(gamma, (dreal) 1e-10);
+				nu = TNL::sqr(SD.lbm_k0 + SD.lbm_k1 * TNL::sqrt(gamma_cap)) / gamma_cap;
+#endif
+				return nu - nu0;
+			};
+
+			dreal dnu_c = compute_dnu(KS.S11, KS.S22, KS.S33, KS.S12, KS.S13, KS.S32);
+			dreal dnu_xp = compute_dnu(KSxp.S11, KSxp.S22, KSxp.S33, KSxp.S12, KSxp.S13, KSxp.S32);
+			dreal dnu_xm = compute_dnu(KSxm.S11, KSxm.S22, KSxm.S33, KSxm.S12, KSxm.S13, KSxm.S32);
+			dreal dnu_yp = compute_dnu(KSyp.S11, KSyp.S22, KSyp.S33, KSyp.S12, KSyp.S13, KSyp.S32);
+			dreal dnu_ym = compute_dnu(KSym.S11, KSym.S22, KSym.S33, KSym.S12, KSym.S13, KSym.S32);
+			dreal dnu_zp = compute_dnu(KSzp.S11, KSzp.S22, KSzp.S33, KSzp.S12, KSzp.S13, KSzp.S32);
+			dreal dnu_zm = compute_dnu(KSzm.S11, KSzm.S22, KSzm.S33, KSzm.S12, KSzm.S13, KSzm.S32);
+
+#if defined(NONNEWTONIAN_SKIP_GRAD_DNU)
+			// Test: neglect d/dx(nu-nu0), d/dy(nu-nu0), d/dz(nu-nu0) terms.
+			// Use the central dnu for all neighbors so the product-rule expansion
+			// collapses to dnu_c * div(S) — isolates the dnu*div(S) part only.
+			dnu_xp = dnu_c;
+			dnu_xm = dnu_c;
+			dnu_yp = dnu_c;
+			dnu_ym = dnu_c;
+			dnu_zp = dnu_c;
+			dnu_zm = dnu_c;
+#endif
+
+			// x-direction: d/dx[(nu-nu0)*S]
 			if (LBM_BC::isNotFluid(gi_map_xm)) {
-				if (LBM_BC::isNotFluid(gi_map_xp)) {
-				}
-				else {
-					F1 += KSxp.S11 - KS.S11;
-					F2 += KSxp.S12 - KS.S12;
-					F3 += KSxp.S13 - KS.S13;
+				if (! LBM_BC::isNotFluid(gi_map_xp)) {
+					F1 += dnu_xp * KSxp.S11 - dnu_c * KS.S11;
+					F2 += dnu_xp * KSxp.S12 - dnu_c * KS.S12;
+					F3 += dnu_xp * KSxp.S13 - dnu_c * KS.S13;
 				}
 			}
 			else if (LBM_BC::isNotFluid(gi_map_xp)) {
-				F1 += KS.S11 - KSxm.S11;
-				F2 += KS.S12 - KSxm.S12;
-				F3 += KS.S13 - KSxm.S13;
+				F1 += dnu_c * KS.S11 - dnu_xm * KSxm.S11;
+				F2 += dnu_c * KS.S12 - dnu_xm * KSxm.S12;
+				F3 += dnu_c * KS.S13 - dnu_xm * KSxm.S13;
 			}
 			else {
-				F1 += n1o2 * (KSxp.S11 - KSxm.S11);
-				F2 += n1o2 * (KSxp.S12 - KSxm.S12);
-				F3 += n1o2 * (KSxp.S13 - KSxm.S13);
+				F1 += n1o2 * (dnu_xp * KSxp.S11 - dnu_xm * KSxm.S11);
+				F2 += n1o2 * (dnu_xp * KSxp.S12 - dnu_xm * KSxm.S12);
+				F3 += n1o2 * (dnu_xp * KSxp.S13 - dnu_xm * KSxm.S13);
 			}
 
-			// derivative in y-direction
+			// y-direction: d/dy[(nu-nu0)*S]
 			if (LBM_BC::isNotFluid(gi_map_ym)) {
-				if (LBM_BC::isNotFluid(gi_map_yp)) {
-				}
-				else {
-					F1 += KSyp.S12 - KS.S12;
-					F2 += KSyp.S22 - KS.S22;
-					F3 += KSyp.S32 - KS.S32;
+				if (! LBM_BC::isNotFluid(gi_map_yp)) {
+					F1 += dnu_yp * KSyp.S12 - dnu_c * KS.S12;
+					F2 += dnu_yp * KSyp.S22 - dnu_c * KS.S22;
+					F3 += dnu_yp * KSyp.S32 - dnu_c * KS.S32;
 				}
 			}
 			else if (LBM_BC::isNotFluid(gi_map_yp)) {
-				F1 += KS.S12 - KSym.S12;
-				F2 += KS.S22 - KSym.S22;
-				F3 += KS.S32 - KSym.S32;
+				F1 += dnu_c * KS.S12 - dnu_ym * KSym.S12;
+				F2 += dnu_c * KS.S22 - dnu_ym * KSym.S22;
+				F3 += dnu_c * KS.S32 - dnu_ym * KSym.S32;
 			}
 			else {
-				F1 += n1o2 * (KSyp.S12 - KSym.S12);
-				F2 += n1o2 * (KSyp.S22 - KSym.S22);
-				F3 += n1o2 * (KSyp.S32 - KSym.S32);
+				F1 += n1o2 * (dnu_yp * KSyp.S12 - dnu_ym * KSym.S12);
+				F2 += n1o2 * (dnu_yp * KSyp.S22 - dnu_ym * KSym.S22);
+				F3 += n1o2 * (dnu_yp * KSyp.S32 - dnu_ym * KSym.S32);
 			}
 
-			// derivative in z-direction
+			// z-direction: d/dz[(nu-nu0)*S]
 			if (LBM_BC::isNotFluid(gi_map_zm)) {
-				if (LBM_BC::isNotFluid(gi_map_zp)) {
-				}
-				else {
-					F1 += KSzp.S13 - KS.S13;
-					F2 += KSzp.S32 - KS.S32;
-					F3 += KSzp.S33 - KS.S33;
+				if (! LBM_BC::isNotFluid(gi_map_zp)) {
+					F1 += dnu_zp * KSzp.S13 - dnu_c * KS.S13;
+					F2 += dnu_zp * KSzp.S32 - dnu_c * KS.S32;
+					F3 += dnu_zp * KSzp.S33 - dnu_c * KS.S33;
 				}
 			}
 			else if (LBM_BC::isNotFluid(gi_map_zp)) {
-				F1 += KS.S13 - KSzm.S13;
-				F2 += KS.S32 - KSzm.S32;
-				F3 += KS.S33 - KSzm.S33;
+				F1 += dnu_c * KS.S13 - dnu_zm * KSzm.S13;
+				F2 += dnu_c * KS.S32 - dnu_zm * KSzm.S32;
+				F3 += dnu_c * KS.S33 - dnu_zm * KSzm.S33;
 			}
 			else {
-				F1 += n1o2 * (KSzp.S13 - KSzm.S13);
-				F2 += n1o2 * (KSzp.S32 - KSzm.S32);
-				F3 += n1o2 * (KSzp.S33 - KSzm.S33);
+				F1 += n1o2 * (dnu_zp * KSzp.S13 - dnu_zm * KSzm.S13);
+				F2 += n1o2 * (dnu_zp * KSzp.S32 - dnu_zm * KSzm.S32);
+				F3 += n1o2 * (dnu_zp * KSzp.S33 - dnu_zm * KSzm.S33);
 			}
 		}
 
-		dreal gamma = sqrt(KS.S11 * KS.S11 + KS.S22 * KS.S22 + KS.S33 * KS.S33 + no2 * (KS.S12 * KS.S12 + KS.S13 * KS.S13 + KS.S32 * KS.S32));
+		// NOTE: KS.rho is default-initialized to 1.0 in defs.h
+		dreal rho = KS.rho;
 
-#ifdef USE_CYMODEL
-		dreal nu =
-			KS.lbmViscosity + (KS.lbm_nu0 - KS.lbmViscosity) * powf((no1 + powf((gamma * KS.lbm_lambda), KS.lbm_a)), (KS.lbm_n - no1) / KS.lbm_a);
-#elif USE_CASSON
-		dreal nu;
-		if (sqrt(gamma) > 1e-10) {
-			nu = (KS.lbm_k0 + KS.lbm_k1 * sqrt(gamma)) * (KS.lbm_k0 + KS.lbm_k1 * sqrt(gamma)) / sqrt(gamma);
-		}
-		else
-			nu = KS.lbmViscosity;
-#endif
-
-		KS.mu = nu * 1000;
-
-		KS.fx += no2 * (nu - KS.lbmViscosity) * F1 * KS.rho;
-		KS.fy += no2 * (nu - KS.lbmViscosity) * F2 * KS.rho;
-		KS.fz += no2 * (nu - KS.lbmViscosity) * F3 * KS.rho;
+		KS.fx += no2 * F1 * rho;
+		KS.fy += no2 * F2 * rho;
+		KS.fz += no2 * F3 * rho;
 	}
 };

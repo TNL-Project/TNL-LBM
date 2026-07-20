@@ -261,17 +261,8 @@ struct D3Q27_KernelStruct
 	REAL vz = 0, vx = 0, vy = 0;
 	REAL rho = 1.0, lbmViscosity = 1.0;
 
-#if defined(USE_CYMODEL) || defined(USE_CASSON)
+#if defined(USE_CYMODEL) || defined(USE_CASSON) || defined(USE_POWERLAW)
 	REAL S11 = 0., S12 = 0., S22 = 0., S32 = 0., S13 = 0., S33 = 0.;
-
-	//Non-Newtonian parameters
-	#if defined(USE_CYMODEL)
-	REAL lbm_nu0 = 0, lbm_lambda = 0, lbm_a = 0, lbm_n = 0;
-	#elif defined(USE_CASSON)
-	REAL lbm_k0 = 0, lbm_k1 = 0;
-	#endif
-
-	REAL mu;
 #endif
 };
 
