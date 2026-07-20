@@ -1,217 +1,12 @@
 #pragma once
 
+#include "d3q27/macro.h"
 #include "defs.h"
 #include "kernels.h"
 #include "lbm_common/ciselnik.h"
+#include "lbm_data.h"
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//                                                                                                                                                                                                                //
-//                                                                                                                                                                                                                //
 // Extra kernels for the non-Newtonian fluid model
-//                                                                                                                                                                                                                //
-//                                                                                                                                                                                                                //
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-#if 0
-template <
-	typename LBM_TYPE,
-	typename STREAMING,
-	typename MACRO,
-	typename LBM_DATA,
-	typename LBM_BC
->
-	#ifdef TODO
-CUDA_HOSTDEV
-void LBMKernelCheckMap(
-	typename LBM_TYPE::T_TRAITS::idx x,
-	typename LBM_TYPE::T_TRAITS::idx y,
-	typename LBM_TYPE::T_TRAITS::idx z,
-	LBM_DATA SD,
-	short int rank,
-	short int nproc
-)
-	#else
-		#ifdef USE_CUDA
-//__launch_bounds__(32, 16)
-__global__ void cudaLBMKernelCheckMap(
-	LBM_DATA SD,
-	short int rank,
-	short int nproc,
-	typename LBM_TYPE::T_TRAITS::idx offset_x
-)
-		#else
-CUDA_HOSTDEV
-void LBMKernelCheckMap(
-	LBM_DATA SD,
-	typename LBM_TYPE::T_TRAITS::idx x,
-	typename LBM_TYPE::T_TRAITS::idx y,
-	typename LBM_TYPE::T_TRAITS::idx z,
-	short int rank,
-	short int nproc
-)
-		#endif
-	#endif
-{
-	using dreal = typename LBM_TYPE::T_TRAITS::dreal;
-	using idx = typename LBM_TYPE::T_TRAITS::idx;
-	using map_t = typename LBM_TYPE::T_TRAITS::map_t;
-
-	#ifndef TODO
-		#ifdef USE_CUDA
-	idx x = threadIdx.x + blockIdx.x * blockDim.x + offset_x;
-	idx y = threadIdx.y + blockIdx.y * blockDim.y;
-	idx z = threadIdx.z + blockIdx.z * blockDim.z;
-		#endif
-	#endif
-	map_t gi_map = SD.map(x, y, z);
-
-	idx xp,xm,yp,ym,zp,zm;
-	if (LBM_BC::isPeriodic(gi_map))
-	{
-		// handle overlaps between GPUs
-//		xp = (!SD.overlap_right && x == SD.X-1) ? 0 : (x+1);
-//		xm = (!SD.overlap_left && x == 0) ? (SD.X-1) : (x-1);
-		xp = (nproc == 1 && x == SD.X()-1) ? 0 : (x+1);
-		xm = (nproc == 1 && x == 0) ? (SD.X()-1) : (x-1);
-		yp = (y == SD.Y()-1) ? 0 : (y+1);
-		ym = (y == 0) ? (SD.Y()-1) : (y-1);
-		zp = (z == SD.Z()-1) ? 0 : (z+1);
-		zm = (z == 0) ? (SD.Z()-1) : (z-1);
-	} else {
-		// handle overlaps between GPUs
-//		xp = (SD.overlap_right) ? x+1 : TNL::min(x+1, SD.X-1);
-//		xm = (SD.overlap_left) ? x-1 : TNL::max(x-1,0);
-		xp = (rank != nproc-1) ? x+1 : TNL::min(x+1, SD.X()-1);
-		xm = (rank != 0) ? x-1 : TNL::max(x-1,0);
-		yp = TNL::min(y+1, SD.Y()-1);
-		ym = TNL::max(y-1,0);
-		zp = TNL::min(z+1, SD.Z()-1);
-		zm = TNL::max(z-1,0);
-	}
-
-	map_t gi_map_xp = SD.map(xp, y, z);
-	map_t gi_map_xm = SD.map(xm, y, z);
-	map_t gi_map_yp = SD.map(x, yp, z);
-	map_t gi_map_ym = SD.map(x, ym, z);
-	map_t gi_map_zp = SD.map(x, y, zp);
-	map_t gi_map_zm = SD.map(x, y, zm);
-
-	//if(gi_map_xm != gi_map)
-	printf("Kontrola mapy:\nxm = %d, x = %d, xp=%d\n gi_xm = %d, gi_x = %d, gi_xp = %d\n",(int)xm,(int)x,(int)xp,gi_map_xm, gi_map, gi_map_xp);
-}
-
-
-template <
-	typename LBM_TYPE,
-	typename STREAMING,
-	typename MACRO,
-	typename LBM_DATA,
-	typename LBM_BC
->
-	#ifdef TODO
-CUDA_HOSTDEV
-void LBMKernelCheckVelocity(
-	typename LBM_TYPE::T_TRAITS::idx x,
-	typename LBM_TYPE::T_TRAITS::idx y,
-	typename LBM_TYPE::T_TRAITS::idx z,
-	LBM_DATA SD,
-	short int rank,
-	short int nproc,
-    int iter
-)
-	#else
-		#ifdef USE_CUDA
-//__launch_bounds__(32, 16)
-__global__ void cudaLBMKernelCheckVelocity(
-	LBM_DATA SD,
-	short int rank,
-	short int nproc,
-	typename LBM_TYPE::T_TRAITS::idx offset_x,
-    int iter
-)
-		#else
-CUDA_HOSTDEV
-void LBMKernelCheckVelocity(
-	LBM_DATA SD,
-	typename LBM_TYPE::T_TRAITS::idx x,
-	typename LBM_TYPE::T_TRAITS::idx y,
-	typename LBM_TYPE::T_TRAITS::idx z,
-	short int rank,
-	short int nproc,
-    int iter
-)
-		#endif
-	#endif
-{
-	using dreal = typename LBM_TYPE::T_TRAITS::dreal;
-	using idx = typename LBM_TYPE::T_TRAITS::idx;
-	using map_t = typename LBM_TYPE::T_TRAITS::map_t;
-
-	#ifndef TODO
-		#ifdef USE_CUDA
-	idx x = threadIdx.x + blockIdx.x * blockDim.x + offset_x;
-	idx y = threadIdx.y + blockIdx.y * blockDim.y;
-	idx z = threadIdx.z + blockIdx.z * blockDim.z;
-		#endif
-	#endif
-	map_t gi_map = SD.map(x, y, z);
-
-	KernelStruct<dreal> KS;
-
-	KernelStruct<dreal> KSxp, KSxm;
-
-	// copy quantities
-	MACRO::copyQuantities(SD, KS, x, y, z);
-
-	idx xp,xm,yp,ym,zp,zm;
-	if (LBM_BC::isPeriodic(gi_map))
-	{
-		// handle overlaps between GPUs
-//		xp = (!SD.overlap_right && x == SD.X-1) ? 0 : (x+1);
-//		xm = (!SD.overlap_left && x == 0) ? (SD.X-1) : (x-1);
-		xp = (nproc == 1 && x == SD.X()-1) ? 0 : (x+1);
-		xm = (nproc == 1 && x == 0) ? (SD.X()-1) : (x-1);
-		yp = (y == SD.Y()-1) ? 0 : (y+1);
-		ym = (y == 0) ? (SD.Y()-1) : (y-1);
-		zp = (z == SD.Z()-1) ? 0 : (z+1);
-		zm = (z == 0) ? (SD.Z()-1) : (z-1);
-	} else {
-		// handle overlaps between GPUs
-//		xp = (SD.overlap_right) ? x+1 : TNL::min(x+1, SD.X-1);
-//		xm = (SD.overlap_left) ? x-1 : TNL::max(x-1,0);
-		xp = (rank != nproc-1) ? x+1 : TNL::min(x+1, SD.X()-1);
-		xm = (rank != 0) ? x-1 : TNL::max(x-1,0);
-		yp = TNL::min(y+1, SD.Y()-1);
-		ym = TNL::max(y-1,0);
-		zp = TNL::min(z+1, SD.Z()-1);
-		zm = TNL::max(z-1,0);
-	}
-
-	MACRO::getMacro(SD, KSxp, xp, y, z);
-	MACRO::getMacro(SD, KSxm, xm, y, z);
-
-	MACRO::getMacro(SD, KS, x, y, z);
-
-	map_t gi_map_xp = SD.map(xp, y, z);
-	map_t gi_map_xm = SD.map(xm, y, z);
-	map_t gi_map_yp = SD.map(x, yp, z);
-	map_t gi_map_ym = SD.map(x, ym, z);
-	map_t gi_map_zp = SD.map(x, y, zp);
-	map_t gi_map_zm = SD.map(x, y, zm);
-
-	if(y == (idx)floor(SD.Y()/2.) && z == (idx)floor(SD.Z()/2.))
-	{
-		if(rank == 0)
-		{
-			printf("Velocity rank %d, iter = %d vlevo:\n C: vx = %e, vy = %e, vz = %e\n R: vx = %e, vy = %e, vz = %e\nx = %d, xp = %d, y = %d, z = %d\n",(int)rank,iter, KS.vx, KS.vy, KS.vz, KSxp.vx, KSxp.vy, KSxp.vz,(int)x, (int)xp,(int)y, (int)z);
-		}
-		else if(rank == 1)
-		{
-			printf("Velocity rank %d, iter = %d vpravo:\n C: vx = %e, vy = %e, vz = %e\n L: vx = %e, vy = %e, vz = %e\nxm = %d, x = %d, y = %d, z = %d\n",(int)rank, iter, KS.vx, KS.vy, KS.vz, KSxm.vx, KSxm.vy, KSxm.vz,(int)xm, (int)x,(int)y, (int)z);
-		}
-	}
-}
-#endif
 
 template <typename NSE>
 #ifdef USE_CUDA
@@ -471,23 +266,6 @@ void computeNonNewtonianKernels(STATE& state)
 	cudaDeviceSynchronize();
 	TNL_CHECK_CUDA_DEVICE;
 
-#if 0
-//	cudaLBMKernelCheckMap< NSE, STREAMING, MACRO, LBM_DATA, LBM_BC><<<gridSizeForBoundary, blockSize, 0, cuda_stream_left>>>(lbm.data, lbm.rank, lbm.nproc, lbm.local_X - lbm.df_overlap_X());
-
-	TNL::MPI::Barrier();
-	if(lbm.rank == 0)
-	{
-		cudaLBMKernelCheckVelocity< NSE, STREAMING, MACRO, LBM_DATA, LBM_BC><<<gridSizeForBoundary, blockSize, 0, cuda_stream_left>>>(lbm.data, lbm.rank, lbm.nproc, lbm.local_X - lbm.df_overlap_X(),lbm.iterations);
-	}
-	else if(lbm.rank == 1)
-	{
-		cudaLBMKernelCheckVelocity< NSE, STREAMING, MACRO, LBM_DATA, LBM_BC><<<gridSizeForBoundary, blockSize, 0, cuda_stream_right>>>(lbm.data, lbm.rank, lbm.nproc, (idx)0,lbm.iterations);
-	}
-	cudaStreamSynchronize(cuda_stream_left);
-	cudaStreamSynchronize(cuda_stream_right);
-	TNL::MPI::Barrier();
-#endif
-
 	// compute on boundaries
 	for (auto& block : nse.blocks) {
 		for (auto direction : boundary_directions)
@@ -535,16 +313,7 @@ void computeNonNewtonianKernels(STATE& state)
 	TNL_CHECK_CUDA_DEVICE;
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//                                                                                                                                                                                                                //
-//                                                                                                                                                                                                                //
 // Default "LBM data" class for the non-Newtonian fluid model
-//                                                                                                                                                                                                                //
-//                                                                                                                                                                                                                //
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-#include "lbm_data.h"
-
 template <typename TRAITS>
 struct LBM_Data_NonNewtonian : NSE_Data<TRAITS>
 {
@@ -562,16 +331,7 @@ struct LBM_Data_NonNewtonian : NSE_Data<TRAITS>
 #endif
 };
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//                                                                                                                                                                                                                //
-//                                                                                                                                                                                                                //
 // Default macro class for the non-Newtonian fluid model
-//                                                                                                                                                                                                                //
-//                                                                                                                                                                                                                //
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-#include "d3q27/macro.h"
-
 template <typename TRAITS>
 struct MacroNonNewtonianDefault : D3Q27_MACRO_Default<TRAITS>
 {
@@ -585,13 +345,6 @@ struct MacroNonNewtonianDefault : D3Q27_MACRO_Default<TRAITS>
 		e_vx,
 		e_vy,
 		e_vz,
-		e_vm_plus_x,
-		e_vm_minus_x,
-		e_vm_y,
-		e_vm_z,
-		e_vm_xx,
-		e_vm_yy,
-		e_vm_zz,
 		e_fx,
 		e_fy,
 		e_fz,
@@ -615,16 +368,6 @@ struct MacroNonNewtonianDefault : D3Q27_MACRO_Default<TRAITS>
 		SD.macro(e_fx, x, y, z) = KS.fx;
 		SD.macro(e_fy, x, y, z) = KS.fy;
 		SD.macro(e_fz, x, y, z) = KS.fz;
-
-		SD.macro(e_vm_plus_x, x, y, z) += (KS.vx > 0) ? KS.rho * KS.vx : 0;
-		SD.macro(e_vm_minus_x, x, y, z) += (KS.vx < 0) ? KS.rho * KS.vx : 0;
-
-		SD.macro(e_vm_y, x, y, z) += KS.rho * KS.vy;
-		SD.macro(e_vm_z, x, y, z) += KS.rho * KS.vz;
-
-		SD.macro(e_vm_xx, x, y, z) += KS.rho * KS.rho * KS.vx * KS.vx;
-		SD.macro(e_vm_yy, x, y, z) += KS.rho * KS.rho * KS.vy * KS.vy;
-		SD.macro(e_vm_zz, x, y, z) += KS.rho * KS.rho * KS.vz * KS.vz;
 	}
 
 	template <typename LBM_DATA, typename LBM_KS>
