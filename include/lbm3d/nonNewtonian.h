@@ -1,5 +1,7 @@
 #pragma once
 
+#include <TNL/Backend.h>
+
 #include "d3q27/macro.h"
 #include "defs.h"
 #include "kernels.h"
@@ -205,9 +207,7 @@ void computeNonNewtonianKernels(STATE& state)
 	using NSE = typename STATE::NSE_type;
 	using TRAITS = typename STATE::TRAITS;
 
-	using idx = typename TRAITS::idx;
 	using idx3d = typename TRAITS::idx3d;
-	using dreal = typename TRAITS::dreal;
 
 	auto& nse = state.nse;
 
@@ -226,10 +226,14 @@ void computeNonNewtonianKernels(STATE& state)
 			if (auto search = block.neighborIDs.find(direction); search != block.neighborIDs.end() && search->second >= 0) {
 				const dim3 blockSize = block.computeData.at(direction).blockSize;
 				const dim3 gridSize = block.computeData.at(direction).gridSize;
-				const cudaStream_t stream = block.computeData.at(direction).stream;
+				const auto& stream = block.computeData.at(direction).stream;
 				const idx3d offset = block.computeData.at(direction).offset;
 				const idx3d size = block.computeData.at(direction).size;
-				cudaLBMKernelVelocity<NSE><<<gridSize, blockSize, 0, stream>>>(block.data, block.is_distributed(), offset, offset + size);
+				TNL::Backend::LaunchConfiguration launch_config;
+				launch_config.gridSize = gridSize;
+				launch_config.blockSize = blockSize;
+				launch_config.stream = stream;
+				TNL::Backend::launchKernelAsync(cudaLBMKernelVelocity<NSE>, launch_config, block.data, block.is_distributed(), offset, offset + size);
 			}
 	}
 
@@ -238,16 +242,20 @@ void computeNonNewtonianKernels(STATE& state)
 		const auto direction = TNL::Containers::SyncDirection::None;
 		const dim3 blockSize = block.computeData.at(direction).blockSize;
 		const dim3 gridSize = block.computeData.at(direction).gridSize;
-		const cudaStream_t stream = block.computeData.at(direction).stream;
+		const auto& stream = block.computeData.at(direction).stream;
 		const idx3d offset = block.computeData.at(direction).offset;
 		const idx3d size = block.computeData.at(direction).size;
-		cudaLBMKernelVelocity<NSE><<<gridSize, blockSize, 0, stream>>>(block.data, block.is_distributed(), offset, offset + size);
+		TNL::Backend::LaunchConfiguration launch_config;
+		launch_config.gridSize = gridSize;
+		launch_config.blockSize = blockSize;
+		launch_config.stream = stream;
+		TNL::Backend::launchKernelAsync(cudaLBMKernelVelocity<NSE>, launch_config, block.data, block.is_distributed(), offset, offset + size);
 	}
 
 	// wait for the computations on boundaries to finish
 	for (auto& block : nse.blocks)
 		for (auto direction : boundary_directions)
-			cudaStreamSynchronize(block.computeData.at(direction).stream);
+			TNL::Backend::streamSynchronize(block.computeData.at(direction).stream);
 
 	// exchange macroscopic quantities on overlaps between blocks
 	// TODO: avoid communication of DFs here
@@ -258,12 +266,12 @@ void computeNonNewtonianKernels(STATE& state)
 
 	// wait for the computation on the interior to finish
 	for (auto& block : nse.blocks) {
-		const cudaStream_t stream = block.computeData.at(TNL::Containers::SyncDirection::None).stream;
-		cudaStreamSynchronize(stream);
+		const auto& stream = block.computeData.at(TNL::Containers::SyncDirection::None).stream;
+		TNL::Backend::streamSynchronize(stream);
 	}
 
-	// synchronize the whole GPU and check errors
-	cudaDeviceSynchronize();
+	// synchronize the null-stream after all grids
+	TNL::Backend::streamSynchronize(0);
 	TNL_CHECK_CUDA_DEVICE;
 
 	// compute on boundaries
@@ -272,10 +280,14 @@ void computeNonNewtonianKernels(STATE& state)
 			if (auto search = block.neighborIDs.find(direction); search != block.neighborIDs.end() && search->second >= 0) {
 				const dim3 blockSize = block.computeData.at(direction).blockSize;
 				const dim3 gridSize = block.computeData.at(direction).gridSize;
-				const cudaStream_t stream = block.computeData.at(direction).stream;
+				const auto& stream = block.computeData.at(direction).stream;
 				const idx3d offset = block.computeData.at(direction).offset;
 				const idx3d size = block.computeData.at(direction).size;
-				cudaLBMKernelStress<NSE><<<gridSize, blockSize, 0, stream>>>(block.data, block.is_distributed(), offset, offset + size);
+				TNL::Backend::LaunchConfiguration launch_config;
+				launch_config.gridSize = gridSize;
+				launch_config.blockSize = blockSize;
+				launch_config.stream = stream;
+				TNL::Backend::launchKernelAsync(cudaLBMKernelStress<NSE>, launch_config, block.data, block.is_distributed(), offset, offset + size);
 			}
 	}
 
@@ -284,16 +296,20 @@ void computeNonNewtonianKernels(STATE& state)
 		const auto direction = TNL::Containers::SyncDirection::None;
 		const dim3 blockSize = block.computeData.at(direction).blockSize;
 		const dim3 gridSize = block.computeData.at(direction).gridSize;
-		const cudaStream_t stream = block.computeData.at(direction).stream;
+		const auto& stream = block.computeData.at(direction).stream;
 		const idx3d offset = block.computeData.at(direction).offset;
 		const idx3d size = block.computeData.at(direction).size;
-		cudaLBMKernelStress<NSE><<<gridSize, blockSize, 0, stream>>>(block.data, block.is_distributed(), offset, offset + size);
+		TNL::Backend::LaunchConfiguration launch_config;
+		launch_config.gridSize = gridSize;
+		launch_config.blockSize = blockSize;
+		launch_config.stream = stream;
+		TNL::Backend::launchKernelAsync(cudaLBMKernelStress<NSE>, launch_config, block.data, block.is_distributed(), offset, offset + size);
 	}
 
 	// wait for the computations on boundaries to finish
 	for (auto& block : nse.blocks)
 		for (auto direction : boundary_directions)
-			cudaStreamSynchronize(block.computeData.at(direction).stream);
+			TNL::Backend::streamSynchronize(block.computeData.at(direction).stream);
 
 	// exchange macroscopic quantities on overlaps between blocks
 	// TODO: avoid communication of DFs here
@@ -304,12 +320,12 @@ void computeNonNewtonianKernels(STATE& state)
 
 	// wait for the computation on the interior to finish
 	for (auto& block : nse.blocks) {
-		const cudaStream_t stream = block.computeData.at(TNL::Containers::SyncDirection::None).stream;
-		cudaStreamSynchronize(stream);
+		const auto& stream = block.computeData.at(TNL::Containers::SyncDirection::None).stream;
+		TNL::Backend::streamSynchronize(stream);
 	}
 
-	// synchronize the whole GPU and check errors
-	cudaDeviceSynchronize();
+	// synchronize the null-stream after all grids
+	TNL::Backend::streamSynchronize(0);
 	TNL_CHECK_CUDA_DEVICE;
 }
 
