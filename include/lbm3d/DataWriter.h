@@ -1,6 +1,5 @@
 #pragma once
 
-#include <any>
 #include <map>
 #include <string>
 #include <vector>
@@ -21,22 +20,24 @@ protected:
 	// IO name in DataManager
 	std::string ioName;
 
-	// internal storage for array variables
-	std::vector<std::any> buffers;
-
 	// data variables recorded for output (mapping of name to dimension)
 	std::map<std::string, int> variables;
+
+	// plugin doesnt support now
+	// template <typename T>
+	// typename adios2::Variable<T>::Span newBuffer(const std::string& varName)
+	// {
+	// 	adios2::Engine& engine = dataManager->getEngine(ioName);
+	// 	adios2::Variable<T> var = dataManager->getVariable<T>(varName, ioName);
+	// 	typename adios2::Variable<T>::Span buffer = engine.Put(var);
+	// 	return buffer;
+	// }
 
 	template <typename T>
 	std::vector<T>& newBuffer(std::size_t reserve = 0)
 	{
-		std::any& any_buffer = buffers.emplace_back(std::make_any<std::vector<T>>());
-		std::vector<T>& buffer = std::any_cast<std::vector<T>&>(any_buffer);
-		if (reserve > 0)
-			buffer.reserve(reserve);
-		return buffer;
+		return dataManager->newStepBuffer<T>(reserve);
 	}
-
 	void recordVariable(const std::string& name, int dim)
 	{
 		if (variables.count(name) > 0)

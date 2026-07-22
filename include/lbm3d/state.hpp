@@ -46,6 +46,17 @@ State<NSE>::State(const std::string& id, const TNL::MPI::Comm& communicator, lat
 	if (have_lock)
 		init_logging(id, communicator);
 
+#ifdef HAVE_MPI
+	int mpi_thread_support = MPI_THREAD_SINGLE;
+	MPI_Query_thread(&mpi_thread_support);
+	asyncIOAllowed = mpi_thread_support >= MPI_THREAD_MULTIPLE;
+	if (TNL::MPI::GetRank(communicator) == 0) {
+		spdlog::info("MPI thread support provided: {} (MPI_THREAD_MULTIPLE={})", mpi_thread_support, static_cast<int>(MPI_THREAD_MULTIPLE));
+		if (! asyncIOAllowed)
+			spdlog::warn("Disabling std::async I/O because MPI did not provide MPI_THREAD_MULTIPLE.");
+	}
+#endif
+
 	if (dataManager.isPluginEngine()) {
 		dataManager.setPluginDataModelPath(fmt::format("results_{}/lbm-fides.json", id));
 	}
@@ -285,15 +296,15 @@ void State<NSE>::writePoints(const char* name, real time, int cycle, const typen
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename NSE>
-void State<NSE>::outputDataPhase1(UniformDataWriter<TRAITS>& writer, std::size_t block_index, const idx3d& begin, const idx3d& end)
+void State<NSE>::outputDataPhase1(UniformDataWriter<TRAITS>& writer, std::size_t block_index, const idx3d& begin, const idx3d& end, real time)
 {
-	writer.write("TIME", nse.physTime());
+	writer.write("TIME", time);
 	writer.write("wall", nse.blocks[block_index].hmap, begin, end);
 	this->outputData(writer, nse.blocks[block_index], begin, end);
 }
 
 template <typename NSE>
-void State<NSE>::write3D()
+void State<NSE>::write3D(real time, int cycle)
 {
 	const std::string fname = fmt::format("results_{}/output_3D", id);
 	create_parent_directories(fname.c_str());
@@ -302,7 +313,7 @@ void State<NSE>::write3D()
 	predefine3D(fname, nse.blocks.front());
 	if (! dataManager.isEngineOpen(fname)) {
 		// Open as Append after the first cycle
-		const auto mode = (cnt[OUT3D].count == 0) ? adios2::Mode::Write : adios2::Mode::Append;
+		const auto mode = (cycle == 0) ? adios2::Mode::Write : adios2::Mode::Append;
 		dataManager.openEngine(fname, mode);
 	}
 	dataManager.beginStep(fname);
@@ -328,11 +339,11 @@ void State<NSE>::write3D()
 		UniformDataWriter<TRAITS> writer(block.global, local_size, block.offset, origin, nse.lat.physDl, dataManager, fname);
 		idx3d begin = block.offset;
 		idx3d end = block.offset + local_size;
-		outputDataPhase1(writer, i, begin, end);
+		outputDataPhase1(writer, i, begin, end, time);
 	}
 
 	dataManager.endStep(fname);
-	spdlog::info("Output {} written, time {:f}, cycle {:d}", fname, nse.physTime(), cnt[OUT3D].count);
+	spdlog::info("Output {} written, time {:f}, cycle {:d}", fname, time, cycle);
 
 	timer.stop();
 	spdlog::info("write3D saved in: {:.2f} seconds", timer.getRealTime());
@@ -525,7 +536,7 @@ void State<NSE>::add3Dcut(idx ox, idx oy, idx oz, idx lx, idx ly, idx lz, const 
 }
 
 template <typename NSE>
-void State<NSE>::write3Dcut()
+void State<NSE>::write3Dcut(real time, int cycle)
 {
 	if (probe3Dvec.size() <= 0)
 		return;
@@ -539,7 +550,7 @@ void State<NSE>::write3Dcut()
 		predefine3Dcut(fname, nse.blocks.front(), probevec);
 		if (! dataManager.isEngineOpen(fname)) {
 			// Open as Append after the first cycle
-			const auto mode = (probevec.cycle == 0) ? adios2::Mode::Write : adios2::Mode::Append;
+			const auto mode = (cycle == 0) ? adios2::Mode::Write : adios2::Mode::Append;
 			dataManager.openEngine(fname, mode);
 		}
 		dataManager.beginStep(fname);
@@ -587,12 +598,12 @@ void State<NSE>::write3Dcut()
 
 			idx3d begin = {TNL::max(ox, block.offset.x()), TNL::max(oy, block.offset.y()), TNL::max(oz, block.offset.z())};
 			idx3d end = begin + cut_local;
-			outputDataPhase1(writer, i, begin, end);
+			outputDataPhase1(writer, i, begin, end, time);
 		}
 
 		dataManager.endStep(fname);
-		spdlog::info("Output {} written, time {:f}, cycle {:d}", fname, nse.physTime(), probevec.cycle);
-		probevec.cycle++;
+		spdlog::info("Output {} written, time {:f}, cycle {:d}", fname, time, cycle);
+		probevec.cycle = cycle + 1;
 	}
 }
 
@@ -658,7 +669,7 @@ void State<NSE>::add2Dcut_Z(idx z, const char* fmts, ARGS... args)
 }
 
 template <typename NSE>
-void State<NSE>::write2D()
+void State<NSE>::write2D(real time, int cycle)
 {
 	if (probe2Dvec.size() <= 0)
 		return;
@@ -672,7 +683,7 @@ void State<NSE>::write2D()
 		predefine2D(fname, nse.blocks.front(), probevec.type);
 		if (! dataManager.isEngineOpen(fname)) {
 			// Open as Append after the first cycle
-			const auto mode = (probevec.cycle == 0) ? adios2::Mode::Write : adios2::Mode::Append;
+			const auto mode = (cycle == 0) ? adios2::Mode::Write : adios2::Mode::Append;
 			dataManager.openEngine(fname, mode);
 		}
 		dataManager.beginStep(fname);
@@ -734,12 +745,12 @@ void State<NSE>::write2D()
 			}
 
 			UniformDataWriter<TRAITS> writer(cut_global, cut_local, cut_offset, cut_origin, nse.lat.physDl, dataManager, fname);
-			outputDataPhase1(writer, i, begin, end);
+			outputDataPhase1(writer, i, begin, end, time);
 		}
 
 		dataManager.endStep(fname);
-		spdlog::info("Output {} written, time {:f}, cycle {:d}", fname, nse.physTime(), probevec.cycle);
-		probevec.cycle++;
+		spdlog::info("Output {} written, time {:f}, cycle {:d}", fname, time, cycle);
+		probevec.cycle = cycle + 1;
 	}
 }
 
@@ -1148,6 +1159,7 @@ void State<NSE>::SimInit()
 	timer_compute_overlaps.reset();
 	timer_wait_communication.reset();
 	timer_wait_computation.reset();
+	timer_wait_io.reset();
 
 	timer_SimInit.start();
 
@@ -1397,16 +1409,47 @@ void State<NSE>::SimUpdate()
 }
 
 template <typename NSE>
+void State<NSE>::waitForPendingIO()
+{
+	if (pendingIO_.valid())
+		pendingIO_.get();
+}
+
+template <typename NSE>
 void State<NSE>::AfterSimUpdate()
 {
 	timer_AfterSimUpdate.start();
 
+	bool waited_for_pending_io = false;
+	auto wait_for_pending_io_timed = [this, &waited_for_pending_io]()
+	{
+		if (waited_for_pending_io)
+			return;
+		timer_wait_io.start();
+		waitForPendingIO();
+		timer_wait_io.stop();
+		waited_for_pending_io = true;
+	};
+
+	if (probe_needs_macro_on_host)
+		wait_for_pending_io_timed();
+
 	bool copy_macro = false;
-	for (int c = 0; c < MAX_COUNTER; c++)
-		if (c != PRINT && c != SAVESTATE)
-			if (cnt[c].action(nse.physTime()))
-				copy_macro = true;
+	if (!probe_needs_macro_on_host) {
+		for (int c = 0; c < MAX_COUNTER; c++)
+			if (c != PRINT && c != SAVESTATE && c != PROBE1)
+				if (cnt[c].action(nse.physTime()))
+					copy_macro = true;
+	}
+	else {
+		for (int c = 0; c < MAX_COUNTER; c++)
+			if (c != PRINT && c != SAVESTATE)
+				if (cnt[c].action(nse.physTime()))
+					copy_macro = true;
+	}
+
 	if (copy_macro) {
+		wait_for_pending_io_timed();
 		nse.copyMacroToHost();
 	}
 
@@ -1448,49 +1491,62 @@ void State<NSE>::AfterSimUpdate()
 		}
 	}
 
-	if (cnt[OUT2D].action(nse.physTime()) || cnt[OUT3D].action(nse.physTime()) || cnt[OUT3DCUT].action(nse.physTime())
-		|| cnt[PROBE1].action(nse.physTime()) || cnt[PROBE2].action(nse.physTime()) || cnt[PROBE3].action(nse.physTime()) || nan_detected)
-	{
-		// probe1
-		if (cnt[PROBE1].action(nse.physTime())) {
-			probe1();
-			cnt[PROBE1].count++;
-		}
-		// probe2
-		if (cnt[PROBE2].action(nse.physTime())) {
-			probe2();
-			cnt[PROBE2].count++;
-		}
-		// probe3
-		if (cnt[PROBE3].action(nse.physTime())) {
-			probe3();
-			cnt[PROBE3].count++;
-		}
-		// 3D output
-		if (cnt[OUT3D].action(nse.physTime()) || nan_detected) {
-			write3D();
-			cnt[OUT3D].count++;
-		}
-		// 3D cut output
-		if (cnt[OUT3DCUT].action(nse.physTime())) {
-			write3Dcut();
-			cnt[OUT3DCUT].count++;
-		}
-		// 2D output
-		if (cnt[OUT2D].action(nse.physTime()) || nan_detected) {
-			write2D();
-			cnt[OUT2D].count++;
-		}
+	const bool do_probe1 = cnt[PROBE1].action(nse.physTime());
+	const bool do_probe2 = cnt[PROBE2].action(nse.physTime());
+	const bool do_probe3 = cnt[PROBE3].action(nse.physTime());
+	const bool do_write3D = cnt[OUT3D].action(nse.physTime()) || nan_detected;
+	const bool do_write3Dcut = cnt[OUT3DCUT].action(nse.physTime());
+	const bool do_write2D = cnt[OUT2D].action(nse.physTime()) || nan_detected;
+	const real output_time = nse.physTime();
+
+	if (do_probe1) {
+		probe1();
+		cnt[PROBE1].count++;
+	}
+	if (do_probe2) {
+		probe2();
+		cnt[PROBE2].count++;
+	}
+	if (do_probe3) {
+		probe3();
+		cnt[PROBE3].count++;
+	}
+	if (do_write3Dcut) {
+		const int write_cycle = cnt[OUT3DCUT].count;
+		write3Dcut(output_time, write_cycle);
+		cnt[OUT3DCUT].count++;
+	}
+	if (do_write2D) {
+		const int write_cycle = cnt[OUT2D].count;
+		write2D(output_time, write_cycle);
+		cnt[OUT2D].count++;
+	}
+	if (do_write3D) {
+		const real write_time = output_time;
+		const int write_cycle = cnt[OUT3D].count;
+		cnt[OUT3D].count++;
+		const int gpu_id = TNL::Backend::getDevice();
+		auto io_work = [this, gpu_id, write_time, write_cycle]()
+		{
+			TNL::Backend::setDevice(gpu_id);
+			write3D(write_time, write_cycle);
+		};
+		if (asyncIOAllowed)
+			pendingIO_ = std::async(std::launch::async, io_work);
+		else
+			io_work();
 	}
 
 	// statReset is called after all probes and output methods
 	// copy macro from host to device after reset
 	if (cnt[STAT_RESET].action(nse.physTime())) {
+		waitForPendingIO();
 		statReset();
 		nse.copyMacroToDevice();
 		cnt[STAT_RESET].count++;
 	}
 	if (cnt[STAT2_RESET].action(nse.physTime())) {
+		waitForPendingIO();
 		stat2Reset();
 		nse.copyMacroToDevice();
 		cnt[STAT2_RESET].count++;
@@ -1548,11 +1604,13 @@ void State<NSE>::AfterSimFinished()
 				timer_AfterSimUpdate.getRealTime()
 			);
 			spdlog::info(
-				"compute time: {:.1f} s, compute overlaps time: {:.1f} s, wait for communication time: {:.1f} s, wait for computation time: {:.1f} s",
+				"compute time: {:.1f} s, compute overlaps time: {:.1f} s, wait for communication time: {:.1f} s, wait for computation time: {:.1f} "
+				"s, wait for async I/O time: {:.1f} s",
 				timer_compute.getRealTime(),
 				timer_compute_overlaps.getRealTime(),
 				timer_wait_communication.getRealTime(),
-				timer_wait_computation.getRealTime()
+				timer_wait_computation.getRealTime(),
+				timer_wait_io.getRealTime()
 			);
 			const double avgLUPS = nse.lat.global.x() * nse.lat.global.y() * nse.lat.global.z()
 								 * (iterations / (timer_SimUpdate.getRealTime() + timer_AfterSimUpdate.getRealTime()));

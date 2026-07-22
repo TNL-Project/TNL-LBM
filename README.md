@@ -86,6 +86,18 @@ example, to build and run `sim_1` as in the previous example:
 
     ./sim_NSE/run sim_1 4
 
+### Visualization
+
+1. **Offline post-processing (PNG export from ADIOS2 output)**
+   Follow the [ADIOS2 Frame Exporter Guide](./catalyst/README.md) to generate
+   planar PNG slices (`xy`, `xz`, `yz`) from ADIOS2 stream/BP output for
+   analysis and animation.
+
+2. **In-situ live visualization in ParaView**
+   Follow the [ParaView Catalyst In-Situ Plugin Guide](./catalyst/plugin/README.md)
+   to connect ParaView Catalyst Live directly to a running simulation via
+   `adios2-inline-plugin.xml`.
+
 ## Getting involved
 
 The TNL project welcomes and encourages participation by everyone. While most of the work for TNL
