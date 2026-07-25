@@ -334,6 +334,7 @@ struct LBM_CONFIG
 // used directly as array indices without an idx() wrapper.
 struct dir9
 {
+	// NOTE: df_sync_directions_d2q9 must be kept consistent with this enum!
 	enum : std::uint8_t
 	{
 		// Q5
@@ -418,4 +419,18 @@ inline constexpr TNL::Containers::SyncDirection df_sync_directions[27] = {
 	TNL::Containers::SyncDirection::BackTopLeft,
 	TNL::Containers::SyncDirection::BackBottomRight,
 	TNL::Containers::SyncDirection::FrontTopLeft,
+};
+
+// D2Q9-specific sync directions for MPI synchronizer
+// (indexing must correspond to the dir9 enum above)
+inline constexpr TNL::Containers::SyncDirection df_sync_directions_d2q9[9] = {
+	TNL::Containers::SyncDirection::None,		  // zz (0)
+	TNL::Containers::SyncDirection::Right,		  // pz (1)
+	TNL::Containers::SyncDirection::Left,		  // mz (2)
+	TNL::Containers::SyncDirection::Top,		  // zp (3)
+	TNL::Containers::SyncDirection::Bottom,		  // zm (4)
+	TNL::Containers::SyncDirection::TopRight,	  // pp (5)
+	TNL::Containers::SyncDirection::BottomLeft,	  // mm (6)
+	TNL::Containers::SyncDirection::BottomRight,  // pm (7)
+	TNL::Containers::SyncDirection::TopLeft,	  // mp (8)
 };

@@ -446,8 +446,9 @@ void LBM_BLOCK<CONFIG>::start4DArraySynchronization(
 	for (int i = 0; i < N; i++) {
 		// rebind just the data pointer
 		view.bind(array.getData() + i * data.XYZ);
-		// determine sync direction
-		TNL::Containers::SyncDirection sync_direction = (is_df) ? df_sync_directions[i] : TNL::Containers::SyncDirection::All;
+		// determine sync direction - use D2Q9 array for Q=9, otherwise D3Q27/D3Q7 array
+		const TNL::Containers::SyncDirection* dirs = (CONFIG::Q == 9) ? df_sync_directions_d2q9 : df_sync_directions;
+		TNL::Containers::SyncDirection sync_direction = (is_df) ? dirs[i] : TNL::Containers::SyncDirection::All;
 	#ifdef AA_PATTERN
 		// reset shift of the lattice sites
 		sync[i].setBufferOffsets(0);
