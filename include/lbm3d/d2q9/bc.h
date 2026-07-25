@@ -90,33 +90,33 @@ struct D2Q9_BC_All
 				KS.vx = 0;
 				KS.vy = 0;
 				// collision step: bounce-back
-				TNL::swap(KS.f[mm], KS.f[pp]);
-				TNL::swap(KS.f[zm], KS.f[zp]);
-				TNL::swap(KS.f[mz], KS.f[pz]);
-				TNL::swap(KS.f[mp], KS.f[pm]);
+				TNL::swap(KS.f[dir9::mm], KS.f[dir9::pp]);
+				TNL::swap(KS.f[dir9::zm], KS.f[dir9::zp]);
+				TNL::swap(KS.f[dir9::mz], KS.f[dir9::pz]);
+				TNL::swap(KS.f[dir9::mp], KS.f[dir9::pm]);
 				break;
 			case GEO_SYM_LEFT:
-				KS.f[pm] = KS.f[mm];
-				KS.f[pz] = KS.f[mz];
-				KS.f[pp] = KS.f[mp];
+				KS.f[dir9::pm] = KS.f[dir9::mm];
+				KS.f[dir9::pz] = KS.f[dir9::mz];
+				KS.f[dir9::pp] = KS.f[dir9::mp];
 				COLL::computeDensityAndVelocity(KS);
 				break;
 			case GEO_SYM_RIGHT:
-				KS.f[mm] = KS.f[pm];
-				KS.f[mz] = KS.f[pz];
-				KS.f[mp] = KS.f[pp];
+				KS.f[dir9::mm] = KS.f[dir9::pm];
+				KS.f[dir9::mz] = KS.f[dir9::pz];
+				KS.f[dir9::mp] = KS.f[dir9::pp];
 				COLL::computeDensityAndVelocity(KS);
 				break;
 			case GEO_SYM_BOTTOM:
-				KS.f[mp] = KS.f[mm];
-				KS.f[zp] = KS.f[zm];
-				KS.f[pp] = KS.f[pm];
+				KS.f[dir9::mp] = KS.f[dir9::mm];
+				KS.f[dir9::zp] = KS.f[dir9::zm];
+				KS.f[dir9::pp] = KS.f[dir9::pm];
 				COLL::computeDensityAndVelocity(KS);
 				break;
 			case GEO_SYM_TOP:
-				KS.f[mm] = KS.f[mp];
-				KS.f[zm] = KS.f[zp];
-				KS.f[pm] = KS.f[pp];
+				KS.f[dir9::mm] = KS.f[dir9::mp];
+				KS.f[dir9::zm] = KS.f[dir9::zp];
+				KS.f[dir9::pm] = KS.f[dir9::pp];
 				COLL::computeDensityAndVelocity(KS);
 				break;
 			default:

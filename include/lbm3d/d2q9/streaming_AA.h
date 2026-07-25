@@ -15,27 +15,27 @@ struct D2Q9_STREAMING
 	{
 		if (SD.even_iter) {
 			// write to the same lattice site, but the opposite DF direction
-			SD.df(df_cur, mm, x, y, z) = KS.f[pp];
-			SD.df(df_cur, mz, x, y, z) = KS.f[pz];
-			SD.df(df_cur, mp, x, y, z) = KS.f[pm];
-			SD.df(df_cur, zm, x, y, z) = KS.f[zp];
-			SD.df(df_cur, zz, x, y, z) = KS.f[zz];
-			SD.df(df_cur, zp, x, y, z) = KS.f[zm];
-			SD.df(df_cur, pm, x, y, z) = KS.f[mp];
-			SD.df(df_cur, pz, x, y, z) = KS.f[mz];
-			SD.df(df_cur, pp, x, y, z) = KS.f[mm];
+			SD.df(df_cur, dir9::mm, x, y, z) = KS.f[dir9::pp];
+			SD.df(df_cur, dir9::mz, x, y, z) = KS.f[dir9::pz];
+			SD.df(df_cur, dir9::mp, x, y, z) = KS.f[dir9::pm];
+			SD.df(df_cur, dir9::zm, x, y, z) = KS.f[dir9::zp];
+			SD.df(df_cur, dir9::zz, x, y, z) = KS.f[dir9::zz];
+			SD.df(df_cur, dir9::zp, x, y, z) = KS.f[dir9::zm];
+			SD.df(df_cur, dir9::pm, x, y, z) = KS.f[dir9::mp];
+			SD.df(df_cur, dir9::pz, x, y, z) = KS.f[dir9::mz];
+			SD.df(df_cur, dir9::pp, x, y, z) = KS.f[dir9::mm];
 		}
 		else {
 			// write to the neighboring lattice sites, same DF direction
-			SD.df(df_cur, pp, xp, yp, z) = KS.f[pp];
-			SD.df(df_cur, pz, xp, y, z) = KS.f[pz];
-			SD.df(df_cur, pm, xp, ym, z) = KS.f[pm];
-			SD.df(df_cur, zp, x, yp, z) = KS.f[zp];
-			SD.df(df_cur, zz, x, y, z) = KS.f[zz];
-			SD.df(df_cur, zm, x, ym, z) = KS.f[zm];
-			SD.df(df_cur, mp, xm, yp, z) = KS.f[mp];
-			SD.df(df_cur, mz, xm, y, z) = KS.f[mz];
-			SD.df(df_cur, mm, xm, ym, z) = KS.f[mm];
+			SD.df(df_cur, dir9::pp, xp, yp, z) = KS.f[dir9::pp];
+			SD.df(df_cur, dir9::pz, xp, y, z) = KS.f[dir9::pz];
+			SD.df(df_cur, dir9::pm, xp, ym, z) = KS.f[dir9::pm];
+			SD.df(df_cur, dir9::zp, x, yp, z) = KS.f[dir9::zp];
+			SD.df(df_cur, dir9::zz, x, y, z) = KS.f[dir9::zz];
+			SD.df(df_cur, dir9::zm, x, ym, z) = KS.f[dir9::zm];
+			SD.df(df_cur, dir9::mp, xm, yp, z) = KS.f[dir9::mp];
+			SD.df(df_cur, dir9::mz, xm, y, z) = KS.f[dir9::mz];
+			SD.df(df_cur, dir9::mm, xm, ym, z) = KS.f[dir9::mm];
 		}
 	}
 
@@ -50,15 +50,15 @@ struct D2Q9_STREAMING
 		}
 		else {
 			// read from the neighboring lattice sites, but the opposite DF direction
-			KS.f[mm] = TNL::Backend::ldg(SD.df(df_cur, pp, xp, yp, z));
-			KS.f[mz] = TNL::Backend::ldg(SD.df(df_cur, pz, xp, y, z));
-			KS.f[mp] = TNL::Backend::ldg(SD.df(df_cur, pm, xp, ym, z));
-			KS.f[zm] = TNL::Backend::ldg(SD.df(df_cur, zp, x, yp, z));
-			KS.f[zz] = TNL::Backend::ldg(SD.df(df_cur, zz, x, y, z));
-			KS.f[zp] = TNL::Backend::ldg(SD.df(df_cur, zm, x, ym, z));
-			KS.f[pm] = TNL::Backend::ldg(SD.df(df_cur, mp, xm, yp, z));
-			KS.f[pz] = TNL::Backend::ldg(SD.df(df_cur, mz, xm, y, z));
-			KS.f[pp] = TNL::Backend::ldg(SD.df(df_cur, mm, xm, ym, z));
+			KS.f[dir9::mm] = TNL::Backend::ldg(SD.df(df_cur, dir9::pp, xp, yp, z));
+			KS.f[dir9::mz] = TNL::Backend::ldg(SD.df(df_cur, dir9::pz, xp, y, z));
+			KS.f[dir9::mp] = TNL::Backend::ldg(SD.df(df_cur, dir9::pm, xp, ym, z));
+			KS.f[dir9::zm] = TNL::Backend::ldg(SD.df(df_cur, dir9::zp, x, yp, z));
+			KS.f[dir9::zz] = TNL::Backend::ldg(SD.df(df_cur, dir9::zz, x, y, z));
+			KS.f[dir9::zp] = TNL::Backend::ldg(SD.df(df_cur, dir9::zm, x, ym, z));
+			KS.f[dir9::pm] = TNL::Backend::ldg(SD.df(df_cur, dir9::mp, xm, yp, z));
+			KS.f[dir9::pz] = TNL::Backend::ldg(SD.df(df_cur, dir9::mz, xm, y, z));
+			KS.f[dir9::pp] = TNL::Backend::ldg(SD.df(df_cur, dir9::mm, xm, ym, z));
 		}
 	}
 };

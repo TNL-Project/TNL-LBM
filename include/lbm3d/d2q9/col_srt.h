@@ -29,14 +29,14 @@ struct D2Q9_SRT : D2Q9_COMMON<TRAITS, LBM_EQ>
 		const dreal force_NW =
 			(no1 - n1o2 / tau) / no36 * (no3 * ((-no1 - KS.vx) * KS.fx + (no1 - KS.vy) * KS.fy) + no9 * (KS.vx - KS.vy) * (KS.fx - KS.fy));
 
-		KS.f[zz] += (LBM_EQ::eq_zz(KS.rho, KS.vx, KS.vy) - KS.f[zz]) / tau + force_C;
-		KS.f[pz] += (LBM_EQ::eq_pz(KS.rho, KS.vx, KS.vy) - KS.f[pz]) / tau + force_E;
-		KS.f[mz] += (LBM_EQ::eq_mz(KS.rho, KS.vx, KS.vy) - KS.f[mz]) / tau + force_W;
-		KS.f[zm] += (LBM_EQ::eq_zm(KS.rho, KS.vx, KS.vy) - KS.f[zm]) / tau + force_S;
-		KS.f[zp] += (LBM_EQ::eq_zp(KS.rho, KS.vx, KS.vy) - KS.f[zp]) / tau + force_N;
-		KS.f[pm] += (LBM_EQ::eq_pm(KS.rho, KS.vx, KS.vy) - KS.f[pm]) / tau + force_SE;
-		KS.f[pp] += (LBM_EQ::eq_pp(KS.rho, KS.vx, KS.vy) - KS.f[pp]) / tau + force_NE;
-		KS.f[mm] += (LBM_EQ::eq_mm(KS.rho, KS.vx, KS.vy) - KS.f[mm]) / tau + force_SW;
-		KS.f[mp] += (LBM_EQ::eq_mp(KS.rho, KS.vx, KS.vy) - KS.f[mp]) / tau + force_NW;
+		KS.f[dir9::zz] += (LBM_EQ::eq_zz(KS.rho, KS.vx, KS.vy) - KS.f[dir9::zz]) / tau + force_C;
+		KS.f[dir9::pz] += (LBM_EQ::eq_pz(KS.rho, KS.vx, KS.vy) - KS.f[dir9::pz]) / tau + force_E;
+		KS.f[dir9::mz] += (LBM_EQ::eq_mz(KS.rho, KS.vx, KS.vy) - KS.f[dir9::mz]) / tau + force_W;
+		KS.f[dir9::zm] += (LBM_EQ::eq_zm(KS.rho, KS.vx, KS.vy) - KS.f[dir9::zm]) / tau + force_S;
+		KS.f[dir9::zp] += (LBM_EQ::eq_zp(KS.rho, KS.vx, KS.vy) - KS.f[dir9::zp]) / tau + force_N;
+		KS.f[dir9::pm] += (LBM_EQ::eq_pm(KS.rho, KS.vx, KS.vy) - KS.f[dir9::pm]) / tau + force_SE;
+		KS.f[dir9::pp] += (LBM_EQ::eq_pp(KS.rho, KS.vx, KS.vy) - KS.f[dir9::pp]) / tau + force_NE;
+		KS.f[dir9::mm] += (LBM_EQ::eq_mm(KS.rho, KS.vx, KS.vy) - KS.f[dir9::mm]) / tau + force_SW;
+		KS.f[dir9::mp] += (LBM_EQ::eq_mp(KS.rho, KS.vx, KS.vy) - KS.f[dir9::mp]) / tau + force_NW;
 	}
 };

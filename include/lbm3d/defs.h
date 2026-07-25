@@ -329,19 +329,25 @@ struct LBM_CONFIG
 //#define USE_GEIER_CUM_2017 // use Geier 2017 Cummulant improvement A,B terms
 //#define USE_GEIER_CUM_ANTIALIAS // use antialiasing Dxu, Dyv, Dzw from Geier 2015/2017
 
-enum : std::uint8_t
+// D2Q9 direction enum — scoped via struct to avoid namespace pollution,
+// but values are plain integers (implicitly std::uint8_t) so they can be
+// used directly as array indices without an idx() wrapper.
+struct dir9
 {
-	// Q5
-	zz = 0,
-	pz = 1,
-	mz = 2,
-	zp = 3,
-	zm = 4,
-	// +Q9
-	pp = 5,
-	mm = 6,
-	pm = 7,
-	mp = 8,
+	enum : std::uint8_t
+	{
+		// Q5
+		zz = 0,
+		pz = 1,
+		mz = 2,
+		zp = 3,
+		zm = 4,
+		// +Q9
+		pp = 5,
+		mm = 6,
+		pm = 7,
+		mp = 8,
+	};
 };
 
 // NOTE: df_sync_directions must be kept consistent with this enum!
