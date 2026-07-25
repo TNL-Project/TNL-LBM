@@ -18,6 +18,7 @@ struct D2Q9_BC_All
 		GEO_FLUID,	// compulsory
 		GEO_WALL,	// compulsory
 		GEO_INFLOW,
+		GEO_INFLOW_LEFT,
 		GEO_OUTFLOW_EQ,
 		GEO_OUTFLOW_RIGHT,
 		GEO_OUTFLOW_RIGHT_INTERP,
@@ -69,6 +70,22 @@ struct D2Q9_BC_All
 				KS.rho = 1;
 				COLL::setEquilibrium(KS);
 				break;
+			case GEO_INFLOW_LEFT:
+				{
+					SD.inflow(KS, x, y, z);
+					// moment boundary condition by Pavel Eichler https://doi.org/10.1016/j.camwa.2024.08.009
+					// 2D reduction: mass + y-momentum + Π_yy (normal stress)
+					// expressions symetrized: Y-mirror directions paired so float32 summation is commutative
+					KS.rho =
+						(KS.f[dir9::zz] + (KS.f[dir9::zp] + KS.f[dir9::zm]) + 2 * (KS.f[dir9::mz] + (KS.f[dir9::mm] + KS.f[dir9::mp]))) / (1 - KS.vx);
+					dreal m01 = KS.rho * KS.vy;
+					dreal m02 = n1o3 * KS.rho + KS.rho * (KS.vy * KS.vy);
+					KS.f[dir9::pp] = (dreal) 0.5 * (m02 + m01 - 2 * KS.f[dir9::zp] - 2 * KS.f[dir9::mp]);
+					KS.f[dir9::pm] = (dreal) 0.5 * (m02 - m01 - 2 * KS.f[dir9::zm] - 2 * KS.f[dir9::mm]);
+					KS.f[dir9::pz] = KS.rho - KS.f[dir9::zz] - KS.f[dir9::mz] - (KS.f[dir9::zp] + KS.f[dir9::zm]) - (KS.f[dir9::pp] + KS.f[dir9::pm])
+								   - (KS.f[dir9::mm] + KS.f[dir9::mp]);
+					break;
+				}
 			case GEO_OUTFLOW_EQ:
 				COLL::computeDensityAndVelocity(KS);
 				KS.rho = 1;
@@ -129,7 +146,7 @@ struct D2Q9_BC_All
 	{
 		// by default, collision is done on non-BC sites only
 		// additionally, BCs which include the collision step should be specified here
-		return isFluid(mapgi) || isPeriodic(mapgi) || mapgi == GEO_OUTFLOW_RIGHT || mapgi == GEO_OUTFLOW_RIGHT_INTERP;
+		return isFluid(mapgi) || isPeriodic(mapgi) || mapgi == GEO_INFLOW_LEFT || mapgi == GEO_OUTFLOW_RIGHT || mapgi == GEO_OUTFLOW_RIGHT_INTERP;
 	}
 
 	template <typename LBM_KS>
