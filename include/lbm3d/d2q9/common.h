@@ -76,6 +76,19 @@ struct D2Q9_COMMON
 	template <typename LAT_DFS>
 	__cuda_callable__ static void setEquilibriumLat(LAT_DFS& f, idx x, idx y, idx z, real rho, real vx, real vy, real vz_unused)
 	{
+#ifdef AA_PATTERN
+		// Twisted orientation: store in the opposite DF direction so that
+		// the first spatial sub-step reads the correct streamed values.
+		f(opposite_direction(dir9::mm), x, y, z) = EQ::eq_mm(rho, vx, vy);
+		f(opposite_direction(dir9::zm), x, y, z) = EQ::eq_zm(rho, vx, vy);
+		f(opposite_direction(dir9::pm), x, y, z) = EQ::eq_pm(rho, vx, vy);
+		f(opposite_direction(dir9::mz), x, y, z) = EQ::eq_mz(rho, vx, vy);
+		f(opposite_direction(dir9::zz), x, y, z) = EQ::eq_zz(rho, vx, vy);
+		f(opposite_direction(dir9::pz), x, y, z) = EQ::eq_pz(rho, vx, vy);
+		f(opposite_direction(dir9::mp), x, y, z) = EQ::eq_mp(rho, vx, vy);
+		f(opposite_direction(dir9::zp), x, y, z) = EQ::eq_zp(rho, vx, vy);
+		f(opposite_direction(dir9::pp), x, y, z) = EQ::eq_pp(rho, vx, vy);
+#else
 		f(dir9::mm, x, y, z) = EQ::eq_mm(rho, vx, vy);
 		f(dir9::zm, x, y, z) = EQ::eq_zm(rho, vx, vy);
 		f(dir9::pm, x, y, z) = EQ::eq_pm(rho, vx, vy);
@@ -85,5 +98,6 @@ struct D2Q9_COMMON
 		f(dir9::mp, x, y, z) = EQ::eq_mp(rho, vx, vy);
 		f(dir9::zp, x, y, z) = EQ::eq_zp(rho, vx, vy);
 		f(dir9::pp, x, y, z) = EQ::eq_pp(rho, vx, vy);
+#endif
 	}
 };
