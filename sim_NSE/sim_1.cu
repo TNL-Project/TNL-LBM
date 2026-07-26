@@ -1,4 +1,5 @@
 #include <argparse/argparse.hpp>
+#include <cmath>
 #include <utility>
 
 #include "lbm3d/core.h"
@@ -29,8 +30,8 @@ struct StateLocal : State<NSE>
 
 	void setupBoundaries() override
 	{
-		nse.setBoundaryX(0, BC::GEO_INFLOW_LEFT);						  // left
-		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT);  // right
+		nse.setBoundaryX(0, BC::GEO_INFLOW_LEFT);							// left
+		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT_INTERP);	// right
 
 		nse.setBoundaryZ(1, BC::GEO_WALL);						 // top
 		nse.setBoundaryZ(nse.lat.global.z() - 2, BC::GEO_WALL);	 // bottom
@@ -139,13 +140,28 @@ void sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	int X = 128 * RESOLUTION;		  // width in pixels
 	int Y = block_size * RESOLUTION;  // height in pixels --- top and bottom walls 1px
 	int Z = Y;						  // height in pixels --- top and bottom walls 1px
-	real LBM_VISCOSITY = 0.00001;	  //1.0/6.0; /// GIVEN: optimal is 1/6
+	real LBM_VISCOSITY = 1e-4;	  //1.0/6.0; /// GIVEN: optimal is 1/6
 	real PHYS_HEIGHT = 0.41;		  // [m] domain height (physical)
 	real PHYS_VISCOSITY = 1.5e-5;	  // [m^2/s] fluid viscosity .... blood?
-	real PHYS_VELOCITY = 1.0;
 	real PHYS_DL = PHYS_HEIGHT / ((real) Y - 2);
 	real PHYS_DT = LBM_VISCOSITY / PHYS_VISCOSITY * PHYS_DL * PHYS_DL;
 	point_t PHYS_ORIGIN = {0., 0., 0.};
+
+	// PHYS_VELOCITY is the characteristic (hole) velocity; the inflow velocity
+	// is scaled down by the inflow/hole area ratio so that mass conservation
+	// gives PHYS_VELOCITY through the hole.
+	real PHYS_VELOCITY = 1.0;
+
+	// hole geometry: square hole spans 40%–60% of Y and Z
+	real hole_height_phys = (real) Z * 2 / 10 * PHYS_DL;
+	real inflow_area = (real) (Y - 2) * (Z - 2) * PHYS_DL * PHYS_DL;
+	real hole_area = hole_height_phys * hole_height_phys;
+	real inflow_velocity = PHYS_VELOCITY * hole_area / inflow_area;
+
+	// dimensionless numbers (based on hole velocity and hole height)
+	real Re = PHYS_VELOCITY * hole_height_phys / PHYS_VISCOSITY;
+	real u_lbm_hole = PHYS_VELOCITY * PHYS_DT / PHYS_DL;
+	real Ma = u_lbm_hole * std::sqrt(3.0);
 
 	// Initialize the lattice
 	lat_t lat;
@@ -162,25 +178,29 @@ void sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 		return;
 
 	// Problem parameters
-	state.lbm_inflow_vx = lat.phys2lbmVelocity(PHYS_VELOCITY);
+	state.lbm_inflow_vx = lat.phys2lbmVelocity(inflow_velocity);
+
+	spdlog::info("PHYS_VELOCITY (hole) = {:e} m/s, inflow_velocity = {:e} m/s", PHYS_VELOCITY, inflow_velocity);
+	spdlog::info("Re = {:e} (based on hole velocity and hole height)", Re);
+	spdlog::info("Ma = {:e} (based on lattice hole velocity, c_s = 1/sqrt(3))", Ma);
 
 	// Set up simulation parameters
-	state.nse.physFinalTime = 1.0;	  // Final physical time of simulation
-	state.cnt[PRINT].period = 0.001;  // Print info every 0.001 physical time units
+	state.nse.physFinalTime = 5.0;
+	state.cnt[PRINT].period = 0.001;
 
 	// Enable checkpointing - create a checkpoint every 10 seconds of wall time
 	// state.cnt[SAVESTATE].period = 10;
 	// state.wallTime = 600;
 
 	// Add visualization cuts
-	state.cnt[OUT2D].period = 0.001;
+	state.cnt[OUT2D].period = 0.05;
 	state.add2Dcut_X(X / 2, "cutsX/cut_X");
 	state.add2Dcut_X(X / 4, "cutsX/cut_X4");
 	state.add2Dcut_Y(Y / 2, "cutsY/cut_Y");
 	state.add2Dcut_Z(Z / 2, "cutsZ/cut_Z");
 
-	state.cnt[OUT3D].period = 0.001;
-	state.cnt[OUT3DCUT].period = 0.001;
+	state.cnt[OUT3D].period = 0.05;
+	state.cnt[OUT3DCUT].period = 0.05;
 	state.add3Dcut(X / 4, Y / 4, Z / 4, X / 2, Y / 2, Z / 2, "box");
 
 	// Execute the simulation
