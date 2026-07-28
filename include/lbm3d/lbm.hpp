@@ -302,6 +302,98 @@ void LBM<CONFIG>::synchronizeDFsAndMacroDevice(uint8_t dftype, bool sync_macro)
 }
 
 template <typename CONFIG>
+void LBM<CONFIG>::synchronizeDFsAndMacroDeviceForLevel(int level, uint8_t dftype, bool sync_macro)
+{
+	const std::vector<BLOCK*> level_blocks = getBlocksAtLevel(level);
+	if (level_blocks.empty())
+		return;
+
+	TNL::Timer t;
+	t.start();
+
+	// stage 0: set inputs, allocate buffers
+	// stage 1: fill send buffers
+	for (auto* block : level_blocks) {
+		block->synchronizeDFsDevice_start(dftype);
+		if (sync_macro)
+			block->synchronizeMacroDevice_start();
+	}
+
+	// stage 2: issue all send and receive async operations
+	for (auto* block : level_blocks) {
+		for (int i = 0; i < CONFIG::Q; i++)
+			block->df_sync[i].stage_2();
+		if (sync_macro)
+			for (int i = 0; i < MACRO::N; i++)
+				block->macro_sync[i].stage_2();
+	}
+
+	// stage 3: copy data from receive buffers
+	for (auto* block : level_blocks) {
+		for (int i = 0; i < CONFIG::Q; i++)
+			block->df_sync[i].stage_3();
+		if (sync_macro)
+			for (int i = 0; i < MACRO::N; i++)
+				block->macro_sync[i].stage_3();
+	}
+
+	// stage 4: ensure everything has finished
+	for (auto* block : level_blocks) {
+		for (int i = 0; i < CONFIG::Q; i++)
+			block->df_sync[i].stage_4();
+		if (sync_macro)
+			for (int i = 0; i < MACRO::N; i++)
+				block->macro_sync[i].stage_4();
+	}
+
+	t.stop();
+
+	auto profile_logger = spdlog::get("profile");
+	if (profile_logger && nproc > 1 && iterations % 100 == 0) {
+		// count the data volume
+		std::size_t total_sent_bytes = 0;
+		std::size_t total_recv_bytes = 0;
+		std::size_t total_sent_messages = 0;
+		std::size_t total_recv_messages = 0;
+		for (auto* block : level_blocks) {
+			for (int i = 0; i < CONFIG::Q; i++) {
+				total_sent_bytes += block->df_sync[i].sent_bytes;
+				total_recv_bytes += block->df_sync[i].recv_bytes;
+				total_sent_messages += block->df_sync[i].sent_messages;
+				total_recv_messages += block->df_sync[i].recv_messages;
+			}
+			if (sync_macro)
+				for (int i = 0; i < MACRO::N; i++) {
+					total_sent_bytes += block->macro_sync[i].sent_bytes;
+					total_recv_bytes += block->macro_sync[i].recv_bytes;
+					total_sent_messages += block->macro_sync[i].sent_messages;
+					total_recv_messages += block->macro_sync[i].recv_messages;
+				}
+		}
+
+		// print stats
+		const double sent_GB = total_sent_bytes * 1e-9;
+		const double recv_GB = total_recv_bytes * 1e-9;
+		const double sent_GBps = sent_GB / t.getRealTime();
+		const double recv_GBps = recv_GB / t.getRealTime();
+		const double total_GBps = sent_GBps + recv_GBps;
+		profile_logger->info(
+			"MPI synchronization stats for level {} (last iteration):\n"
+			"sent {} GB in {} messages, received {} GB in {} messages, in {} seconds\n"
+			"bandwidth: unidirectional {} GB/s, bidirectional {} GB/s",
+			level,
+			sent_GB,
+			total_sent_messages,
+			recv_GB,
+			total_recv_messages,
+			t.getRealTime(),
+			recv_GBps,
+			total_GBps
+		);
+	}
+}
+
+template <typename CONFIG>
 void LBM<CONFIG>::synchronizeMapDevice()
 {
 	for (auto& block : blocks)
