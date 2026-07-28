@@ -38,7 +38,12 @@ struct D3Q27_BC_All
 		GEO_ADJOINT_FLUID_m,
 		GEO_ADJOINT_WALL,
 		GEO_ADJOINT_INFLOW_BB_LEFT,
-		GEO_ADJOINT_OUTFLOW_RIGHT
+		GEO_ADJOINT_OUTFLOW_RIGHT,
+
+		// coarse cells adjacent to fine blocks - skipped by the collide-stream
+		// kernel, their DFs are overwritten by the inter-level coupling kernel;
+		// appended last to keep the numeric values of existing tags stable
+		GEO_AMR_INTERFACE
 	};
 
 	__cuda_callable__ static bool isSymmetric(map_t mapgi)
@@ -95,6 +100,18 @@ struct D3Q27_BC_All
 	__cuda_callable__ static void preCollision(DATA& SD, LBM_KS& KS, map_t mapgi, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
 		if (mapgi == GEO_NOTHING || isOutflowPassBC(mapgi)) {
+			KS.rho = 1;
+			KS.vx = 0;
+			KS.vy = 0;
+			KS.vz = 0;
+			return;
+		}
+
+		if (mapgi == GEO_AMR_INTERFACE) {
+			// streaming is skipped: the DFs are owned by the inter-level
+			// coupling kernel; setting rho/v keeps the unconditional
+			// outputMacro call defined (the coupling kernel overwrites dmacro
+			// with the real values for these cells)
 			KS.rho = 1;
 			KS.vx = 0;
 			KS.vy = 0;
@@ -460,6 +477,9 @@ struct D3Q27_BC_All
 
 	__cuda_callable__ static bool doCollision(map_t mapgi)
 	{
+		// interface cells are overwritten by the inter-level coupling kernel
+		if (mapgi == GEO_AMR_INTERFACE)
+			return false;
 		// by default, collision is done on non-BC sites only
 		// additionally, BCs which include the collision step should be specified here
 		return isFluid(mapgi) || isSymmetric(mapgi) || mapgi == GEO_INFLOW_LEFT;
@@ -472,6 +492,23 @@ struct D3Q27_BC_All
 		if (mapgi == GEO_NOTHING || isOutflowPassBC(mapgi))
 			return;
 
+		// KS.f is uninitialized (preCollision skips streaming), so the
+		// write-back would clobber the coupling-supplied DFs with garbage
+		if (mapgi == GEO_AMR_INTERFACE)
+			return;
+
 		STREAMING::postCollisionStreaming(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+	}
+
+	// bitmask of the D3Q27 directions (bit q matches the direction enum in
+	// defs.h) in which the cell at (x, y, z) crosses a refinement interface;
+	// returns 0 for blocks without interface data (non-AMR runs, fine blocks)
+	// and for cells not adjacent to a fine region
+	template <typename LBM_DATA>
+	__cuda_callable__ static std::uint32_t getInterfaceDir(const LBM_DATA& SD, idx x, idx y, idx z)
+	{
+		if (SD.dinterface_dir == nullptr)
+			return 0;
+		return SD.dinterface_dir[SD.indexer.getStorageIndex(x, y, z)];
 	}
 };
