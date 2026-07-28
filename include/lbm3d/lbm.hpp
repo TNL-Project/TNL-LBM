@@ -37,6 +37,16 @@ LBM<CONFIG>::LBM(const TNL::MPI::Comm& communicator, lat_t lat, std::vector<BLOC
 }
 
 template <typename CONFIG>
+LBM<CONFIG>::LBM(const TNL::MPI::Comm& communicator, lat_t lat, const bool3d& periodic, int max_level)
+: LBM(communicator, lat, periodic)
+{
+	// fine-level blocks are created later by the caller (AMR setup code), which
+	// is also responsible for maintaining level_block_counts
+	this->max_level = max_level;
+	level_block_counts = std::vector<int>(max_level + 1, 0);
+}
+
+template <typename CONFIG>
 bool LBM<CONFIG>::isAnyLocalIndex(idx x, idx y, idx z)
 {
 	for (auto& block : blocks)
@@ -70,6 +80,25 @@ bool LBM<CONFIG>::isAnyLocalZ(idx z)
 		if (block.isLocalZ(z))
 			return true;
 	return false;
+}
+
+template <typename CONFIG>
+std::vector<typename LBM<CONFIG>::BLOCK*> LBM<CONFIG>::getBlocksAtLevel(int level)
+{
+	std::vector<BLOCK*> blocks_at_level;
+	for (auto& block : blocks)
+		if (block.level == level)
+			blocks_at_level.push_back(&block);
+	return blocks_at_level;
+}
+
+template <typename CONFIG>
+typename LBM<CONFIG>::BLOCK* LBM<CONFIG>::findBlockContaining(idx x, idx y, idx z, int level)
+{
+	for (auto& block : blocks)
+		if (block.level == level && block.isLocalIndex(x, y, z))
+			return &block;
+	return nullptr;
 }
 
 template <typename CONFIG>
@@ -329,6 +358,44 @@ void LBM<CONFIG>::updateKernelData()
 			block.data.dfs[k] = block.dfs[knew].getData();
 			//printf("updateKernelData:: assigning data.dfs[%d] = dfs[%d]\n",k, knew);
 		}
+	}
+}
+
+template <typename CONFIG>
+void LBM<CONFIG>::updateKernelDataForLevel(int level, int substep)
+{
+	// Per-level variant of updateKernelData() for Berger-Colella subcycling:
+	// the global `iterations` counter increments only once per coarse step, but
+	// fine levels perform multiple substeps per coarse step, so the parity
+	// driving even_iter (A-A pattern) and the DF pointer rotation (A-B pattern)
+	// must be based on the level-local `substep` counter instead.
+	// Only blocks at the given level are updated - the coarse level keeps using
+	// the global updateKernelData() driven by `iterations`.
+	for (auto& block : blocks) {
+		if (block.level != level)
+			continue;
+
+		// restore the per-level lattice viscosity, which State::updateKernelData()
+		// overwrites from the level-0 lattice every iteration
+		block.data.lbmViscosity = block.lat_local.lbmViscosity();
+
+#ifdef AA_PATTERN
+		// A-A pattern: DF rotation is a no-op (DFMAX=1), only even_iter toggles;
+		// see updateKernelData() for the sub-step ordering requirements
+		block.data.even_iter = (substep % 2) == 1;
+#endif
+
+#ifdef AB_PATTERN
+		// A-B pattern: absolute DF pointer rotation, mirroring updateKernelData();
+		// the source must be the stored dfs arrays, because data.dfs are
+		// already-rotated raw pointers
+		int i = substep % DFMAX;  // i = 0, 1, 2, ... DFMAX-1
+
+		for (int k = 0; k < DFMAX; k++) {
+			int knew = (k - i) <= 0 ? (k - i + DFMAX) % DFMAX : k - i;
+			block.data.dfs[k] = block.dfs[knew].getData();
+		}
+#endif
 	}
 }
 

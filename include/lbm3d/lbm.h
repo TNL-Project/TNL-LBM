@@ -33,6 +33,13 @@ struct LBM
 	std::vector<BLOCK> blocks;
 	int total_blocks = 0;
 
+	// AMR: maximum refinement level present among the blocks and the number of
+	// blocks at each level (blocks at all levels share the `blocks` vector and
+	// each block carries its own `level` field; level_block_counts is maintained
+	// by the caller when fine-level blocks are created)
+	int max_level = 0;
+	std::vector<int> level_block_counts;
+
 #ifdef HAVE_MPI
 	// synchronization methods
 	void synchronizeDFsAndMacroDevice(uint8_t dftype, bool sync_macro);
@@ -54,6 +61,10 @@ struct LBM
 	LBM(LBM&&) = default;
 	LBM(const TNL::MPI::Comm& communicator, lat_t lat, const bool3d& periodic = {false, false, false});
 	LBM(const TNL::MPI::Comm& communicator, lat_t lat, std::vector<BLOCK>&& blocks);
+	// AMR: delegates to the default-decomposition constructor (level-0 blocks
+	// are created as usual) and pre-allocates the per-level bookkeeping;
+	// fine-level block creation is left to the caller (AMR setup code)
+	LBM(const TNL::MPI::Comm& communicator, lat_t lat, const bool3d& periodic, int max_level);
 
 	real Re(real physvel)
 	{
@@ -94,6 +105,14 @@ struct LBM
 	void allocateDiffusionCoefficientArrays();
 	void allocatePhiTransferDirectionArrays();
 	void updateKernelData();  // copy physical parameters to data structure accessible by the CUDA kernel
+
+	// AMR helpers for multi-level block management
+	std::vector<BLOCK*> getBlocksAtLevel(int level);			 // non-owning pointers to blocks at the given level (empty for out-of-range levels)
+	BLOCK* findBlockContaining(idx x, idx y, idx z, int level);	 // block at `level` whose local range contains the coordinate (nullptr if none)
+	// per-level variant of updateKernelData() for subcycling: even_iter parity
+	// and DF pointer rotation are driven by the level-local `substep` counter,
+	// not the global `iterations`
+	void updateKernelDataForLevel(int level, int substep);
 
 	template <typename F>
 	void forLocalLatticeSites(F f);
