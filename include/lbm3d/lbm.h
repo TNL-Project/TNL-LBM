@@ -43,6 +43,10 @@ struct LBM
 #ifdef HAVE_MPI
 	// synchronization methods
 	void synchronizeDFsAndMacroDevice(uint8_t dftype, bool sync_macro);
+	// AMR: per-level variant of synchronizeDFsAndMacroDevice for subcycling -
+	// synchronizes only the blocks at `level` (early no-op when the level has
+	// no blocks on this rank)
+	void synchronizeDFsAndMacroDeviceForLevel(int level, uint8_t dftype, bool sync_macro);
 	void synchronizeMapDevice();
 #endif
 
