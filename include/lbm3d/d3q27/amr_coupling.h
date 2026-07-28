@@ -208,3 +208,186 @@ __global__ void cudaAMR_CoarseToFine(
 		fine_SD.macro(MACRO::e_vz, x, y, z) = vz_f;
 	}
 }
+
+/**
+ * \brief Fill one coarse-level interface extent with DFs rescaled from the
+ * fine level -- the reverse direction of `cudaAMR_CoarseToFine` (Lagrava et
+ * al. 2012, JCP 231, merged with the volumetric formulation of Rohde et al.
+ * 2006 / Chen et al. 1998).
+ *
+ * Cell-centered coordinate mapping (exact inverse of the coarse-to-fine
+ * kernel): coarse cell `(x,y,z)` covers the 8 fine cells
+ * `(2*x+{0,1}, 2*y+{0,1}, 2*z+{0,1})`. One thread per coarse interface cell
+ * in [coarse_begin, coarse_end); the caller derives
+ * `coarse_end = coarse_begin + coarse_size` from the patch (same
+ * begin/end range handling as `cudaAMR_CoarseToFine`) and must guarantee
+ * that all 8 fine subcells of every coarse cell in the extent are valid
+ * storage indices of `fine_SD` (the fine block must store the region
+ * overlapping the coarse interface extent, and the two blocks' indexer
+ * origins must correspond -- the same alignment assumption as todo 5).
+ *
+ * Algorithm per coarse cell:
+ * 1. Read the post-kernel fine DFs of all 8 subcells (orientation below).
+ * 2. FILTER (MANDATORY): the per-direction arithmetic average
+ *    `f_avg[q] = (1/8) * sum_k f_fine[q]_k` suppresses unresolved
+ *    high-frequency fine-grid modes before projection onto the coarse
+ *    grid -- without it the projection aliases and the coarse solution
+ *    goes unstable (Lagrava et al. 2012). The 1/8 averaging IS the
+ *    volumetric correction: DFs are point densities and each fine cell
+ *    holds 1/8 of the coarse cell volume, so NO additional volume factor
+ *    is applied anywhere.
+ * 3. Compute the coarse macros (rho_c, u_c) as the moments of f_avg and
+ *    the equilibrium f_eq[q] at those macros (EQ::eq_* per direction).
+ * 4. Rescale the non-equilibrium part by tau_coarse / tau_fine -- the
+ *    reciprocal of the coarse-to-fine factor, NOT a no-op (tau_fine !=
+ *    tau_coarse with 2:1 refinement; both taus are computed by the caller
+ *    from the per-level `lbmViscosity`). The coarse DF is
+ *    `f_coarse[q] = f_eq[q] + (tau_c/tau_f) * (f_avg[q] - f_eq[q])`.
+ *
+ * Streaming-pattern handling (DF reads and writes are the ONLY
+ * pattern-dependent parts):
+ * - Reads from the fine level mirror `cudaAMR_CoarseToFine`: AB reads the
+ *   post-collision DFs from `df_out` in natural orientation; AA reads
+ *   `df_cur` from the opposite-direction slot when `fine_even_iter` is
+ *   true (twisted post-collision state) or from the natural slot when
+ *   false (post-stream state).
+ * - Writes go to `coarse_SD.df(df_cur, ...)` for BOTH patterns (a single
+ *   site), but the DIRECTION slot depends on which substep consumes the
+ *   data next (convention in `streaming_AA.h` lines 31-90, against which
+ *   this v1 decision was reviewed):
+ *   - AB: natural orientation -- the next coarse `streaming()` pull reads
+ *     `df_cur[q]` at the same site, and AB always pulls in natural
+ *     orientation. The caller passes `coarse_SD` in the rotation state
+ *     the next coarse kernel launch will read (same caveat as the coarse
+ *     read side in todo 5); `coarse_even_iter` is AA-only state.
+ *   - AA with `coarse_even_iter == true`: the NEXT coarse substep is the
+ *     even ("reflect") substep, whose streaming reads the same site,
+ *     same direction -- store natural (the post-stream state the even
+ *     substep consumes).
+ *   - AA with `coarse_even_iter == false`: the next coarse substep is the
+ *     odd ("spatial") substep, whose pull reads
+ *     `KS.f[q](P+vel(q)) = df_cur[opposite_direction(q), P]`, i.e. the DF
+ *     streaming out of P in direction q sits in the opposite-direction
+ *     slot at P -- store twisted. This reproduces exactly the state the
+ *     previous coarse even substep's postCollisionStreaming would have
+ *     left at the interface cells, so the odd substep consumes it with no
+ *     additional handling.
+ *   Note the parameter asymmetry: on the READ side `fine_even_iter`
+ *   describes the parity of the stored fine data, on the WRITE side
+ *   `coarse_even_iter` describes the parity of the NEXT consuming coarse
+ *   substep.
+ *
+ * Macros: for cells tagged `GEO_AMR_INTERFACE` the filtered macros are
+ * written to `dmacro` -- the main coarse kernel skips collision on these
+ * cells, so its `outputMacro` would otherwise write garbage KS there.
+ */
+template <typename CONFIG>
+__global__ void cudaAMR_FineToCoarse(
+	typename CONFIG::DATA coarse_SD,
+	typename CONFIG::DATA fine_SD,
+	typename CONFIG::TRAITS::idx3d coarse_begin,
+	typename CONFIG::TRAITS::idx3d coarse_end,
+	typename CONFIG::TRAITS::dreal tau_coarse,
+	typename CONFIG::TRAITS::dreal tau_fine,
+	bool fine_even_iter,
+	bool coarse_even_iter
+)
+{
+	using TRAITS = typename CONFIG::TRAITS;
+	using COLL = typename CONFIG::COLL;
+	using BC = typename CONFIG::BC;
+	using MACRO = typename CONFIG::MACRO;
+
+	using idx = typename TRAITS::idx;
+	using dreal = typename TRAITS::dreal;
+	using LBM_KS = typename CONFIG::template KernelStruct<dreal>;
+
+	const idx x = threadIdx.x + blockIdx.x * blockDim.x + coarse_begin.x();
+	const idx y = threadIdx.y + blockIdx.y * blockDim.y + coarse_begin.y();
+	const idx z = threadIdx.z + blockIdx.z * blockDim.z + coarse_begin.z();
+
+	if (x >= coarse_end.x() || y >= coarse_end.y() || z >= coarse_end.z())
+		return;
+
+	// fine-side DF read in the orientation produced by the last fine kernel
+	// launch -- one of only TWO streaming-pattern-dependent sites
+	const auto read_fine_df = [&fine_SD, fine_even_iter](int q, idx fx, idx fy, idx fz) -> dreal
+	{
+#ifdef AB_PATTERN
+		// AB: post-collision DF of direction q at the same site, natural
+		// orientation, is stored in df_out (fine_even_iter is AA-only state)
+		static_cast<void>(fine_even_iter);
+		return fine_SD.df(df_out, q, fx, fy, fz);
+#elif defined(AA_PATTERN)
+		if (fine_even_iter)
+			// AA post-collision state (twisted): the post-collision DF of
+			// direction q at (fx,fy,fz) sits in the opposite-direction slot
+			return fine_SD.df(df_cur, opposite_direction(q), fx, fy, fz);
+		// AA post-stream state (natural): the streamed-in DF of direction q
+		return fine_SD.df(df_cur, q, fx, fy, fz);
+#endif
+	};
+
+	// Lagrava spatial filter: per-direction arithmetic average of the 8 fine
+	// subcells covered by this coarse cell. The (1/8) factor IS the
+	// volumetric fine-to-coarse conversion -- no other volume factor.
+	dreal f_avg[CONFIG::Q] = {};
+	for (int bz = 0; bz < 2; bz++) {
+		for (int by = 0; by < 2; by++) {
+			for (int bx = 0; bx < 2; bx++) {
+				for (int q = 0; q < CONFIG::Q; q++)
+					f_avg[q] += read_fine_df(q, 2 * x + bx, 2 * y + by, 2 * z + bz);
+			}
+		}
+	}
+	for (int q = 0; q < CONFIG::Q; q++)
+		f_avg[q] *= dreal(0.125);
+
+	// coarse macros from the filtered DFs
+	LBM_KS KS;
+	for (int q = 0; q < CONFIG::Q; q++)
+		KS.f[q] = f_avg[q];
+	COLL::computeDensityAndVelocity(KS);
+
+	// equilibrium at the filtered macros
+	LBM_KS KS_EQ;
+	KS_EQ.rho = KS.rho;
+	KS_EQ.vx = KS.vx;
+	KS_EQ.vy = KS.vy;
+	KS_EQ.vz = KS.vz;
+	COLL::setEquilibrium(KS_EQ);
+
+	// volumetric rescaling, f_coarse[q] = eq_q(rho_c,u_c) + (tau_c/tau_f)*f_neq[q]
+	const dreal neq_scale = tau_coarse / tau_fine;
+	for (int q = 0; q < CONFIG::Q; q++) {
+		const dreal f_coarse = KS_EQ.f[q] + neq_scale * (f_avg[q] - KS_EQ.f[q]);
+
+		// coarse DF write in the orientation the NEXT coarse substep will read
+		// (see the kernel docstring) -- the other pattern-dependent site
+#ifdef AB_PATTERN
+		// AB: the next streaming() pulls df_cur[q] at the same site, natural
+		// orientation (coarse_even_iter is AA-only state)
+		static_cast<void>(coarse_even_iter);
+		coarse_SD.df(df_cur, q, x, y, z) = f_coarse;
+#elif defined(AA_PATTERN)
+		if (coarse_even_iter)
+			// next substep is even ("reflect"): reads the same site, same
+			// direction -- store natural
+			coarse_SD.df(df_cur, q, x, y, z) = f_coarse;
+		else
+			// next substep is odd ("spatial"): the DF streaming out of this
+			// cell in direction q is pulled from the opposite-direction slot
+			// -- store twisted
+			coarse_SD.df(df_cur, opposite_direction(q), x, y, z) = f_coarse;
+#endif
+	}
+
+	// macros for GEO_AMR_INTERFACE cells (the main kernel's outputMacro must
+	// not read garbage KS there)
+	if (coarse_SD.map(x, y, z) == BC::GEO_AMR_INTERFACE) {
+		coarse_SD.macro(MACRO::e_rho, x, y, z) = KS.rho;
+		coarse_SD.macro(MACRO::e_vx, x, y, z) = KS.vx;
+		coarse_SD.macro(MACRO::e_vy, x, y, z) = KS.vy;
+		coarse_SD.macro(MACRO::e_vz, x, y, z) = KS.vz;
+	}
+}
