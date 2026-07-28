@@ -311,6 +311,7 @@ target_compile_definitions(TNL_LBM INTERFACE TNL_LBM_STREAMING_PATTERN_${TNL_LBM
 add_subdirectory(include)
 add_subdirectory(sim_2D)
 add_subdirectory(sim_adjoint)
+add_subdirectory(sim_AMR)
 add_subdirectory(sim_NSE)
 add_subdirectory(sim_NSE_ADE)
 add_subdirectory(tests)
