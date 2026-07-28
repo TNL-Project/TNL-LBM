@@ -1,6 +1,7 @@
 set(TARGETS
     sim2d_1
     sim2d_2
+    sim2d_Taylor_Green
 )
 
 foreach(target IN ITEMS ${TARGETS})
