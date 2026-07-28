@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <utility>
 #include <vector>
 
@@ -9,6 +10,20 @@
 #include "state.h"
 #include "amr_decomposition.h"
 #include "d3q27/amr_coupling.h"
+
+/**
+ * \brief Conservation statistics aggregated over the AMR block hierarchy.
+ *
+ * Global mass and momentum are volume-weighted (a level-L cell carries
+ * `1/8^L` of the coarse-cell volume with the 2:1 refinement ratio); the
+ * per-level kinetic energy is a plain (unweighted) level diagnostic.
+ */
+struct AMRConservationStats
+{
+	double total_mass = 0;
+	double total_momentum_x = 0, total_momentum_y = 0, total_momentum_z = 0;
+	std::vector<double> per_level_kinetic_energy;
+};
 
 /**
  * \brief Berger-Colella time subcycling driver for AMR simulations.
@@ -142,6 +157,11 @@ struct State_AMR : State<NSE>
 	// base driver when `nse.max_level == 0`
 	void SimUpdate() override;
 
+	// runs the base AfterSimUpdate (I/O, probes, checkpoints), then - for
+	// `nse.max_level > 0` only - logs the conservation statistics of
+	// \ref computeConservationStats at the PRINT interval
+	void AfterSimUpdate() override;
+
 	// implementation details of the subcycling stages (kept public for
 	// future subclass overrides, same as the base State members)
 
@@ -177,6 +197,11 @@ struct State_AMR : State<NSE>
 	{
 		return block.level == 0 ? this->nse.lat.lbmViscosity() : block.lat_local.lbmViscosity();
 	}
+
+private:
+	// host-side reduction over all blocks: volume-weighted global mass and
+	// momentum plus per-level kinetic energy (see AfterSimUpdate)
+	AMRConservationStats computeConservationStats();
 };
 
 /**
@@ -257,6 +282,82 @@ void State_AMR<NSE>::SimInit()
 		spdlog::warn(
 			"State_AMR: no GEO_AMR_INTERFACE cells found for max_level = {} - inter-level coupling kernels will not launch", this->nse.max_level
 		);
+}
+
+/**
+ * \brief Logs the AMR conservation statistics at the PRINT interval.
+ *
+ * The PRINT trigger must be captured BEFORE calling the base
+ * implementation, because `State::AfterSimUpdate()` increments
+ * `cnt[PRINT].count` (state.hpp) and afterwards `action()` no longer
+ * reports the trigger for this step - the same capture-before-base pattern
+ * as in `State_NSE_ADE::AfterSimUpdate()`. With `max_level == 0` the
+ * behavior is identical to the base driver.
+ */
+template <typename NSE>
+void State_AMR<NSE>::AfterSimUpdate()
+{
+	// trigger check BEFORE Base (Base increments count)
+	const bool do_amr_report = this->nse.max_level > 0 && this->cnt[PRINT].action(this->nse.physTime());
+
+	Base::AfterSimUpdate();
+
+	if (! do_amr_report)
+		return;
+
+	AMRConservationStats s = computeConservationStats();
+	spdlog::info("AMR conservation: mass = {:.6e}", s.total_mass);
+	for (std::size_t L = 0; L < s.per_level_kinetic_energy.size(); L++)
+		spdlog::info("AMR level {}: kinetic energy = {:.6e}", L, s.per_level_kinetic_energy[L]);
+}
+
+/**
+ * \brief Host-side reduction of the conservation quantities over all blocks.
+ *
+ * Each block's macroscopic quantities are copied to the host and summed in
+ * physical-volume units: the cell volume scales as `(1/2)^3` per refinement
+ * level with the 2:1 ratio, so a level-L cell weights `1/8^L` of a coarse
+ * cell. The per-level kinetic energy sums `0.5 * rho * |u|^2` without the
+ * volume weight (per-level diagnostic).
+ */
+template <typename NSE>
+auto State_AMR<NSE>::computeConservationStats() -> AMRConservationStats
+{
+	using MACRO = typename NSE::MACRO;
+	AMRConservationStats s;
+	s.per_level_kinetic_energy.resize(this->nse.max_level + 1, 0.0);
+
+	for (auto& block : this->nse.blocks) {
+		block.copyMacroToHost();
+		// cell volume scales as (1/2)^3 per refinement level (2:1 ratio)
+		const double volume_factor = std::pow(0.5, 3.0 * block.level);
+		double block_ke = 0.0;
+
+		block.forLocalLatticeSites(
+			[&](BLOCK_NSE& b, idx x, idx y, idx z)
+			{
+				const double rho = b.hmacro(MACRO::e_rho, x, y, z);
+				const double vx = b.hmacro(MACRO::e_vx, x, y, z);
+				const double vy = b.hmacro(MACRO::e_vy, x, y, z);
+				const double vz = b.hmacro(MACRO::e_vz, x, y, z);
+
+// forLocalLatticeSites is OpenMP-parallel: accumulate atomically
+#pragma omp atomic update
+				s.total_mass += rho * volume_factor;
+#pragma omp atomic update
+				s.total_momentum_x += rho * vx * volume_factor;
+#pragma omp atomic update
+				s.total_momentum_y += rho * vy * volume_factor;
+#pragma omp atomic update
+				s.total_momentum_z += rho * vz * volume_factor;
+#pragma omp atomic update
+				block_ke += 0.5 * rho * (vx * vx + vy * vy + vz * vz);
+			}
+		);
+
+		s.per_level_kinetic_energy[block.level] += block_ke;
+	}
+	return s;
 }
 
 /**
