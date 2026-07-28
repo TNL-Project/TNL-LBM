@@ -32,6 +32,13 @@ struct LBM_Data
 	dreal* dmacro;
 	map_t* dmap;
 
+	// AMR: per-cell bitmask of the D3Q27 directions crossing a refinement
+	// interface (bit i set = neighbor in direction i of the enum in defs.h is
+	// inside a fine block); 32 bits are required because direction indices go
+	// up to 26. Allocated only for blocks owning GEO_AMR_INTERFACE cells, see
+	// markAMRInterface (amr_decomposition.h); nullptr keeps non-AMR runs fast.
+	std::uint32_t* dinterface_dir = nullptr;
+
 	// sizes NOT including overlaps
 	CUDA_HOSTDEV idx X()
 	{
