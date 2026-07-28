@@ -1,5 +1,9 @@
 #pragma once
 
+#if ! defined(AA_PATTERN) && ! defined(AB_PATTERN)
+	#error "amr_coupling.h requires either AA_PATTERN or AB_PATTERN to be defined before inclusion"
+#endif
+
 #include "lbm3d/defs.h"
 
 /**
