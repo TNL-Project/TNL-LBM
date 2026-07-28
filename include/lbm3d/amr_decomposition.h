@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+#include <cstdint>
 #include <map>
 #include <sstream>
 #include <stdexcept>
@@ -8,6 +10,8 @@
 
 #include <fmt/core.h>
 #include <spdlog/spdlog.h>
+
+#include <TNL/Containers/Array.h>
 
 #include "lbm.h"
 
@@ -242,5 +246,206 @@ void createAMRBlocks(LBM<CONFIG>& lbm, const std::vector<AMR_Region<CONFIG>>& re
 		// maintain the multi-level bookkeeping consistent with the LBM constructor invariants
 		lbm.level_block_counts[region.level]++;
 		lbm.total_blocks += lbm.nproc;
+	}
+}
+
+// D3Q27 lattice velocity vectors c_q = (cx, cy, cz), matching the direction
+// enum in lbm3d/defs.h (zzz = 0, pzz = 1, mzz = 2, ...)
+inline constexpr int amr_d3q27_directions[27][3] = {
+	{0, 0, 0},	   // zzz
+	{1, 0, 0},	   // pzz
+	{-1, 0, 0},	   // mzz
+	{0, 1, 0},	   // zpz
+	{0, -1, 0},	   // zmz
+	{0, 0, 1},	   // zzp
+	{0, 0, -1},	   // zzm
+	{1, 1, 0},	   // ppz
+	{-1, -1, 0},   // mmz
+	{1, -1, 0},	   // pmz
+	{-1, 1, 0},	   // mpz
+	{1, 0, 1},	   // pzp
+	{-1, 0, -1},   // mzm
+	{1, 0, -1},	   // pzm
+	{-1, 0, 1},	   // mzp
+	{0, 1, 1},	   // zpp
+	{0, -1, -1},   // zmm
+	{0, 1, -1},	   // zpm
+	{0, -1, 1},	   // zmp
+	{1, 1, 1},	   // ppp
+	{-1, -1, -1},  // mmm
+	{1, 1, -1},	   // ppm
+	{-1, -1, 1},   // mmp
+	{1, -1, 1},	   // pmp
+	{-1, 1, -1},   // mpm
+	{1, -1, -1},   // pmm
+	{-1, 1, 1},	   // mpp
+};
+
+// Host+device storage backing LBM_Data::dinterface_dir for one block. The
+// arrays are addressed by the block's kernel indexer storage index
+// (`data.indexer.getStorageIndex(x, y, z)`, flat storage size `data.XYZ`).
+template <typename CONFIG>
+struct AMR_InterfaceDirStorage
+{
+	using TRAITS = typename CONFIG::TRAITS;
+	TNL::Containers::Array<std::uint32_t, TNL::Devices::Host> host;
+	TNL::Containers::Array<std::uint32_t, DeviceType> device;
+};
+
+// The storage cannot be an LBM_BLOCK member because blocks are move-constructed
+// during `lbm.blocks` growth while `data.dinterface_dir` must keep pointing at
+// the same allocation; keys are raw block addresses, stable because
+// markAMRInterface is called only after all blocks exist. An entry left behind
+// by a destroyed LBM instance at a reused address is harmless: a new block
+// starts with dinterface_dir == nullptr and the allocate path overwrites the
+// entry.
+template <typename CONFIG>
+std::map<LBM_BLOCK<CONFIG>*, AMR_InterfaceDirStorage<CONFIG>>& amrInterfaceDirRegistry()
+{
+	static std::map<LBM_BLOCK<CONFIG>*, AMR_InterfaceDirStorage<CONFIG>> registry;
+	return registry;
+}
+
+/**
+ * \brief Allocate and zero the interface-direction bitmask of `block` and wire
+ * it into `block.data.dinterface_dir`.
+ *
+ * Idempotent (a block with a non-null `data.dinterface_dir` is untouched).
+ * Blocks without GEO_AMR_INTERFACE cells never get the array, so the
+ * nullptr check in `D3Q27_BC_All::getInterfaceDir` keeps non-AMR runs fast.
+ */
+template <typename CONFIG>
+void allocateInterfaceDirArray(LBM_BLOCK<CONFIG>& block)
+{
+	auto& registry = amrInterfaceDirRegistry<CONFIG>();
+	if (block.data.dinterface_dir == nullptr) {
+		auto& arrays = registry[&block];
+		arrays.host.setSize(block.data.XYZ);
+		arrays.host.setValue(0);
+		arrays.device.setSize(block.data.XYZ);
+		arrays.device.setValue(0);
+		block.data.dinterface_dir = arrays.device.getData();
+	}
+}
+
+/**
+ * \brief Tag coarse cells adjacent to fine blocks as GEO_AMR_INTERFACE and
+ * fill their interface-direction bitmasks.
+ *
+ * Every fine block's footprint is projected onto its parent level as the
+ * rectangle [global_offset, global_offset + local/2) in parent-level
+ * coordinates (global_offset is the parent-level origin set by
+ * createAMRBlocks, consecutive levels always have a 2:1 ratio). Every
+ * parent-level cell within Chebyshev distance 1 of the rectangle, but
+ * outside it, is tagged GEO_AMR_INTERFACE and its bitmask records the D3Q27
+ * directions (bit q matching the direction enum in defs.h) whose neighbor
+ * cell lies inside the rectangle - the directions pointing INTO the fine
+ * region. Fine-level boundary cells are never tagged (they stay GEO_FLUID).
+ *
+ * Only GEO_FLUID cells are re-tagged: physical boundary conditions (walls,
+ * inflows, ...) survive where a fine region touches the domain boundary, and
+ * bits accumulate where two fine regions are adjacent to the same cell.
+ *
+ * v1 limitations: single MPI rank (same as createAMRBlocks), periodic
+ * wrap-around interfaces are not handled. Must be called AFTER all fine
+ * blocks exist and after the coarse boundary conditions were set on hmap;
+ * uploads the updated hmap and bitmasks to the device before returning.
+ */
+template <typename CONFIG>
+void markAMRInterface(LBM<CONFIG>& lbm)
+{
+	using BC = typename CONFIG::BC;
+	using idx = typename CONFIG::TRAITS::idx;
+	using idx3d = typename CONFIG::TRAITS::idx3d;
+	using BLOCK = LBM_BLOCK<CONFIG>;
+
+	// blocks whose map and bitmask need a host -> device upload at the end
+	std::vector<BLOCK*> dirty_blocks;
+
+	for (auto& fine : lbm.blocks) {
+		if (fine.level <= 0)
+			continue;
+		const idx3d origin = fine.global_offset;
+		// fine footprint extent in parent-level cells (2:1 ratio); guaranteed
+		// exact by createAMRBlocks
+		const idx3d size{fine.local.x() / 2, fine.local.y() / 2, fine.local.z() / 2};
+		const int parent_level = fine.level - 1;
+		int marked_fine = 0;
+
+		for (auto& coarse : lbm.blocks) {
+			if (coarse.level != parent_level)
+				continue;
+
+			// 1-cell halo around the fine footprint, clipped to this coarse
+			// block's local range (global parent-level coordinates); a halo
+			// spanning multiple coarse blocks is handled by the other
+			// (fine, coarse) pair iterations
+			const idx x_begin = std::max(coarse.offset.x(), origin.x() - 1);
+			const idx x_end = std::min(coarse.offset.x() + coarse.local.x(), origin.x() + size.x() + 1);
+			const idx y_begin = std::max(coarse.offset.y(), origin.y() - 1);
+			const idx y_end = std::min(coarse.offset.y() + coarse.local.y(), origin.y() + size.y() + 1);
+			const idx z_begin = std::max(coarse.offset.z(), origin.z() - 1);
+			const idx z_end = std::min(coarse.offset.z() + coarse.local.z(), origin.z() + size.z() + 1);
+
+			int marked = 0;
+			for (idx x = x_begin; x < x_end; x++) {
+				for (idx y = y_begin; y < y_end; y++) {
+					for (idx z = z_begin; z < z_end; z++) {
+						// cells inside the footprint belong to the fine
+						// block, not to the coarse-side interface
+						const bool inside = x >= origin.x() && x < origin.x() + size.x() && y >= origin.y() && y < origin.y() + size.y()
+										 && z >= origin.z() && z < origin.z() + size.z();
+						if (inside)
+							continue;
+
+						// directions whose neighbor cell is inside the footprint
+						std::uint32_t mask = 0;
+						for (int q = 1; q < 27; q++) {
+							const idx nx = x + amr_d3q27_directions[q][0];
+							const idx ny = y + amr_d3q27_directions[q][1];
+							const idx nz = z + amr_d3q27_directions[q][2];
+							const bool crosses = nx >= origin.x() && nx < origin.x() + size.x() && ny >= origin.y() && ny < origin.y() + size.y()
+											  && nz >= origin.z() && nz < origin.z() + size.z();
+							if (crosses)
+								mask |= std::uint32_t(1) << q;
+						}
+						if (mask == 0)
+							continue;
+
+						const auto map_value = coarse.hmap(x, y, z);
+						const bool already_interface = map_value == BC::GEO_AMR_INTERFACE;
+						// do not clobber physical boundary conditions
+						if (! already_interface && ! BC::isFluid(map_value))
+							continue;
+
+						allocateInterfaceDirArray(coarse);
+						auto& arrays = amrInterfaceDirRegistry<CONFIG>().at(&coarse);
+						arrays.host[coarse.data.indexer.getStorageIndex(x, y, z)] |= mask;
+
+						if (! already_interface) {
+							coarse.setMap(x, y, z, BC::GEO_AMR_INTERFACE);
+							marked++;
+						}
+					}
+				}
+			}
+
+			if (marked > 0) {
+				marked_fine += marked;
+				if (std::find(dirty_blocks.begin(), dirty_blocks.end(), &coarse) == dirty_blocks.end())
+					dirty_blocks.push_back(&coarse);
+			}
+		}
+
+		if (marked_fine > 0)
+			spdlog::info(
+				"markAMRInterface: fine block {} (level {}) added {} interface cells on level {}", fine.id, fine.level, marked_fine, parent_level
+			);
+	}
+
+	for (auto* coarse : dirty_blocks) {
+		coarse->copyMapToDevice();
+		auto& arrays = amrInterfaceDirRegistry<CONFIG>().at(coarse);
+		arrays.device = arrays.host;
 	}
 }
