@@ -1,0 +1,40 @@
+#!/bin/bash
+
+# exit as soon as there is an error
+set -o errexit
+# abort when an unset variable is used
+set -o nounset
+
+# get the path of directory where this script is located
+THIS_DIR="$( builtin cd -P "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+
+# project directory
+PROJECT_DIR="$( realpath "$THIS_DIR/..")"
+
+# build directory
+BUILD_DIR="$PROJECT_DIR/build"
+
+# parse command line arguments
+if [[ "$#" == "0" ]]; then
+    echo "Usage: $0 SIM [args...]" >&2
+    echo "For example: $0 sim_AMR 1" >&2
+    exit 1
+fi
+TARGET="$1"
+shift
+if [[ ! -f "$THIS_DIR/$TARGET.cu" ]]; then
+    echo "ERROR: file $TARGET.cu does not exist." >&2
+    exit 1
+fi
+
+# configure the build
+if [[ ! -d "$BUILD_DIR" ]]; then
+    cmake -B "$BUILD_DIR" -S "$PROJECT_DIR" -DCMAKE_BUILD_TYPE=Release
+fi
+
+# build the target
+cmake --build "$BUILD_DIR" --target "$TARGET"
+
+# run the target
+echo "Running $TARGET $@"
+"$BUILD_DIR/sim_AMR/$TARGET" "$@"
