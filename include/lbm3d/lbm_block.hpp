@@ -12,11 +12,55 @@ LBM_BLOCK<CONFIG>::LBM_BLOCK(const TNL::MPI::Comm& communicator, idx3d global, i
   global(global),
   local(local),
   offset(offset),
-  id(this_id)
+  id(this_id),
+  global_offset(offset)
 {
 	// initialize MPI info
 	rank = communicator.rank();
 	nproc = communicator.size();
+}
+
+template <typename CONFIG>
+LBM_BLOCK<CONFIG>::LBM_BLOCK(
+	const TNL::MPI::Comm& communicator, idx3d global, idx3d local, idx3d offset, const lat_t& base_lat, int level, int this_id
+)
+: communicator(communicator),
+  global(global),
+  local(local),
+  offset(offset),
+  id(this_id),
+  level(level),
+  global_offset(offset)
+{
+	// initialize MPI info
+	rank = communicator.rank();
+	nproc = communicator.size();
+
+	// compute per-level lattice parameters (no-op scaling when level == 0)
+	initLevelLattice(base_lat, level);
+}
+
+template <typename CONFIG>
+void LBM_BLOCK<CONFIG>::initLevelLattice(const lat_t& base_lat, int level)
+{
+	this->level = level;
+
+	// per-level lattice parameters with the standard 2:1 refinement ratio:
+	// both the spatial and temporal steps are halved on each finer level
+	lat_local.global = global;	// global coarsest-level size is shared by all levels
+	lat_local.physDl = base_lat.physDl / (1 << level);
+	lat_local.physDt = base_lat.physDt / (1 << level);
+	lat_local.physViscosity = base_lat.physViscosity;  // physical viscosity is level-independent
+	lat_local.physOrigin = base_lat.physOrigin;		   // TODO (Wave 3): refine with the per-block global_offset
+
+	// Do NOT redistribute the lattice viscosity: it is computed from the
+	// physical viscosity as nu_lb = physViscosity * physDt / physDl^2, so
+	// with 2:1 refinement it doubles on the fine level, nu_lb_f = 2 * nu_lb_c.
+	// This is CORRECT - the physical viscosity is the same on all levels.
+	// Consequently the relaxation time tau = 3*nu_lb + 0.5 differs between
+	// levels (tau_f != tau_c); the ratio tau_f/tau_c is used as the
+	// non-equilibrium rescaling factor in the inter-level coupling (Waves 4-5).
+	data.lbmViscosity = lat_local.lbmViscosity();
 }
 
 template <typename CONFIG>

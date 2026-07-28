@@ -73,11 +73,23 @@ struct LBM_BLOCK
 	// index of this block
 	int id;
 
+	// AMR: refinement level of this block (0 = coarsest level, default for backward compatibility)
+	int level = 0;
+
 	// indices of the neighboring blocks
 	std::map<TNL::Containers::SyncDirection, int> neighborIDs;
 
 	// owners of the neighboring blocks
 	std::map<TNL::Containers::SyncDirection, int> neighborRanks;
+
+	// AMR: refinement-level state
+	// per-block lattice parameters for this refinement level (defaults to all
+	// zeros until initLevelLattice is called; identical semantics to the
+	// global LBM::lat when level == 0)
+	lat_t lat_local;
+	// offset of this block in the parent (coarse) level's coordinate system
+	// (used for interface location matching in Wave 3; defaults to `offset`)
+	idx3d global_offset;
 
 #ifdef HAVE_MPI
 	// synchronizers for dfs, macro and map
@@ -121,6 +133,11 @@ struct LBM_BLOCK
 	LBM_BLOCK(const LBM_BLOCK&) = delete;
 	LBM_BLOCK(LBM_BLOCK&&) = default;
 	LBM_BLOCK(const TNL::MPI::Comm& communicator, idx3d global, idx3d local, idx3d offset, int this_id = 0);
+	// AMR: constructor with explicit refinement level - computes per-level lattice parameters from the base (coarsest-level) lattice
+	LBM_BLOCK(const TNL::MPI::Comm& communicator, idx3d global, idx3d local, idx3d offset, const lat_t& base_lat, int level, int this_id = 0);
+
+	// AMR: (re)initializes the refinement-level state (`level`, `lat_local` and `data.lbmViscosity`) from the base (coarsest-level) lattice
+	void initLevelLattice(const lat_t& base_lat, int level);
 
 	// initialization method for MPI synchronization - must be called before starting the simulation!
 	template <typename Pattern>
