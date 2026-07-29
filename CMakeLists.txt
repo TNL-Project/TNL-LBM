@@ -264,11 +264,13 @@ find_package(PNG REQUIRED)
 find_package(OpenMP COMPONENTS CXX)
 find_package(MPI COMPONENTS CXX)
 find_package(ADIOS2 REQUIRED)
+find_package(HDF5 REQUIRED COMPONENTS C)
 
 # Add dependencies to the interface target
 target_link_libraries(TNL_LBM INTERFACE
     TNL::TNL
     PNG::PNG
+    HDF5::HDF5
     fmt::fmt
     spdlog::spdlog
     nlohmann_json::nlohmann_json
