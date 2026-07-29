@@ -6,6 +6,7 @@ add_subdirectory(unit)
 set(AMR_TESTS
         test_amr_coupling
         test_amr_subcycling
+        test_amr_vtkhdf_writer
 )
 
 foreach(test_name IN ITEMS ${AMR_TESTS})
