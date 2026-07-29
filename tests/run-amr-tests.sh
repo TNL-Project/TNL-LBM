@@ -2,9 +2,9 @@
 
 set -u
 
-# Builds and runs the AMR unit tests (tests/test_amr_coupling.cu and
-# tests/test_amr_subcycling.cu, each compiled for both the A-B and A-A
-# streaming patterns).
+# Builds and runs the AMR unit tests (tests/test_amr_coupling.cu,
+# tests/test_amr_subcycling.cu and tests/test_amr_vtkhdf_writer.cu, each
+# compiled for both the A-B and A-A streaming patterns).
 #
 # The script uses paths relative to the project directory, change there before
 # doing anything else (same convention as tests/compare-IBM-matrices.sh).
@@ -16,6 +16,8 @@ targets=(
     test_amr_coupling_aa
     test_amr_subcycling_ab
     test_amr_subcycling_aa
+    test_amr_vtkhdf_writer_ab
+    test_amr_vtkhdf_writer_aa
 )
 
 echo "Building AMR test targets: ${targets[*]}"
