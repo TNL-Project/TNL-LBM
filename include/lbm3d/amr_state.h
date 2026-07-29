@@ -10,6 +10,7 @@
 #include "state.h"
 #include "amr_decomposition.h"
 #include "d3q27/amr_coupling.h"
+#include "viz/OverlappingAMRWriter.h"
 
 /**
  * \brief Conservation statistics aggregated over the AMR block hierarchy.
@@ -162,6 +163,11 @@ struct State_AMR : State<NSE>
 	// \ref computeConservationStats at the PRINT interval
 	void AfterSimUpdate() override;
 
+	// Write AMR visualization output in VTKHDF (OverlappingAMR) format.
+	// Static single-GPU version (v1): one file per OUT3D cycle.
+	// No-op when nse.max_level == 0 (no AMR).
+	void write3D_AMR(real time, int cycle);
+
 	// implementation details of the subcycling stages (kept public for
 	// future subclass overrides, same as the base State members)
 
@@ -297,6 +303,11 @@ void State_AMR<NSE>::SimInit()
 template <typename NSE>
 void State_AMR<NSE>::AfterSimUpdate()
 {
+	// VTKHDF AMR output at the OUT3D cadence (co-exists with base BP5 output);
+	// trigger check BEFORE Base (Base increments count)
+	if (this->nse.max_level > 0 && this->cnt[OUT3D].action(this->nse.physTime()))
+		this->write3D_AMR(this->nse.physTime(), this->cnt[OUT3D].count);
+
 	// trigger check BEFORE Base (Base increments count)
 	const bool do_amr_report = this->nse.max_level > 0 && this->cnt[PRINT].action(this->nse.physTime());
 
@@ -309,6 +320,34 @@ void State_AMR<NSE>::AfterSimUpdate()
 	spdlog::info("AMR conservation: mass = {:.6e}", s.total_mass);
 	for (std::size_t L = 0; L < s.per_level_kinetic_energy.size(); L++)
 		spdlog::info("AMR level {}: kinetic energy = {:.6e}", L, s.per_level_kinetic_energy[L]);
+}
+
+/**
+ * \brief Write the AMR block hierarchy to one VTKHDF OverlappingAMR file.
+ *
+ * Called from \ref AfterSimUpdate at the OUT3D cadence (co-exists with the
+ * base driver's BP5 output). The host mirrors of the macroscopic quantities
+ * are refreshed explicitly because macros are not computed in every
+ * iteration when `MACRO::compute_in_each_iteration == false` (e.g.
+ * D3Q27_MACRO_Default); the writer itself only copies, it does not
+ * recompute.
+ */
+template <typename NSE>
+void State_AMR<NSE>::write3D_AMR(real time, int cycle)
+{
+	if (this->nse.max_level == 0)
+		return;
+
+	// single-file VTKHDF per step; cycle is OUT3D's current counter
+	// (pre-increment - Base::AfterSimUpdate increments it later)
+	const std::string fname = fmt::format("results_{}/output_amr_{:04d}.vtkhdf", this->id, cycle);
+
+	// ensure the host-side macros are up to date before the writer pulls
+	// them (copyMacroToHost() is non-const; the writer takes care of the rest)
+	for (auto& block : this->nse.blocks)
+		block.copyMacroToHost();
+
+	OverlappingAMRWriter<TRAITS>::write(fname, this->nse, time);
 }
 
 /**
