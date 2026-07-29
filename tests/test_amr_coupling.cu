@@ -259,6 +259,41 @@ int coarseWriteSlot(int q, bool next_coarse_even_iter)
 #endif
 }
 
+// Direction slot in the fine df_cur array where the coarse-to-fine fill
+// stores the DF of direction q (see the kernel docstring): natural
+// orientation for the A-B pattern (df_cur is pulled same-direction), twisted
+// for the A-A pattern (the spatial substep pulls ghost DFs from the
+// opposite-direction slot)
+int c2fWriteSlot(int q)
+{
+#ifdef AB_PATTERN
+	return q;
+#elif defined(AA_PATTERN)
+	return opposite_direction(q);
+#endif
+}
+
+// DF array cudaAMR_FineToCoarse stores into: df_out for the A-B pattern
+// (the next global DF rotation turns it into the df_cur the next coarse
+// kernel launch reads), df_cur for the A-A pattern (single array)
+uint8_t f2cWriteArray()
+{
+#ifdef AB_PATTERN
+	return df_out;
+#elif defined(AA_PATTERN)
+	return df_cur;
+#endif
+}
+
+// rho moment of the DFs cudaAMR_FineToCoarse wrote at a coarse cell
+dreal f2cWrittenRho(const MockBlock& coarse, bool next_coarse_even_iter, idx x, idx y, idx z)
+{
+	dreal rho = 0;
+	for (int q = 0; q < 27; q++)
+		rho += coarse.hfs[f2cWriteArray()](coarseWriteSlot(q, next_coarse_even_iter), x, y, z);
+	return rho;
+}
+
 // fill the whole stored extent (including the overlap layers) of `block` with
 // the equilibrium of a constant macroscopic state
 void fillUniform(MockBlock& block, bool even_iter, dreal rho, dreal u0, dreal v0, dreal w0)
@@ -308,19 +343,11 @@ dreal rhoMoment(const MockBlock& block, idx x, idx y, idx z)
 	return rho;
 }
 
-void launchCoarseToFine(MockBlock& fine, MockBlock& coarse, idx3d begin, idx3d end, bool coarse_even_iter)
-{
-	const idx3d size = end - begin;
-	TNL::Backend::LaunchConfiguration launch_config;
-	launch_config.blockSize = dim3(4, 4, 4);
-	launch_config.gridSize = dim3(
-		static_cast<unsigned>((size.x() + 3) / 4), static_cast<unsigned>((size.y() + 3) / 4), static_cast<unsigned>((size.z() + 3) / 4)
-	);
-	TNL::Backend::launchKernelAsync(cudaAMR_CoarseToFine<NSE_CONFIG>, launch_config, fine.data, coarse.data, begin, end, TAU_FINE, TAU_COARSE, coarse_even_iter);
-	TNL::Backend::streamSynchronize(0);
-}
-
-void launchFineToCoarse(MockBlock& coarse, MockBlock& fine, idx3d begin, idx3d end, bool fine_even_iter, bool coarse_even_iter)
+// launch the coupling kernels with the block-offset parameters the kernels
+// map between indexer frames with (fine_off/coarse_off are the two blocks'
+// origins in the global coordinates of their level; the fine block's size
+// and overlap are taken from the fine mock block)
+void launchCoarseToFine(MockBlock& fine, MockBlock& coarse, idx3d begin, idx3d end, idx3d fine_off, idx3d coarse_off, bool coarse_even_iter)
 {
 	const idx3d size = end - begin;
 	TNL::Backend::LaunchConfiguration launch_config;
@@ -329,7 +356,34 @@ void launchFineToCoarse(MockBlock& coarse, MockBlock& fine, idx3d begin, idx3d e
 		static_cast<unsigned>((size.x() + 3) / 4), static_cast<unsigned>((size.y() + 3) / 4), static_cast<unsigned>((size.z() + 3) / 4)
 	);
 	TNL::Backend::launchKernelAsync(
-		cudaAMR_FineToCoarse<NSE_CONFIG>, launch_config, coarse.data, fine.data, begin, end, TAU_COARSE, TAU_FINE, fine_even_iter, coarse_even_iter
+		cudaAMR_CoarseToFine<NSE_CONFIG>, launch_config, fine.data, coarse.data, begin, end, TAU_FINE, TAU_COARSE, coarse_even_iter, fine_off, coarse_off
+	);
+	TNL::Backend::streamSynchronize(0);
+}
+
+void launchFineToCoarse(MockBlock& coarse, MockBlock& fine, idx3d begin, idx3d end, idx3d fine_off, idx3d coarse_off, bool fine_even_iter, bool coarse_even_iter)
+{
+	const idx3d size = end - begin;
+	TNL::Backend::LaunchConfiguration launch_config;
+	launch_config.blockSize = dim3(4, 4, 4);
+	launch_config.gridSize = dim3(
+		static_cast<unsigned>((size.x() + 3) / 4), static_cast<unsigned>((size.y() + 3) / 4), static_cast<unsigned>((size.z() + 3) / 4)
+	);
+	TNL::Backend::launchKernelAsync(
+		cudaAMR_FineToCoarse<NSE_CONFIG>,
+		launch_config,
+		coarse.data,
+		fine.data,
+		begin,
+		end,
+		TAU_COARSE,
+		TAU_FINE,
+		fine_even_iter,
+		coarse_even_iter,
+		fine_off,
+		coarse_off,
+		idx3d{fine.size, fine.size, fine.size},
+		fine.ov
 	);
 	TNL::Backend::streamSynchronize(0);
 }
@@ -358,7 +412,15 @@ void test_uniform_coarse_to_fine()
 		coarse.copyToDevice();
 
 		// fill the whole fine interior plus the outer ghost layer
-		launchCoarseToFine(fine, coarse, {0, 0, 0}, {FINE_N + 1, FINE_N + 1, FINE_N + 1}, even_iter);
+		launchCoarseToFine(
+			fine,
+			coarse,
+			{0, 0, 0},
+			{FINE_N + 1, FINE_N + 1, FINE_N + 1},
+			{0, 0, 0},
+			{0, 0, 0},
+			even_iter
+		);
 		fine.copyToHost();
 
 		double max_err = 0;
@@ -367,7 +429,8 @@ void test_uniform_coarse_to_fine()
 			for (idx y = 0; y <= FINE_N; y++)
 				for (idx x = 0; x <= FINE_N; x++)
 					for (int q = 0; q < 27; q++) {
-						const dreal actual = fine.hfs[df_cur](q, x, y, z);
+						// the fill stores each direction in its pattern-specific slot
+						const dreal actual = fine.hfs[df_cur](c2fWriteSlot(q), x, y, z);
 						if (! closeEnough(actual, expected[q], 1e-6, 1e-8)) {
 							if (bad == 0)
 								fmt::println(
@@ -400,7 +463,16 @@ void test_uniform_fine_to_coarse()
 			fillUniform(fine, fine_even_iter, rho0, u0, v0, w0);
 			fine.copyToDevice();
 
-			launchFineToCoarse(coarse, fine, {0, 0, 0}, {COARSE_N, COARSE_N, COARSE_N}, fine_even_iter, coarse_even_iter);
+			launchFineToCoarse(
+				coarse,
+				fine,
+				{0, 0, 0},
+				{COARSE_N, COARSE_N, COARSE_N},
+				{0, 0, 0},
+				{0, 0, 0},
+				fine_even_iter,
+				coarse_even_iter
+			);
 			coarse.copyToHost();
 
 			double max_err = 0;
@@ -410,8 +482,8 @@ void test_uniform_fine_to_coarse()
 					for (idx x = 0; x < COARSE_N; x++)
 						for (int q = 0; q < 27; q++) {
 							// the kernel writes the direction-q DF into the
-							// parity-dependent df_cur slot
-							const dreal actual = coarse.hfs[df_cur](coarseWriteSlot(q, coarse_even_iter), x, y, z);
+							// parity-dependent slot of the write array
+							const dreal actual = coarse.hfs[f2cWriteArray()](coarseWriteSlot(q, coarse_even_iter), x, y, z);
 							if (! closeEnough(actual, expected[q], 1e-6, 1e-8)) {
 								if (bad == 0)
 									fmt::println(
@@ -471,7 +543,7 @@ void test_linear_gradient_coarse_to_fine()
 	);
 	coarse.copyToDevice();
 
-	launchCoarseToFine(fine, coarse, {0, 0, 0}, {FINE_N, FINE_N, FINE_N}, even_iter);
+	launchCoarseToFine(fine, coarse, {0, 0, 0}, {FINE_N, FINE_N, FINE_N}, {0, 0, 0}, {0, 0, 0}, even_iter);
 	fine.copyToHost();
 
 	double max_rel_rho = 0, max_rel_jx = 0, max_abs_jyz = 0;
@@ -481,7 +553,7 @@ void test_linear_gradient_coarse_to_fine()
 			for (idx x = 0; x < FINE_N; x++) {
 				dreal moment[3] = {0, 0, 0};
 				for (int q = 0; q < 27; q++) {
-					const dreal f = fine.hfs[df_cur](q, x, y, z);
+					const dreal f = fine.hfs[df_cur](c2fWriteSlot(q), x, y, z);
 					for (int d = 0; d < 3; d++)
 						moment[d] += VELOCITY[q][d] * f;
 				}
@@ -562,7 +634,16 @@ void test_mass_conservation_fine_to_coarse()
 				fine_mass[z][y][x] = m / 8.0;
 			}
 
-	launchFineToCoarse(coarse, fine, {0, 0, 0}, {COARSE_N, COARSE_N, COARSE_N}, fine_even_iter, coarse_even_iter);
+	launchFineToCoarse(
+		coarse,
+		fine,
+		{0, 0, 0},
+		{COARSE_N, COARSE_N, COARSE_N},
+		{0, 0, 0},
+		{0, 0, 0},
+		fine_even_iter,
+		coarse_even_iter
+	);
 	coarse.copyToHost();
 
 	double max_rel = 0;
@@ -570,7 +651,7 @@ void test_mass_conservation_fine_to_coarse()
 	for (idx z = 0; z < COARSE_N; z++)
 		for (idx y = 0; y < COARSE_N; y++)
 			for (idx x = 0; x < COARSE_N; x++) {
-				const dreal rho_c = rhoMoment(coarse, x, y, z);
+				const dreal rho_c = f2cWrittenRho(coarse, coarse_even_iter, x, y, z);
 				const double rel = std::abs(rho_c - fine_mass[z][y][x]) / fine_mass[z][y][x];
 				max_rel = std::max(max_rel, rel);
 				if (rel > 1e-5)
@@ -615,7 +696,7 @@ void test_mass_conservation_coarse_to_fine()
 
 	// fill the fine cells covered by the interior coarse cells [1, COARSE_N)
 	// (their fine subcells are [2, FINE_N))
-	launchCoarseToFine(fine, coarse, {2, 2, 2}, {FINE_N, FINE_N, FINE_N}, even_iter);
+	launchCoarseToFine(fine, coarse, {2, 2, 2}, {FINE_N, FINE_N, FINE_N}, {0, 0, 0}, {0, 0, 0}, even_iter);
 	fine.copyToHost();
 
 	double max_rel = 0;
@@ -713,32 +794,6 @@ dreal correctF2Crho(idx c, idx coarse_off, idx fine_off)
 	return m / 2;
 }
 
-// direction slot in the fine df_cur array where the coarse-to-fine fill
-// stores the DF of direction q (see the kernel docstring): natural
-// orientation for the A-B pattern (df_cur is pulled same-direction), twisted
-// for the A-A pattern (the spatial substep pulls ghost DFs from the
-// opposite-direction slot)
-int c2fWriteSlot(int q)
-{
-#ifdef AB_PATTERN
-	return q;
-#elif defined(AA_PATTERN)
-	return opposite_direction(q);
-#endif
-}
-
-// DF array index cudaAMR_FineToCoarse stores into: df_out for the A-B pattern
-// (the next coarse kernel launch reads that physical array as df_cur after
-// the global DF rotation), df_cur for the A-A pattern (single array)
-uint8_t f2cWriteArray()
-{
-#ifdef AB_PATTERN
-	return df_out;
-#elif defined(AA_PATTERN)
-	return df_cur;
-#endif
-}
-
 // fill the whole stored extent (including the 2-cell overlap) of `block` with
 // the equilibrium of the marker field. The A-B coupling kernels read the
 // source block's df_out in natural orientation; every other array is poisoned
@@ -779,14 +834,6 @@ dreal nestedFineGhostRho(const MockBlock& fine, idx x, idx y, idx z)
 	return rho;
 }
 
-dreal nestedCoarseHaloRho(const MockBlock& coarse, bool next_coarse_even_iter, idx x, idx y, idx z)
-{
-	dreal rho = 0;
-	for (int q = 0; q < 27; q++)
-		rho += coarse.hfs[f2cWriteArray()](coarseWriteSlot(q, next_coarse_even_iter), x, y, z);
-	return rho;
-}
-
 void test_nested_geometry_coupling()
 {
 	// storage parities of the source data (A-A-only state): post-stream
@@ -807,11 +854,10 @@ void test_nested_geometry_coupling()
 	// coarse-to-fine: the production ghost extents of the min-x and max-x
 	// faces (fine indexer coordinates, cf. buildCouplings:
 	// fine_origin = 2 * coarse_rect_begin - fine.offset)
-	launchCoarseToFine(fine, coarse, {-2, -2, -2}, {0, 18, 18}, coarse_even_iter);
-	launchCoarseToFine(fine, coarse, {16, -2, -2}, {18, 18, 18}, coarse_even_iter);
-	// fine-to-coarse: the production storability clip of the launch helper
-	// (the correct per-cell guard is the subject of the fix under test)
-	launchFineToCoarse(coarse, fine, {3, 3, 3}, {4, 9, 9}, fine_even_iter, next_coarse_even_iter);
+	const idx3d fine_off{NEST_FINE_OFF, NEST_FINE_OFF, NEST_FINE_OFF};
+	const idx3d coarse_off{0, 0, 0};
+	launchCoarseToFine(fine, coarse, {-2, -2, -2}, {0, 18, 18}, fine_off, coarse_off, coarse_even_iter);
+	launchCoarseToFine(fine, coarse, {16, -2, -2}, {18, 18, 18}, fine_off, coarse_off, coarse_even_iter);
 
 	fine.copyToHost();
 	coarse.copyToHost();
@@ -874,6 +920,27 @@ void test_nested_geometry_coupling()
 		}
 	}
 	report(bad == 0, fmt::format("Test 5 nested C2F ghost rho moments: moments match (max |err| = {:.3e})", max_err));
+
+	// re-establish the pristine marker state for the F2C direction: the C2F
+	// fill just wrote into the fine ghost layer that the F2C filter reads
+	// (the intended production flow) -- for the A-A pattern with a spatial-consumer
+	// fill, self-opposite directions (e.g. the rest direction) share the slot
+	// the F2C natural read uses, so the F2C input must be re-marked to assert
+	// pure filter geography
+	fillMarkerNested(coarse, false, coarse_even_iter);
+	fillMarkerNested(fine, true, fine_even_iter);
+	coarse.copyToDevice();
+	fine.copyToDevice();
+
+	// fine-to-coarse: FULL halo face extents extended past both storable and
+	// non-storable cells -- the per-cell kernel guard replaces the former
+	// launch-extent clip (c = 2 and c = 13 are skipped by the guard as their
+	// 2x2x2 fine subcell block is not fully storable)
+	launchFineToCoarse(coarse, fine, {2, 3, 3}, {4, 13, 13}, fine_off, coarse_off, fine_even_iter, next_coarse_even_iter);
+	launchFineToCoarse(coarse, fine, {12, 3, 3}, {14, 13, 13}, fine_off, coarse_off, fine_even_iter, next_coarse_even_iter);
+
+	fine.copyToHost();
+	coarse.copyToHost();
 
 	// ----- F2C halo faces: the coarse halo cells must hold the Lagrava
 	// average of the correctly mapped fine subcells -----
@@ -948,7 +1015,7 @@ void test_nested_geometry_coupling()
 	bad = 0;
 	for (const idx c : {2, 13}) {
 		const dreal rho_marker = static_cast<dreal>(c) + NEST_RHO0;
-		const dreal rho_m = nestedCoarseHaloRho(coarse, next_coarse_even_iter, c, 8, 8);
+		const dreal rho_m = f2cWrittenRho(coarse, next_coarse_even_iter, c, 8, 8);
 		max_err = std::max<double>(max_err, std::abs(rho_m - rho_marker));
 		if (! closeEnough(rho_m, rho_marker, 1e-4, 1e-5))
 			bad++;

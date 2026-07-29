@@ -28,15 +28,23 @@
  * applied: each coarse-to-fine DF is a point density (the 1/8 volume
  * averaging belongs to the fine-to-coarse direction in todo 6).
  *
- * Cell-centered coordinate mapping (per axis, fine coord `x_f`):
- * the home coarse cell is `x_f / 2` (non-negative block-indexer coords, so
- * integer division floors). The fine cell center sits at +-1/4 of the home
- * cell's width from the home cell center, hence the two bracketing coarse
- * cell centers are {home-1, home} for even `x_f` and {home, home+1} for odd
- * `x_f`, unified as `home - 1 + (x_f & 1)`. The trilinear weight is 3/4 on
- * the home side and 1/4 on the far side of each axis (exact for linear
- * fields; all weights are binary fractions so constant fields are preserved
- * exactly).
+ * Cell-centered coordinate mapping (per axis): the two blocks' indexer
+ * origins do NOT correspond in general (a nested fine block starts wherever
+ * its footprint places it), so the mapping is computed in the GLOBAL frame.
+ * For a fine indexer coordinate `x_f` the fine global coordinate is
+ * `fg = x_f + fine_off`, the home coarse cell (global) is
+ * `home = floor(fg / 2)` (true floor division -- valid for negative fine
+ * global coordinates, unlike the truncating integer division of C++, so the
+ * x_f = -1 ghost maps to the correct home cell), and the fine cell center
+ * sits at +-1/4 of the home cell's width from the home cell center, hence
+ * the two bracketing coarse cell centers (global) are {home-1, home} for
+ * even `fg` and {home, home+1} for odd `fg`, unified as
+ * `home - 1 + (fg & 1)` and converted back to the coarse block's indexer
+ * frame via `- coarse_off`. The trilinear weight is 3/4 on the home side
+ * and 1/4 on the far side of each axis (exact for linear fields; all
+ * weights are binary fractions so constant fields are preserved exactly).
+ * `fine_off` and `coarse_off` are the blocks' indexer origins in the global
+ * coordinates of their own level (`LBM_BLOCK::offset`).
  *
  * Ghost cells: the kernel fills EVERY cell in
  * [ghost_begin_fine, ghost_end_fine) -- the caller passes exactly the
@@ -61,12 +69,16 @@
  *   coarse substep will collide with, which is the physics-correct input for
  *   mirroring the coarse level onto the fine ghosts.
  *
- * Writes: fine ghost DFs go to `fine_SD.df(df_cur, ...)` for BOTH patterns
- * (a single site, so no #ifdef here): `df_cur` is the array the next
- * fine-level streaming step pulls from, and ghosts are re-filled every
- * substep. For the AA pattern the values are written in natural orientation
- * (v1: fine ghosts are consumed as streamed-in data; the twisted-phase fine
- * handling is Wave 4/5 work).
+ * Writes: fine ghost DFs go to `fine_SD.df(df_cur, ...)` for both patterns
+ * (the caller sets the fine level's DF rotation for the upcoming substep
+ * BEFORE the fill, so `df_cur` is exactly the array the next fine-level
+ * streaming step pulls from; ghosts are re-filled every substep). The
+ * direction slot is pattern-dependent: A-B pulls ghost DFs in natural
+ * orientation, so direction q is stored in slot q; the A-A spatial
+ * ("odd") substep pulls the DF streaming out of a ghost cell in direction q
+ * from the opposite-direction slot (see D3Q27_STREAMING::streaming in
+ * streaming_AA.h), so direction q is stored twisted in
+ * `opposite_direction(q)`.
  *
  * Macroscopic output: for cells tagged `GEO_AMR_INTERFACE` the interpolated
  * macros are written to `dmacro` (the main kernel's `outputMacro` would
@@ -111,7 +123,9 @@ __global__ void cudaAMR_CoarseToFine(
 	typename CONFIG::TRAITS::idx3d ghost_end_fine,
 	typename CONFIG::TRAITS::dreal tau_fine,
 	typename CONFIG::TRAITS::dreal tau_coarse,
-	bool coarse_even_iter
+	bool coarse_even_iter,
+	typename CONFIG::TRAITS::idx3d fine_off,
+	typename CONFIG::TRAITS::idx3d coarse_off
 )
 {
 	using TRAITS = typename CONFIG::TRAITS;
@@ -150,13 +164,24 @@ __global__ void cudaAMR_CoarseToFine(
 #endif
 	};
 
-	// bracketing coarse corners and trilinear weights (see the file docstring)
-	const idx cx0 = x / 2 - 1 + (x & 1);
-	const idx cy0 = y / 2 - 1 + (y & 1);
-	const idx cz0 = z / 2 - 1 + (z & 1);
-	const dreal wx0 = (x & 1) ? dreal(0.75) : dreal(0.25);
-	const dreal wy0 = (y & 1) ? dreal(0.75) : dreal(0.25);
-	const dreal wz0 = (z & 1) ? dreal(0.75) : dreal(0.25);
+	// bracketing coarse corners and trilinear weights in the GLOBAL frame
+	// (see the file docstring): fine global coordinate fg = x + fine_off;
+	// the home coarse cell is floor(fg/2) and the bracketing corners
+	// {home-1+(fg&1), home+(fg&1)} are converted back to the coarse block's
+	// indexer frame via coarse_off
+	const auto fdiv2 = [](idx v) -> idx
+	{
+		return v >= 0 ? v / 2 : -((-v + 1) / 2);
+	};
+	const idx fgx = x + fine_off.x();
+	const idx fgy = y + fine_off.y();
+	const idx fgz = z + fine_off.z();
+	const idx cx0 = fdiv2(fgx) - 1 + (fgx & 1) - coarse_off.x();
+	const idx cy0 = fdiv2(fgy) - 1 + (fgy & 1) - coarse_off.y();
+	const idx cz0 = fdiv2(fgz) - 1 + (fgz & 1) - coarse_off.z();
+	const dreal wx0 = (fgx & 1) ? dreal(0.75) : dreal(0.25);
+	const dreal wy0 = (fgy & 1) ? dreal(0.75) : dreal(0.25);
+	const dreal wz0 = (fgz & 1) ? dreal(0.75) : dreal(0.25);
 
 	// interpolated fine-level macros and per-direction non-equilibrium sums
 	dreal rho_f = 0, vx_f = 0, vy_f = 0, vz_f = 0;
@@ -201,8 +226,17 @@ __global__ void cudaAMR_CoarseToFine(
 
 	// volumetric rescaling, f_fine[q] = eq_q(rho_f,u_f) + (tau_f/tau_c)*f_neq[q]
 	const dreal neq_scale = tau_fine / tau_coarse;
-	for (int q = 0; q < CONFIG::Q; q++)
+	for (int q = 0; q < CONFIG::Q; q++) {
+#ifdef AB_PATTERN
+		// A-B: the next fine streaming pulls df_cur[q] in natural orientation
 		fine_SD.df(df_cur, q, x, y, z) = KS_F.f[q] + neq_scale * f_neq[q];
+#elif defined(AA_PATTERN)
+		// A-A: the next fine substep is spatial and pulls the DF streaming
+		// out of this ghost cell in direction q from the opposite-direction
+		// slot -- store twisted
+		fine_SD.df(df_cur, opposite_direction(q), x, y, z) = KS_F.f[q] + neq_scale * f_neq[q];
+#endif
+	}
 
 	// macros for GEO_AMR_INTERFACE cells (no-op in v1, see the file docstring)
 	if (fine_SD.map(x, y, z) == BC::GEO_AMR_INTERFACE) {
@@ -220,15 +254,26 @@ __global__ void cudaAMR_CoarseToFine(
  * 2006 / Chen et al. 1998).
  *
  * Cell-centered coordinate mapping (exact inverse of the coarse-to-fine
- * kernel): coarse cell `(x,y,z)` covers the 8 fine cells
- * `(2*x+{0,1}, 2*y+{0,1}, 2*z+{0,1})`. One thread per coarse interface cell
- * in [coarse_begin, coarse_end); the caller derives
+ * kernel, computed in the GLOBAL frame for the same reason): coarse cell
+ * `(x,y,z)` (coarse indexer coordinates) covers the 8 fine subcells
+ * `2*(x+coarse_off)-fine_off+{0,1}` per axis (fine indexer coordinates),
+ * where `coarse_off`/`fine_off` are the blocks' indexer origins in the
+ * global coordinates of their level (`LBM_BLOCK::offset`). One thread per
+ * coarse interface cell in [coarse_begin, coarse_end); the caller derives
  * `coarse_end = coarse_begin + coarse_size` from the patch (same
- * begin/end range handling as `cudaAMR_CoarseToFine`) and must guarantee
- * that all 8 fine subcells of every coarse cell in the extent are valid
- * storage indices of `fine_SD` (the fine block must store the region
- * overlapping the coarse interface extent, and the two blocks' indexer
- * origins must correspond -- the same alignment assumption as todo 5).
+ * begin/end range handling as `cudaAMR_CoarseToFine`).
+ *
+ * Storability guard (per cell): all 8 fine subcells of a processed coarse
+ * cell must be valid fine STORAGE indices, i.e. within the overlap-extended
+ * range `[-ov, fine_local + ov)` (`ov = LBM_BLOCK::overlap_width`); cells
+ * failing the test are skipped individually. This per-cell guard replaces
+ * the former launch-extent clip, which evaluated the storability condition
+ * in the wrong (origin-aligned) frame and silently dropped the max-side
+ * faces and half of the patch extents of nested geometries. Note the fine
+ * overlap storage must actually cover the subcells: with
+ * `overlap_width == 1` the coarse interface cells whose subcells include
+ * the outer fine ghost ring (2 cells deep) are NOT storable and the
+ * transfer skips them (they keep their pre-tag values).
  *
  * Algorithm per coarse cell:
  * 1. Read the post-kernel fine DFs of all 8 subcells (orientation below).
@@ -259,11 +304,12 @@ __global__ void cudaAMR_CoarseToFine(
  *   site), but the DIRECTION slot depends on which substep consumes the
  *   data next (convention in `streaming_AA.h` lines 31-90, against which
  *   this v1 decision was reviewed):
- *   - AB: natural orientation -- the next coarse `streaming()` pull reads
- *     `df_cur[q]` at the same site, and AB always pulls in natural
- *     orientation. The caller passes `coarse_SD` in the rotation state
- *     the next coarse kernel launch will read (same caveat as the coarse
- *     read side in todo 5); `coarse_even_iter` is AA-only state.
+ *   - AB: the write goes to logical `df_out` in natural orientation. The
+ *     caller passes `coarse_SD` in the rotation state of the LAST coarse
+ *     kernel launch (which read df_cur and wrote df_out); the next global
+ *     `updateKernelData()` rotates the coarse frames, so the physical
+ *     array written here becomes exactly the `df_cur` the next coarse
+ *     kernel launch pulls from. `coarse_even_iter` is AA-only state.
  *   - AA with `coarse_even_iter == true`: the NEXT coarse substep is the
  *     even ("reflect") substep, whose streaming reads the same site,
  *     same direction -- store natural (the post-stream state the even
@@ -294,7 +340,11 @@ __global__ void cudaAMR_FineToCoarse(
 	typename CONFIG::TRAITS::dreal tau_coarse,
 	typename CONFIG::TRAITS::dreal tau_fine,
 	bool fine_even_iter,
-	bool coarse_even_iter
+	bool coarse_even_iter,
+	typename CONFIG::TRAITS::idx3d fine_off,
+	typename CONFIG::TRAITS::idx3d coarse_off,
+	typename CONFIG::TRAITS::idx3d fine_local,
+	typename CONFIG::TRAITS::idx ov
 )
 {
 	using TRAITS = typename CONFIG::TRAITS;
@@ -312,6 +362,23 @@ __global__ void cudaAMR_FineToCoarse(
 
 	if (x >= coarse_end.x() || y >= coarse_end.y() || z >= coarse_end.z())
 		return;
+
+	// fine subcells of this coarse cell in the fine block's indexer frame
+	// (global-frame mapping, see the file docstring)
+	const idx fx0 = 2 * (x + coarse_off.x()) - fine_off.x();
+	const idx fy0 = 2 * (y + coarse_off.y()) - fine_off.y();
+	const idx fz0 = 2 * (z + coarse_off.z()) - fine_off.z();
+
+	// per-cell storability guard: all 8 subcells must be valid fine storage
+	// indices (see the file docstring)
+	for (int b = 0; b < 2; b++) {
+		if (fx0 + b < -ov || fx0 + b >= fine_local.x() + ov)
+			return;
+		if (fy0 + b < -ov || fy0 + b >= fine_local.y() + ov)
+			return;
+		if (fz0 + b < -ov || fz0 + b >= fine_local.z() + ov)
+			return;
+	}
 
 	// fine-side DF read in the orientation produced by the last fine kernel
 	// launch -- one of only TWO streaming-pattern-dependent sites
@@ -340,7 +407,7 @@ __global__ void cudaAMR_FineToCoarse(
 		for (int by = 0; by < 2; by++) {
 			for (int bx = 0; bx < 2; bx++) {
 				for (int q = 0; q < CONFIG::Q; q++)
-					f_avg[q] += read_fine_df(q, 2 * x + bx, 2 * y + by, 2 * z + bz);
+					f_avg[q] += read_fine_df(q, fx0 + bx, fy0 + by, fz0 + bz);
 			}
 		}
 	}
@@ -369,10 +436,12 @@ __global__ void cudaAMR_FineToCoarse(
 		// coarse DF write in the orientation the NEXT coarse substep will read
 		// (see the kernel docstring) -- the other pattern-dependent site
 #ifdef AB_PATTERN
-		// AB: the next streaming() pulls df_cur[q] at the same site, natural
-		// orientation (coarse_even_iter is AA-only state)
+		// AB: write to logical df_out, natural orientation -- the next global
+		// updateKernelData() rotates the coarse frames, so this physical
+		// array is the df_cur the next coarse kernel launch pulls from
+		// (coarse_even_iter is AA-only state)
 		static_cast<void>(coarse_even_iter);
-		coarse_SD.df(df_cur, q, x, y, z) = f_coarse;
+		coarse_SD.df(df_out, q, x, y, z) = f_coarse;
 #elif defined(AA_PATTERN)
 		if (coarse_even_iter)
 			// next substep is even ("reflect"): reads the same site, same
