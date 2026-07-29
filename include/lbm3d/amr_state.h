@@ -39,15 +39,19 @@ struct AMRConservationStats
  *    `iterations` counter). Coarse cells tagged `GEO_AMR_INTERFACE` are
  *    skipped inside the kernel via `BC::doCollision == false` (Wave 2).
  * 2. For each finer level L = 1..max_level:
- *    a. coarse-to-fine transfer: `cudaAMR_CoarseToFine` fills the fine
+ *    a. `updateKernelDataForLevel(L, 0)` toggles the fine level's even_iter
+ *       parity / DF rotation to substep 0 (MANDATORY before the ghost fill
+ *       - for the A-B pattern the rotation selects the physical array
+ *       `df_cur` refers to, so the fill must land in the array the
+ *       upcoming substep reads; the global `updateKernelData()` is driven
+ *       by the coarse clock and must not drive the fine substeps),
+ *    b. coarse-to-fine transfer: `cudaAMR_CoarseToFine` fills the fine
  *       ghost layer from level L-1 (see `d3q27/amr_coupling.h`),
- *    b. `updateKernelDataForLevel(L, 0)` toggles the fine level's even_iter
- *       parity / DF rotation to substep 0 (MANDATORY before the substep -
- *       the global `updateKernelData()` is driven by the coarse clock),
  *    c. fine substep 1 of 2: `cudaLBMKernel` on all blocks at level L,
- *    d. BVP: the coarse-to-fine transfer re-fills the fine ghost layer
+ *    d. `updateKernelDataForLevel(L, 1)` toggles the parity again (BEFORE
+ *       the BVP fill, same reason),
+ *    e. BVP: the coarse-to-fine transfer re-fills the fine ghost layer
  *       (substep 1 consumed the ghost DFs and streamed outward into them),
- *    e. `updateKernelDataForLevel(L, 1)` toggles the parity again,
  *    f. fine substep 2 of 2,
  *    g. fine-to-coarse transfer: `cudaAMR_FineToCoarse` projects the
  *       Lagrava-filtered fine state back onto level L-1.
@@ -65,9 +69,11 @@ struct AMRConservationStats
  *   source block (the parity of the kernel launch that produced the data).
  *   For `cudaAMR_FineToCoarse` the write-side `coarse_even_iter` is the
  *   parity of the NEXT consuming coarse substep.
- * - Kernel extents are passed in the target block's indexer coordinates;
- *   the kernels assume the two blocks' indexer origins correspond (see the
- *   precondition in the kernel docstrings - a Wave 5/6 concern).
+ * - Kernel extents are passed in the target block's indexer coordinates
+ *   and both blocks' `offset` values are passed to the kernels, which map
+ *   between the two indexer frames in the global coordinates of each level
+ *   (nested fine blocks have non-corresponding indexer origins - see the
+ *   kernel docstrings).
  *
  * v1 scope (same single-GPU scope as `createAMRBlocks`/`markAMRInterface`):
  * - `max_level == 0` falls back to the base `State<NSE>::SimUpdate()`
@@ -594,7 +600,17 @@ void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level)
 			launch_config.blockSize = fine->getCudaBlockSize(size);
 			launch_config.gridSize = fine->getCudaGridSize(size, launch_config.blockSize);
 			TNL::Backend::launchKernelAsync(
-				cudaAMR_CoarseToFine<NSE>, launch_config, fine->data, coarse->data, begin, end, tau_fine, tau_coarse, coarse_even_iter
+				cudaAMR_CoarseToFine<NSE>,
+				launch_config,
+				fine->data,
+				coarse->data,
+				begin,
+				end,
+				tau_fine,
+				tau_coarse,
+				coarse_even_iter,
+				fine->offset,
+				coarse->offset
 			);
 		}
 	}
@@ -614,13 +630,15 @@ void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level)
  * tagged by `markAMRInterface` (one patch per (fine block, parent block,
  * halo face) triple).
  *
- * Storability guard: the kernel reads the 2x2x2 fine subcells {2c, 2c+1}
- * (per axis, in the kernel's shared indexer frame) of every coarse cell c
- * in the extent, so the extent is clipped to cells whose subcells are all
- * valid fine storage indices - the fine overlap storage is
- * `overlap_width` deep around `[0, fine.local)`. When \ref couplings is
- * empty (no marked interface cells), this is a silent no-op (SimInit
- * logged a warning).
+ * Storability guard: the kernel clips itself per coarse cell - coarse cells
+ * whose 2x2x2 fine subcell block is not fully storable in the fine block's
+ * overlap-extended storage `[-overlap_width, fine.local + overlap_width)`
+ * are skipped inside the kernel (the fine overlap storage with
+ * `overlap_width == 1` cannot hold the 2-cell-deep ghost ring at the
+ * footprint faces, so the outer ring of interface cells is skipped there
+ * and keeps its pre-tag values). The launch therefore covers the FULL
+ * patch extents; when \ref couplings is empty (no marked interface cells),
+ * this is a silent no-op (SimInit logged a warning).
  */
 template <typename NSE>
 void State_AMR<NSE>::launchFineToCoarseTransfers(int fine_level)
@@ -650,22 +668,15 @@ void State_AMR<NSE>::launchFineToCoarseTransfers(int fine_level)
 			// (even_iter == false)
 			const bool next_coarse_even_iter = (coarse_level == 0) ? ((this->nse.iterations % 2) == 1) : false;
 
-			// launch extent in the coarse block's indexer coordinates,
-			// clipped to coarse cells whose 2x2x2 fine subcell block is
-			// storable in the fine block, incl. its overlap layer (see the
-			// docstring):
-			//   2c >= -ov  &&  2c+1 < fine.local + ov   per axis,
-			// where 2c, 2c+1 are the fine indexer coordinates the kernel
-			// reads; the lower bound is x >= -ov/2, i.e. x >= 0 for
-			// overlap_width <= 1, and the patch origins are non-negative
+			// launch extent in the coarse block's indexer coordinates: the
+			// FULL patch rectangle -- non-storable cells are skipped per
+			// cell inside the kernel (see the docstring)
 			const idx ov = BLOCK_NSE::overlap_width;
-			const idx3d begin{
-				std::max(patch.coarse_origin.x(), idx(0)), std::max(patch.coarse_origin.y(), idx(0)), std::max(patch.coarse_origin.z(), idx(0))
-			};
+			const idx3d begin = patch.coarse_origin;
 			const idx3d end{
-				std::min(patch.coarse_origin.x() + patch.coarse_size.x(), (fine->local.x() + ov - 2) / 2 + 1),
-				std::min(patch.coarse_origin.y() + patch.coarse_size.y(), (fine->local.y() + ov - 2) / 2 + 1),
-				std::min(patch.coarse_origin.z() + patch.coarse_size.z(), (fine->local.z() + ov - 2) / 2 + 1)
+				patch.coarse_origin.x() + patch.coarse_size.x(),
+				patch.coarse_origin.y() + patch.coarse_size.y(),
+				patch.coarse_origin.z() + patch.coarse_size.z()
 			};
 			if (begin.x() >= end.x() || begin.y() >= end.y() || begin.z() >= end.z())
 				continue;
@@ -685,7 +696,11 @@ void State_AMR<NSE>::launchFineToCoarseTransfers(int fine_level)
 				tau_coarse,
 				tau_fine,
 				fine_even_iter,
-				next_coarse_even_iter
+				next_coarse_even_iter,
+				fine->offset,
+				coarse->offset,
+				fine->local,
+				ov
 			);
 		}
 	}
@@ -788,20 +803,19 @@ void State_AMR<NSE>::SimUpdate()
 
 	// ---------- Berger-Colella recursion: finer levels ----------
 	for (int L = 1; L <= this->nse.max_level; L++) {
-		// 1. coarse-to-fine: fill the fine ghost layer from level L-1
-		// (patch rectangles of the level coupling built in SimInit).
-		// v1 fills the PRE-toggle df_cur frame (exact plan ordering); for
-		// the AB pattern the toggle below may rotate df_cur to the other
-		// physical array - the ghost frame targeting is deferred to the
-		// AA/AB review of Wave 5 (same v1 caveat as the fine-ghost
-		// orientation in the coupling-kernel docstrings)
+		// 1. toggle the fine level's even_iter parity / DF rotation to
+		// substep 0 BEFORE the ghost fill (CRITICAL: for the A-B pattern
+		// the rotation selects the physical array df_cur refers to, and
+		// the ghost fill must land in the array the upcoming substep
+		// reads; the global updateKernelData() is driven by the coarse
+		// clock and must not drive the fine substeps)
+		this->nse.updateKernelDataForLevel(L, 0);
+
+		// 2. coarse-to-fine: fill the fine ghost layer from level L-1
+		// (patch rectangles of the level coupling built in SimInit)
 		launchCoarseToFineTransfers(L);
 
-		// 2. fine substep 1 of 2: toggle the fine level's even_iter parity /
-		// DF rotation to substep 0 BEFORE the kernel (CRITICAL: the global
-		// updateKernelData() is driven by the coarse clock and must not
-		// drive the fine substeps)
-		this->nse.updateKernelDataForLevel(L, 0);
+		// 3. fine substep 1 of 2
 		launchLBMKernelForLevel(L, compute_macro);
 
 	#ifdef HAVE_MPI
@@ -814,13 +828,17 @@ void State_AMR<NSE>::SimUpdate()
 		}
 	#endif
 
-		// 3. BVP: re-fill the fine ghost layer between the substeps (the
+		// 4. toggle the parity for substep 1 BEFORE the BVP re-fill (same
+		// reason as above: the fill must target the df_cur frame the
+		// upcoming substep reads)
+		this->nse.updateKernelDataForLevel(L, 1);
+
+		// 5. BVP: re-fill the fine ghost layer between the substeps (the
 		// first substep's streaming consumed the ghost DFs and streamed
 		// outward into them)
 		launchCoarseToFineTransfers(L);
 
-		// 4. fine substep 2 of 2 (toggle the parity again)
-		this->nse.updateKernelDataForLevel(L, 1);
+		// 6. fine substep 2 of 2
 		launchLBMKernelForLevel(L, compute_macro);
 
 	#ifdef HAVE_MPI
@@ -833,7 +851,7 @@ void State_AMR<NSE>::SimUpdate()
 		}
 	#endif
 
-		// 5. fine-to-coarse: project the (Lagrava-filtered) fine state back
+		// 7. fine-to-coarse: project the (Lagrava-filtered) fine state back
 		// onto the level L-1 interface cells of the coupling patches
 		launchFineToCoarseTransfers(L);
 	}
