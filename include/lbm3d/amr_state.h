@@ -37,7 +37,9 @@ struct AMRConservationStats
  *    (`updateKernelData()` was already called by `execute()` in `core.h` and
  *    set the level-0 even_iter parity / DF rotation from the global
  *    `iterations` counter). Coarse cells tagged `GEO_AMR_INTERFACE` are
- *    skipped inside the kernel via `BC::doCollision == false` (Wave 2).
+ *    collision-active inside the kernel (they stream and collide like fluid);
+ *    the fine-to-coarse transfer additionally overwrites them at the end of
+ *    each coarse step (Wave 2).
  * 2. For each finer level L = 1..max_level:
  *    a. `updateKernelDataForLevel(L, 0)` toggles the fine level's even_iter
  *       parity / DF rotation to substep 0 (MANDATORY before the ghost fill
@@ -222,9 +224,10 @@ private:
  * v1 single-GPU: all blocks are local, so the interior
  * (`SyncDirection::None`) launch configuration is used over the FULL block
  * extent on the null stream (matches the `nproc == 1` path of the base
- * driver). `GEO_AMR_INTERFACE` cells are skipped inside the kernel via
- * `BC::doCollision == false`; fine-level ghost cells are maintained by the
- * coupling kernels, not by MPI overlap synchronization.
+ * driver). `GEO_AMR_INTERFACE` cells are collision-active inside the kernel
+ * (they stream and collide like fluid) and may additionally be overwritten
+ * by the inter-level fine-to-coarse transfer; fine-level ghost cells are
+ * maintained by the coupling kernels, not by MPI overlap synchronization.
  */
 template <typename NSE>
 void State_AMR<NSE>::launchLBMKernelForLevel(int level, bool compute_macro)
@@ -790,8 +793,9 @@ void State_AMR<NSE>::SimUpdate()
 	// ---------- Berger-Colella step 1: one coarse (level 0) LBM step ----------
 	// execute() (core.h) already called updateKernelData(), which set the
 	// level-0 even_iter parity / DF rotation from the global `iterations`.
-	// GEO_AMR_INTERFACE cells are skipped inside the kernel (BC::doCollision
-	// == false); their DFs are maintained by the fine-to-coarse transfer.
+	// GEO_AMR_INTERFACE cells are collision-active inside the kernel
+	// (BC::doCollision == true); the fine-to-coarse transfer also overwrites
+	// them at the end of each coarse step.
 	launchLBMKernelForLevel(0, compute_macro);
 
 	#ifdef HAVE_MPI
