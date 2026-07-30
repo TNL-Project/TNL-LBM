@@ -383,7 +383,7 @@ void launchFineToCoarse(MockBlock& coarse, MockBlock& fine, idx3d begin, idx3d e
 		fine_off,
 		coarse_off,
 		idx3d{fine.size, fine.size, fine.size},
-		fine.ov
+		idx3d{fine.ov, fine.ov, fine.ov}
 	);
 	TNL::Backend::streamSynchronize(0);
 }
