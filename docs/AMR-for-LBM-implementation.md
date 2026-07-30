@@ -169,11 +169,32 @@ Compares every cell of the AMR composite against a bracket formed by independent
 - **sim_AMR Taylor-Green** (64³ coarse + 32³-coarse-footprint fine, Re=100, 10 coarse cycles):
   - between-metric cycle 10: **685,713 violations** (rho 463,276 max 2.66e-4; vx 19,898 max 2.52e-4; vy 19,824 max 2.56e-4; vz 182,715 max 2.74e-4).
   - 0 frozen placeholder cells; mass exactly conserved.
-  - Residual character: smooth bulk drift (~3e-4 rho, ~2.5e-4 velocity) distributed across the domain, concentrated in the fine-boundary band (2–4 fine cells inside the interface); no localized spikes or frozen cells.
+  - Residual character: smooth bulk drift (~3e-4 rho, ~2.5e-4 velocity) distributed across the domain, concentrated in the fine-boundary band (2–4 fine cells inside the interface); no localized spikes or frozen cells. The boundary-band concentration is explained by C2F shadow injection (§9.2.1); the bulk drift and pressure-offset non-decay by the one-way clamp (§9.2).
 
 ### 9.2 Root cause of residual: one-way clamp
 
 The F2C kernel reads fine **ghost** cells, which were C2F-filled from coarse interpolation. The ring values are therefore a `(1/8, 3/4, 1/8)³` binomial smoothing of coarse neighborhood data — no fine-interior information ever reaches the coarse lattice. The fine patch is a one-way clamp on a coarser boundary stencil. Velocity errors diffuse away (momentum has a viscous decay channel); rho offsets do not (pressure offsets have no decay channel in the one-way scheme).
+
+### 9.2.1 Complementary root cause: C2F shadow injection via inside-hidden cells
+
+§9.2 identifies the missing **F2C** feedback (fine → coarse). A second, distinct error source exists in the **C2F** direction (coarse → fine): the inner fine ghost layer's trilinear stencil reads a physically superseded coarse cell — the "inside-hidden" cell under the fine footprint — and injects its diverging shadow state into the fine boundary at 25% weight.
+
+**The hidden-cell problem.** Coarse cells volumetrically inside the fine footprint are never tagged `GEO_AMR_INTERFACE` (`markAMRInterface` skips them, `amr_decomposition.h:396-399`). They keep `GEO_FLUID`, so `doCollision` returns true (`bc.h:478`) and the coarse kernel streams + collides them every step. They are never overwritten by F2C (the map guard at `amr_coupling.h:467` admits only `GEO_AMR_INTERFACE` cells). The fine lattice is the authoritative solution over the footprint, but the hidden cells evolve as an independent coarse LBM solve — a "shadow" — diverging from the physical solution at O(truncation error) per step with no correction mechanism.
+
+**Asymmetric bracket geometry.** The C2F kernel brackets each fine ghost cell between two coarse corners (`amr_coupling.h:175-187`). For the x-normal left face (footprint `[origin, origin+size)`, ring cell `origin-1`), the two ghost layers have qualitatively different brackets along the face normal:
+
+| Ghost layer | Fine global `fg` | `home` (weight 0.75) | 0.25 bracket | Physical validity of 0.25 source |
+|---|---|---|---|---|
+| **Outer** (farther from interior) | `2·origin−2` (even) | ring (`origin−1`) | far-fluid (`origin−2`) | **valid** — coarse is authoritative there |
+| **Inner** (closer to interior) | `2·origin−1` (odd) | ring (`origin−1`) | inside-hidden (`origin`) | **invalid** — superseded shadow solve |
+
+The ring cell (`GEO_AMR_INTERFACE`) is always `home` at 0.75 weight for both layers — it carries delayed fine feedback (F2C overwrote it last cycle, then one coarse collision mixed it with neighbors). The asymmetry is in the 0.25 bracket: the outer ghost reads legitimate far-fluid (the coarse solution is physically correct where no fine patch exists); the inner ghost reads a diverging shadow that does not correspond to the physical solution.
+
+**Error propagation.** The inner ghost's reconstructed DFs are 75% delayed-fine (ring) + 25% invalid shadow. Fine interior boundary cells stream directly from these ghosts, so 25% of the ghost's state — including the shadow contribution — enters the fine interior computation at the boundary. This is consistent with the §9.1 observation that the residual is "concentrated in the fine-boundary band (2–4 fine cells inside the interface)": the inner ghost is the first cell of that band, and its shadow contribution is the leading error source.
+
+**Distinction from §9.2.** §9.2 frames the residual as *missing feedback*: fine-interior data never reaches the coarse lattice via F2C. The C2F shadow injection is the complementary problem: *actively wrong coarse data* (the shadow solve) is injected *into* the fine boundary via C2F. The one-way-clamp framing treats all coarse C2F sources as legitimate interpolation inputs; it does not flag that the inside-hidden cells are physically superseded and therefore invalid sources. Both mechanisms contribute to the residual — §9.2 explains the pressure-offset non-decay, and the shadow injection explains the boundary-band concentration.
+
+**Why the obvious fixes fail.** The falsification matrix (§9.3) tested two attempts to address the under-footprint region. v6 (naive two-way F2C into hidden cells) went unstable; v8 (deeper F2C reach into footprint cells) was +69% worse. Both wrote F2C data into the hidden cells *after* the coarse step, but the coarse collision *during* the step had already used the hidden cells' (wrong) state to compute the ring cell's streaming (the ring streams from its hidden neighbor). Overwriting the hidden cell afterward does not undo that contamination — the ring's post-step state is already corrupted, and the overwritten hidden cell is a Frankenstein state (part coarse-evolved, part fine-overwritten) that destabilizes the next step's collision. A proper fix requires either (a) carving a hole so C2F extrapolates from ring + exterior only, (b) replacing hidden-cell collision with a fine-averaged state *before* the coarse streaming step, or (c) stabilized two-way coupling with relaxation and correct temporal ordering — all future work beyond v1.
 
 ### 9.3 Variant falsification matrix (bit-exact control)
 
@@ -202,7 +223,7 @@ Full out-of-tree builds with the variant applied; same sim_AMR run; same between
 
 ## 10. Known limitations of v1
 
-- **One-way information flow**: no fine-interior data feeds back into the coarse lattice (the residual root cause; see §9.2).
+- **One-way information flow**: no fine-interior data feeds back into the coarse lattice via F2C (see §9.2), and inside-hidden coarse cells are a diverging shadow solve whose state is injected into the fine boundary via C2F (see §9.2.1). Both contribute to the residual.
 - **Static refinement only**: regions fixed at SimInit; no dynamic adaptation.
 - **Single-rank, single-GPU**: fine blocks have no same-level MPI neighbors; coupling kernels are CUDA-only.
 - **Multi-level (level > 1)**: `createAMRBlocks` hard-rejects `level > 1` during validation (throws at `amr_decomposition.h:187-188`); deeper nesting is impossible by construction in v1, not merely untested.
