@@ -1,8 +1,7 @@
 # D3Q27 LATTICE MODEL KNOWLEDGE BASE
 
-**Generated:** 2026-07-07T10:36:19Z  
-**Commit:** 7949240  
-**Branch:** agents
+**Updated:** 2026-07-30
+**Branch:** lbm2d
 
 ## OVERVIEW
 
