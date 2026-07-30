@@ -460,6 +460,94 @@ void test_max_level_zero_fallthrough()
 	}
 }
 
+// Test 4: after one Berger-Colella cycle every coarse cell tagged
+// GEO_AMR_INTERFACE must hold the macroscopic values written by the
+// fine-to-coarse coupling transfer, NOT the (rho = 1, v = 0) placeholder
+// that `preCollision` rewrites for these cells at every coarse step (see
+// D3Q27_BC_All::preCollision in d3q27/bc.h -- streaming and collision are
+// skipped on these cells and the unconditional outputMacro call stores the
+// placeholder, so the coupling kernel HAS to overwrite `dmacro` afterwards).
+//
+// This exercises the production pipeline end to end: the fine block's
+// storage overlap allocation in createAMRBlocks, the coarse-to-fine fill
+// extent, and the fine-to-coarse storability guard. With a 1-cell fine
+// overlap the ring's fine subcells (2 cells deep in the face normal) are
+// not storable, the fine-to-coarse kernel skips EVERY ring cell, and the
+// whole ring keeps the placeholder -- that is the bug this test captures.
+void test_interface_ring_freshness()
+{
+	lat_t lat = makeLattice();
+	const std::string id = fmt::format("test_amr_subcycling_{}_ring", pattern_name);
+	StateLocal_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/1);
+	if (! state.canCompute()) {
+		report(false, "Test 4 setup: state.canCompute()");
+		return;
+	}
+
+	// one centered level-1 region with the coarse footprint [4, 12)^3: the
+	// GEO_AMR_INTERFACE ring is the 10^3 - 8^3 = 488 shell cells around it
+	createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>("1 4 4 4 8 8 8"));
+
+	state.SimInit();
+	if (state.nse.terminate) {
+		report(false, "Test 4 setup: SimInit triggered the terminate flag");
+		return;
+	}
+
+	BLOCK* coarse = state.nse.getBlocksAtLevel(0).front();
+
+	// force macroscopic output inside the kernel so that the
+	// GEO_AMR_INTERFACE overwrite ordering is visible in dmacro on the host:
+	// at every coarse step preCollision stores the (rho=1, v=0) placeholder
+	// for these cells and the fine-to-coarse transfer at the end of the
+	// cycle must overwrite it. (Test 3 uses the same flag to make
+	// single-step kernel effects observable.)
+	state.cnt[OUT3DCUT].period = 1e-30;
+
+	// one coupled Berger-Colella cycle (1 coarse step + 2 fine substeps
+	// with the inter-level transfers in between)
+	state.updateKernelData();
+	state.SimUpdate();
+	if (state.nse.terminate) {
+		report(false, "Test 4: SimUpdate triggered the terminate flag");
+		return;
+	}
+
+	coarse->copyMapToHost();
+	coarse->copyMacroToHost();
+
+	idx ring_cells = 0;
+	idx placeholder_cells = 0;
+	for (idx z = 0; z < coarse->local.z(); z++) {
+		for (idx y = 0; y < coarse->local.y(); y++) {
+			for (idx x = 0; x < coarse->local.x(); x++) {
+				if (coarse->hmap(x, y, z) != NSE_CONFIG::BC::GEO_AMR_INTERFACE)
+					continue;
+				ring_cells++;
+				const auto rho = coarse->hmacro(NSE_CONFIG::MACRO::e_rho, x, y, z);
+				const auto vx = coarse->hmacro(NSE_CONFIG::MACRO::e_vx, x, y, z);
+				const auto vy = coarse->hmacro(NSE_CONFIG::MACRO::e_vy, x, y, z);
+				const auto vz = coarse->hmacro(NSE_CONFIG::MACRO::e_vz, x, y, z);
+				if (rho == static_cast<real>(1) && vx == static_cast<real>(0) && vy == static_cast<real>(0) && vz == static_cast<real>(0)) {
+					if (placeholder_cells < 3)
+						fmt::println("  placeholder at ring cell ({}, {}, {})", x, y, z);
+					placeholder_cells++;
+				}
+			}
+		}
+	}
+
+	// the tag layout is fixed by markAMRInterface: without the 1-cell shell
+	// the freshness check below would be vacuous
+	report(ring_cells == 10 * 10 * 10 - 8 * 8 * 8, fmt::format("Test 4 setup: GEO_AMR_INTERFACE shell has 488 cells around the 8^3 footprint (got {})", ring_cells));
+	// the core assertion: no ring cell may keep the placeholder after a
+	// coupled cycle -- the fine-to-coarse transfer must cover all of them
+	report(
+		placeholder_cells == 0,
+		fmt::format("Test 4 freshness: all {} GEO_AMR_INTERFACE cells hold coupling-produced macros ({} still hold the rho=1, v=0 placeholder)", ring_cells, placeholder_cells)
+	);
+}
+
 int main(int argc, char** argv)
 {
 	TNLMPI_INIT mpi(argc, argv);
@@ -473,6 +561,7 @@ int main(int argc, char** argv)
 
 	test_subcycling_schedule();
 	test_max_level_zero_fallthrough();
+	test_interface_ring_freshness();
 
 	if (g_failures == 0) {
 		fmt::println("RESULT: all AMR subcycling tests passed");
