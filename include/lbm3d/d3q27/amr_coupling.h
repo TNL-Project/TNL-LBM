@@ -264,16 +264,18 @@ __global__ void cudaAMR_CoarseToFine(
  * begin/end range handling as `cudaAMR_CoarseToFine`).
  *
  * Storability guard (per cell): all 8 fine subcells of a processed coarse
- * cell must be valid fine STORAGE indices, i.e. within the overlap-extended
- * range `[-ov, fine_local + ov)` (`ov = LBM_BLOCK::overlap_width`); cells
- * failing the test are skipped individually. This per-cell guard replaces
- * the former launch-extent clip, which evaluated the storability condition
- * in the wrong (origin-aligned) frame and silently dropped the max-side
- * faces and half of the patch extents of nested geometries. Note the fine
- * overlap storage must actually cover the subcells: with
- * `overlap_width == 1` the coarse interface cells whose subcells include
- * the outer fine ghost ring (2 cells deep) are NOT storable and the
- * transfer skips them (they keep their pre-tag values).
+ * cell must be valid fine STORAGE indices, i.e. within the per-axis
+ * overlap-extended range `[-ov_i, fine_local_i + ov_i)`, where `ov` is the
+ * overlap depth the caller allocated on the fine block's indexer (2 on
+ * refinement-level blocks, see `LBM_BLOCK::storage_overlap`); cells failing
+ * the test are skipped individually. This per-cell guard replaces the
+ * former launch-extent clip, which evaluated the storability condition in
+ * the wrong (origin-aligned) frame and silently dropped the max-side faces
+ * and half of the patch extents of nested geometries. Note the fine overlap
+ * storage must actually cover the 2-cell-deep ghost ring of the block's
+ * footprint, otherwise every interface cell is skipped and keeps the
+ * `preCollision` placeholder (`LBM_BLOCK` allocates it; the mock tests
+ * allocate `ov` explicitly).
  *
  * Algorithm per coarse cell:
  * 1. Read the post-kernel fine DFs of all 8 subcells (orientation below).
@@ -344,7 +346,7 @@ __global__ void cudaAMR_FineToCoarse(
 	typename CONFIG::TRAITS::idx3d fine_off,
 	typename CONFIG::TRAITS::idx3d coarse_off,
 	typename CONFIG::TRAITS::idx3d fine_local,
-	typename CONFIG::TRAITS::idx ov
+	typename CONFIG::TRAITS::idx3d ov
 )
 {
 	using TRAITS = typename CONFIG::TRAITS;
@@ -372,11 +374,11 @@ __global__ void cudaAMR_FineToCoarse(
 	// per-cell storability guard: all 8 subcells must be valid fine storage
 	// indices (see the file docstring)
 	for (int b = 0; b < 2; b++) {
-		if (fx0 + b < -ov || fx0 + b >= fine_local.x() + ov)
+		if (fx0 + b < -ov.x() || fx0 + b >= fine_local.x() + ov.x())
 			return;
-		if (fy0 + b < -ov || fy0 + b >= fine_local.y() + ov)
+		if (fy0 + b < -ov.y() || fy0 + b >= fine_local.y() + ov.y())
 			return;
-		if (fz0 + b < -ov || fz0 + b >= fine_local.z() + ov)
+		if (fz0 + b < -ov.z() || fz0 + b >= fine_local.z() + ov.z())
 			return;
 	}
 
