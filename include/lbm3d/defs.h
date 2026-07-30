@@ -239,13 +239,26 @@ auto getMacroView(const Array& array, std::uint8_t id)
 #endif
 }
 
+// KernelStruct - D2Q9
+template <typename REAL>
+struct D2Q9_KernelStruct
+{
+	static constexpr int D = 2;
+	static constexpr int Q = 9;
+	REAL f[Q];
+	REAL fx = 0, fy = 0;
+	REAL vx = 0, vy = 0;
+	REAL rho = 1.0, lbmViscosity = 1.0;
+};
+
 // KernelStruct - D3Q7
 template <typename REAL>
 struct D3Q7_KernelStruct
 {
+	static constexpr int D = 3;
 	static constexpr int Q = 7;
 	REAL f[Q];
-	REAL vz = 0, vx = 0, vy = 0;
+	REAL vx = 0, vy = 0, vz = 0;
 	REAL phi = 1.0, lbmViscosity = 1.0;
 	// FIXME
 	//REAL qcrit=0, phigradmag2=0;
@@ -255,10 +268,11 @@ struct D3Q7_KernelStruct
 template <typename REAL>
 struct D3Q27_KernelStruct
 {
+	static constexpr int D = 3;
 	static constexpr int Q = 27;
 	REAL f[Q];
-	REAL fz = 0, fx = 0, fy = 0;
-	REAL vz = 0, vx = 0, vy = 0;
+	REAL fx = 0, fy = 0, fz = 0;
+	REAL vx = 0, vy = 0, vz = 0;
 	REAL rho = 1.0, lbmViscosity = 1.0;
 
 #if defined(USE_CYMODEL) || defined(USE_CASSON)
@@ -306,6 +320,7 @@ struct LBM_CONFIG
 	using BC = _BC<LBM_CONFIG>;
 	using MACRO = _MACRO;
 
+	static constexpr int D = KernelStruct<typename TRAITS::dreal>::D;
 	static constexpr int Q = KernelStruct<typename TRAITS::dreal>::Q;
 };
 
@@ -313,6 +328,28 @@ struct LBM_CONFIG
 //#define USE_GALILEAN_CORRECTION // Geier 2015: use Gal correction in BKG and CUM?
 //#define USE_GEIER_CUM_2017 // use Geier 2017 Cummulant improvement A,B terms
 //#define USE_GEIER_CUM_ANTIALIAS // use antialiasing Dxu, Dyv, Dzw from Geier 2015/2017
+
+// D2Q9 direction enum — scoped via struct to avoid namespace pollution,
+// but values are plain integers (implicitly std::uint8_t) so they can be
+// used directly as array indices without an idx() wrapper.
+struct dir9
+{
+	// NOTE: df_sync_directions_d2q9 must be kept consistent with this enum!
+	enum : std::uint8_t
+	{
+		// Q5
+		zz = 0,
+		pz = 1,
+		mz = 2,
+		zp = 3,
+		zm = 4,
+		// +Q9
+		pp = 5,
+		mm = 6,
+		pm = 7,
+		mp = 8,
+	};
+};
 
 // NOTE: df_sync_directions must be kept consistent with this enum!
 enum : std::uint8_t
@@ -382,4 +419,18 @@ inline constexpr TNL::Containers::SyncDirection df_sync_directions[27] = {
 	TNL::Containers::SyncDirection::BackTopLeft,
 	TNL::Containers::SyncDirection::BackBottomRight,
 	TNL::Containers::SyncDirection::FrontTopLeft,
+};
+
+// D2Q9-specific sync directions for MPI synchronizer
+// (indexing must correspond to the dir9 enum above)
+inline constexpr TNL::Containers::SyncDirection df_sync_directions_d2q9[9] = {
+	TNL::Containers::SyncDirection::None,		  // zz (0)
+	TNL::Containers::SyncDirection::Right,		  // pz (1)
+	TNL::Containers::SyncDirection::Left,		  // mz (2)
+	TNL::Containers::SyncDirection::Top,		  // zp (3)
+	TNL::Containers::SyncDirection::Bottom,		  // zm (4)
+	TNL::Containers::SyncDirection::TopRight,	  // pp (5)
+	TNL::Containers::SyncDirection::BottomLeft,	  // mm (6)
+	TNL::Containers::SyncDirection::BottomRight,  // pm (7)
+	TNL::Containers::SyncDirection::TopLeft,	  // mp (8)
 };

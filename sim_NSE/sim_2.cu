@@ -79,7 +79,7 @@ struct StateLocal : State<NSE>
 		delete[] l1errors;
 	}
 
-	real raw_analytical_ux(int n, idx lbm_y, idx lbm_z)
+	real raw_analytical_vx(int n, idx lbm_y, idx lbm_z)
 	{
 		if (lbm_y == 0 || lbm_y == nse.lat.global.y() - 1 || lbm_z == 0 || lbm_z == nse.lat.global.z() - 1)
 			return 0;
@@ -106,7 +106,7 @@ struct StateLocal : State<NSE>
 		return coef * 16.0 * a * a / PI / PI / PI * sum / nse.lat.lbmViscosity();
 	}
 
-	real analytical_ux(idx lbm_y, idx lbm_z)
+	real analytical_vx(idx lbm_y, idx lbm_z)
 	{
 		if (an_cache.getData() == nullptr) {
 			cache_analytical();
@@ -128,7 +128,7 @@ struct StateLocal : State<NSE>
 #pragma omp parallel for schedule(static) collapse(2) default(none) shared(block)
 		for (idx z = block.offset.z(); z < block.offset.z() + block.local.z(); z++)
 			for (idx y = block.offset.y(); y < block.offset.y() + block.local.y(); y++)
-				an_cache(0, y, z) = raw_analytical_ux(an_n, y, z);
+				an_cache(0, y, z) = raw_analytical_vx(an_n, y, z);
 	}
 
 	void setupBoundaries() override
@@ -169,10 +169,10 @@ struct StateLocal : State<NSE>
 			"velocity_x",
 			"velocity_y",
 			"velocity_z",
-			"lbm_analytical_ux",
-			"lbm_error_ux",
-			"analytical_ux",
-			"error_ux"
+			"lbm_analytical_vx",
+			"lbm_error_vx",
+			"analytical_vx",
+			"error_vx"
 		};
 	}
 
@@ -219,37 +219,37 @@ struct StateLocal : State<NSE>
 			end
 		);
 		writer.write(
-			"lbm_analytical_ux",
+			"lbm_analytical_vx",
 			[&](idx x, idx y, idx z) -> dreal
 			{
-				return analytical_ux(y, z);
+				return analytical_vx(y, z);
 			},
 			begin,
 			end
 		);
 		writer.write(
-			"lbm_error_ux",
+			"lbm_error_vx",
 			[&](idx x, idx y, idx z) -> dreal
 			{
-				return TNL::abs(block.hmacro(MACRO::e_vx, x, y, z) - analytical_ux(y, z));
+				return TNL::abs(block.hmacro(MACRO::e_vx, x, y, z) - analytical_vx(y, z));
 			},
 			begin,
 			end
 		);
 		writer.write(
-			"analytical_ux",
+			"analytical_vx",
 			[&](idx x, idx y, idx z) -> dreal
 			{
-				return nse.lat.lbm2physVelocity(analytical_ux(y, z));
+				return nse.lat.lbm2physVelocity(analytical_vx(y, z));
 			},
 			begin,
 			end
 		);
 		writer.write(
-			"error_ux",
+			"error_vx",
 			[&](idx x, idx y, idx z) -> dreal
 			{
-				return nse.lat.lbm2physVelocity(TNL::abs(block.hmacro(MACRO::e_vx, x, y, z) - analytical_ux(y, z)));
+				return nse.lat.lbm2physVelocity(TNL::abs(block.hmacro(MACRO::e_vx, x, y, z) - analytical_vx(y, z)));
 			},
 			begin,
 			end
@@ -258,41 +258,55 @@ struct StateLocal : State<NSE>
 
 	void probe1() override
 	{
-		// compute exact error
-		// uy,uz should be zero
-		// use openmp
-		// warning: ux,uy,uz are in LBM units ... measure that in phys units
-		// analytical ux has no dpdx --- add
-		// compute error
-		real local_l1sum = 0;
-		real local_l2sum = 0;
-		//real local_la1sum=0;
-		//real local_la2sum=0;
-		for (int i = nse.blocks.front().offset.x() + 1; i < nse.blocks.front().offset.x() + nse.blocks.front().local.x() - 1; i++)
-			for (int j = nse.blocks.front().offset.y() + 1; j < nse.blocks.front().offset.y() + nse.blocks.front().local.y() - 1; j++)
-				for (int k = nse.blocks.front().offset.z() + 1; k < nse.blocks.front().offset.z() + nse.blocks.front().local.z() - 1; k++) {
-					real an = analytical_ux(j, k);
-					real diff = fabs(nse.blocks.front().hmacro(MACRO::e_vx, i, j, k) - an);
-					//local_la1sum += an;
-					//local_la2sum += TNL::sqr(an);
-					local_l1sum += diff;
-					local_l2sum += TNL::sqr(diff);
+		// compute L1 and L2 errors against the analytical solution
+		// (skip non-fluid and non-periodic sites — only count interior fluid cells)
+		auto& block = nse.blocks.front();
+		real local_l1sum_vx = 0;
+		real local_l1sum_vy = 0;
+		real local_l1sum_vz = 0;
+		real local_l2sum_vx = 0;
+		real local_l2sum_vy = 0;
+		real local_l2sum_vz = 0;
+		for (int i = block.offset.x() + 1; i < block.offset.x() + block.local.x() - 1; i++)
+			for (int j = block.offset.y() + 1; j < block.offset.y() + block.local.y() - 1; j++)
+				for (int k = block.offset.z() + 1; k < block.offset.z() + block.local.z() - 1; k++) {
+					auto gi = block.hmap(i, j, k);
+					if (! (NSE::BC::isFluid(gi) || NSE::BC::isPeriodic(gi)))
+						continue;
+					real an_vx = analytical_vx(j, k);
+					real diff_vx = fabs(block.hmacro(MACRO::e_vx, i, j, k) - an_vx);
+					real diff_vy = fabs(block.hmacro(MACRO::e_vy, i, j, k));
+					real diff_vz = fabs(block.hmacro(MACRO::e_vz, i, j, k));
+					local_l1sum_vx += diff_vx;
+					local_l1sum_vy += diff_vy;
+					local_l1sum_vz += diff_vz;
+					local_l2sum_vx += TNL::sqr(diff_vx);
+					local_l2sum_vy += TNL::sqr(diff_vy);
+					local_l2sum_vz += TNL::sqr(diff_vz);
 				}
 
 		// MPI reduction of the local results
-		real l1sum = TNL::MPI::reduce(local_l1sum, MPI_SUM, MPI_COMM_WORLD);
-		real l2sum = TNL::MPI::reduce(local_l2sum, MPI_SUM, MPI_COMM_WORLD);
-		//real la1sum=TNL::MPI::reduce(local_la1sum, MPI_SUM, MPI_COMM_WORLD);
-		//real la2sum=TNL::MPI::reduce(local_la2sum, MPI_SUM, MPI_COMM_WORLD);
+		real l1sum_vx = TNL::MPI::reduce(local_l1sum_vx, MPI_SUM, MPI_COMM_WORLD);
+		real l1sum_vy = TNL::MPI::reduce(local_l1sum_vy, MPI_SUM, MPI_COMM_WORLD);
+		real l1sum_vz = TNL::MPI::reduce(local_l1sum_vz, MPI_SUM, MPI_COMM_WORLD);
+		real l2sum_vx = TNL::MPI::reduce(local_l2sum_vx, MPI_SUM, MPI_COMM_WORLD);
+		real l2sum_vy = TNL::MPI::reduce(local_l2sum_vy, MPI_SUM, MPI_COMM_WORLD);
+		real l2sum_vz = TNL::MPI::reduce(local_l2sum_vz, MPI_SUM, MPI_COMM_WORLD);
 
-		// considering PHYS_DL, converting to physical units
-		real l1error_phys = l1sum * nse.lat.physDl * nse.lat.physDl * nse.lat.physDl;
-		real l2error_phys = l2sum * nse.lat.physDl * nse.lat.physDl * nse.lat.physDl;
-		l2error_phys = sqrt(l2error_phys);
-		l1error_phys = nse.lat.lbm2physVelocity(l1error_phys);
-		l2error_phys = nse.lat.lbm2physVelocity(l2error_phys);
+		// convert to physical units
+		real vol = nse.lat.physDl * nse.lat.physDl * nse.lat.physDl;
+		auto to_phys = [&](real l1, real l2) -> std::pair<real, real>
+		{
+			real l1p = nse.lat.lbm2physVelocity(l1 * vol);
+			real l2p = nse.lat.lbm2physVelocity(sqrt(l2 * vol));
+			return {l1p, l2p};
+		};
+		auto [l1error_phys_vx, l2error_phys_vx] = to_phys(l1sum_vx, l2sum_vx);
+		auto [l1error_phys_vy, l2error_phys_vy] = to_phys(l1sum_vy, l2sum_vy);
+		auto [l1error_phys_vz, l2error_phys_vz] = to_phys(l1sum_vz, l2sum_vz);
 
-		// dynamic stopping criterion
+		// dynamic stopping criterion (based on vx error, the primary component)
+		real l1error_phys = l1error_phys_vx;
 		real threshold = 1e-4;
 		real threshold_stddev = 1e-3;
 		real l1prev = 0.0;
@@ -304,8 +318,9 @@ struct StateLocal : State<NSE>
 			stddev += TNL::sqr(l1errors[i] - l1prev);
 		stddev /= (errors_count - 1);
 		stddev = sqrt(stddev);
-		real stopping = abs(l1prev - l1error_phys) / l1error_phys;
-		if (stopping < threshold && stddev < threshold_stddev)
+		real stopping = l1error_phys > 0 ? abs(l1prev - l1error_phys) / l1error_phys : 0;
+		real stopping_stddev = l1prev > 0 ? stddev / l1prev : 0;
+		if (stopping < threshold && stopping_stddev < threshold_stddev)
 			nse.terminate = true;
 
 		error_idx = (error_idx + 1) % errors_count;
@@ -313,11 +328,15 @@ struct StateLocal : State<NSE>
 
 		if (nse.rank == 0)
 			spdlog::info(
-				"at t={:1.2f}s, iterations={:d} l1error_phys={:e} l2error_phys={:e} stopping={:e}",
+				"at t={:1.2f}s, iterations={:d} l1error_phys_v=[{:e},{:e},{:e}] l2error_phys_v=[{:e},{:e},{:e}] stopping={:e}",
 				nse.physTime(),
 				nse.iterations,
-				l1error_phys,
-				l2error_phys,
+				l1error_phys_vx,
+				l1error_phys_vy,
+				l1error_phys_vz,
+				l2error_phys_vx,
+				l2error_phys_vy,
+				l2error_phys_vz,
 				stopping
 			);
 	}
@@ -425,7 +444,7 @@ void sim(const std::string& adios_config, int RES, bool use_forcing, Scaling sca
 		for (int j = 0; j < state.nse.blocks.front().local.y(); j++)
 			for (int k = 0; k < state.nse.blocks.front().local.z(); k++)
 				analytical[k * state.nse.blocks.front().local.y() + j] =
-					state.analytical_ux(state.nse.blocks.front().offset.y() + j, state.nse.blocks.front().offset.z() + k);
+					state.analytical_vx(state.nse.blocks.front().offset.y() + j, state.nse.blocks.front().offset.z() + k);
 		// copy the analytical profile to the GPU
 		TNL::Backend::memcpy(
 			state.nse.blocks.front().data.vx_profile,
@@ -437,7 +456,7 @@ void sim(const std::string& adios_config, int RES, bool use_forcing, Scaling sca
 		for (int j = 0; j < state.nse.blocks.front().local.y(); j++)
 			for (int k = 0; k < state.nse.blocks.front().local.z(); k++)
 				state.nse.blocks.front().data.vx_profile[k * state.nse.blocks.front().local.y() + j] =
-					state.analytical_ux(state.nse.blocks.front().offset.y() + j, state.nse.blocks.front().offset.z() + k);
+					state.analytical_vx(state.nse.blocks.front().offset.y() + j, state.nse.blocks.front().offset.z() + k);
 #endif
 	}
 
