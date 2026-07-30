@@ -40,9 +40,10 @@ struct D3Q27_BC_All
 		GEO_ADJOINT_INFLOW_BB_LEFT,
 		GEO_ADJOINT_OUTFLOW_RIGHT,
 
-		// coarse cells adjacent to fine blocks - skipped by the collide-stream
-		// kernel, their DFs are overwritten by the inter-level coupling kernel;
-		// appended last to keep the numeric values of existing tags stable
+		// coarse cells adjacent to fine blocks - collision-active (streamed
+		// and collided like fluid); the inter-level fine-to-coarse coupling
+		// kernel additionally overwrites their DFs at the end of each coarse
+		// step; appended last to keep the numeric values of existing tags stable
 		GEO_AMR_INTERFACE
 	};
 
@@ -107,17 +108,9 @@ struct D3Q27_BC_All
 			return;
 		}
 
-		if (mapgi == GEO_AMR_INTERFACE) {
-			// streaming is skipped: the DFs are owned by the inter-level
-			// coupling kernel; setting rho/v keeps the unconditional
-			// outputMacro call defined (the coupling kernel overwrites dmacro
-			// with the real values for these cells)
-			KS.rho = 1;
-			KS.vx = 0;
-			KS.vy = 0;
-			KS.vz = 0;
-			return;
-		}
+		// GEO_AMR_INTERFACE cells proceed through the normal streaming path:
+		// the inter-level fine-to-coarse transfer still overwrites their DF
+		// state at the end of each coarse step (collision-active interface)
 
 		// modify pull location for streaming
 		if (mapgi == GEO_ADJOINT_OUTFLOW_RIGHT)
@@ -477,9 +470,10 @@ struct D3Q27_BC_All
 
 	__cuda_callable__ static bool doCollision(map_t mapgi)
 	{
-		// interface cells are overwritten by the inter-level coupling kernel
+		// interface cells collide like fluid; the inter-level coupling
+		// kernel may still overwrite them at the end of each coarse step
 		if (mapgi == GEO_AMR_INTERFACE)
-			return false;
+			return true;
 		// by default, collision is done on non-BC sites only
 		// additionally, BCs which include the collision step should be specified here
 		return isFluid(mapgi) || isSymmetric(mapgi) || mapgi == GEO_INFLOW_LEFT;
@@ -492,10 +486,9 @@ struct D3Q27_BC_All
 		if (mapgi == GEO_NOTHING || isOutflowPassBC(mapgi))
 			return;
 
-		// KS.f is uninitialized (preCollision skips streaming), so the
-		// write-back would clobber the coupling-supplied DFs with garbage
-		if (mapgi == GEO_AMR_INTERFACE)
-			return;
+		// GEO_AMR_INTERFACE cells are written back like fluid; the
+		// inter-level fine-to-coarse transfer may overwrite their DF state
+		// afterwards (collision-active interface)
 
 		STREAMING::postCollisionStreaming(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 	}
