@@ -81,9 +81,12 @@
  * `opposite_direction(q)`.
  *
  * Macroscopic output: for cells tagged `GEO_AMR_INTERFACE` the interpolated
- * macros are written to `dmacro` (the main kernel's `outputMacro` would
- * otherwise read garbage KS there). In v1 fine ghosts are never
- * GEO_AMR_INTERFACE, so the guard is a no-op kept for safety.
+ * macros are written to `dmacro` so visualization shows coupling-produced
+ * values (the main kernel also recomputes macros for these
+ * collision-active cells every step; this write would be the
+ * output-relevant one for any fine cell carrying the tag). In v1 fine
+ * ghosts are never GEO_AMR_INTERFACE, so the guard is a no-op kept for
+ * safety.
  */
 
 /**
@@ -330,8 +333,10 @@ __global__ void cudaAMR_CoarseToFine(
  *   substep.
  *
  * Macros: for cells tagged `GEO_AMR_INTERFACE` the filtered macros are
- * written to `dmacro` -- the main coarse kernel skips collision on these
- * cells, so its `outputMacro` would otherwise write garbage KS there.
+ * written to `dmacro` at the end of each coarse step; the main coarse
+ * kernel also recomputes macros for these collision-active cells every
+ * step, so both writers produce real values -- the transfer's write is the
+ * output-relevant one until the next coarse step recomputes it.
  */
 template <typename CONFIG>
 __global__ void cudaAMR_FineToCoarse(
@@ -457,8 +462,8 @@ __global__ void cudaAMR_FineToCoarse(
 #endif
 	}
 
-	// macros for GEO_AMR_INTERFACE cells (the main kernel's outputMacro must
-	// not read garbage KS there)
+	// macros for GEO_AMR_INTERFACE cells (authoritative coupling value for
+	// output; the main kernel recomputes its own at the next step)
 	if (coarse_SD.map(x, y, z) == BC::GEO_AMR_INTERFACE) {
 		coarse_SD.macro(MACRO::e_rho, x, y, z) = KS.rho;
 		coarse_SD.macro(MACRO::e_vx, x, y, z) = KS.vx;
