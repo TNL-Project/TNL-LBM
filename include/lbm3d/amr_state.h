@@ -553,13 +553,15 @@ typename State_AMR<NSE>::BLOCK_NSE* State_AMR<NSE>::findBlockById(int level, int
  * `begin = fine_origin, end = fine_origin + fine_size` (fine indexer
  * coordinates).
  *
- * Storability guard: the patch's fine rectangle is clipped to the fine
- * block's ghost STORAGE, which is only `overlap_width` cells deep around
- * `[0, fine.local)`; with `overlap_width == 1` the outer cell layer of the
- * 2-cell-deep rectangle is skipped (the kernels read only the 1-cell-deep
- * ghost layer during streaming, so no consumed data is lost). When
- * \ref couplings is empty (no marked interface cells), this is a silent
- * no-op (SimInit logged a warning).
+ * Storability guard: the patch's fine rectangle is clipped per axis to the
+ * fine block's ALLOCATED ghost STORAGE (the overlap depth of the block's
+ * indexer, 2 cells deep on refinement-level blocks -- see
+ * `LBM_BLOCK::storage_overlap` -- so the full 2-cell-deep ring is filled:
+ * the outer layer feeds the fine-to-coarse filter, the inner layer the
+ * fine-level streaming). Axes where the block spans its global extent have
+ * no overlap allocated there and get no fill (streaming then consumes
+ * exterior-boundary data instead). When \ref couplings is empty (no marked
+ * interface cells), this is a silent no-op (SimInit logged a warning).
  */
 template <typename NSE>
 void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level)
@@ -584,12 +586,14 @@ void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level)
 
 			// launch extent in the fine block's indexer coordinates, clipped
 			// to the fine block's overlap storage (see the docstring)
-			const idx ov = BLOCK_NSE::overlap_width;
-			const idx3d begin{std::max(patch.fine_origin.x(), -ov), std::max(patch.fine_origin.y(), -ov), std::max(patch.fine_origin.z(), -ov)};
+			const idx3d ov{fine->df_overlap_X(), fine->df_overlap_Y(), fine->df_overlap_Z()};
+			const idx3d begin{
+				std::max(patch.fine_origin.x(), -ov.x()), std::max(patch.fine_origin.y(), -ov.y()), std::max(patch.fine_origin.z(), -ov.z())
+			};
 			const idx3d end{
-				std::min(patch.fine_origin.x() + patch.fine_size.x(), fine->local.x() + ov),
-				std::min(patch.fine_origin.y() + patch.fine_size.y(), fine->local.y() + ov),
-				std::min(patch.fine_origin.z() + patch.fine_size.z(), fine->local.z() + ov)
+				std::min(patch.fine_origin.x() + patch.fine_size.x(), fine->local.x() + ov.x()),
+				std::min(patch.fine_origin.y() + patch.fine_size.y(), fine->local.y() + ov.y()),
+				std::min(patch.fine_origin.z() + patch.fine_size.z(), fine->local.z() + ov.z())
 			};
 			if (begin.x() >= end.x() || begin.y() >= end.y() || begin.z() >= end.z())
 				continue;
@@ -632,13 +636,14 @@ void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level)
  *
  * Storability guard: the kernel clips itself per coarse cell - coarse cells
  * whose 2x2x2 fine subcell block is not fully storable in the fine block's
- * overlap-extended storage `[-overlap_width, fine.local + overlap_width)`
- * are skipped inside the kernel (the fine overlap storage with
- * `overlap_width == 1` cannot hold the 2-cell-deep ghost ring at the
- * footprint faces, so the outer ring of interface cells is skipped there
- * and keeps its pre-tag values). The launch therefore covers the FULL
- * patch extents; when \ref couplings is empty (no marked interface cells),
- * this is a silent no-op (SimInit logged a warning).
+ * overlap-extended storage are skipped inside the kernel (the fine overlap
+ * must be at least 2 cells deep to cover the ghost ring of the footprint,
+ * which `LBM_BLOCK::storage_overlap` arranges for refinement-level blocks;
+ * cells on axes where the block spans its global extent remain skipped -
+ * they are exterior-boundary cells owned by another boundary condition).
+ * The launch therefore covers the FULL patch extents; when \ref couplings
+ * is empty (no marked interface cells), this is a silent no-op (SimInit
+ * logged a warning).
  */
 template <typename NSE>
 void State_AMR<NSE>::launchFineToCoarseTransfers(int fine_level)
@@ -671,7 +676,7 @@ void State_AMR<NSE>::launchFineToCoarseTransfers(int fine_level)
 			// launch extent in the coarse block's indexer coordinates: the
 			// FULL patch rectangle -- non-storable cells are skipped per
 			// cell inside the kernel (see the docstring)
-			const idx ov = BLOCK_NSE::overlap_width;
+			const idx3d ov{fine->df_overlap_X(), fine->df_overlap_Y(), fine->df_overlap_Z()};
 			const idx3d begin = patch.coarse_origin;
 			const idx3d end{
 				patch.coarse_origin.x() + patch.coarse_size.x(),

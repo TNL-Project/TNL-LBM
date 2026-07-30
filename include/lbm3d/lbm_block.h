@@ -161,6 +161,17 @@ struct LBM_BLOCK
 	// maximum width of overlaps for the macro arrays
 	static constexpr int macro_overlap_width = CONFIG::MACRO::overlap_width;
 
+	// Actual width of overlaps allocated for this block's arrays (map, DF and
+	// macro storages all share one indexer, so they must all use this width).
+	// Defaults to `overlap_width`; blocks at refinement level > 0 use 2 so
+	// that the inter-level coupling kernels can fill (coarse-to-fine) and read
+	// (fine-to-coarse) a 2-cell-deep ghost ring around the block's footprint
+	// -- see initLevelLattice and the kernels in d3q27/amr_coupling.h. The
+	// allocation only materializes the overlap on axes where the block is a
+	// proper subdomain (`local != global`), so always query the allocated
+	// indexer (`df_overlap_X/Y/Z`) instead of assuming this value everywhere.
+	int storage_overlap = overlap_width;
+
 	int df_overlap_X()
 	{
 		return data.indexer.template getOverlap<0>();
