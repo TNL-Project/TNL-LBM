@@ -461,19 +461,21 @@ void test_max_level_zero_fallthrough()
 }
 
 // Test 4: after one Berger-Colella cycle every coarse cell tagged
-// GEO_AMR_INTERFACE must hold the macroscopic values written by the
-// fine-to-coarse coupling transfer, NOT the (rho = 1, v = 0) placeholder
-// that `preCollision` rewrites for these cells at every coarse step (see
-// D3Q27_BC_All::preCollision in d3q27/bc.h -- streaming and collision are
-// skipped on these cells and the unconditional outputMacro call stores the
-// placeholder, so the coupling kernel HAS to overwrite `dmacro` afterwards).
+// GEO_AMR_INTERFACE must hold real macroscopic values, not the
+// (rho = 1, v = 0) initialization state. The interface ring is
+// collision-active (D3Q27_BC_All::doCollision returns true since
+// commit 5237b2f), so the kernel streams and collides these cells;
+// the fine-to-coarse transfer additionally overwrites their DFs
+// and macros at the end of each coarse step.
 //
 // This exercises the production pipeline end to end: the fine block's
-// storage overlap allocation in createAMRBlocks, the coarse-to-fine fill
-// extent, and the fine-to-coarse storability guard. With a 1-cell fine
-// overlap the ring's fine subcells (2 cells deep in the face normal) are
-// not storable, the fine-to-coarse kernel skips EVERY ring cell, and the
-// whole ring keeps the placeholder -- that is the bug this test captures.
+// storage overlap allocation in createAMRBlocks (commit 089e47a raised
+// it to 2 for level > 0), the coarse-to-fine fill extent, and the
+// fine-to-coarse storability guard. Regression guard: with a 1-cell
+// fine overlap the F2C kernel skips every ring cell (subcells 2 cells
+// deep are not storable) and the ring keeps stale init values; with
+// collision-inactive bc.h the kernel writes a (rho=1, v=0) placeholder
+// that F2C was supposed to overwrite but couldn't reach.
 void test_interface_ring_freshness()
 {
 	lat_t lat = makeLattice();
@@ -497,11 +499,11 @@ void test_interface_ring_freshness()
 	BLOCK* coarse = state.nse.getBlocksAtLevel(0).front();
 
 	// force macroscopic output inside the kernel so that the
-	// GEO_AMR_INTERFACE overwrite ordering is visible in dmacro on the host:
-	// at every coarse step preCollision stores the (rho=1, v=0) placeholder
-	// for these cells and the fine-to-coarse transfer at the end of the
-	// cycle must overwrite it. (Test 3 uses the same flag to make
-	// single-step kernel effects observable.)
+	// GEO_AMR_INTERFACE cells' macro state is visible in dmacro on
+	// the host after one cycle: the kernel computes real macros for
+	// these collision-active cells, and the fine-to-coarse transfer
+	// overwrites them at the end of the cycle. (Test 3 uses the same
+	// flag to make single-step kernel effects observable.)
 	state.cnt[OUT3DCUT].period = 1e-30;
 
 	// one coupled Berger-Colella cycle (1 coarse step + 2 fine substeps
