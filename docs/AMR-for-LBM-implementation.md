@@ -33,7 +33,7 @@ Physical scaling is convective (dt ∝ dx): lattice velocity u_lb is identical o
 
 `createAMRBlocks(lbm, regions)` takes a pre-parsed `std::vector<AMR_Region<CONFIG>>` (parsing is done by `parseAMRConfig` separately), validates each region, constructs fine `LBM_BLOCK` instances with the level-aware constructor, sets `global_offset` in parent-level coordinates, allocates host/device data, resets map to `GEO_FLUID`, and initializes DFs to equilibrium.
 
-`markAMRInterface(lbm)` tags coarse cells adjacent to each fine footprint (the 1-cell halo ring, 34³−32³ cells for a 32³ footprint) as `GEO_AMR_INTERFACE`. Also allocates `dinterface_dir` bitmask storage for blocks owning interface cells (vestigial in v1 — `getInterfaceDir` has no callers; reserved for future directional coupling).
+`markAMRInterface(lbm)` tags two coarse-cell populations: (1) the 1-cell halo ring around each fine footprint (34³−32³ cells for a 32³ footprint) as `GEO_AMR_INTERFACE`, and (2) the coarse cells inside each footprint (32³ = 32768 cells) as `GEO_NOTHING` — frozen cells that do not stream or collide. The frozen cells prevent the diverging "shadow solve" (a coarse LBM evolution under the footprint where the fine lattice is authoritative — see §9.2.1). Their DFs are set exclusively by the interior F2C transfer (§4.2). Also allocates `dinterface_dir` bitmask storage for blocks owning interface cells (vestigial in v1 — `getInterfaceDir` has no callers; reserved for future directional coupling).
 
 ---
 
@@ -41,18 +41,22 @@ Physical scaling is convective (dt ∝ dx): lattice velocity u_lb is identical o
 
 ### 3.1 Patch construction (`State_AMR::buildCouplings`, `amr_state.h`)
 
-For each fine block at level L and each of the six faces of its footprint's 1-cell halo box (disjoint partition: x-faces span full y/z halo, y-faces interior x-range, z-faces interior x/y range), `buildCouplings` clips the face rectangle against every level-(L−1) block's range. A patch is appended iff it contains at least one `GEO_AMR_INTERFACE` cell not shadowed by another same-level block.
+**Ring patches** (one per face): for each fine block at level L and each of the six faces of its footprint's 1-cell halo box (disjoint partition: x-faces span full y/z halo, y-faces interior x-range, z-faces interior x/y range), `buildCouplings` clips the face rectangle against every level-(L−1) block's range. A patch is appended iff it contains at least one `GEO_AMR_INTERFACE` cell not shadowed by another same-level block.
 
-Each `AMR_InterfacePatch` stores:
+Each ring `AMR_InterfacePatch` stores:
 - `coarse_origin` / `coarse_size` — the parent-level halo rectangle (1 cell thick in face normal).
 - `fine_origin` / `fine_size` — the matching fine-level ghost rectangle (2 fine cells per coarse cell, 2 cells thick: outer layer feeds the F2C filter, inner layer is the ghost layer read by fine-level streaming).
 - `face` — the interface normal direction.
 
+**Interior patches** (one per fine-block × coarse-block overlap): cover the full footprint `[global_offset, global_offset + local/2)` in parent-level coordinates. These target the frozen `GEO_NOTHING` cells under the footprint. `face` is set to `SyncDirection::None` (not a face). The interior F2C transfer injects fine-averaged DFs into these cells each cycle (§4.2), providing the two-way feedback channel.
+
 ### 3.2 Launch helpers (`amr_state.h`)
 
-`launchCoarseToFineTransfers(L)` iterates patches for level L, clips the fine rectangle to the fine block's allocated overlap (`df_overlap_X/Y/Z()` per-axis from the indexer), and launches `cudaAMR_CoarseToFine` per patch.
+`launchCoarseToFineTransfers(L)` iterates ring patches for level L, clips the fine rectangle to the fine block's allocated overlap (`df_overlap_X/Y/Z()` per-axis from the indexer), and launches `cudaAMR_CoarseToFine` per patch.
 
-`launchFineToCoarseTransfers(L)` iterates the same patches, launches `cudaAMR_FineToCoarse` over the FULL patch coarse rectangle (non-storable cells are skipped per-cell inside the kernel). The storability guard uses per-axis allocated overlap (`idx3d ov`) passed as a kernel parameter.
+`launchFineToCoarseTransfers(L)` iterates the same ring patches, launches `cudaAMR_FineToCoarse` over the FULL patch coarse rectangle (non-storable cells are skipped per-cell inside the kernel). The storability guard uses per-axis allocated overlap (`idx3d ov`) passed as a kernel parameter.
+
+`launchFineToCoarseTransfersInterior(L)` iterates the interior patches, launches `cudaAMR_FineToCoarse` over the full footprint. The frozen `GEO_NOTHING` cells receive Lagrava-filtered fine-averaged DFs (full overwrite — no λ-blend needed because the frozen cells have no collision to conflict with).
 
 ---
 
@@ -108,6 +112,7 @@ Per global iteration (= one coarse step, physDt advance = physDt_coarse):
     5. `launchCoarseToFineTransfers(L)` — BVP re-fill (ghost ring consumed by substep 1's streaming).
     6. `launchLBMKernelForLevel(L, compute_macro)` — fine substep 2 (fine advances to physDt_coarse).
     7. `launchFineToCoarseTransfers(L)` — project Lagrava-filtered fine state onto coarse ring cells.
+    8. `launchFineToCoarseTransfersInterior(L)` — inject fine-averaged DFs into frozen `GEO_NOTHING` cells under the footprint (two-way feedback; eliminates the shadow solve of §9.2.1).
 
 Physical time consistency: coarse advances physDt_coarse per cycle; fine advances 2 × physDt_coarse/2 = physDt_coarse. Verified exact in `test_amr_subcycling` Test 2.
 
@@ -223,12 +228,34 @@ Full out-of-tree builds with the variant applied; same sim_AMR run; same between
 
 ## 10. Known limitations of v1
 
-- **One-way information flow**: no fine-interior data feeds back into the coarse lattice via F2C (see §9.2), and inside-hidden coarse cells are a diverging shadow solve whose state is injected into the fine boundary via C2F (see §9.2.1). Both contribute to the residual.
+- **Two-way coupling via frozen hidden cells**: coarse cells under the fine footprint are frozen as `GEO_NOTHING` (no stream/collide) and receive Lagrava-filtered fine-averaged DFs via interior F2C each cycle (§4.2, §5 step 8). This eliminates both the one-way clamp (§9.2) and the C2F shadow injection (§9.2.1): the ring cell streams from a frozen fine-injected neighbor (not a diverging shadow), and the C2F kernel reads fine-injected values from frozen cells (not invalid shadow data). **Verified correct for AB_PATTERN** (the `defs.h` default, used by sim_AMR). **AA_PATTERN has a deferred defect — see §10.1.** The residual is expected to drop substantially from the v7 baseline (685,713 violations); between-metric quantification is pending.
 - **Static refinement only**: regions fixed at SimInit; no dynamic adaptation.
 - **Single-rank, single-GPU**: fine blocks have no same-level MPI neighbors; coupling kernels are CUDA-only.
 - **Multi-level (level > 1)**: `createAMRBlocks` hard-rejects `level > 1` during validation (throws at `amr_decomposition.h:187-188`); deeper nesting is impossible by construction in v1, not merely untested.
 - **Non-Newtonian viscosity with AMR**: excluded.
 - **IBM (immersed boundary)**: excluded.
+
+### 10.1 Known defects (deferred — Oracle-verified)
+
+The following defects were identified by an Oracle review of the freeze approach. They are silent in the current test suite (which tests each kernel against its documented contract in isolation, not the F2C-write → coarse-kernel-skip → C2F-read composition) and in sim_AMR (which uses AB_PATTERN with an interior footprint). They must be fixed before the corresponding configurations are exercised.
+
+**Defect 1: AA_PATTERN C2F read of frozen cells is direction-reversed (blocking for AA AMR).**
+
+The interior F2C stores frozen DFs in the **next-substep consume convention** (what the coarse streaming will read — natural if next is even/reflect, twisted if odd/spatial; `amr_coupling.h:452-462`). The C2F kernel reads with the **post-kernel produce convention** (`amr_coupling.h:152-168`: twisted if `coarse_even_iter`, natural otherwise). For normal cells these match because the coarse kernel rewrites them; frozen cells are never rewritten, so they retain the consume convention. Under AA these conventions are exactly opposite at **both** parities, yielding `f_used[q] = f_real[opp(q)]`: density survives (Σf_q invariant), but momentum is sign-flipped and non-equilibrium stress is mirrored, injected at 0.25 weight into every inner-ghost C2F fill, every cycle. Compounding this, on odd AA cycles the ring cells' `postCollisionStreaming` (`streaming_AA.h:61-90`) clobbers some surface-frozen slots with ring post-collision data before C2F reads them. AB is unaffected (single natural convention; C2F reads fine data that is 2 cycles stale but orientation-correct).
+
+Fix: (a) in `cudaAMR_CoarseToFine`'s `read_coarse_df` (`amr_coupling.h:152-168`), branch on `coarse_SD.map(cx,cy,cz)==GEO_NOTHING` and read with the inverted parity convention; (b) skip ring→frozen stores in odd `postCollisionStreaming` using the allocated-but-vestigial `dinterface_dir` bitmask (`amr_decomposition.h:288-329`, `bc.h:499-505`), which exists for exactly this purpose.
+
+**Defect 2: F2C has no coarse-map guard on DF writes (latent for boundary-touching footprints).**
+
+`markAMRInterface` deliberately preserves physical BC tags (walls/inflows) under the footprint — those cells keep `GEO_WALL`/`GEO_INFLOW` rather than becoming `GEO_NOTHING`. But `cudaAMR_FineToCoarse` writes DFs with no coarse-map check (the map guard at `amr_coupling.h:467` covers macros only). A wall cell under the footprint gets its DFs overwritten with fine-averaged fluid data each cycle; under AB's pull scheme, adjacent coarse fluid cells stream from it as if fluid — the no-slip wall is bypassed wherever a footprint covers it, contradicting the documented "physical boundary conditions survive" design intent.
+
+Fix: skip the DF write unless `coarse_SD.map(x,y,z) == GEO_NOTHING` — ~3 lines in the kernel (`amr_coupling.h:440`).
+
+**Minor concerns (non-blocking):**
+
+- **AB C2F 2-cycle staleness**: under AB, C2F reads `df_out` of cycle N+1, which after rotation is the physical buffer *not* written by cycle N's interior F2C — C2F sees fine data from cycle N−1 (2-cycle lag, orientation correct). Not a correctness break; a real asymmetry vs. the 1-cycle freshness the design narrative implies.
+- **Conservation metric double-counts the footprint**: `computeConservationStats` (`amr_state.h:386-423`) sums frozen coarse cells (weight 1, fine-injected macros) *plus* fine interior cells (1/8 weight). It is a self-consistent drift metric, not exact physical conservation; v7 had the same double-count, so the comparison is apples-to-apples.
+- **Overlapping/face-sharing same-level footprints**: `createAMRBlocks` has no overlap check; overlapping footprints produce duplicate interior patches (nondeterministic write order). Face-sharing footprints expose an order-dependence where a shared cell stays collision-active ring while another block's interior F2C overwrites it. v1 (single fine block) is unaffected.
 
 ---
 
@@ -238,7 +265,7 @@ Full out-of-tree builds with the variant applied; same sim_AMR run; same between
 |---|---|
 | `include/lbm3d/d3q27/amr_coupling.h` | Coupling kernels: `cudaAMR_CoarseToFine`, `cudaAMR_FineToCoarse` |
 | `include/lbm3d/amr_state.h` | `State_AMR` driver: `SimInit`, `SimUpdate`, `buildCouplings`, `launchCoarseToFineTransfers`, `launchFineToCoarseTransfers`, `launchLBMKernelForLevel` |
-| `include/lbm3d/amr_decomposition.h` | `createAMRBlocks`, `markAMRInterface`, `allocateInterfaceDirArray` |
+| `include/lbm3d/amr_decomposition.h` | `createAMRBlocks`, `markAMRInterface` (rings `GEO_AMR_INTERFACE` + hidden cells `GEO_NOTHING`), `allocateInterfaceDirArray` |
 | `include/lbm3d/d3q27/bc.h` | `D3Q27_BC_All`: `GEO_AMR_INTERFACE` tag, `preCollision`/`doCollision`/`postCollision` collision-active handling |
 | `include/lbm3d/lbm_block.h` / `.hpp` | `LBM_BLOCK`: `storage_overlap`, `initLevelLattice`, `allocateHostData`/`allocateDeviceData` |
 | `include/lbm3d/lbm.h` / `.hpp` | `LBM`: multi-level block management, `updateKernelDataForLevel` |
