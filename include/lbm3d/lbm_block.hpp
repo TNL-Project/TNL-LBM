@@ -56,7 +56,11 @@ void LBM_BLOCK<CONFIG>::initLevelLattice(const lat_t& base_lat, int level)
 	lat_local.physDl = base_lat.physDl / (1 << level);
 	lat_local.physDt = base_lat.physDt / (1 << level);
 	lat_local.physViscosity = base_lat.physViscosity;  // physical viscosity is level-independent
-	lat_local.physOrigin = base_lat.physOrigin;		   // TODO (Wave 3): refine with the per-block global_offset
+	// cell-centered convention: lbm2physPoint(x) = physOrigin + (x - 0.5) * physDl,
+	// so physOrigin sits at the cell corner, not the center. The fine global
+	// lattice's physOrigin must be shifted so that fine cell 0 maps to the
+	// first subcell of coarse cell 0 (not the coarse cell center).
+	lat_local.physOrigin = base_lat.physOrigin - (base_lat.physDl - lat_local.physDl);
 
 	// Do NOT redistribute the lattice viscosity: it is computed from the
 	// physical viscosity as nu_lb = physViscosity * physDt / physDl^2, so
