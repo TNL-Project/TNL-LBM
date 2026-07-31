@@ -222,10 +222,11 @@ void createAMRBlocks(LBM<CONFIG>& lbm, const std::vector<AMR_Region<CONFIG>>& re
 		// interface coupling (Wave 3) matches interfaces in PARENT-level coordinates
 		block.global_offset = region.origin_coarse;
 
-		// per-region physical origin: the fine block's local origin must coincide with the
-		// coarse cell at origin_coarse on the parent's physical lattice
-		block.lat_local.physOrigin =
-			lbm.lat.physOrigin + point_t(region.origin_coarse.x(), region.origin_coarse.y(), region.origin_coarse.z()) * lbm.lat.physDl;
+		// per-region physical origin: initLevelLattice already set
+		// lat_local.physOrigin to the correct fine-level global origin
+		// (adjusted for the cell-centered convention); add the block's
+		// offset in fine coordinates
+		block.lat_local.physOrigin += point_t(block.offset.x(), block.offset.y(), block.offset.z()) * block.lat_local.physDl;
 
 		// CUDA streams and kernel launch extents (single rank: interior compute only)
 		block.setLatticeDecomposition(TNL::Containers::NDArraySyncPatterns::D3Q27, neighbors, neighbors);
