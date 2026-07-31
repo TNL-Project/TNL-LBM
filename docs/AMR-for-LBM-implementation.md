@@ -215,6 +215,9 @@ Full out-of-tree builds with the variant applied; same sim_AMR run; same between
 | v6 | naive inside-shell two-way (F2C from footprint-underneath, no stabilization) | unstable (rho max 0.96 @ cyc1, NaN @ cyc2) | — | **unstable** |
 | **v7** | **collision-active ring** (bc.h: `doCollision` → true, remove placeholder skips) | **685,713** | **−45.8%** | **committed (`5237b2f`)** |
 | v8 | deeper F2C reach (into footprint cells) | 2,139,397 | +69% | worse |
+| **v9** | **freeze hidden cells** (`GEO_NOTHING` under footprint + interior F2C, commit `a738b0d`) | **2,260,592**† | **+78%** | **worse** (5.6× vs v7 under corrected harness) |
+
+† v9 measured under a corrected between-metric harness (proper fine-block placement at `[32:96]³`, matching-viscosity uniform references). v7 under the same corrected harness: 405,761. The original harness numbers (1,265,680 / 685,713) used the old /tmp/opencode script with a different composite builder and reference set; the relative ordering v7 > baseline > v9 is preserved.
 
 ### 9.4 Pre-fix trajectory
 

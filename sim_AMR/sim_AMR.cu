@@ -28,7 +28,7 @@ struct StateLocal_AMR : State_AMR<NSE>
 	dreal V_0 = 0;	// [m/s] velocity amplitude
 	dreal k = 0;	// [1/m] wave number
 
-	StateLocal_AMR(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath)
+	StateLocal_AMR(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath, int max_level = 1)
 	: State_AMR<NSE>(
 		  id,
 		  communicator,
@@ -36,7 +36,7 @@ struct StateLocal_AMR : State_AMR<NSE>
 		  adiosConfigPath,
 		  // fully periodic domain, so no setupBoundaries() override
 		  bool3d{true, true, true},
-		  /*max_level=*/1
+		  max_level
 	  )
 	{}
 
@@ -96,7 +96,7 @@ struct StateLocal_AMR : State_AMR<NSE>
 };
 
 template <typename NSE>
-void sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 1)
+void sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 1, int max_level = 1, float lattice_viscosity_override = -1.0f)
 {
 	using idx = typename NSE::TRAITS::idx;
 	using real = typename NSE::TRAITS::real;
@@ -104,7 +104,7 @@ void sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 1)
 	using lat_t = Lattice<3, real, idx>;
 
 	const int N = 64 * RESOLUTION;
-	const real LBM_VISCOSITY = 0.005;	 // [Δx^2/Δt] coarse-level lattice viscosity
+	const real LBM_VISCOSITY = (lattice_viscosity_override > 0) ? lattice_viscosity_override : 0.005f;	 // [Δx^2/Δt] lattice viscosity
 	const real PHYS_HEIGHT = 0.41;		 // [m] domain extent (periodic cube)
 	const real PHYS_VISCOSITY = 1.5e-5;	 // [m^2/s]
 	const real REYNOLDS = 100;			 // [-] Re = V_0 * L / nu
@@ -124,7 +124,7 @@ void sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 1)
 	const std::string amr_config = "1 16 16 16 32 32 32";
 
 	const std::string state_id = fmt::format("sim_AMR_res{:02d}_np{:03d}", RESOLUTION, TNL::MPI::GetSize(MPI_COMM_WORLD));
-	StateLocal_AMR<NSE> state(state_id, MPI_COMM_WORLD, lat, adios_config);
+	StateLocal_AMR<NSE> state(state_id, MPI_COMM_WORLD, lat, adios_config, max_level);
 
 	if (! state.canCompute())
 		return;
@@ -142,15 +142,17 @@ void sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 1)
 	state.nse.allocateHostData();
 	state.nse.allocateDeviceData();
 	state.nse.iterations = 0;
-	createAMRBlocks(state.nse, parseAMRConfig<NSE>(amr_config));
-	markAMRInterface(state.nse);
+	if (max_level > 0) {
+		createAMRBlocks(state.nse, parseAMRConfig<NSE>(amr_config));
+		markAMRInterface(state.nse);
+	}
 	state.setInitialCondition();
 
 	execute(state);
 }
 
 template <typename TRAITS = TraitsSP>
-void run(const std::string& adios_config, int resolution)
+void run(const std::string& adios_config, int resolution, int max_level = 1, float lattice_viscosity = -1.0f)
 {
 	using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
 
@@ -164,7 +166,7 @@ void run(const std::string& adios_config, int resolution)
 		D3Q27_BC_All,
 		D3Q27_MACRO_Default<TRAITS>>;
 
-	sim<NSE_CONFIG>(adios_config, resolution);
+	sim<NSE_CONFIG>(adios_config, resolution, max_level, lattice_viscosity);
 }
 
 int main(int argc, char** argv)
@@ -175,6 +177,8 @@ int main(int argc, char** argv)
 	program.add_description("2-level AMR Taylor-Green vortex simulation using incompressible Navier-Stokes equations.");
 	program.add_argument("--adios-config").help("path to ADIOS2 configuration file").default_value(std::string("adios2.xml")).nargs(1);
 	program.add_argument("--resolution").help("resolution of the lattice").scan<'i', int>().default_value(1).nargs(1);
+	program.add_argument("--max-level").help("maximum AMR refinement level (0 = uniform)").scan<'i', int>().default_value(1).nargs(1);
+	program.add_argument("--lattice-viscosity").help("override lattice viscosity [dx^2/dt] (for uniform reference runs)").scan<'f', float>().default_value(-1.0f).nargs(1);
 	program.add_argument("--precision").help("floating point precision").choices("float", "double").default_value(std::string("float")).nargs(1);
 
 	try {
@@ -188,7 +192,9 @@ int main(int argc, char** argv)
 
 	const auto adios_config = program.get<std::string>("--adios-config");
 	const auto resolution = program.get<int>("--resolution");
+	const auto max_level = program.get<int>("--max-level");
 	const auto precision = program.get<std::string>("--precision");
+	const auto lattice_viscosity = program.get<float>("--lattice-viscosity");
 
 	if (resolution < 1) {
 		fmt::println(stderr, "CLI error: resolution must be at least 1");
@@ -196,9 +202,9 @@ int main(int argc, char** argv)
 	}
 
 	if (precision == "double")
-		run<TraitsDP>(adios_config, resolution);
+		run<TraitsDP>(adios_config, resolution, max_level, lattice_viscosity);
 	else
-		run<TraitsSP>(adios_config, resolution);
+		run<TraitsSP>(adios_config, resolution, max_level, lattice_viscosity);
 
 	return 0;
 }
