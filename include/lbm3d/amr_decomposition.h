@@ -335,12 +335,25 @@ void allocateInterfaceDirArray(LBM_BLOCK<CONFIG>& block)
  * Every fine block's footprint is projected onto its parent level as the
  * rectangle [global_offset, global_offset + local/2) in parent-level
  * coordinates (global_offset is the parent-level origin set by
- * createAMRBlocks, consecutive levels always have a 2:1 ratio). Every
- * parent-level cell within Chebyshev distance 1 of the rectangle, but
- * outside it, is tagged GEO_AMR_INTERFACE and its bitmask records the D3Q27
- * directions (bit q matching the direction enum in defs.h) whose neighbor
- * cell lies inside the rectangle - the directions pointing INTO the fine
- * region. Fine-level boundary cells are never tagged (they stay GEO_FLUID).
+ * createAMRBlocks, consecutive levels always have a 2:1 ratio). Two
+ * populations are tagged:
+ *
+ * - **Interface ring**: every parent-level cell within Chebyshev distance 1
+ *   of the rectangle, but outside it, is tagged GEO_AMR_INTERFACE and its
+ *   bitmask records the D3Q27 directions (bit q matching the direction
+ *   enum in defs.h) whose neighbor cell lies inside the rectangle - the
+ *   directions pointing INTO the fine region.
+ *
+ * - **Hidden (frozen) cells**: every parent-level cell INSIDE the rectangle
+ *   is tagged GEO_NOTHING. These cells are "hidden" under the fine
+ *   footprint — the fine lattice is the authoritative solution there. They
+ *   do not stream or collide (GEO_NOTHING: preCollision/postCollision early
+ *   return, doCollision returns false). Their DFs are set exclusively by the
+ *   interior fine-to-coarse transfer at the end of each coarse cycle, which
+ *   injects Lagrava-filtered fine-averaged DFs. This eliminates the "shadow
+ *   solve" (a diverging coarse-evolved state under the footprint that would
+ *   corrupt the fine boundary via C2F interpolation — see
+ *   docs/AMR-for-LBM-implementation.md §9.2.1).
  *
  * Only GEO_FLUID cells are re-tagged: physical boundary conditions (walls,
  * inflows, ...) survive where a fine region touches the domain boundary, and
@@ -371,6 +384,7 @@ void markAMRInterface(LBM<CONFIG>& lbm)
 		const idx3d size{fine.local.x() / 2, fine.local.y() / 2, fine.local.z() / 2};
 		const int parent_level = fine.level - 1;
 		int marked_fine = 0;
+		int frozen_fine = 0;
 
 		for (auto& coarse : lbm.blocks) {
 			if (coarse.level != parent_level)
@@ -388,15 +402,22 @@ void markAMRInterface(LBM<CONFIG>& lbm)
 			const idx z_end = std::min(coarse.offset.z() + coarse.local.z(), origin.z() + size.z() + 1);
 
 			int marked = 0;
+			int frozen = 0;
 			for (idx x = x_begin; x < x_end; x++) {
 				for (idx y = y_begin; y < y_end; y++) {
 					for (idx z = z_begin; z < z_end; z++) {
-						// cells inside the footprint belong to the fine
-						// block, not to the coarse-side interface
+						// freeze hidden cells under the footprint: GEO_NOTHING
+						// (no stream/collide) prevents the diverging shadow solve;
+						// interior F2C injects fine-averaged DFs each cycle
 						const bool inside = x >= origin.x() && x < origin.x() + size.x() && y >= origin.y() && y < origin.y() + size.y()
 										 && z >= origin.z() && z < origin.z() + size.z();
-						if (inside)
+						if (inside) {
+							if (coarse.hmap(x, y, z) == BC::GEO_FLUID) {
+								coarse.setMap(x, y, z, BC::GEO_NOTHING);
+								frozen++;
+							}
 							continue;
+						}
 
 						// directions whose neighbor cell is inside the footprint
 						std::uint32_t mask = 0;
@@ -430,22 +451,29 @@ void markAMRInterface(LBM<CONFIG>& lbm)
 				}
 			}
 
-			if (marked > 0) {
+			if (marked > 0 || frozen > 0) {
 				marked_fine += marked;
+				frozen_fine += frozen;
 				if (std::find(dirty_blocks.begin(), dirty_blocks.end(), &coarse) == dirty_blocks.end())
 					dirty_blocks.push_back(&coarse);
 			}
 		}
 
-		if (marked_fine > 0)
+		if (marked_fine > 0 || frozen_fine > 0)
 			spdlog::info(
-				"markAMRInterface: fine block {} (level {}) added {} interface cells on level {}", fine.id, fine.level, marked_fine, parent_level
+				"markAMRInterface: fine block {} (level {}) added {} interface cells, froze {} hidden cells on level {}",
+				fine.id,
+				fine.level,
+				marked_fine,
+				frozen_fine,
+				parent_level
 			);
 	}
 
 	for (auto* coarse : dirty_blocks) {
 		coarse->copyMapToDevice();
-		auto& arrays = amrInterfaceDirRegistry<CONFIG>().at(coarse);
-		arrays.device = arrays.host;
+		auto it = amrInterfaceDirRegistry<CONFIG>().find(coarse);
+		if (it != amrInterfaceDirRegistry<CONFIG>().end())
+			it->second.device = it->second.host;
 	}
 }
