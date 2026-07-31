@@ -143,6 +143,11 @@ struct State_AMR : State<NSE>
 		std::vector<AMR_InterfacePatch<NSE>> patches;
 		std::vector<int> coarse_block_ids;
 		std::vector<int> fine_block_ids;
+		// interior (under-footprint) patches: frozen GEO_NOTHING cells that
+		// receive fine-averaged DFs via F2C each cycle (two-way feedback)
+		std::vector<AMR_InterfacePatch<NSE>> interior_patches;
+		std::vector<int> interior_coarse_block_ids;
+		std::vector<int> interior_fine_block_ids;
 	};
 
 	// all inter-level couplings of the simulation (empty when max_level == 0
@@ -190,6 +195,9 @@ struct State_AMR : State<NSE>
 	// onto level `fine_level - 1` via `cudaAMR_FineToCoarse`, iterating the
 	// `AMR_InterfacePatch` descriptors of \ref couplings
 	void launchFineToCoarseTransfers(int fine_level);
+	// project fine-averaged DFs onto frozen GEO_NOTHING cells under each
+	// fine footprint (interior_patches of \ref couplings)
+	void launchFineToCoarseTransfersInterior(int fine_level);
 
 	// build \ref couplings from the `GEO_AMR_INTERFACE` markings (called by
 	// SimInit AFTER `markAMRInterface` ran); see the implementation for the
@@ -287,15 +295,21 @@ void State_AMR<NSE>::SimInit()
 	buildCouplings();
 
 	std::size_t total_patches = 0;
+	std::size_t total_interior_patches = 0;
 	for (const InterLevelCoupling& coupling : couplings) {
 		total_patches += coupling.patches.size();
+		total_interior_patches += coupling.interior_patches.size();
 		spdlog::info(
-			"State_AMR: coupling level {} -> {} has {} interface patches", coupling.coarse_level, coupling.fine_level, coupling.patches.size()
+			"State_AMR: coupling level {} -> {} has {} interface patches, {} interior patches",
+			coupling.coarse_level,
+			coupling.fine_level,
+			coupling.patches.size(),
+			coupling.interior_patches.size()
 		);
 	}
-	if (total_patches == 0)
+	if (total_patches == 0 && total_interior_patches == 0)
 		spdlog::warn(
-			"State_AMR: no GEO_AMR_INTERFACE cells found for max_level = {} - inter-level coupling kernels will not launch", this->nse.max_level
+			"State_AMR: no AMR coupling patches found for max_level = {} - inter-level coupling kernels will not launch", this->nse.max_level
 		);
 }
 
@@ -517,6 +531,35 @@ void State_AMR<NSE>::buildCouplings()
 					coupling.fine_block_ids.push_back(fine->id);
 				}
 			}
+
+			// interior patches: under-footprint cells (frozen GEO_NOTHING,
+			// F2C-injected with fine-averaged DFs each cycle — two-way feedback)
+			const idx3d int_begin = go;
+			const idx3d int_end{go.x() + gs.x(), go.y() + gs.y(), go.z() + gs.z()};
+			for (auto* coarse : this->nse.getBlocksAtLevel(coarse_level)) {
+				const idx3d cbegin{
+					std::max(int_begin.x(), coarse->offset.x()),
+					std::max(int_begin.y(), coarse->offset.y()),
+					std::max(int_begin.z(), coarse->offset.z())
+				};
+				const idx3d cend{
+					std::min(int_end.x(), coarse->offset.x() + coarse->local.x()),
+					std::min(int_end.y(), coarse->offset.y() + coarse->local.y()),
+					std::min(int_end.z(), coarse->offset.z() + coarse->local.z())
+				};
+				if (cbegin.x() >= cend.x() || cbegin.y() >= cend.y() || cbegin.z() >= cend.z())
+					continue;
+
+				AMR_InterfacePatch<NSE> patch;
+				patch.coarse_origin = {cbegin.x() - coarse->offset.x(), cbegin.y() - coarse->offset.y(), cbegin.z() - coarse->offset.z()};
+				patch.coarse_size = {cend.x() - cbegin.x(), cend.y() - cbegin.y(), cend.z() - cbegin.z()};
+				patch.fine_origin = {2 * cbegin.x() - fine->offset.x(), 2 * cbegin.y() - fine->offset.y(), 2 * cbegin.z() - fine->offset.z()};
+				patch.fine_size = {2 * patch.coarse_size.x(), 2 * patch.coarse_size.y(), 2 * patch.coarse_size.z()};
+				patch.face = SyncDirection::None;
+				coupling.interior_patches.push_back(patch);
+				coupling.interior_coarse_block_ids.push_back(coarse->id);
+				coupling.interior_fine_block_ids.push_back(fine->id);
+			}
 		}
 
 		couplings.push_back(std::move(coupling));
@@ -716,6 +759,73 @@ void State_AMR<NSE>::launchFineToCoarseTransfers(int fine_level)
 	TNL::Backend::streamSynchronize(0);
 }
 
+/**
+ * \brief Interior (under-footprint) fine-to-coarse transfer.
+ *
+ * Iterates the interior_patches of \ref couplings and launches
+ * `cudaAMR_FineToCoarse` over the full footprint. The under-footprint
+ * coarse cells are frozen as GEO_NOTHING (no stream/collide); their DFs
+ * are set exclusively by this transfer — Lagrava-filtered fine-averaged
+ * DFs, full overwrite. This is the two-way feedback channel: fine-interior
+ * information reaches the coarse lattice through the frozen cells, which
+ * the ring cell streams from at the next coarse step.
+ */
+template <typename NSE>
+void State_AMR<NSE>::launchFineToCoarseTransfersInterior(int fine_level)
+{
+	const int coarse_level = fine_level - 1;
+
+	for (const InterLevelCoupling& coupling : couplings) {
+		if (coupling.fine_level != fine_level)
+			continue;
+
+		for (std::size_t i = 0; i < coupling.interior_patches.size(); i++) {
+			const AMR_InterfacePatch<NSE>& patch = coupling.interior_patches[i];
+			BLOCK_NSE* fine = findBlockById(coupling.fine_level, coupling.interior_fine_block_ids[i]);
+			BLOCK_NSE* coarse = findBlockById(coupling.coarse_level, coupling.interior_coarse_block_ids[i]);
+			if (fine == nullptr || coarse == nullptr)
+				continue;
+
+			const dreal tau_fine = static_cast<dreal>(3 * blockLbmViscosity(*fine) + 0.5);
+			const dreal tau_coarse = static_cast<dreal>(3 * blockLbmViscosity(*coarse) + 0.5);
+			const bool fine_even_iter = fine->data.even_iter;
+			const bool next_coarse_even_iter = (coarse_level == 0) ? ((this->nse.iterations % 2) == 1) : false;
+
+			const idx3d ov{fine->df_overlap_X(), fine->df_overlap_Y(), fine->df_overlap_Z()};
+			const idx3d begin = patch.coarse_origin;
+			const idx3d end{
+				patch.coarse_origin.x() + patch.coarse_size.x(),
+				patch.coarse_origin.y() + patch.coarse_size.y(),
+				patch.coarse_origin.z() + patch.coarse_size.z()
+			};
+			if (begin.x() >= end.x() || begin.y() >= end.y() || begin.z() >= end.z())
+				continue;
+
+			const idx3d size{end.x() - begin.x(), end.y() - begin.y(), end.z() - begin.z()};
+			TNL::Backend::LaunchConfiguration launch_config;
+			launch_config.blockSize = coarse->getCudaBlockSize(size);
+			launch_config.gridSize = coarse->getCudaGridSize(size, launch_config.blockSize);
+			TNL::Backend::launchKernelAsync(
+				cudaAMR_FineToCoarse<NSE>,
+				launch_config,
+				coarse->data,
+				fine->data,
+				begin,
+				end,
+				tau_coarse,
+				tau_fine,
+				fine_even_iter,
+				next_coarse_even_iter,
+				fine->offset,
+				coarse->offset,
+				fine->local,
+				ov
+			);
+		}
+	}
+	TNL::Backend::streamSynchronize(0);
+}
+
 template <typename NSE>
 void State_AMR<NSE>::SimUpdate()
 {
@@ -861,8 +971,12 @@ void State_AMR<NSE>::SimUpdate()
 	#endif
 
 		// 7. fine-to-coarse: project the (Lagrava-filtered) fine state back
-		// onto the level L-1 interface cells of the coupling patches
+		// onto the level L-1 interface ring cells of the coupling patches
 		launchFineToCoarseTransfers(L);
+
+		// 8. interior F2C: inject fine-averaged DFs into frozen
+		// GEO_NOTHING cells under the footprint (two-way feedback)
+		launchFineToCoarseTransfersInterior(L);
 	}
 
 	this->timer_compute.stop();
