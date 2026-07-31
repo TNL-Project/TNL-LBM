@@ -462,9 +462,12 @@ __global__ void cudaAMR_FineToCoarse(
 #endif
 	}
 
-	// macros for GEO_AMR_INTERFACE cells (authoritative coupling value for
-	// output; the main kernel recomputes its own at the next step)
-	if (coarse_SD.map(x, y, z) == BC::GEO_AMR_INTERFACE) {
+	// macros for coupling cells (GEO_AMR_INTERFACE ring or GEO_NOTHING
+	// frozen hidden cells): authoritative coupling value for output; the
+	// main kernel recomputes its own at the next step for collision-active
+	// ring cells; frozen cells' macros come exclusively from this write
+	const auto map_val = coarse_SD.map(x, y, z);
+	if (map_val == BC::GEO_AMR_INTERFACE || map_val == BC::GEO_NOTHING) {
 		coarse_SD.macro(MACRO::e_rho, x, y, z) = KS.rho;
 		coarse_SD.macro(MACRO::e_vx, x, y, z) = KS.vx;
 		coarse_SD.macro(MACRO::e_vy, x, y, z) = KS.vy;
