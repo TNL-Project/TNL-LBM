@@ -444,18 +444,43 @@ __global__ void cudaAMR_CoarseToFine(
  * storage must actually cover the 2-cell-deep ghost ring of the block's
  * footprint, otherwise every interface cell is skipped and keeps the
  * `preCollision` placeholder (`LBM_BLOCK` allocates it; the mock tests
- * allocate `ov` explicitly).
+ * allocate `ov` explicitly). The filter's WIDER stencil (one extra fine
+ * cell on each side of the subcell block per axis, see below) is handled
+ * by the same shifted-window machinery as the coarse-to-fine kernel: each
+ * per-axis window is shifted into the storable extent (shortened if the
+ * extent is smaller than the window) and its Lagrange weights are
+ * re-evaluated at runtime, so interface cells adjacent to the fine block
+ * boundary are still processed (never skipped) as long as their 8
+ * subcells are storable.
  *
  * Algorithm per coarse cell:
- * 1. Read the post-kernel fine DFs of all 8 subcells (orientation below).
- * 2. FILTER (MANDATORY): the per-direction arithmetic average
- *    `f_avg[q] = (1/8) * sum_k f_fine[q]_k` suppresses unresolved
- *    high-frequency fine-grid modes before projection onto the coarse
- *    grid -- without it the projection aliases and the coarse solution
- *    goes unstable (Lagrava et al. 2012). The 1/8 averaging IS the
- *    volumetric correction: DFs are point densities and each fine cell
- *    holds 1/8 of the coarse cell volume, so NO additional volume factor
- *    is applied anywhere.
+ * 1. Read the post-kernel fine DFs of the filter stencil (orientation
+ *    below).
+ * 2. FILTER (MANDATORY, Lagrava et al. 2012): unresolved high-frequency
+ *    fine-grid modes alias onto the coarse grid without a spatial filter,
+ *    destabilizing the coarse solution. The default filter is the
+ *    tensor-product 4-node-per-axis Lagrange projection of the fine DFs
+ *    onto the coarse cell center `t = fx0 + 0.5` (fine indexer
+ *    coordinates, same global-frame mapping as the subcell mapping): the
+ *    nominal per-axis window `{fx0-1, ..., fx0+2}` covers the 2x2x2
+ *    subcell block extended by one fine cell on each side (4x4x4 = 64
+ *    fine cells in 3D), and centered windows yield the exact dyadic
+ *    rationals {-1, 9, 9, -1}/16 per axis. The projection reproduces
+ *    cubic fields at the coarse center exactly (the plain 1/8 box average
+ *    only reproduces linear ones) and exactly preserves constant and
+ *    linear fields on shifted windows as well, which is what the
+ *    boundary-adjacent interface cells see; the highest fine-resolvable
+ *    modes (odd/even checkerboard of the two subcell parities) are
+ *    annihilated. Normalization: the per-axis Lagrange weights sum to
+ *    one, so the tensor weight over the full 4x4x4 stencil sums to one
+ *    and NO additional volume factor is applied anywhere (the sum-to-one
+ *    weighted average IS the volumetric fine-to-coarse conversion, the
+ *    same role the 1/8 factor plays in the box average). Global mass is
+ *    conserved exactly: on a translation-invariant extent each fine cell
+ *    contributes to the coarse values with total weight 1/2 per axis
+ *    (1/8 in 3D), the same total as the box average. The original 1/8
+ *    box average of the 8 subcells remains available as a compile-time
+ *    fallback with `-DF2C_FULL_LAGRAVA`.
  * 3. Compute the coarse macros (rho_c, u_c) as the moments of f_avg and
  *    the equilibrium f_eq[q] at those macros (EQ::eq_* per direction).
  * 4. Rescale the non-equilibrium part by tau_coarse / tau_fine -- the
@@ -572,9 +597,69 @@ __global__ void cudaAMR_FineToCoarse(
 #endif
 	};
 
-	// Lagrava spatial filter: per-direction arithmetic average of the 8 fine
-	// subcells covered by this coarse cell. The (1/8) factor IS the
-	// volumetric fine-to-coarse conversion -- no other volume factor.
+	// Lagrava spatial filter (see the kernel docstring)
+#ifdef F2C_FULL_LAGRAVA
+	// tensor-product 4-node-per-axis Lagrange projection onto the coarse
+	// cell center t = fx0 + 0.5 (fine indexer coordinates): the nominal
+	// per-axis window {fx0-1, ..., fx0+2} covers the 2x2x2 subcell block
+	// extended by one fine cell on each side (4x4x4 = 64 fine cells).
+	// Near fine-block boundaries the window is shifted (and shortened if
+	// the per-axis storage extent is smaller) so that all of its nodes are
+	// valid storage indices -- the wider-stencil extension of the
+	// storability guard, mirrored from the coarse-to-fine kernel; the
+	// evaluation point stays FIXED at the coarse cell center, so the
+	// shifted-window weights still reproduce cubic fields exactly (and
+	// constant/linear fields on every window). The Lagrange weights are
+	// evaluated at runtime in double precision and normalized to sum to
+	// one; centered windows round to the exact dyadic rationals
+	// {-1, 9, 9, -1}/16 per axis.
+	constexpr int F2C_STENCIL = 4;
+	const auto axis_window = [](idx f0, idx size_a, idx ov_a, idx* nodes, dreal* weights) -> int
+	{
+		const double t = static_cast<double>(f0) + 0.5;
+		const int extent = static_cast<int>(size_a + 2 * ov_a);
+		const int n = F2C_STENCIL < extent ? F2C_STENCIL : extent;
+		const idx lo = -ov_a;
+		const idx hi = size_a - 1 + ov_a - (n - 1);
+		idx start = f0 - 1;
+		start = start < lo ? lo : (start > hi ? hi : start);
+		double w[F2C_STENCIL], wsum = 0;
+		for (int i = 0; i < n; i++) {
+			double wi = 1;
+			for (int j = 0; j < n; j++)
+				if (j != i)
+					wi *= (t - static_cast<double>(start + j)) / static_cast<double>(i - j);
+			w[i] = wi;
+			wsum += wi;
+		}
+		for (int i = 0; i < n; i++) {
+			nodes[i] = start + i;
+			weights[i] = static_cast<dreal>(w[i] / wsum);
+		}
+		return n;
+	};
+	idx fnx[F2C_STENCIL], fny[F2C_STENCIL], fnz[F2C_STENCIL];
+	dreal fwx[F2C_STENCIL], fwy[F2C_STENCIL], fwz[F2C_STENCIL];
+	const int nnx = axis_window(fx0, fine_SD.X(), ov.x(), fnx, fwx);
+	const int nny = axis_window(fy0, fine_SD.Y(), ov.y(), fny, fwy);
+	const int nnz = axis_window(fz0, fine_SD.Z(), ov.z(), fnz, fwz);
+
+	// per-direction weighted sums (the weights sum to one over the full
+	// stencil, so no normalization factor is needed afterwards)
+	dreal f_avg[CONFIG::Q] = {};
+	for (int bz = 0; bz < nnz; bz++) {
+		for (int by = 0; by < nny; by++) {
+			for (int bx = 0; bx < nnx; bx++) {
+				const dreal w = fwx[bx] * fwy[by] * fwz[bz];
+				for (int q = 0; q < CONFIG::Q; q++)
+					f_avg[q] += w * read_fine_df(q, fnx[bx], fny[by], fnz[bz]);
+			}
+		}
+	}
+#else
+	// plain per-direction arithmetic average of the 8 fine subcells covered
+	// by this coarse cell. The (1/8) factor IS the volumetric
+	// fine-to-coarse conversion -- no other volume factor.
 	dreal f_avg[CONFIG::Q] = {};
 	for (int bz = 0; bz < 2; bz++) {
 		for (int by = 0; by < 2; by++) {
@@ -586,6 +671,7 @@ __global__ void cudaAMR_FineToCoarse(
 	}
 	for (int q = 0; q < CONFIG::Q; q++)
 		f_avg[q] *= dreal(0.125);
+#endif
 
 	// coarse macros from the filtered DFs
 	LBM_KS KS;
