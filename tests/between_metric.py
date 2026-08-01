@@ -2,8 +2,18 @@
 """
 Between-property metric for TNL-LBM AMR verification.
 
-Compares every cell of the AMR composite against a bracket formed by
-independent uniform-coarse and uniform-fine reference runs.
+Compares the AMR composite against a bracket formed by independent uniform-coarse
+and uniform-fine reference runs, evaluated in physical coordinates so that the
+error is comparable across different resolutions.
+
+Two metrics are reported per cycle:
+  1. Violation count — number of cells outside the bracket [min(C,F) - tol, max(C,F) + tol].
+  2. Excess norm — L1, L2, and Linf norms of the excess (how far outside the bracket),
+     integrated in physical space (each fine cell carries volume physDl_f^3).
+
+The physical-coordinate sampling ensures that a coarse cell (volume physDl_c^3) and
+the 8 fine subcells it covers (total volume 8 * physDl_f^3 = physDl_c^3) contribute
+equally to the norm, making the metric resolution-independent.
 
 Usage:
   python3 between_metric.py [--amr-dir results_sim_AMR_res01_np001]
@@ -14,7 +24,6 @@ Usage:
 """
 
 import argparse
-import csv
 import os
 import sys
 
@@ -36,13 +45,12 @@ def read_vtkhdf_levels(path):
             levels[lv] = {}
             for fld in FIELDS:
                 arr = cd[fld][:]
-                # VTKHDF stores flat 1D arrays; reshape to 3D
                 n = arr.size
                 s = round(n ** (1 / 3))
                 if s * s * s == n:
                     levels[lv][fld] = arr.reshape(s, s, s)
                 else:
-                    levels[lv][fld] = arr  # leave as-is if not cubic
+                    levels[lv][fld] = arr
             if "vtkGhostType" in cd:
                 gt = cd["vtkGhostType"][:]
                 s = round(gt.size ** (1 / 3))
@@ -56,7 +64,7 @@ def read_vtkhdf_levels(path):
 
 
 def read_ref_cycles(ref_dir, max_cycle=10):
-    """Read reference simulation output cycles (output_3D.bp via h5py or vtkhdf)."""
+    """Read reference simulation output cycles."""
     cycles = []
     for cyc in range(max_cycle + 1):
         path = os.path.join(ref_dir, f"output_amr_{cyc:04d}.vtkhdf")
@@ -70,21 +78,63 @@ def read_ref_cycles(ref_dir, max_cycle=10):
     return cycles
 
 
-def broadcast2x(arr):
-    """Upsample a 3D array by factor 2 (nearest-neighbor broadcast)."""
-    return np.repeat(np.repeat(np.repeat(arr, 2, axis=0), 2, axis=1), 2, axis=2)
+def _upsample_axis_2x(arr, axis, periodic):
+    """Trilinear 2x upsampling along one axis.
+
+    Each coarse cell i produces two fine subcells:
+      sub0 at -0.25*dx (toward neighbor i-1): weight 3/4 on i, 1/4 on i-1
+      sub1 at +0.25*dx (toward neighbor i+1): weight 3/4 on i, 1/4 on i+1
+    """
+    n = arr.shape[axis]
+    if periodic:
+        left = np.roll(arr, 1, axis=axis)
+        right = np.roll(arr, -1, axis=axis)
+    else:
+        left = np.roll(arr, 1, axis=axis)
+        right = np.roll(arr, -1, axis=axis)
+        sl0 = [slice(None)] * arr.ndim
+        sl0[axis] = 0
+        left[tuple(sl0)] = arr[tuple(sl0)]
+        sl1 = [slice(None)] * arr.ndim
+        sl1[axis] = -1
+        right[tuple(sl1)] = arr[tuple(sl1)]
+
+    sub0 = 0.75 * arr + 0.25 * left
+    sub1 = 0.75 * arr + 0.25 * right
+
+    out_shape = list(arr.shape)
+    out_shape[axis] = 2 * n
+    result = np.empty(out_shape, dtype=arr.dtype)
+    sl_even = [slice(None)] * arr.ndim
+    sl_even[axis] = slice(0, None, 2)
+    sl_odd = [slice(None)] * arr.ndim
+    sl_odd[axis] = slice(1, None, 2)
+    result[tuple(sl_even)] = sub0
+    result[tuple(sl_odd)] = sub1
+    return result
+
+
+def upsample2x(arr, periodic=True):
+    """Trilinear 2x upsampling for cell-centered data (separable, 3/4:1/4 weights)."""
+    result = _upsample_axis_2x(arr, 0, periodic)
+    result = _upsample_axis_2x(result, 1, periodic)
+    result = _upsample_axis_2x(result, 2, periodic)
+    return result
 
 
 def amr_composite(
-    amr_levels, fld, footprint_origin=(32, 32, 32), footprint_size=(64, 64, 64)
+    amr_levels,
+    fld,
+    footprint_origin=(32, 32, 32),
+    footprint_size=(64, 64, 64),
+    periodic=True,
 ):
-    """Build a composite field at fine resolution from AMR levels.
-    Level 0 (coarse) is broadcast 2x; level 1 (fine) overrides where present."""
+    """Build a composite field at fine resolution from AMR levels."""
     if 1 in amr_levels:
         fine = amr_levels[1][fld]
         if 0 in amr_levels:
-            coarse_bc = broadcast2x(amr_levels[0][fld])
-            result = coarse_bc.copy()
+            coarse_up = upsample2x(amr_levels[0][fld], periodic)
+            result = coarse_up.copy()
             oz, oy, ox = footprint_origin
             sz, sy, sx = footprint_size
             result[oz : oz + sz, oy : oy + sy, ox : ox + sx] = fine
@@ -93,16 +143,34 @@ def amr_composite(
     return amr_levels[0][fld]
 
 
-def signed_iface_dist(shape, origin, size):
-    """Compute signed distance from the fine footprint boundary.
-    Negative = inside fine, positive = outside (coarse-only region)."""
-    nz, ny, nx = shape
-    oz, oy, ox = origin
-    sz, sy, sx = size
-    dz = np.maximum(np.maximum(oz - np.arange(nz), np.arange(nz) - (oz + sz - 1)), -1)
-    dy = np.maximum(np.maximum(oy - np.arange(ny), np.arange(ny) - (oy + sy - 1)), -1)
-    dx = np.maximum(np.maximum(ox - np.arange(nx), np.arange(nx) - (ox + sx - 1)), -1)
-    return dz[:, None, None], dy[None, :, None], dx[None, None, :]
+def compute_excess(A, C, F, gamma, eps):
+    """Compute the excess: how far A is outside the bracket [min(C,F)-tol, max(C,F)+tol].
+
+    Returns an array of the same shape; zero where A is inside the bracket.
+    """
+    lo = np.minimum(C, F)
+    hi = np.maximum(C, F)
+    tol = gamma * np.abs(F - C) + eps
+    excess = np.zeros_like(A)
+    below = A < (lo - tol)
+    above = A > (hi + tol)
+    excess[below] = (lo - tol - A)[below]
+    excess[above] = (A - hi - tol)[above]
+    return excess
+
+
+def norms(arr, cell_volume):
+    """Compute volume-weighted L1, L2, and Linf norms.
+
+    L1  = sum |arr| * cell_volume
+    L2  = sqrt(sum |arr|^2 * cell_volume)
+    Linf = max |arr|
+    """
+    abs_arr = np.abs(arr)
+    l1 = float(np.sum(abs_arr) * cell_volume)
+    l2 = float(np.sqrt(np.sum(abs_arr**2) * cell_volume))
+    linf = float(abs_arr.max()) if abs_arr.size > 0 else 0.0
+    return l1, l2, linf
 
 
 def main():
@@ -143,10 +211,25 @@ def main():
     ncycles = min(len(refC), len(refF), args.max_cycle + 1)
     print(f"Loaded {ncycles} reference cycles (coarse {len(refC)}, fine {len(refF)})")
 
-    # Fine footprint origin/size in fine coords (for face classification)
-    # sim_AMR: 64^3 coarse, footprint [16,48)^3 = fine [32,96)^3
+    # Physical parameters (from sim_AMR: PHYS_HEIGHT=0.41, N_coarse=64)
+    PHYS_HEIGHT = 0.41
+    N_COARSE = 64
+    physDl_c = PHYS_HEIGHT / N_COARSE
+    physDl_f = physDl_c / 2
+    cell_volume_f = physDl_f**3  # fine cell volume (the common resolution)
+
+    # Fine footprint origin/size in fine coords
     footprint_origin = (32, 32, 32)
     footprint_size = (64, 64, 64)
+
+    # Domain volume for normalization
+    domain_volume = PHYS_HEIGHT**3
+
+    print(
+        f"physical: physDl_c={physDl_c:.8e} physDl_f={physDl_f:.8e} "
+        f"cell_volume_f={cell_volume_f:.8e} domain_volume={domain_volume:.8e}"
+    )
+    print()
 
     all_pass = True
     for cyc in range(ncycles):
@@ -156,38 +239,51 @@ def main():
             continue
 
         amr_levels = read_vtkhdf_levels(amr_path)
-        t = cyc * 0.05472  # approximate; real t from log if needed
 
         total_viol = 0
         field_strs = []
+        total_l1 = 0.0
+        total_l2_sq = 0.0
+        total_linf = 0.0
+
         for fld in FIELDS:
-            C = broadcast2x(refC[cyc][fld])
+            C = upsample2x(refC[cyc][fld], periodic=True)
             F = refF[cyc][fld]
             if args.selftest:
                 A = F.copy()
             else:
                 A = amr_composite(amr_levels, fld, footprint_origin, footprint_size)
 
-            lo = np.minimum(C, F)
-            hi = np.maximum(C, F)
-            tol = args.gamma * np.abs(F - C) + eps[fld]
+            excess = compute_excess(A, C, F, args.gamma, eps[fld])
 
-            viol = (A < lo - tol) | (A > hi + tol)
-            n_viol = int(viol.sum())
-            if n_viol > 0:
-                diff = np.abs(A - np.clip(A, lo, hi))
-                max_amp = float(diff[viol].max())
-            else:
-                max_amp = 0.0
+            n_viol = int(np.count_nonzero(excess))
+            l1, l2, linf = norms(excess, cell_volume_f)
 
             total_viol += n_viol
-            field_strs.append(f"{fld}:{n_viol} (max {max_amp:.6e})")
+            total_l1 += l1
+            total_l2_sq += l2**2
+            total_linf = max(total_linf, linf)
+
+            field_strs.append(
+                f"{fld}: viol={n_viol} L1={l1:.4e} L2={l2:.4e} Linf={linf:.4e}"
+            )
+
+        total_l2 = float(np.sqrt(total_l2_sq))
+
+        # Normalize by domain volume for resolution-independent comparison
+        total_l1_norm = total_l1 / domain_volume
+        total_l2_norm = total_l2 / float(np.sqrt(domain_volume))
 
         status = "pass" if total_viol == 0 else "FAIL"
         if total_viol > 0:
             all_pass = False
+
+        print(f"cycle {cyc:2d}: {status} viol={total_viol}")
+        for s in field_strs:
+            print(f"         {s}")
         print(
-            f"cycle {cyc:2d} t={t:.5f}: {status} total_viol={total_viol} | {' | '.join(field_strs)}"
+            f"         TOTAL: L1={total_l1:.4e} (norm={total_l1_norm:.4e}) "
+            f"L2={total_l2:.4e} (norm={total_l2_norm:.4e}) Linf={total_linf:.4e}"
         )
 
     print()
