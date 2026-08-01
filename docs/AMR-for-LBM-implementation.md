@@ -77,7 +77,7 @@ Fills fine ghost cells from coarse data:
 Projects filtered fine data onto coarse interface ring cells:
 
 1. **Storability guard** (per cell, per axis): all 8 fine subcells must be within the fine block's overlap-extended storage `[-ov_i, fine_local_i + ov_i)`. Cells failing the guard are skipped individually (commit `26e36db` replaced a launch-extent clip that evaluated storability in the wrong origin-aligned frame). With `storage_overlap = 2` on fine blocks (commit `089e47a`), all ring cells are storable.
-2. **Lagrava filter** (mandatory): per-direction arithmetic 1/8 average of the 8 fine subcells covered by the coarse ring cell. The 1/8 factor IS the volumetric fine-to-coarse conversion — suppresses unresolved high-frequency fine modes before projection (Lagrava et al. 2012).
+2. **Lagrava filter** (mandatory): tensor-product 4-node-per-axis Lagrange projection of the fine DFs onto the coarse cell center (`t = fx0 + 0.5`, fine indexer coordinates) — the nominal per-axis window `{fx0−1, …, fx0+2}` covers the 2×2×2 subcell block extended by one fine cell per side (4×4×4 = 64 fine cells); centered windows yield the dyadic rationals {−1, 9, 9, −1}/16 per axis. Near fine-block boundaries the window is shifted/shortened into the storable extent with runtime double-precision weights (same machinery as the C2F storability guard) while the evaluation point stays fixed at the coarse center, so constant-to-cubic fields are reproduced exactly on every window (the plain 1/8 box average was linear-exact only). The weights sum to one, so the weighted sum IS the volumetric fine-to-coarse conversion — no other volume factor. The 1/8 box average remains as `-DF2C_BOX_AVERAGE`.
 3. **Macro recompute + equilibrium**: `COLL::computeDensityAndVelocity(KS)` on the averaged DFs; `COLL::setEquilibrium(KS_EQ)` at those macros.
 4. **Non-equilibrium rescale**: `f_coarse = eq_c + (τ_c/τ_f) · (f_avg − eq_c)` — the reciprocal of the C2F factor.
 5. **Write** to the coarse DF state the NEXT coarse substep will consume (AB: logical `df_out`; next `updateKernelData()` rotation makes it `df_cur`; AA: natural if next substep is even/reflect, twisted if odd/spatial).
@@ -325,15 +325,16 @@ The τ-rescaling is required because `ν_lb` differs between levels (§12.3). Fi
 
 ### 12.2 The Lagrava spatial filter (Lagrava et al. 2012)
 
-The F2C kernel applies a mandatory spatial filter before projecting fine data onto the coarse grid: the per-direction arithmetic 1/8 average of the 8 fine subcells covered by one coarse cell. Lagrava et al. (2012) showed that without this filter, unresolved high-frequency fine modes alias onto the coarse grid, causing instability — especially in turbulent flows.
+The F2C kernel applies a mandatory spatial filter before projecting fine data onto the coarse grid. Lagrava et al. (2012) showed that without this filter, unresolved high-frequency fine modes alias onto the coarse grid, causing instability — especially in turbulent flows. The review (§4.2) confirms the filter is "mandatory at fine-to-coarse transfer locations."
 
-The 1/8 factor has a dual interpretation:
-1. **Volumetric** (implementers' synthesis merging Lagrava's filter with Chen/Rohde's volumetric formulation): DFs are point densities; each fine cell holds 1/8 of the coarse cell volume, so averaging 8 fine cells with weight 1/8 yields the coarse-cell-averaged density.
-2. **Filter**: the arithmetic mean is a low-pass filter that suppresses modes above the coarse Nyquist frequency.
+The current implementation is the tensor-product 4-node-per-axis **Lagrange projection onto the coarse cell center** (4×4×4 = 64 fine cells): the nominal per-axis window `{fx0−1, …, fx0+2}` extends the 2×2×2 subcell block by one fine cell per side, the runtime-evaluated Lagrange weights are normalized to sum to one (centered windows: {−1, 9, 9, −1}/16), and near fine-block boundaries the window is shifted/shortened into the storable extent while the evaluation point stays fixed at the coarse center (the same shifted-window storability machinery as C2F). Properties:
 
-The review (§4.2) confirms this filter is "mandatory at fine-to-coarse transfer locations."
+1. **Volumetric** (implementers' synthesis merging Lagrava's filter with Chen/Rohde's volumetric formulation): DFs are point densities; the sum-to-one weighted average over the subcell neighborhood plays the role of the volume ratio (no additional factor), generalizing the 1/8 weight of the box average.
+2. **Filter**: the weighted neighborhood mean is a low-pass filter; the odd/even checkerboard (the highest fine-resolvable mode) is annihilated since the per-axis weights sum to zero on it ({−1, 9, 9, −1} on any alternating ± pattern evaluates to 0).
+3. **Order**: the projection reproduces cubic fields at the coarse center exactly (the box average reproduced only linear fields), matching the 3rd-order C2F spatial interpolation and the review's "third- or fourth-order spatial" recommendation (§4.3); on shifted boundary windows it remains exact for constants and linears.
+4. **Conservation**: global mass is conserved exactly on translation-invariant extents (each fine cell contributes with total weight 1/2 per axis → 1/8 in 3D, same as the box average); per-cell mass conservation — the box average's property — is traded for the higher order.
 
-**Note**: Lagrava's actual filter (Lagrava 2012, cell-vertex method) is a *weighted* neighborhood average, not a plain 1/8 box average. The implementation's 1/8 box average serves as both the volumetric conversion (Rohde/Chen) and the low-pass filter; Lagrava's additional weighted smoothing is not implemented. The review doc does not contain a volumetric interpretation of the Lagrava filter — the dual interpretation above is the implementers' synthesis.
+The 1/8 box average of the 8 subcells (the original v1 filter) remains available as a compile-time fallback (`-DF2C_BOX_AVERAGE`, cache var `TNL_LBM_F2C_STRATEGY`). Lagrava's own filter (cell-vertex method) is a weighted neighborhood smoothing; the implementation's weighted projection is its cell-centered volumetric analog.
 
 ### 12.3 The τ-rescaling and viscosity mismatch (Filippova & Hänel 1998)
 
