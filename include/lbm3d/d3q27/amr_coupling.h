@@ -281,16 +281,17 @@ __global__ void cudaAMR_CoarseToFine(
 	#ifdef C2F_LINEAR_EXPLOSION
 	// linear explosion: the home cell's macros (rho, u) are distributed to
 	// the fine subcells -- the equilibrium is re-evaluated at those macros
-	// (one `EQ::eq_*` call per direction, never shared) and the
-	// non-equilibrium part is zeroed (pure equilibrium explosion)
+	// and the non-equilibrium part is τ-rescaled from the home cell
+	// (preserves stress information without neighbor-cell reads)
 	LBM_KS KS_EQ;
 	KS_EQ.rho = rho_f;
 	KS_EQ.vx = vx_f;
 	KS_EQ.vy = vy_f;
 	KS_EQ.vz = vz_f;
 	COLL::setEquilibrium(KS_EQ);
+	const dreal neq_scale = tau_fine / tau_coarse;
 	for (int q = 0; q < CONFIG::Q; q++)
-		store_fine_df(q, KS_EQ.f[q]);
+		store_fine_df(q, KS_EQ.f[q] + neq_scale * (KS_H.f[q] - KS_EQ.f[q]));
 	#else
 	// uniform explosion: the home cell's DFs are duplicated to every fine
 	// subcell unchanged (zeroth order; no equilibrium re-evaluation, no
