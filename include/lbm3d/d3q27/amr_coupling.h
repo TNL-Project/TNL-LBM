@@ -13,13 +13,16 @@
  * interface with distribution functions (DFs) reconstructed from the coarse
  * level (Chen et al. 1998, Rohde et al. 2006, Guzik et al. 2014):
  *
- * 1. The macroscopic quantities (rho, u) of the 2x2x2 coarse cells whose
- *    centers bracket the fine cell center are trilinearly interpolated to
- *    the fine cell (cell-centered layout at a 2:1 ratio).
+ * 1. The macroscopic quantities (rho, u) of the 4x4x4 coarse cells whose
+ *    centers surround the fine cell center are interpolated to the fine
+ *    cell with tensor-product 3rd-order Lagrange interpolation
+ *    (cell-centered layout at a 2:1 ratio; trilinear 2nd-order
+ *    interpolation is available as a fallback with -DC2F_TRILINEAR).
  * 2. The equilibrium part of each fine DF is re-evaluated at the
  *    interpolated macros (one `EQ::eq_*` call per direction, never shared).
- * 3. The non-equilibrium part is trilinearly interpolated per direction from
- *    the 8 coarse corner cells and rescaled by `tau_fine / tau_coarse`.
+ * 3. The non-equilibrium part is interpolated per direction from the same
+ *    coarse cells with the same weights and rescaled by
+ *    `tau_fine / tau_coarse`.
  *
  * With 2:1 refinement `nu_lb_f = 2 * nu_lb_c`, so `tau_fine != tau_coarse`
  * (tau = 3 * nu_lb + 0.5 per level): the non-equilibrium rescaling is NOT a
@@ -36,15 +39,60 @@
  * `home = floor(fg / 2)` (true floor division -- valid for negative fine
  * global coordinates, unlike the truncating integer division of C++, so the
  * x_f = -1 ghost maps to the correct home cell), and the fine cell center
- * sits at +-1/4 of the home cell's width from the home cell center, hence
- * the two bracketing coarse cell centers (global) are {home-1, home} for
- * even `fg` and {home, home+1} for odd `fg`, unified as
- * `home - 1 + (fg & 1)` and converted back to the coarse block's indexer
- * frame via `- coarse_off`. The trilinear weight is 3/4 on the home side
- * and 1/4 on the far side of each axis (exact for linear fields; all
- * weights are binary fractions so constant fields are preserved exactly).
- * `fine_off` and `coarse_off` are the blocks' indexer origins in the global
- * coordinates of their own level (`LBM_BLOCK::offset`).
+ * sits at +-1/4 of the home cell's width from the home cell center. The
+ * 3rd-order per-axis stencil uses the 4 coarse cell centers (global)
+ * {home-2, home-1, home, home+1} for even `fg` and
+ * {home-1, home, home+1, home+2} for odd `fg`, unified as
+ * `home - 2 + (fg & 1) + {0,1,2,3}` and converted back to the coarse
+ * block's indexer frame via `- coarse_off`, with Lagrange interpolation
+ * weights evaluated at the fine cell center (offset -1/4 resp. +1/4 of a
+ * coarse cell width from the home cell center). For the centered stencil
+ * the weights are the exact dyadic rationals {-5, 35, 105, -7}/128
+ * (even `fg`) and {-7, 105, 35, -5}/128 (odd `fg`), which sum to 1 so
+ * constant fields are preserved exactly; the interpolation reproduces
+ * cubic fields exactly on any 4 distinct nodes. `fine_off` and
+ * `coarse_off` are the blocks' indexer origins in the global coordinates
+ * of their own level (`LBM_BLOCK::offset`).
+ *
+ * Storability guard: the nominal 4-cell stencil extends up to 2 coarse
+ * cells on each side of the fine cell's home cell, so it can overreach the
+ * coarse block's stored extent near block boundaries. The kernel queries
+ * the coarse storage extent (sizes and overlap) from `coarse_SD.indexer`
+ * and SHIFTS the per-axis stencil window so that all of its cells are
+ * valid storage indices (shortening it if the per-axis extent is smaller
+ * than the stencil), and evaluates the Lagrange weights of the actual
+ * window at runtime in double precision, normalized so they sum to one.
+ * Full nominal accuracy requires the interface ghosts to be positioned at
+ * least two coarse cells inside the coarse block's stored extent; boundary
+ * cells receive a shifted-stencil interpolation that is still exact for
+ * cubic fields but evaluated from a non-centered window.
+ *
+ * Explosion strategies (Eitel-Amor et al. 2025, Fluids 10(2):31): instead
+ * of interpolating from neighboring coarse cells, each fine ghost cell
+ * reads ONLY its home coarse cell, which "explodes" into its 8 fine
+ * subcells independently. No stencil-neighbor coupling exists at the
+ * interface, so the interpolation stencil cannot inject spurious noise
+ * (e.g. from superseded "inside-hidden" coarse cells):
+ * - `C2F_UNIFORM_EXPLOSION`: the home cell's DFs are duplicated to every
+ *   fine subcell unchanged (zeroth order; exactly preserves the home
+ *   cell's moments, no equilibrium re-evaluation, no rescaling).
+ * - `C2F_LINEAR_EXPLOSION`: the home cell's macros (rho, u) are taken
+ *   over directly and the equilibrium is re-evaluated at those macros;
+ *   the non-equilibrium part is zeroed (pure equilibrium explosion --
+ *   the simplest and most stable variant).
+ * With an explosion define the home cell index is clamped per axis into
+ * the coarse storage extent (the analog of the storability guard; valid
+ * geometries never clamp).
+ *
+ * Compile-time switches (C2F reconstruction strategy; the 3rd-order
+ * Lagrange scheme above is the default):
+ * - `C2F_TRILINEAR`: reverts the interpolation to the original 2nd-order
+ *   trilinear scheme (2-point per-axis stencil {home-1+(fg&1),
+ *   home+(fg&1)} with 3/4:1/4 weights, reproduced by the same runtime
+ *   Lagrange machinery with a 2-node window).
+ * - `C2F_LINEAR_EXPLOSION` / `C2F_UNIFORM_EXPLOSION`: the explosion
+ *   strategies described above (linear takes precedence if both are
+ *   defined).
  *
  * Ghost cells: the kernel fills EVERY cell in
  * [ghost_begin_fine, ghost_end_fine) -- the caller passes exactly the
@@ -52,10 +100,14 @@
  * no valid map/classification of their own (fine cells are GEO_FLUID in v1),
  * so no map filtering is done beyond the single `dmacro` guard below.
  *
- * Precondition: the 2x2x2 bracketing coarse cells of every fine ghost cell
- * must be valid storage indices in `coarse_SD` (including overlaps) -- the
- * caller must position interface ghosts at least one coarse cell inside the
- * coarse block's stored extent.
+ * Precondition: the coarse cells of every fine ghost cell's interpolation
+ * stencil must be valid storage indices in `coarse_SD` (including
+ * overlaps). The kernel enforces this itself by shifting/shortening each
+ * per-axis stencil window into the coarse storage extent (see the
+ * storability guard above); no coarse storage index is ever accessed out
+ * of bounds. For the full unshifted 3rd-order stencil the caller should
+ * position interface ghosts at least two coarse cells inside the coarse
+ * block's stored extent.
  *
  * Streaming-pattern handling (DF reads are the ONLY pattern-dependent part):
  * - AB pattern: `postCollisionStreaming` stores the post-collision DF of each
@@ -167,46 +219,167 @@ __global__ void cudaAMR_CoarseToFine(
 #endif
 	};
 
-	// bracketing coarse corners and trilinear weights in the GLOBAL frame
-	// (see the file docstring): fine global coordinate fg = x + fine_off;
-	// the home coarse cell is floor(fg/2) and the bracketing corners
-	// {home-1+(fg&1), home+(fg&1)} are converted back to the coarse block's
-	// indexer frame via coarse_off
+	// true floor division by 2 (valid for negative fine global coordinates,
+	// unlike the truncating integer division of C++ which truncates toward
+	// zero and would map the x = -1 ghost to the wrong home cell)
 	const auto fdiv2 = [](idx v) -> idx
 	{
 		return v >= 0 ? v / 2 : -((-v + 1) / 2);
 	};
-	const idx fgx = x + fine_off.x();
-	const idx fgy = y + fine_off.y();
-	const idx fgz = z + fine_off.z();
-	const idx cx0 = fdiv2(fgx) - 1 + (fgx & 1) - coarse_off.x();
-	const idx cy0 = fdiv2(fgy) - 1 + (fgy & 1) - coarse_off.y();
-	const idx cz0 = fdiv2(fgz) - 1 + (fgz & 1) - coarse_off.z();
-	const dreal wx0 = (fgx & 1) ? dreal(0.75) : dreal(0.25);
-	const dreal wy0 = (fgy & 1) ? dreal(0.75) : dreal(0.25);
-	const dreal wz0 = (fgz & 1) ? dreal(0.75) : dreal(0.25);
 
-	// interpolated fine-level macros and per-direction non-equilibrium sums
+	// fine-DF write in the orientation the next fine substep pulls (see the
+	// file docstring): A-B pulls ghost DFs in natural orientation, so
+	// direction q goes to slot q; the A-A spatial ("odd") substep pulls the
+	// DF streaming out of a ghost cell in direction q from the
+	// opposite-direction slot, so direction q is stored twisted
+	const auto store_fine_df = [&fine_SD, x, y, z](int q, dreal f) -> void
+	{
+#ifdef AB_PATTERN
+		fine_SD.df(df_cur, q, x, y, z) = f;
+#elif defined(AA_PATTERN)
+		fine_SD.df(df_cur, opposite_direction(q), x, y, z) = f;
+#endif
+	};
+
+	// macros supplied to the fine ghost cell (interpolated or the home
+	// coarse cell's), also used for the dmacro write at the end
 	dreal rho_f = 0, vx_f = 0, vy_f = 0, vz_f = 0;
+
+#if defined(C2F_LINEAR_EXPLOSION) || defined(C2F_UNIFORM_EXPLOSION)
+	// ---- Explosion strategies (Eitel-Amor et al. 2025): the fine ghost
+	// cell reads ONLY its home coarse cell, which explodes into its 8 fine
+	// subcells independently -- no stencil-neighbor coupling at the
+	// interface (see the file docstring) ----
+	static_cast<void>(tau_fine);
+	static_cast<void>(tau_coarse);
+
+	// home coarse cell in the coarse indexer frame, clamped per axis into
+	// the stored extent (the explosion analog of the storability guard;
+	// valid geometries never clamp because the fine ghost ring's home
+	// cells lie inside the coarse block's stored footprint)
+	const auto clamped_home = [&coarse_SD, &fdiv2](idx fg, idx coarse_off_a, idx size_a, idx ov_a) -> idx
+	{
+		const idx h = fdiv2(fg) - coarse_off_a;
+		const idx lo = -ov_a;
+		const idx hi = size_a - 1 + ov_a;
+		return h < lo ? lo : (h > hi ? hi : h);
+	};
+	const idx cx = clamped_home(x + fine_off.x(), coarse_off.x(), coarse_SD.X(), coarse_SD.indexer.template getOverlap<0>());
+	const idx cy = clamped_home(y + fine_off.y(), coarse_off.y(), coarse_SD.Y(), coarse_SD.indexer.template getOverlap<1>());
+	const idx cz = clamped_home(z + fine_off.z(), coarse_off.z(), coarse_SD.Z(), coarse_SD.indexer.template getOverlap<2>());
+
+	// the home coarse cell's DF state and its macros
+	LBM_KS KS_H;
+	for (int q = 0; q < CONFIG::Q; q++)
+		KS_H.f[q] = read_coarse_df(q, cx, cy, cz);
+	COLL::computeDensityAndVelocity(KS_H);
+	rho_f = KS_H.rho;
+	vx_f = KS_H.vx;
+	vy_f = KS_H.vy;
+	vz_f = KS_H.vz;
+
+	#ifdef C2F_LINEAR_EXPLOSION
+	// linear explosion: the home cell's macros (rho, u) are distributed to
+	// the fine subcells -- the equilibrium is re-evaluated at those macros
+	// (one `EQ::eq_*` call per direction, never shared) and the
+	// non-equilibrium part is zeroed (pure equilibrium explosion)
+	LBM_KS KS_EQ;
+	KS_EQ.rho = rho_f;
+	KS_EQ.vx = vx_f;
+	KS_EQ.vy = vy_f;
+	KS_EQ.vz = vz_f;
+	COLL::setEquilibrium(KS_EQ);
+	for (int q = 0; q < CONFIG::Q; q++)
+		store_fine_df(q, KS_EQ.f[q]);
+	#else
+	// uniform explosion: the home cell's DFs are duplicated to every fine
+	// subcell unchanged (zeroth order; no equilibrium re-evaluation, no
+	// rescaling)
+	for (int q = 0; q < CONFIG::Q; q++)
+		store_fine_df(q, KS_H.f[q]);
+	#endif
+
+#else
+	// ---- Interpolation strategies (default: 3rd-order Lagrange) ----
+	// Per-axis interpolation stencils and weights in the GLOBAL frame (see
+	// the file docstring): fine global coordinate fg = coord + fine_off; the
+	// home coarse cell is floor(fg/2) and the fine cell center sits at
+	// +-1/4 of the home cell's width from its center. The nominal per-axis
+	// stencil covers the C2F_STENCIL coarse cell centers
+	// `home - C2F_STENCIL/2 + (fg&1) + {0..C2F_STENCIL-1}` and is shifted
+	// (and shortened if the per-axis storage extent is smaller) so that all
+	// nodes are valid coarse storage indices -- the storability guard. The
+	// Lagrange weights are evaluated at runtime in double precision and
+	// normalized to sum to one; for the centered 4-node windows they round
+	// to the exact dyadic rationals {-5,35,105,-7}/128 (even fg) and
+	// {-7,105,35,-5}/128 (odd fg).
+	#ifdef C2F_TRILINEAR
+	// 2nd-order trilinear fallback (the original scheme): 2-point per-axis
+	// stencil {home-1+(fg&1), home+(fg&1)} with 3/4:1/4 weights
+	constexpr int C2F_STENCIL = 2;
+	#else
+	// 3rd-order interpolation: 4-point per-axis Lagrange stencil
+	constexpr int C2F_STENCIL = 4;
+	#endif
+	const auto axis_stencil = [&fdiv2](idx fg, idx coarse_off_a, idx size_a, idx ov_a, idx* nodes, dreal* weights) -> int
+	{
+		const idx home = fdiv2(fg);
+		const idx p = fg & 1;
+		// evaluation point (fine cell center) in the coarse indexer frame
+		const double t = static_cast<double>(home - coarse_off_a) + (p ? 0.25 : -0.25);
+		// limit the stencil to the available storage extent and shift the
+		// window so all nodes are valid storage indices (storability guard)
+		const int extent = static_cast<int>(size_a + 2 * ov_a);
+		const int n = C2F_STENCIL < extent ? C2F_STENCIL : extent;
+		const idx lo = -ov_a;
+		const idx hi = size_a - 1 + ov_a - (n - 1);
+		idx start = home - coarse_off_a - C2F_STENCIL / 2 + p;
+		start = start < lo ? lo : (start > hi ? hi : start);
+		// Lagrange weights of the n consecutive nodes {start..start+n-1} at t
+		// (nodes are consecutive integers, so the denominators are i - j)
+		double w[C2F_STENCIL], wsum = 0;
+		for (int i = 0; i < n; i++) {
+			double wi = 1;
+			for (int j = 0; j < n; j++)
+				if (j != i)
+					wi *= (t - static_cast<double>(start + j)) / static_cast<double>(i - j);
+			w[i] = wi;
+			wsum += wi;
+		}
+		for (int i = 0; i < n; i++) {
+			nodes[i] = start + i;
+			weights[i] = static_cast<dreal>(w[i] / wsum);
+		}
+		return n;
+	};
+	idx cnx[C2F_STENCIL], cny[C2F_STENCIL], cnz[C2F_STENCIL];
+	dreal cwx[C2F_STENCIL], cwy[C2F_STENCIL], cwz[C2F_STENCIL];
+	const int nnx = axis_stencil(x + fine_off.x(), coarse_off.x(), coarse_SD.X(), coarse_SD.indexer.template getOverlap<0>(), cnx, cwx);
+	const int nny = axis_stencil(y + fine_off.y(), coarse_off.y(), coarse_SD.Y(), coarse_SD.indexer.template getOverlap<1>(), cny, cwy);
+	const int nnz = axis_stencil(z + fine_off.z(), coarse_off.z(), coarse_SD.Z(), coarse_SD.indexer.template getOverlap<2>(), cnz, cwz);
+
+	// per-direction non-equilibrium sums (the interpolated macros accumulate
+	// into the rho_f/vx_f/vy_f/vz_f declared above)
 	dreal f_neq[CONFIG::Q] = {};
 
-	// visit the 2x2x2 coarse cells whose centers bracket the fine cell center
-	for (int bz = 0; bz < 2; bz++) {
-		for (int by = 0; by < 2; by++) {
-			for (int bx = 0; bx < 2; bx++) {
-				const dreal w = (bx ? 1 - wx0 : wx0) * (by ? 1 - wy0 : wy0) * (bz ? 1 - wz0 : wz0);
+	// visit the coarse cells of the interpolation stencil (up to 4x4x4 cells
+	// whose centers surround the fine cell center)
+	for (int bz = 0; bz < nnz; bz++) {
+		for (int by = 0; by < nny; by++) {
+			for (int bx = 0; bx < nnx; bx++) {
+				const dreal w = cwx[bx] * cwy[by] * cwz[bz];
 
-				// corner DF state and its macroscopic quantities
+				// coarse-cell DF state and its macroscopic quantities
 				LBM_KS KS;
 				for (int q = 0; q < CONFIG::Q; q++)
-					KS.f[q] = read_coarse_df(q, cx0 + bx, cy0 + by, cz0 + bz);
+					KS.f[q] = read_coarse_df(q, cnx[bx], cny[by], cnz[bz]);
 				COLL::computeDensityAndVelocity(KS);
 				rho_f += w * KS.rho;
 				vx_f += w * KS.vx;
 				vy_f += w * KS.vy;
 				vz_f += w * KS.vz;
 
-				// non-equilibrium at the corner: f_neq[q] = f[q] - eq_q(rho_c, u_c)
+				// non-equilibrium at the coarse cell: f_neq[q] = f[q] - eq_q(rho_c, u_c)
 				LBM_KS KS_EQ;
 				KS_EQ.rho = KS.rho;
 				KS_EQ.vx = KS.vx;
@@ -229,17 +402,9 @@ __global__ void cudaAMR_CoarseToFine(
 
 	// volumetric rescaling, f_fine[q] = eq_q(rho_f,u_f) + (tau_f/tau_c)*f_neq[q]
 	const dreal neq_scale = tau_fine / tau_coarse;
-	for (int q = 0; q < CONFIG::Q; q++) {
-#ifdef AB_PATTERN
-		// A-B: the next fine streaming pulls df_cur[q] in natural orientation
-		fine_SD.df(df_cur, q, x, y, z) = KS_F.f[q] + neq_scale * f_neq[q];
-#elif defined(AA_PATTERN)
-		// A-A: the next fine substep is spatial and pulls the DF streaming
-		// out of this ghost cell in direction q from the opposite-direction
-		// slot -- store twisted
-		fine_SD.df(df_cur, opposite_direction(q), x, y, z) = KS_F.f[q] + neq_scale * f_neq[q];
+	for (int q = 0; q < CONFIG::Q; q++)
+		store_fine_df(q, KS_F.f[q] + neq_scale * f_neq[q]);
 #endif
-	}
 
 	// macros for GEO_AMR_INTERFACE cells (no-op in v1, see the file docstring)
 	if (fine_SD.map(x, y, z) == BC::GEO_AMR_INTERFACE) {
@@ -463,9 +628,7 @@ __global__ void cudaAMR_FineToCoarse(
 	}
 
 	// macros for coupling cells (GEO_AMR_INTERFACE ring or GEO_NOTHING
-	// frozen hidden cells): authoritative coupling value for output; the
-	// main kernel recomputes its own at the next step for collision-active
-	// ring cells; frozen cells' macros come exclusively from this write
+	// frozen hidden cells): authoritative coupling value for output
 	const auto map_val = coarse_SD.map(x, y, z);
 	if (map_val == BC::GEO_AMR_INTERFACE || map_val == BC::GEO_NOTHING) {
 		coarse_SD.macro(MACRO::e_rho, x, y, z) = KS.rho;
