@@ -66,9 +66,9 @@ Each ring `AMR_InterfacePatch` stores:
 
 Fills fine ghost cells from coarse data:
 
-1. **Trilinear macro interpolation**: for each fine ghost cell at global fine coordinate `fg`, compute the home coarse cell `home = floor_div(fg, 2)` (true floor division via `fdiv2`). Bracketing corners: `{home−1+(fg&1), home+(fg&1)}` per axis. Weights: 3/4 on the home side, 1/4 on the far side (exact for linear fields; binary fractions so constant fields are preserved exactly).
+1. **3rd-order Lagrange macro interpolation**: for each fine ghost cell at global fine coordinate `fg`, compute the home coarse cell `home = floor_div(fg, 2)` (true floor division via `fdiv2`). Per-axis stencil: 4 coarse cell centers `{home−2+(fg&1)…home+1+(fg&1)}` with Lagrange weights evaluated at the fine cell center (offset ±1/4 from the home center; centered windows give the dyadic rationals {−5, 35, 105, −7}/128 for even `fg` and {−7, 105, 35, −5}/128 for odd `fg`). Exact for cubic fields; the upgraded scheme implements the "3rd-order C2F spatial interpolation" recommendation of §12.7 (Gendre et al. 2017, Lagrava et al. 2012). **Storability guard**: the kernel shifts/shortens each per-axis window into the coarse storage extent queried from `coarse_SD.indexer` (sizes + overlap) and normalizes the runtime-computed weights to sum to one, so no out-of-bounds access can occur; full nominal accuracy needs ghosts ≥2 coarse cells inside the coarse stored extent. The original trilinear scheme (2-node stencil, 3/4:1/4 weights) remains available via `-DC2F_TRILINEAR`. **Explosion alternatives** (Eitel-Amor et al. 2025, §12.7 item 6): `-DC2F_LINEAR_EXPLOSION` skips the neighbor interpolation entirely — each fine ghost cell takes the home coarse cell's macros `(rho, u)` directly and re-evaluates the equilibrium at them with the non-equilibrium zeroed (pure equilibrium explosion); `-DC2F_UNIFORM_EXPLOSION` duplicates the home cell's DFs to the 8 subcells unchanged (zeroth order, no rescaling). The home cell index is clamped per axis into the coarse storage extent (the explosion analog of the storability guard). Measured on the Taylor-Green bracket metric (cycle-10 violations vs the 188,353 baseline): linear explosion 839,717 (+346 %, rho-plateau dominated), uniform explosion 276,789 (+47 %) — both worse than the 3rd-order interpolation; see §12.7 item 6.
 2. **Equilibrium re-evaluation**: `COLL::setEquilibrium(KS_F)` at the interpolated (rho, u) — one `EQ::eq_*` call per direction, never shared.
-3. **Non-equilibrium interpolation + rescale**: per direction, trilinearly interpolate `f_neq = f_corner − eq_corner(rho_c, u_c)` from the 8 coarse corners, rescale by `τ_f / τ_c` (the non-equilibrium rescaling factor; with 2:1 refinement τ_f ≠ τ_c since ν_lb doubles per level). Result: `f_fine = eq_f + (τ_f/τ_c) · f_neq_interp`.
+3. **Non-equilibrium interpolation + rescale**: per direction, interpolate `f_neq = f_cell − eq_cell(rho_c, u_c)` from the same coarse stencil with the same weights, rescale by `τ_f / τ_c` (the non-equilibrium rescaling factor; with 2:1 refinement τ_f ≠ τ_c since ν_lb doubles per level). Result: `f_fine = eq_f + (τ_f/τ_c) · f_neq_interp`.
 4. **Write** to `fine_SD.df(df_cur, ...)` in the storage-parity expected by the upcoming fine substep (AB: natural orientation; AA: twisted — direction q stored in `opposite_direction(q)` slot because the spatial/odd substep pulls from the opposite slot).
 5. **Macro write guard**: if `fine_SD.map(x,y,z) == GEO_AMR_INTERFACE`, write interpolated macros to `dmacro` (no-op in v1 — fine ghosts are never tagged).
 
@@ -290,3 +290,130 @@ Fix: skip the DF write unless `coarse_SD.map(x,y,z) == GEO_NOTHING` — ~3 lines
 | `089e47a` | `fix` | 2-cell ghost ring on fine blocks so F2C covers the interface ring |
 | `bd227d1` | `docs` | Regenerated Taylor-Green slice render |
 | `5237b2f` | `fix` | Collision-active GEO_AMR_INTERFACE ring (−45.8% violations) |
+
+---
+
+## 12. Mathematical grounding and literature references
+
+This section maps the implementation to the mathematical formulations in the AMR-LBM literature, and identifies what the literature suggests for the open interface problems (§9.2, §9.2.1, v9 regression).
+
+### 12.1 Cell-centered volumetric formulation (Chen 1998, Rohde 2006)
+
+The implementation uses the cell-centered (volumetric) approach: DFs are point densities at cell centers, and coarse/fine grids do not co-locate. Chen (1998) introduced the volumetric reformulation, treating distributions as *masses* moving between cells of different resolution. Rohde et al. (2006) generalized this into a generic, mass-conservative local grid refinement technique independent of the collision step.
+
+The C2F and F2C kernels (`amr_coupling.h`) implement the volumetric DF decomposition:
+
+```
+f = f_eq(ρ, u) + f_neq
+```
+
+where `f_eq` is the equilibrium distribution and `f_neq = f - f_eq(ρ, u)` is the non-equilibrium part.
+
+**Coarse-to-fine** (§4.1 of the implementation doc):
+```
+f_fine = f_eq(ρ_f, u_f) + (τ_f / τ_c) · f_neq_interp
+```
+where `ρ_f`, `u_f` are trilinearly interpolated macros, and `f_neq_interp` is the trilinearly interpolated non-equilibrium from the 8 coarse corner cells. The factor `τ_f / τ_c` rescales the non-equilibrium stress to the fine-level relaxation time.
+
+**Fine-to-coarse** (§4.2):
+```
+f_coarse = f_eq(ρ_c, u_c) + (τ_c / τ_f) · f_neq_avg
+```
+where `f_neq_avg = (1/8) Σ f_neq_k` is the Lagrava-filtered non-equilibrium (the 1/8 arithmetic average IS the volumetric conversion — each fine cell holds 1/8 of the coarse cell volume).
+
+The τ-rescaling is required because `ν_lb` differs between levels (§12.3). Filippova & Hänel (1998) introduced non-equilibrium rescaling; their original factor is `(τ_f−0.5)/(τ_c−0.5)·(dt_f/dt_c)`. The implementation uses the simpler `τ_f/τ_c` — the v1 variant in the falsification matrix (§9.3) tested the FH form and found it noise (−0.3%), so the simpler form is retained.
+
+### 12.2 The Lagrava spatial filter (Lagrava et al. 2012)
+
+The F2C kernel applies a mandatory spatial filter before projecting fine data onto the coarse grid: the per-direction arithmetic 1/8 average of the 8 fine subcells covered by one coarse cell. Lagrava et al. (2012) showed that without this filter, unresolved high-frequency fine modes alias onto the coarse grid, causing instability — especially in turbulent flows.
+
+The 1/8 factor has a dual interpretation:
+1. **Volumetric** (implementers' synthesis merging Lagrava's filter with Chen/Rohde's volumetric formulation): DFs are point densities; each fine cell holds 1/8 of the coarse cell volume, so averaging 8 fine cells with weight 1/8 yields the coarse-cell-averaged density.
+2. **Filter**: the arithmetic mean is a low-pass filter that suppresses modes above the coarse Nyquist frequency.
+
+The review (§4.2) confirms this filter is "mandatory at fine-to-coarse transfer locations."
+
+**Note**: Lagrava's actual filter (Lagrava 2012, cell-vertex method) is a *weighted* neighborhood average, not a plain 1/8 box average. The implementation's 1/8 box average serves as both the volumetric conversion (Rohde/Chen) and the low-pass filter; Lagrava's additional weighted smoothing is not implemented. The review doc does not contain a volumetric interpretation of the Lagrava filter — the dual interpretation above is the implementers' synthesis.
+
+### 12.3 The τ-rescaling and viscosity mismatch (Filippova & Hänel 1998)
+
+With 2:1 convective scaling (`dt ∝ dx`), the lattice viscosity doubles per level:
+
+```
+ν_lb,f = physViscosity · physDt_f / physDl_f² = physViscosity · (physDt_c/2) / (physDl_c/2)² = 2 · ν_lb,c
+```
+
+The relaxation time `τ = 3·ν_lb + 0.5` differs between levels (`τ_f ≠ τ_c`). The non-equilibrium part of the DF depends on `τ` through the stress tensor `Π = Σ f_neq · c_i c_j ≈ -2/3 · ρ · ν_lb · S` (where `S` is the strain rate; this is a standard Chapman-Enskog relation, not from the review doc). Rescaling by `τ_f/τ_c` (C2F) or `τ_c/τ_f` (F2C) maps the stress correctly across levels, preserving the physical viscosity.
+
+### 12.4 Berger-Colella time subcycling (Berger & Colella 1989)
+
+The implementation follows the standard Berger-Colella schedule (§5): one coarse step per global iteration, two fine substeps per coarse step. The review (§2.2) confirms the 2:1 ratio is natural for LBM because halving `Δx` halves `Δt`, so "one coarse time step corresponds to two fine time steps."
+
+**Temporal consistency**: both C2F fills use the coarse post-step state (`t_{n+1}`), so the first fine substep (advancing `t_n → t_{n+1/2}`) receives boundary data from a full coarse step ahead. The "H9" time-interpolation variant (§5, v4) was tested and rejected (+13.4% worse). The review (§4.3) notes that Palabos (Lagrava et al. 2012) uses third-order polynomial *temporal* interpolation, suggesting that linear DF interpolation (H9) is too low-order for the nonlinear DF dynamics. Gendre et al. (2017) require at least third-order *spatial* interpolation for mass conservation in their directional splitting approach — a separate (spatial, not temporal) requirement that also suggests the current second-order C2F interpolation may be insufficient.
+
+### 12.5 Two-way coupling: what the literature says
+
+The central open problem is how to feed fine-interior data back into the coarse lattice without instability. The falsification matrix (§9.3) documents four failed attempts:
+
+- **v6** (naive two-way, full overwrite): unstable (NaN @ cyc 2)
+- **v8** (deeper F2C reach): +69% worse
+- **v9** (freeze hidden cells + interior F2C): +5.6× worse (2,260,592 violations)
+- **v7** (collision-active ring, no under-footprint coupling): best so far (405,761 violations)
+
+The literature offers several relevant insights:
+
+**Rohde et al. (2006)** — the volumetric formulation's key property is that conservation is guaranteed *by construction* through particle redistribution: DFs are masses, and the 1/8 averaging in F2C conserves total mass exactly. This means a proper two-way coupling should not require ad-hoc stabilization (λ-blend, etc.) — the conservation is built into the volumetric averaging. The v6 instability likely resulted from overwriting *post-collision* coarse DFs with fine-averaged DFs without accounting for the collision state mismatch (the coarse cell had already collided; the fine average is pre-collision-equivalent).
+
+**Lagrava et al. (2012)** — the filter is mandatory only for F2C; the C2F direction needs no filter (interpolation from coarse to fine is always well-posed). The implementation correctly applies the filter only in F2C. However, Lagrava's method is cell-vertex (node-based), where co-located nodes allow direct transfer — the cell-centered implementation must rely entirely on the volumetric averaging, which may introduce more coupling error at the interface.
+
+**Guzik et al. (2014)** — developed cell-centered LBM AMR within the Chombo/Berger-Colella framework. The review (§4.3) notes that multiple studies find the interpolation order at the interface critical for maintaining LBM's second-order accuracy, with Palabos using third- or fourth-order spatial interpolation and Gendre et al. (2017) requiring at least third-order. The implementation uses trilinear (second-order) interpolation for C2F macros and non-equilibrium, which may be insufficient. Guzik also distinguishes IVP (prefill ghost cells at `t_l` for all subcycles) from BVP (refill each substep) — the implementation uses BVP (refill per substep); the IVP approach directly addresses the temporal mismatch by precomputing all ghost data at the start of the subcycle.
+
+**Eitel-Amor et al. (2023, 2025)** — conducted the only systematic head-to-head comparison of cell-vertex, cell-centered, and combined approaches with multiple collision models (BGK, MRT, RR, HRR). Key findings:
+- Stability limits depend on the specific coupling mechanism, not just the grid layout.
+- The HRR collision model filters non-hydrodynamic mode contributions regardless of the grid-coupling algorithm (Astoul et al. 2021a). The review does not state that the cumulant collision operator (used in this implementation) shares HRR's mode-filtering properties; whether cumulant provides equivalent damping is an open question.
+
+**Astoul et al. (2021a)** — identified the root cause of spurious noise at refinement interfaces: non-hydrodynamic modes inherent to LBM generate spurious vorticity and acoustics when projected onto coarser grids. This is "intrinsic to resolution changes (aliasing) and is independent of the specific grid-coupling algorithm." This explains why the v9 freeze regression amplified vz: the interior F2C injects fine non-hydrodynamic modes directly into the coarse lattice, where they generate spurious vorticity (including the vz channel, §9.1). The collision-active ring (v7) damps these modes through coarse collision before they propagate.
+
+### 12.6 Why v9 (freeze) regressed: the missing collision damping
+
+The v9 freeze approach removed collision from hidden cells and replaced it with direct fine-averaged DF injection. The review literature explains why this fails:
+
+1. **Non-hydrodynamic mode injection** (Astoul et al. 2021a, review §4.4): the fine solution contains non-hydrodynamic modes that the coarse grid cannot represent. When these are injected directly (v9 interior F2C), they alias onto the coarse grid and generate spurious vorticity/acoustics. In v7, the hidden cells' collision (cumulant relaxation) damps these modes before they reach the ring — the collision acts as a filter.
+
+2. **Post-collision state mismatch** (inference, not directly in the review): v9 overwrites post-coarse-step DFs (already collided) with fine-averaged DFs. The next coarse streaming step then reads from a state that is inconsistent with what collision would have produced — a discontinuity that propagates through the coarse lattice. Note: Rohde's method is described in the review as "independent of the collision step," which does not directly support this claim; the inference is that overwriting a post-collision state with a pre-collision-equivalent average creates an inconsistency.
+
+3. **Loss of collision damping** (inference from Eitel-Amor et al. 2023, review §4.2): the collision-active hidden cells in v7 damp interface perturbations through viscous dissipation. Removing collision (v9) exposes the coarse lattice directly to fine-grid perturbations. The review identifies stability as dependent on the coupling mechanism, but does not use "buffer zone" terminology; this interpretation is the implementers' inference.
+
+### 12.7 Suggested approaches from the literature
+
+Based on the review, the most promising directions for improving the interface coupling are:
+
+1. **Higher-order C2F spatial interpolation**: upgrade from trilinear (second-order) to at least third-order spatial interpolation (Gendre et al. 2017, Lagrava et al. 2012). This reduces the interpolation error that feeds the one-way clamp.
+
+2. **Temporal interpolation for C2F**: despite v4 (linear H9) failing, the review suggests third-order polynomial temporal interpolation (as used in Palabos) may work. The H9 failure was likely due to linear interpolation being too low-order for the nonlinear DF dynamics. Alternatively, Guzik's IVP approach (prefill all ghost cells at `t_l` before the subcycle) directly avoids the temporal mismatch without per-step interpolation.
+
+3. **Mode-filtering collision at the interface**: the review identifies HRR as filtering non-hydrodynamic mode contributions (Astoul et al. 2021a). The implementation uses the cumulant collision operator; whether cumulant provides equivalent non-hydrodynamic mode filtering is not established in the review. If it does not, switching the ring cells to HRR (or a hybrid) may reduce spurious noise.
+
+4. **Cell-vertex (node-based) coupling for the interface**: the review contains a tension on this point — §4.2 reports "cell-vertex approaches qualitatively emit less spurious acoustic noise than cell-centered layouts" (Eitel-Amor et al. 2023), while §4.4 and Table 1 find cell-centered approaches produce "the least spurious noise" with linear or uniform explosion in C2F (Eitel-Amor et al. 2025). The difference likely reflects different test cases and metrics. A hybrid approach — cell-centered in the bulk, cell-vertex at the interface — is the "combined method" family described in §3.3 of the review.
+
+5. **Direct coupling** (Astoul et al. 2021b): eliminate the overlapping mesh layer (the ghost ring) and solve a non-linear equation system constraining zeroth- and first-order non-equilibrium moments at the interface. This "tightens the link between fine and coarse grids" and reduces spurious noise. Note: this is a cell-vertex method; applying it to the cell-centered implementation would be a redesign.
+
+6. **Linear or uniform explosion in C2F** (Eitel-Amor et al. 2025): the review finds that cell-centered C2F with "linear or uniform explosion" produces the least spurious noise among cell-centered variants. This is directly actionable for the C2F kernel's interpolation strategy. **Implemented and measured** (compile-time switches `-DC2F_LINEAR_EXPLOSION` / `-DC2F_UNIFORM_EXPLOSION` in `amr_coupling.h`; pure equilibrium explosion — non-equilibrium zeroed): both variants run the sim_AMR Taylor-Green benchmark to completion without NaN, but both regress on the between-property bracket metric at cycle 10 — linear explosion 839,717 violations (+346 %, dominated by rho: each coarse cell's density is duplicated piecewise-constant over its 8 subcells, producing plateaus that break the bracket), uniform explosion 276,789 (+47 %) — vs the 3rd-order Lagrange baseline of 188,353. The aeroacoustic-noise advantage found by Eitel-Amor et al. does not translate into bracket-metric accuracy on this benchmark; the 3rd-order interpolation remains the preferred default.
+
+7. **Two-step trilinear C2F** (Freitas et al. 2006): interpolate to a virtual cell then transform — the implementation's direct trilinear C2F is close to this; a two-step variant may reduce coupling error.
+
+### 12.8 References
+
+- Astoul, T., Wissocq, G., Boussuge, J.-F., Sengissen, A., & Sagaut, P. (2021a). Analysis and reduction of spurious noise generated at grid refinement interfaces with the lattice Boltzmann method. *J. Computational Physics*, 425, 109949.
+- Astoul, T., Wissocq, G., Boussuge, J.-F., Sengissen, A., & Sagaut, P. (2021b). Lattice Boltzmann method for computational aeroacoustics on non-uniform meshes: A direct grid coupling approach. *J. Computational Physics*, 430, 110667.
+- Berger, M. J., & Colella, P. (1989). Local adaptive mesh refinement for shock hydrodynamics. *J. Computational Physics*, 82(1), 64–84.
+- Chen, H. (1998). Volumetric formulation of the lattice Boltzmann method for fluid dynamics: Basic concept. *Physical Review E*, 58(3), 3955–3963.
+- Chen, H., Filippova, O., Hoch, J., Molvig, K., Shock, R., Teixeira, C., & Zhang, R. (2006). Grid refinement in lattice Boltzmann methods based on volumetric formulation. *Physica A*, 362(1), 158–167.
+- Eitel-Amor, G., Meinke, M., & Schröder, W. (2023). Analysis of hierarchical grid refinement techniques for the lattice Boltzmann method by numerical experiments. *Fluids*, 8(3), 103.
+- Eitel-Amor, G., Meinke, M., & Schröder, W. (2025). Spurious aeroacoustic emissions in lattice Boltzmann grid refinement. *Fluids*, 10(2), 31.
+- Filippova, O., & Hänel, D. (1998). Grid refinement for lattice-BGK models. *J. Computational Physics*, 147(1), 219–228.
+- Freitas, R. K., Meinke, M., & Schröder, W. (2006). Turbulence simulation via the lattice-Boltzmann method on hierarchically refined meshes. *Int. J. Heat and Fluid Flow*, 27(6), 1053–1067.
+- Gendre, F., Ricot, D., Fritz, G., & Sagaut, P. (2017). Grid refinement for aeroacoustics in the lattice Boltzmann method: A directional splitting approach. *Physical Review E*, 96, 023311.
+- Guzik, S. M., Weisgraber, T. H., Colella, P., & Alder, B. J. (2014). Interpolation methods and the accuracy of lattice-Boltzmann mesh refinement. *J. Computational Physics*, 259, 461–487.
+- Lagrava, D., Malaspinas, O., Latt, J., & Chopard, B. (2012). Advances in multi-domain lattice Boltzmann grid refinement. *J. Computational Physics*, 231(14), 4808–4822.
+- Rohde, M., Kandhai, D., Derksen, J. J., & Van den Akker, H. E. A. (2006). A generic, mass conservative local grid refinement technique for lattice-Boltzmann schemes. *Int. J. Numerical Methods in Fluids*, 51(4), 439–468.
