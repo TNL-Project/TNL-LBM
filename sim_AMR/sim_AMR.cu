@@ -68,7 +68,8 @@ struct StateLocal_AMR : State_AMR<NSE>
 					const dreal u = V_0 * TNL::sin(k * phys.x()) * TNL::cos(k * phys.y()) * TNL::cos(k * phys.z());
 					const dreal v = -V_0 * TNL::cos(k * phys.x()) * TNL::sin(k * phys.y()) * TNL::cos(k * phys.z());
 					const dreal w = 0;
-					const dreal rho = 1;
+					const dreal rho =
+						1 + 3 * (V_0 * V_0 / 16) * (TNL::cos(2 * k * phys.x()) + TNL::cos(2 * k * phys.y())) * (TNL::cos(2 * k * phys.z()) + 2);
 					NSE::COLL::setEquilibriumLat(local_df, x, y, z, rho, u, v, w);
 				}
 			);
@@ -104,11 +105,11 @@ void sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 1, int
 	using lat_t = Lattice<3, real, idx>;
 
 	const int N = 64 * RESOLUTION;
-	const real LBM_VISCOSITY = (lattice_viscosity_override > 0) ? lattice_viscosity_override : 0.005f;	 // [Δx^2/Δt] lattice viscosity
-	const real PHYS_HEIGHT = 0.41;		 // [m] domain extent (periodic cube)
-	const real PHYS_VISCOSITY = 1.5e-5;	 // [m^2/s]
-	const real REYNOLDS = 100;			 // [-] Re = V_0 * L / nu
-	const real PHYS_VELOCITY = REYNOLDS * PHYS_VISCOSITY / PHYS_HEIGHT;	 // [m/s]
+	const real LBM_VISCOSITY = (lattice_viscosity_override > 0) ? lattice_viscosity_override : 0.005f;	// [Δx^2/Δt] lattice viscosity
+	const real PHYS_HEIGHT = 0.41;																		// [m] domain extent (periodic cube)
+	const real PHYS_VISCOSITY = 1.5e-5;																	// [m^2/s]
+	const real REYNOLDS = 100;																			// [-] Re = V_0 * L / nu
+	const real PHYS_VELOCITY = REYNOLDS * PHYS_VISCOSITY / PHYS_HEIGHT;									// [m/s]
 	const real PHYS_DL = PHYS_HEIGHT / N;
 	const real PHYS_DT = LBM_VISCOSITY / PHYS_VISCOSITY * PHYS_DL * PHYS_DL;  // [s]
 	point_t PHYS_ORIGIN = {0., 0., 0.};
@@ -178,7 +179,11 @@ int main(int argc, char** argv)
 	program.add_argument("--adios-config").help("path to ADIOS2 configuration file").default_value(std::string("adios2.xml")).nargs(1);
 	program.add_argument("--resolution").help("resolution of the lattice").scan<'i', int>().default_value(1).nargs(1);
 	program.add_argument("--max-level").help("maximum AMR refinement level (0 = uniform)").scan<'i', int>().default_value(1).nargs(1);
-	program.add_argument("--lattice-viscosity").help("override lattice viscosity [dx^2/dt] (for uniform reference runs)").scan<'f', float>().default_value(-1.0f).nargs(1);
+	program.add_argument("--lattice-viscosity")
+		.help("override lattice viscosity [dx^2/dt] (for uniform reference runs)")
+		.scan<'f', float>()
+		.default_value(-1.0f)
+		.nargs(1);
 	program.add_argument("--precision").help("floating point precision").choices("float", "double").default_value(std::string("float")).nargs(1);
 
 	try {
