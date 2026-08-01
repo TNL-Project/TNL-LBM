@@ -17,6 +17,14 @@ foreach(test_name IN ITEMS ${AMR_TESTS})
         target_compile_definitions(${target} PRIVATE "${pattern_upper}_PATTERN")
         target_link_libraries(${target} PUBLIC TNL::TNL_LBM)
 
+        # optional C2F strategy compile-check (same cache var as sim_AMR):
+        # only for verifying that alternative strategies compile in both
+        # patterns -- the tests pin the default scheme's semantics, so they
+        # are RUN with the default build (empty TNL_LBM_C2F_STRATEGY)
+        if(TNL_LBM_C2F_STRATEGY)
+            target_compile_definitions(${target} PRIVATE ${TNL_LBM_C2F_STRATEGY})
+        endif()
+
         # force language to HIP
         if(TNL_LBM_BUILD_HIP)
             set_source_files_properties(${test_name}.cu PROPERTIES LANGUAGE HIP)
