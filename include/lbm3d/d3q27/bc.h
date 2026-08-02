@@ -356,15 +356,18 @@ struct D3Q27_BC_All
 				break;
 			case GEO_ADJOINT_INFLOW_BB_LEFT:
 				{
-					KS.f[mzz] = KS.f[pzz];
-					KS.f[mpz] = KS.f[pmz];
-					KS.f[mmz] = KS.f[ppz];
-					KS.f[mzp] = KS.f[pzm];
-					KS.f[mzm] = KS.f[pzp];
-					KS.f[mpp] = KS.f[pmm];
-					KS.f[mpm] = KS.f[pmp];
-					KS.f[mmp] = KS.f[ppm];
-					KS.f[mmm] = KS.f[ppp];
+					// site-local post-collision populations from the wall node are needed
+					// for a valid rho in the collision below; the streamed +x populations
+					// come from the ghost face (unused in AB) and would pollute the state
+					KS.f[mzz] = TNL::Backend::ldg(SD.df(df_cur, pzz, x, y, z));
+					KS.f[mpz] = TNL::Backend::ldg(SD.df(df_cur, pmz, x, y, z));
+					KS.f[mmz] = TNL::Backend::ldg(SD.df(df_cur, ppz, x, y, z));
+					KS.f[mzp] = TNL::Backend::ldg(SD.df(df_cur, pzm, x, y, z));
+					KS.f[mzm] = TNL::Backend::ldg(SD.df(df_cur, pzp, x, y, z));
+					KS.f[mpp] = TNL::Backend::ldg(SD.df(df_cur, pmm, x, y, z));
+					KS.f[mpm] = TNL::Backend::ldg(SD.df(df_cur, pmp, x, y, z));
+					KS.f[mmp] = TNL::Backend::ldg(SD.df(df_cur, ppm, x, y, z));
+					KS.f[mmm] = TNL::Backend::ldg(SD.df(df_cur, ppp, x, y, z));
 					dreal temp_f_mzz = KS.f[mzz];
 					dreal temp_f_mpz = KS.f[mpz];
 					dreal temp_f_mmz = KS.f[mmz];
