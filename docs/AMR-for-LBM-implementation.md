@@ -404,6 +404,8 @@ Based on the review, the most promising directions for improving the interface c
 
 7. **Two-step trilinear C2F** (Freitas et al. 2006): interpolate to a virtual cell then transform — the implementation's direct trilinear C2F is close to this; a two-step variant may reduce coupling error.
 
+8. **Compact-moment (cumulant-projection) C2F** (Schönherr 2015): project the coarse cell's distribution onto its 3rd+ order cumulants and reconstruct the fine-scale distribution from the filtered moment set, in the spirit of the mode-filtering review finding in item 3. **Implemented and measured** (compile-time switch `-DC2F_COMPACT_MOMENT` in `amr_coupling.h`; not the default). Measured against the 3rd-order Lagrange baseline via `between_metric` with trilinear upsampling and volume-weighted norms: CM yields 688,265 violations at the final cycle vs 202,078 for the baseline (3.4× worse at cycle 10, 1.9× overall). Per-field at cycle 10 — rho: CM 513,702 violations (28× L1 norm vs baseline), the dominant error; vx/vy: ~2.8× minor increase; vz: 1.5× violation count but 0.64× L1 and 0.26× L∞ (improved on average). The mode-filtering approach reduces vz aliasing as designed but severely degrades the rho channel. CM is retained as a compile-time option but is not the default.
+
 ### 12.8 References
 
 - Astoul, T., Wissocq, G., Boussuge, J.-F., Sengissen, A., & Sagaut, P. (2021a). Analysis and reduction of spurious noise generated at grid refinement interfaces with the lattice Boltzmann method. *J. Computational Physics*, 425, 109949.
