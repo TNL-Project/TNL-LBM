@@ -5,7 +5,6 @@ set(TARGETS
         sim_4
         sim_IBM1
         sim_IBM2
-        sim_IBM3
         sim_IBM4
 )
 

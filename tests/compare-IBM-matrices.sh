@@ -18,7 +18,7 @@ resolution=1
 for method in modified original; do
     for dirac in {1..4}; do
         echo "$method method, $compute compute, dirac $dirac"
-        ./build/sim_NSE/sim_IBM3 --compute "$compute" --method "$method" --dirac "$dirac" --discretization-ratio "$discretization_ratio" --resolution "$resolution"
+        ./build/sim_NSE/sim_IBM2 --compute "$compute" --method "$method" --dirac "$dirac" --discretization-ratio "$discretization_ratio" --resolution "$resolution" --spheres 1 --final-time 0.0 --mtx-output
     done
 done
 
