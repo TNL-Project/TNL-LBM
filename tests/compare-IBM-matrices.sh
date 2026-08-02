@@ -19,9 +19,9 @@ for method in modified original; do
     for dirac in {1..4}; do
         echo "$method method, $compute compute, dirac $dirac"
         ./build/sim_NSE/sim_IBM3 --compute "$compute" --method "$method" --dirac "$dirac" --discretization-ratio "$discretization_ratio" --resolution "$resolution"
-        for matrix in A M; do
-            echo "Diff matrix $matrix Dirac $dirac"
-            ./pydiff.py "ibm_${compute}_matrix-${matrix}_method-${method}_dirac-$dirac.mtx" "./tests/baseline_ibm_matrices/matrix-${matrix}_method-${method}_dirac-$dirac.mtx"
-        done
     done
 done
+
+# Compare the generated matrices against the baselines. The validator checks
+# dimensions, sparsity pattern, and values for every generated file.
+python3 tests/regression/check-d3q27-ibm-results.py
