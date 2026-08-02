@@ -5,6 +5,7 @@
 #endif
 
 #include "lbm3d/defs.h"
+#include "lbm_common/ciselnik.h"
 
 /**
  * \brief AMR inter-level coupling: coarse-to-fine volumetric DF rescaling.
@@ -93,6 +94,20 @@
  * - `C2F_LINEAR_EXPLOSION` / `C2F_UNIFORM_EXPLOSION`: the explosion
  *   strategies described above (linear takes precedence if both are
  *   defined).
+ * - `C2F_COMPACT_MOMENT`: moment-based compact interpolation (Schönherr
+ *   2015 thesis, Sec. 7.2, Eqs. 7.10-7.48; the production scheme of the
+ *   Musubi code) from the 2x2x2-cell home window (the C2F_TRILINEAR
+ *   stencil): the five independent second-order non-equilibrium moments
+ *   (strain rates) are computed per source cell from f_neq = f - f_eq,
+ *   the 8-coefficient density and three 11-coefficient velocity
+ *   polynomials are fitted (exact for linear and pure quadratic fields),
+ *   the averaged moments are corrected by the fitted gradients, and the
+ *   fine DFs are reconstructed from the six second-order cumulants with
+ *   the cumulant back-transformation of col_cum.h, with third-order and
+ *   higher central moments zeroed (projects the non-hydrodynamic modes
+ *   out of the interface instead of interpolating them per direction).
+ *   Precedence if several defines are given: explosion > compact moment
+ *   > interpolation.
  *
  * Ghost cells: the kernel fills EVERY cell in
  * [ghost_begin_fine, ghost_end_fine) -- the caller passes exactly the
@@ -299,6 +314,430 @@ __global__ void cudaAMR_CoarseToFine(
 	for (int q = 0; q < CONFIG::Q; q++)
 		store_fine_df(q, KS_H.f[q]);
 	#endif
+
+#elif defined(C2F_COMPACT_MOMENT)
+	// ---- Compact moment-based interpolation (Schönherr 2015 thesis,
+	// Sec. 7.2, Eqs. 7.10-7.48; see the file docstring for the outline):
+	// the fine ghost cell brackets its home window of 2x2x2 coarse source
+	// cells (the C2F_TRILINEAR stencil), computes the five independent
+	// second-order non-equilibrium moments per source cell from
+	// f_neq = f - f_eq (strain-rate information), fits the 8-coefficient
+	// density polynomial and the three 11-coefficient velocity polynomials
+	// (exact for linear and pure quadratic fields), corrects the averaged
+	// moments by the fitted gradients, and reconstructs the fine DFs from
+	// the six second-order cumulants via the cumulant back-transformation
+	// of col_cum.h; third-order and higher central moments are set to
+	// zero, so the non-hydrodynamic modes of D3Q27 are projected out at
+	// the interface instead of being interpolated per direction.
+
+	// D3Q27 lattice velocity components per direction (enumeration from
+	// defs.h: the p/m/z letters map to +1/-1/0 in x/y/z order)
+	constexpr signed char vel_cx[27] = {0, 1, -1, 0, 0, 0, 0, 1, -1, 1, -1, 1, -1, 1, -1, 0, 0, 0, 0, 1, -1, 1, -1, 1, -1, 1, -1};
+	constexpr signed char vel_cy[27] = {0, 0, 0, 1, -1, 0, 0, 1, -1, -1, 1, 0, 0, 0, 0, 1, -1, 1, -1, 1, -1, 1, -1, -1, 1, -1, 1};
+	constexpr signed char vel_cz[27] = {0, 0, 0, 0, 0, 1, -1, 0, 0, 0, 0, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1};
+
+	// relaxation rates of the source (coarse) and destination (fine) grids
+	const dreal omega_s = no1 / tau_coarse;
+	const dreal omega_d = no1 / tau_fine;
+
+	// Step A: 2-cell-per-axis source window and the evaluation point. The
+	// axis_stencil lambda of the default branch is not visible here, so
+	// the window logic is duplicated (nodes only; the Lagrange weights of
+	// the default branch are not needed): the nominal window is
+	// {home-1, home} for even fg and {home, home+1} for odd fg, shifted
+	// into the coarse storage extent by the storability guard; the nodal
+	// local coordinates are +-1/2 (bx=0 -> -1/2) and the fine cell center
+	// evaluates at (tx,ty,tz) = +-1/4 per axis. On a degenerate axis
+	// (storage extent 1) the single cell is mirrored at both nodes: all
+	// coefficients of monomials containing that axis then evaluate to
+	// zero, so the polynomials reduce correctly.
+	const auto axis_window = [&fdiv2](idx fg, idx coarse_off_a, idx size_a, idx ov_a, idx* nodes) -> dreal
+	{
+		const idx home = fdiv2(fg);
+		const idx p = fg & 1;
+		// fine cell center (evaluation point) in the coarse indexer frame
+		const double t = static_cast<double>(home - coarse_off_a) + (p ? 0.25 : -0.25);
+		// nominal 2-cell window home - 1 + (fg&1) + {0,1}, shifted into
+		// the storage extent (storability guard)
+		const int extent = static_cast<int>(size_a + 2 * ov_a);
+		const int n = 2 < extent ? 2 : extent;
+		const idx lo = -ov_a;
+		const idx hi = size_a - 1 + ov_a - (n - 1);
+		idx start = home - coarse_off_a - 1 + p;
+		start = start < lo ? lo : (start > hi ? hi : start);
+		nodes[0] = start;
+		nodes[1] = start + (n - 1);
+		// evaluation point relative to the window center (start + 1/2)
+		return static_cast<dreal>(t - (static_cast<double>(start) + 0.5));
+	};
+	idx cnx[2], cny[2], cnz[2];
+	const dreal tx = axis_window(x + fine_off.x(), coarse_off.x(), coarse_SD.X(), coarse_SD.indexer.template getOverlap<0>(), cnx);
+	const dreal ty = axis_window(y + fine_off.y(), coarse_off.y(), coarse_SD.Y(), coarse_SD.indexer.template getOverlap<1>(), cny);
+	const dreal tz = axis_window(z + fine_off.z(), coarse_off.z(), coarse_SD.Z(), coarse_SD.indexer.template getOverlap<2>(), cnz);
+
+	// Steps B-D: visit the 8 source cells (local coordinates (xn,yn,zn)
+	// in {+-1/2}^3) and accumulate the polynomial coefficient sums; the
+	// prefactors of Eqs. 7.10-7.28 are applied after the loop
+	dreal sd0 = 0, sdx = 0, sdy = 0, sdz = 0, sdxy = 0, sdyz = 0, sdxz = 0, sdxyz = 0;
+	dreal sa0 = 0, sax = 0, say = 0, saz = 0, saxx = 0, sayy = 0, sazz = 0, saxy = 0, sayz = 0, saxz = 0, saxyz = 0;
+	dreal sb0 = 0, sbx = 0, sby = 0, sbz = 0, sbxx = 0, sbyy = 0, sbzz = 0, sbxy = 0, sbxz = 0, sbyz = 0, sbxyz = 0;
+	dreal sc0 = 0, scx = 0, scy = 0, scz = 0, scxx = 0, scyy = 0, sczz = 0, scxy = 0, scyz = 0, scxz = 0, scxyz = 0;
+	dreal sk_xy = 0, sk_yz = 0, sk_xz = 0, sk_xx_yy = 0, sk_xx_zz = 0;
+	for (int ibz = 0; ibz < 2; ibz++) {
+		const dreal zn = static_cast<dreal>(ibz) - n1o2;
+		const idx cz = cnz[ibz];
+		for (int iby = 0; iby < 2; iby++) {
+			const dreal yn = static_cast<dreal>(iby) - n1o2;
+			const idx cy = cny[iby];
+			for (int ibx = 0; ibx < 2; ibx++) {
+				const dreal xn = static_cast<dreal>(ibx) - n1o2;
+
+				// Step B: the source cell's DF state and its macros
+				LBM_KS KS_C;
+				for (int q = 0; q < CONFIG::Q; q++)
+					KS_C.f[q] = read_coarse_df(q, cnx[ibx], cy, cz);
+				COLL::computeDensityAndVelocity(KS_C);
+				const dreal rho_n = KS_C.rho;
+				const dreal u = KS_C.vx;
+				const dreal v = KS_C.vy;
+				const dreal w = KS_C.vz;
+
+				// non-equilibrium at the coarse cell and its pressure
+				// tensor, Pi_ab = sum_q c_qa * c_qb * (f[q] - f_eq[q])
+				LBM_KS KS_E;
+				KS_E.rho = rho_n;
+				KS_E.vx = u;
+				KS_E.vy = v;
+				KS_E.vz = w;
+				COLL::setEquilibrium(KS_E);
+				dreal Pi_xx = 0, Pi_yy = 0, Pi_zz = 0, Pi_xy = 0, Pi_xz = 0, Pi_yz = 0;
+				for (int q = 0; q < CONFIG::Q; q++) {
+					const dreal f_neq = KS_C.f[q] - KS_E.f[q];
+					const dreal cqx = static_cast<dreal>(vel_cx[q]);
+					const dreal cqy = static_cast<dreal>(vel_cy[q]);
+					const dreal cqz = static_cast<dreal>(vel_cz[q]);
+					Pi_xx += cqx * cqx * f_neq;
+					Pi_yy += cqy * cqy * f_neq;
+					Pi_zz += cqz * cqz * f_neq;
+					Pi_xy += cqx * cqy * f_neq;
+					Pi_xz += cqx * cqz * f_neq;
+					Pi_yz += cqy * cqz * f_neq;
+				}
+
+				// second-order moments from f_neq (Eqs. 7.5-7.9): the
+				// off-diagonals carry -3*omega_s, the diagonal
+				// differences -(3/2)*omega_s, where omega_s is the
+				// SOURCE (coarse) grid relaxation rate
+				const dreal om_rho = omega_s / rho_n;
+				const dreal k_xy = -no3 * om_rho * Pi_xy;
+				const dreal k_yz = -no3 * om_rho * Pi_yz;
+				const dreal k_xz = -no3 * om_rho * Pi_xz;
+				const dreal k_xx_yy = -n3o2 * om_rho * (Pi_xx - Pi_yy);
+				const dreal k_xx_zz = -n3o2 * om_rho * (Pi_xx - Pi_zz);
+				// diagonal-moment combinations of the velocity families
+				// (K_b = k_yy_xx + k_yy_zz, K_c = k_zz_xx + k_zz_yy)
+				const dreal K_a = k_xx_yy + k_xx_zz;
+				const dreal K_b = k_xx_zz - no2 * k_xx_yy;
+				const dreal K_c = k_xx_yy - no2 * k_xx_zz;
+
+				// density coefficient sums (Eqs. 7.10-7.17)
+				sd0 += rho_n;
+				sdx += xn * rho_n;
+				sdy += yn * rho_n;
+				sdz += zn * rho_n;
+				sdxy += xn * yn * rho_n;
+				sdyz += yn * zn * rho_n;
+				sdxz += xn * zn * rho_n;
+				sdxyz += xn * yn * zn * rho_n;
+
+				// x-velocity coefficient sums (Eqs. 7.18-7.28)
+				sa0 += -xn * K_a - no2 * yn * k_xy - no2 * zn * k_xz + no4 * u + no4 * xn * yn * v + no4 * xn * zn * w;
+				sax += xn * u;
+				say += yn * u;
+				saz += zn * u;
+				saxx += xn * K_a + no4 * xn * yn * v + no4 * xn * zn * w;
+				sayy += no2 * yn * k_xy - no8 * xn * yn * v;
+				sazz += no2 * zn * k_xz - no8 * xn * zn * w;
+				saxy += xn * yn * u;
+				sayz += yn * zn * u;
+				saxz += xn * zn * u;
+				saxyz += xn * yn * zn * u;
+
+				// y-velocity coefficient sums (cyclic permutation)
+				sb0 += -yn * K_b - no2 * xn * k_xy - no2 * zn * k_yz + no4 * v + no4 * xn * yn * u + no4 * yn * zn * w;
+				sbx += xn * v;
+				sby += yn * v;
+				sbz += zn * v;
+				sbxx += no2 * xn * k_xy - no8 * xn * yn * u;
+				sbyy += yn * K_b + no4 * xn * yn * u + no4 * yn * zn * w;
+				sbzz += no2 * zn * k_yz - no8 * yn * zn * w;
+				sbxy += xn * yn * v;
+				sbxz += xn * zn * v;
+				sbyz += yn * zn * v;
+				sbxyz += xn * yn * zn * v;
+
+				// z-velocity coefficient sums (cyclic permutation)
+				sc0 += -zn * K_c - no2 * xn * k_xz - no2 * yn * k_yz + no4 * w + no4 * xn * zn * u + no4 * yn * zn * v;
+				scx += xn * w;
+				scy += yn * w;
+				scz += zn * w;
+				scxx += no2 * xn * k_xz - no8 * xn * zn * u;
+				scyy += no2 * yn * k_yz - no8 * yn * zn * v;
+				sczz += zn * K_c + no4 * xn * zn * u + no4 * yn * zn * v;
+				scxy += xn * yn * w;
+				scyz += yn * zn * w;
+				scxz += xn * zn * w;
+				scxyz += xn * yn * zn * w;
+
+				// nodal second-order moment sums (for the Step E averages)
+				sk_xy += k_xy;
+				sk_yz += k_yz;
+				sk_xz += k_xz;
+				sk_xx_yy += k_xx_yy;
+				sk_xx_zz += k_xx_zz;
+			}
+		}
+	}
+
+	// Step C: density polynomial coefficients (Eqs. 7.10-7.17) and the
+	// density at the fine cell center (Eq. 7.37)
+	const dreal d_0 = n1o8 * sd0;
+	const dreal d_x = n1o2 * sdx;
+	const dreal d_y = n1o2 * sdy;
+	const dreal d_z = n1o2 * sdz;
+	const dreal d_xy = no2 * sdxy;
+	const dreal d_yz = no2 * sdyz;
+	const dreal d_xz = no2 * sdxz;
+	const dreal d_xyz = no8 * sdxyz;
+	rho_f = d_0 + d_x * tx + d_y * ty + d_z * tz + d_xy * tx * ty + d_xz * tx * tz + d_yz * ty * tz + d_xyz * tx * ty * tz;
+
+	// Step D: velocity polynomial coefficients (Eqs. 7.18-7.28 and the
+	// cyclic permutations for the y- and z-families) and the velocities
+	// at the fine cell center (Eqs. 7.34-7.36)
+	const dreal n1o32 = n1o8 * n1o4;
+	const dreal a_0 = n1o32 * sa0;
+	const dreal a_x = n1o2 * sax;
+	const dreal a_y = n1o2 * say;
+	const dreal a_z = n1o2 * saz;
+	const dreal a_xx = n1o8 * saxx;
+	const dreal a_yy = n1o8 * sayy;
+	const dreal a_zz = n1o8 * sazz;
+	const dreal a_xy = no2 * saxy;
+	const dreal a_yz = no2 * sayz;
+	const dreal a_xz = no2 * saxz;
+	const dreal a_xyz = no8 * saxyz;
+	const dreal b_0 = n1o32 * sb0;
+	const dreal b_x = n1o2 * sbx;
+	const dreal b_y = n1o2 * sby;
+	const dreal b_z = n1o2 * sbz;
+	const dreal b_xx = n1o8 * sbxx;
+	const dreal b_yy = n1o8 * sbyy;
+	const dreal b_zz = n1o8 * sbzz;
+	const dreal b_xy = no2 * sbxy;
+	const dreal b_yz = no2 * sbyz;
+	const dreal b_xz = no2 * sbxz;
+	const dreal b_xyz = no8 * sbxyz;
+	const dreal c_0 = n1o32 * sc0;
+	const dreal c_x = n1o2 * scx;
+	const dreal c_y = n1o2 * scy;
+	const dreal c_z = n1o2 * scz;
+	const dreal c_xx = n1o8 * scxx;
+	const dreal c_yy = n1o8 * scyy;
+	const dreal c_zz = n1o8 * sczz;
+	const dreal c_xy = no2 * scxy;
+	const dreal c_yz = no2 * scyz;
+	const dreal c_xz = no2 * scxz;
+	const dreal c_xyz = no8 * scxyz;
+	vx_f = a_0 + tx * (a_x + tx * a_xx + ty * a_xy + tz * a_xz + ty * tz * a_xyz) + ty * a_y + tz * a_z + ty * ty * a_yy + tz * tz * a_zz
+		 + ty * tz * a_yz;
+	vy_f = b_0 + tx * (b_x + tx * b_xx + ty * b_xy + tz * b_xz + ty * tz * b_xyz) + ty * b_y + tz * b_z + ty * ty * b_yy + tz * tz * b_zz
+		 + ty * tz * b_yz;
+	vz_f = c_0 + tx * (c_x + tx * c_xx + ty * c_xy + tz * c_xz + ty * tz * c_xyz) + ty * c_y + tz * c_z + ty * ty * c_yy + tz * tz * c_zz
+		 + ty * tz * c_yz;
+
+	// Step E: averaged second-order moments with the velocity-gradient
+	// corrections (Eqs. 7.29-7.33)
+	const dreal avg_k_xy = n1o8 * sk_xy - (a_y + b_x);
+	const dreal avg_k_yz = n1o8 * sk_yz - (b_z + c_y);
+	const dreal avg_k_xz = n1o8 * sk_xz - (a_z + c_x);
+	const dreal avg_k_xx_yy = n1o8 * sk_xx_yy - (a_x - b_y);
+	const dreal avg_k_xx_zz = n1o8 * sk_xx_zz - (a_x - c_z);
+
+	// Step F: second-order cumulants at the fine cell (Eqs. 7.38-7.48);
+	// sigma_{c->f} = 1/2, omega_d is the destination (fine) grid rate
+	const dreal sigma = n1o2;
+	const dreal corr_B = no2 * a_xx * tx - b_xy * tx + a_xy * ty - no2 * b_yy * ty + a_xz * tz - b_yz * tz - b_xyz * tx * tz + a_xyz * ty * tz;
+	const dreal corr_C = no2 * a_xx * tx - c_xz * tx + a_xy * ty - c_yz * ty - c_xyz * tx * ty + a_xz * tz - no2 * c_zz * tz + a_xyz * ty * tz;
+	const dreal A011 = b_xz * tx + c_xy * tx + b_yz * ty + no2 * c_yy * ty + b_xyz * tx * ty + no2 * b_zz * tz + c_yz * tz + c_xyz * tx * tz;
+	const dreal A101 = a_xz * tx + no2 * c_xx * tx + a_yz * ty + c_xy * ty + a_xyz * tx * ty + no2 * a_zz * tz + c_xz * tz + c_xyz * ty * tz;
+	const dreal A110 = a_xy * tx + no2 * b_xx * tx + no2 * a_yy * ty + b_xy * ty + a_yz * tz + b_xz * tz + a_xyz * tx * tz + b_xyz * ty * tz;
+	const dreal off_factor = sigma * rho_f / (no3 * omega_d);
+	const dreal C011 = -off_factor * (b_z + c_y + avg_k_yz + A011);
+	const dreal C101 = -off_factor * (a_z + c_x + avg_k_xz + A101);
+	const dreal C110 = -off_factor * (a_y + b_x + avg_k_xy + A110);
+	// the diagonal cumulants carry the rho/3 equilibrium term; the
+	// non-equilibrium corrections are trace-free
+	const dreal X = a_x - b_y + avg_k_xx_yy + corr_B;
+	const dreal Y = a_x - c_z + avg_k_xx_zz + corr_C;
+	const dreal diag_factor = no2 * sigma * rho_f / (no9 * omega_d);
+	const dreal diag_eq = rho_f * n1o3;
+	const dreal C200 = diag_eq - diag_factor * (X + Y);
+	const dreal C020 = diag_eq - diag_factor * (-no2 * X + Y);
+	const dreal C002 = diag_eq - diag_factor * (X - no2 * Y);
+
+	// Step G: cumulant/central moment state at the fine cell -- the
+	// zeroth cumulant is the interpolated density, the first-order
+	// central moments vanish by construction (central frame), the
+	// second-order central moments equal the cumulants of Step F, and
+	// ALL third-order and higher central moments are zero (the mode
+	// filter, cf. col_cum.h's simplified non-USE_GEIER_CUM_2017 path)
+	const dreal ks_000 = rho_f;
+	const dreal ks_100 = 0;
+	const dreal ks_010 = 0;
+	const dreal ks_001 = 0;
+	const dreal ks_200 = C200;
+	const dreal ks_020 = C020;
+	const dreal ks_002 = C002;
+	const dreal ks_110 = C110;
+	const dreal ks_101 = C101;
+	const dreal ks_011 = C011;
+	const dreal ks_210 = 0;
+	const dreal ks_120 = 0;
+	const dreal ks_201 = 0;
+	const dreal ks_102 = 0;
+	const dreal ks_021 = 0;
+	const dreal ks_012 = 0;
+	const dreal ks_111 = 0;
+
+	const dreal rho_inv = no1 / rho_f;
+	const dreal vx_sqr = vx_f * vx_f;
+	const dreal vy_sqr = vy_f * vy_f;
+	const dreal vz_sqr = vz_f * vz_f;
+
+	// Step H: cumulant back-transformation (central moments -> DFs),
+	// copied from col_cum.h (the non-USE_GEIER_CUM_2017 path, Geier 2015
+	// Eqs. 81-96) with the #define aliases replaced by explicit variables
+	// and KS.f[...] replaced by store_fine_df(...). There is no collision:
+	// the post-collision cumulants equal the pre-collision ones.
+
+	// Eqs. 81-82 from Geier 2015: higher-order central moments
+	const dreal ks_211 = (ks_200 * ks_011 + no2 * ks_101 * ks_110) * rho_inv;
+	const dreal ks_121 = (ks_020 * ks_101 + no2 * ks_110 * ks_011) * rho_inv;
+	const dreal ks_112 = (ks_002 * ks_110 + no2 * ks_011 * ks_101) * rho_inv;
+	const dreal ks_220 = (ks_020 * ks_200 + no2 * ks_110 * ks_110) * rho_inv;
+	const dreal ks_022 = (ks_002 * ks_020 + no2 * ks_011 * ks_011) * rho_inv;
+	const dreal ks_202 = (ks_200 * ks_002 + no2 * ks_101 * ks_101) * rho_inv;
+
+	// Eq. 83 from Geier 2015 (all third-order cumulants are zero)
+	const dreal ks_122 = 0;
+	const dreal ks_212 = 0;
+	const dreal ks_221 = 0;
+
+	// Eq. 84 from Geier 2015
+	const dreal ks_222 = (ks_200 * ks_022 + ks_020 * ks_202 + ks_002 * ks_220 + no4 * (ks_011 * ks_211 + ks_101 * ks_121 + ks_110 * ks_112)) * rho_inv
+					   - (no16 * ks_110 * ks_101 * ks_011 + no4 * (ks_101 * ks_101 * ks_020 + ks_011 * ks_011 * ks_200 + ks_110 * ks_110 * ks_002)
+						  + no2 * ks_200 * ks_020 * ks_002)
+							 * rho_inv * rho_inv;
+
+	// backward central moment transformation (Eqs. 88-96 from Geier 2015)
+	// Eq. 88
+	const dreal ks_z00 = ks_000 * (no1 - vx_sqr) - no2 * vx_f * ks_100 - ks_200;
+	const dreal ks_z01 = ks_001 * (no1 - vx_sqr) - no2 * vx_f * ks_101 - ks_201;
+	const dreal ks_z02 = ks_002 * (no1 - vx_sqr) - no2 * vx_f * ks_102 - ks_202;
+	const dreal ks_z10 = ks_010 * (no1 - vx_sqr) - no2 * vx_f * ks_110 - ks_210;
+	const dreal ks_z11 = ks_011 * (no1 - vx_sqr) - no2 * vx_f * ks_111 - ks_211;
+	const dreal ks_z12 = ks_012 * (no1 - vx_sqr) - no2 * vx_f * ks_112 - ks_212;
+	const dreal ks_z20 = ks_020 * (no1 - vx_sqr) - no2 * vx_f * ks_120 - ks_220;
+	const dreal ks_z21 = ks_021 * (no1 - vx_sqr) - no2 * vx_f * ks_121 - ks_221;
+	const dreal ks_z22 = ks_022 * (no1 - vx_sqr) - no2 * vx_f * ks_122 - ks_222;
+
+	// Eq. 89
+	const dreal ks_m00 = (ks_000 * (vx_sqr - vx_f) + ks_100 * (no2 * vx_f - no1) + ks_200) * n1o2;
+	const dreal ks_m01 = (ks_001 * (vx_sqr - vx_f) + ks_101 * (no2 * vx_f - no1) + ks_201) * n1o2;
+	const dreal ks_m02 = (ks_002 * (vx_sqr - vx_f) + ks_102 * (no2 * vx_f - no1) + ks_202) * n1o2;
+	const dreal ks_m10 = (ks_010 * (vx_sqr - vx_f) + ks_110 * (no2 * vx_f - no1) + ks_210) * n1o2;
+	const dreal ks_m11 = (ks_011 * (vx_sqr - vx_f) + ks_111 * (no2 * vx_f - no1) + ks_211) * n1o2;
+	const dreal ks_m12 = (ks_012 * (vx_sqr - vx_f) + ks_112 * (no2 * vx_f - no1) + ks_212) * n1o2;
+	const dreal ks_m20 = (ks_020 * (vx_sqr - vx_f) + ks_120 * (no2 * vx_f - no1) + ks_220) * n1o2;
+	const dreal ks_m21 = (ks_021 * (vx_sqr - vx_f) + ks_121 * (no2 * vx_f - no1) + ks_221) * n1o2;
+	const dreal ks_m22 = (ks_022 * (vx_sqr - vx_f) + ks_122 * (no2 * vx_f - no1) + ks_222) * n1o2;
+
+	// Eq. 90
+	const dreal ks_p00 = (ks_000 * (vx_sqr + vx_f) + ks_100 * (no2 * vx_f + no1) + ks_200) * n1o2;
+	const dreal ks_p01 = (ks_001 * (vx_sqr + vx_f) + ks_101 * (no2 * vx_f + no1) + ks_201) * n1o2;
+	const dreal ks_p02 = (ks_002 * (vx_sqr + vx_f) + ks_102 * (no2 * vx_f + no1) + ks_202) * n1o2;
+	const dreal ks_p10 = (ks_010 * (vx_sqr + vx_f) + ks_110 * (no2 * vx_f + no1) + ks_210) * n1o2;
+	const dreal ks_p11 = (ks_011 * (vx_sqr + vx_f) + ks_111 * (no2 * vx_f + no1) + ks_211) * n1o2;
+	const dreal ks_p12 = (ks_012 * (vx_sqr + vx_f) + ks_112 * (no2 * vx_f + no1) + ks_212) * n1o2;
+	const dreal ks_p20 = (ks_020 * (vx_sqr + vx_f) + ks_120 * (no2 * vx_f + no1) + ks_220) * n1o2;
+	const dreal ks_p21 = (ks_021 * (vx_sqr + vx_f) + ks_121 * (no2 * vx_f + no1) + ks_221) * n1o2;
+	const dreal ks_p22 = (ks_022 * (vx_sqr + vx_f) + ks_122 * (no2 * vx_f + no1) + ks_222) * n1o2;
+
+	// Eq. 91
+	const dreal ks_mz0 = ks_m00 * (no1 - vy_sqr) - no2 * vy_f * ks_m10 - ks_m20;
+	const dreal ks_mz1 = ks_m01 * (no1 - vy_sqr) - no2 * vy_f * ks_m11 - ks_m21;
+	const dreal ks_mz2 = ks_m02 * (no1 - vy_sqr) - no2 * vy_f * ks_m12 - ks_m22;
+	const dreal ks_zz0 = ks_z00 * (no1 - vy_sqr) - no2 * vy_f * ks_z10 - ks_z20;
+	const dreal ks_zz1 = ks_z01 * (no1 - vy_sqr) - no2 * vy_f * ks_z11 - ks_z21;
+	const dreal ks_zz2 = ks_z02 * (no1 - vy_sqr) - no2 * vy_f * ks_z12 - ks_z22;
+	const dreal ks_pz0 = ks_p00 * (no1 - vy_sqr) - no2 * vy_f * ks_p10 - ks_p20;
+	const dreal ks_pz1 = ks_p01 * (no1 - vy_sqr) - no2 * vy_f * ks_p11 - ks_p21;
+	const dreal ks_pz2 = ks_p02 * (no1 - vy_sqr) - no2 * vy_f * ks_p12 - ks_p22;
+
+	// Eq. 92
+	const dreal ks_mm0 = (ks_m00 * (vy_sqr - vy_f) + ks_m10 * (no2 * vy_f - no1) + ks_m20) * n1o2;
+	const dreal ks_mm1 = (ks_m01 * (vy_sqr - vy_f) + ks_m11 * (no2 * vy_f - no1) + ks_m21) * n1o2;
+	const dreal ks_mm2 = (ks_m02 * (vy_sqr - vy_f) + ks_m12 * (no2 * vy_f - no1) + ks_m22) * n1o2;
+	const dreal ks_zm0 = (ks_z00 * (vy_sqr - vy_f) + ks_z10 * (no2 * vy_f - no1) + ks_z20) * n1o2;
+	const dreal ks_zm1 = (ks_z01 * (vy_sqr - vy_f) + ks_z11 * (no2 * vy_f - no1) + ks_z21) * n1o2;
+	const dreal ks_zm2 = (ks_z02 * (vy_sqr - vy_f) + ks_z12 * (no2 * vy_f - no1) + ks_z22) * n1o2;
+	const dreal ks_pm0 = (ks_p00 * (vy_sqr - vy_f) + ks_p10 * (no2 * vy_f - no1) + ks_p20) * n1o2;
+	const dreal ks_pm1 = (ks_p01 * (vy_sqr - vy_f) + ks_p11 * (no2 * vy_f - no1) + ks_p21) * n1o2;
+	const dreal ks_pm2 = (ks_p02 * (vy_sqr - vy_f) + ks_p12 * (no2 * vy_f - no1) + ks_p22) * n1o2;
+
+	// Eq. 93
+	const dreal ks_mp0 = (ks_m00 * (vy_sqr + vy_f) + ks_m10 * (no2 * vy_f + no1) + ks_m20) * n1o2;
+	const dreal ks_mp1 = (ks_m01 * (vy_sqr + vy_f) + ks_m11 * (no2 * vy_f + no1) + ks_m21) * n1o2;
+	const dreal ks_mp2 = (ks_m02 * (vy_sqr + vy_f) + ks_m12 * (no2 * vy_f + no1) + ks_m22) * n1o2;
+	const dreal ks_zp0 = (ks_z00 * (vy_sqr + vy_f) + ks_z10 * (no2 * vy_f + no1) + ks_z20) * n1o2;
+	const dreal ks_zp1 = (ks_z01 * (vy_sqr + vy_f) + ks_z11 * (no2 * vy_f + no1) + ks_z21) * n1o2;
+	const dreal ks_zp2 = (ks_z02 * (vy_sqr + vy_f) + ks_z12 * (no2 * vy_f + no1) + ks_z22) * n1o2;
+	const dreal ks_pp0 = (ks_p00 * (vy_sqr + vy_f) + ks_p10 * (no2 * vy_f + no1) + ks_p20) * n1o2;
+	const dreal ks_pp1 = (ks_p01 * (vy_sqr + vy_f) + ks_p11 * (no2 * vy_f + no1) + ks_p21) * n1o2;
+	const dreal ks_pp2 = (ks_p02 * (vy_sqr + vy_f) + ks_p12 * (no2 * vy_f + no1) + ks_p22) * n1o2;
+
+	// Eq. 94
+	store_fine_df(mmz, ks_mm0 * (no1 - vz_sqr) - no2 * vz_f * ks_mm1 - ks_mm2);
+	store_fine_df(mzz, ks_mz0 * (no1 - vz_sqr) - no2 * vz_f * ks_mz1 - ks_mz2);
+	store_fine_df(mpz, ks_mp0 * (no1 - vz_sqr) - no2 * vz_f * ks_mp1 - ks_mp2);
+	store_fine_df(zmz, ks_zm0 * (no1 - vz_sqr) - no2 * vz_f * ks_zm1 - ks_zm2);
+	store_fine_df(zzz, ks_zz0 * (no1 - vz_sqr) - no2 * vz_f * ks_zz1 - ks_zz2);
+	store_fine_df(zpz, ks_zp0 * (no1 - vz_sqr) - no2 * vz_f * ks_zp1 - ks_zp2);
+	store_fine_df(pmz, ks_pm0 * (no1 - vz_sqr) - no2 * vz_f * ks_pm1 - ks_pm2);
+	store_fine_df(pzz, ks_pz0 * (no1 - vz_sqr) - no2 * vz_f * ks_pz1 - ks_pz2);
+	store_fine_df(ppz, ks_pp0 * (no1 - vz_sqr) - no2 * vz_f * ks_pp1 - ks_pp2);
+
+	// Eq. 95
+	store_fine_df(mmm, (ks_mm0 * (vz_sqr - vz_f) + ks_mm1 * (no2 * vz_f - no1) + ks_mm2) * n1o2);
+	store_fine_df(mzm, (ks_mz0 * (vz_sqr - vz_f) + ks_mz1 * (no2 * vz_f - no1) + ks_mz2) * n1o2);
+	store_fine_df(mpm, (ks_mp0 * (vz_sqr - vz_f) + ks_mp1 * (no2 * vz_f - no1) + ks_mp2) * n1o2);
+	store_fine_df(zmm, (ks_zm0 * (vz_sqr - vz_f) + ks_zm1 * (no2 * vz_f - no1) + ks_zm2) * n1o2);
+	store_fine_df(zzm, (ks_zz0 * (vz_sqr - vz_f) + ks_zz1 * (no2 * vz_f - no1) + ks_zz2) * n1o2);
+	store_fine_df(zpm, (ks_zp0 * (vz_sqr - vz_f) + ks_zp1 * (no2 * vz_f - no1) + ks_zp2) * n1o2);
+	store_fine_df(pmm, (ks_pm0 * (vz_sqr - vz_f) + ks_pm1 * (no2 * vz_f - no1) + ks_pm2) * n1o2);
+	store_fine_df(pzm, (ks_pz0 * (vz_sqr - vz_f) + ks_pz1 * (no2 * vz_f - no1) + ks_pz2) * n1o2);
+	store_fine_df(ppm, (ks_pp0 * (vz_sqr - vz_f) + ks_pp1 * (no2 * vz_f - no1) + ks_pp2) * n1o2);
+
+	// Eq. 96
+	store_fine_df(mmp, (ks_mm0 * (vz_sqr + vz_f) + ks_mm1 * (no2 * vz_f + no1) + ks_mm2) * n1o2);
+	store_fine_df(mzp, (ks_mz0 * (vz_sqr + vz_f) + ks_mz1 * (no2 * vz_f + no1) + ks_mz2) * n1o2);
+	store_fine_df(mpp, (ks_mp0 * (vz_sqr + vz_f) + ks_mp1 * (no2 * vz_f + no1) + ks_mp2) * n1o2);
+	store_fine_df(zmp, (ks_zm0 * (vz_sqr + vz_f) + ks_zm1 * (no2 * vz_f + no1) + ks_zm2) * n1o2);
+	store_fine_df(zzp, (ks_zz0 * (vz_sqr + vz_f) + ks_zz1 * (no2 * vz_f + no1) + ks_zz2) * n1o2);
+	store_fine_df(zpp, (ks_zp0 * (vz_sqr + vz_f) + ks_zp1 * (no2 * vz_f + no1) + ks_zp2) * n1o2);
+	store_fine_df(pmp, (ks_pm0 * (vz_sqr + vz_f) + ks_pm1 * (no2 * vz_f + no1) + ks_pm2) * n1o2);
+	store_fine_df(pzp, (ks_pz0 * (vz_sqr + vz_f) + ks_pz1 * (no2 * vz_f + no1) + ks_pz2) * n1o2);
+	store_fine_df(ppp, (ks_pp0 * (vz_sqr + vz_f) + ks_pp1 * (no2 * vz_f + no1) + ks_pp2) * n1o2);
 
 #else
 	// ---- Interpolation strategies (default: 3rd-order Lagrange) ----
