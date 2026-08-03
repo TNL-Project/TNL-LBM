@@ -50,7 +50,7 @@ struct StateLocal : State<NSE>
 
 	void setupBoundaries() override
 	{
-		nse.setBoundaryX(0, BC::GEO_INFLOW_BOUNCEBACK);  // left
+		nse.setBoundaryX(0, BC::GEO_INFLOW_BOUNCEBACK);	 // left
 
 		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_WALL);	 // right
 		nse.setBoundaryZ(0, BC::GEO_WALL);						 // top
@@ -284,7 +284,8 @@ int simAdjoint(
 	double* lossFunction,
 	double eps,
 	int RESOLUTION = 1,
-	bool print = false
+	bool print = false,
+	const std::string& adios_config = "adios2.xml"
 )
 {
 	using MACRO = typename NSE::MACRO;
@@ -314,7 +315,7 @@ int simAdjoint(
 	lat.physViscosity = PHYS_VISCOSITY;
 
 	const std::string state_id = fmt::format("sim_adjoint_res{:02d}_np{:03d}", RESOLUTION, TNL::MPI::GetSize(MPI_COMM_WORLD));
-	StateLocalAdjoint<NSE> state(state_id, MPI_COMM_WORLD, lat);
+	StateLocalAdjoint<NSE> state(state_id, MPI_COMM_WORLD, lat, adios_config);
 
 	// problem parameters
 	state.lbm_inflow_vx_profile = velocityProfileX;
@@ -491,7 +492,13 @@ int simAdjoint(
 }
 
 template <typename NSE>
-int sim(double* velocityProfileX, double* velocityProfileY, double* velocityProfileZ, int RESOLUTION = 1, bool print = false)
+int
+sim(double* velocityProfileX,
+	double* velocityProfileY,
+	double* velocityProfileZ,
+	int RESOLUTION = 1,
+	bool print = false,
+	const std::string& adios_config = "adios2.xml")
 {
 	using idx = typename NSE::TRAITS::idx;
 	using real = typename NSE::TRAITS::real;
@@ -518,7 +525,7 @@ int sim(double* velocityProfileX, double* velocityProfileY, double* velocityProf
 	lat.physViscosity = PHYS_VISCOSITY;
 
 	const std::string state_id = fmt::format("sim_primary_res{:02d}_np{:03d}", RESOLUTION, TNL::MPI::GetSize(MPI_COMM_WORLD));
-	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat);
+	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, adios_config);
 
 	// problem parameters
 	state.resolution = RESOLUTION;
@@ -592,7 +599,7 @@ int sim(double* velocityProfileX, double* velocityProfileY, double* velocityProf
 }
 
 template <typename TRAITS = TraitsDP>
-void run(double* velocityProfileX, double* velocityProfileY, double* velocityProfileZ, int RES, bool print)
+void run(double* velocityProfileX, double* velocityProfileY, double* velocityProfileZ, int RES, bool print, const std::string& adios_config)
 {
 	//	using COLL = D3Q27_CUM< TRAITS >;
 	using COLL = D3Q27_SRT<TRAITS, D3Q27_EQ<TRAITS>>;
@@ -607,13 +614,21 @@ void run(double* velocityProfileX, double* velocityProfileY, double* velocityPro
 		D3Q27_BC_All,
 		MacroLocal<TRAITS>>;
 
-	sim<NSE_CONFIG>(velocityProfileX, velocityProfileY, velocityProfileZ, RES, print);
+	sim<NSE_CONFIG>(velocityProfileX, velocityProfileY, velocityProfileZ, RES, print, adios_config);
 }
 
 // ADJOINT
 template <typename TRAITS = TraitsDP>
 void runAdjoint(
-	double hide, double* velocityProfileX, double* velocityProfileY, double* velocityProfileZ, double* lossFunction, double eps, int RES, bool print
+	double hide,
+	double* velocityProfileX,
+	double* velocityProfileY,
+	double* velocityProfileZ,
+	double* lossFunction,
+	double eps,
+	int RES,
+	bool print,
+	const std::string& adios_config
 )
 {
 	//	using COLL = D3Q27_CUM< TRAITS >;
@@ -629,7 +644,7 @@ void runAdjoint(
 		D3Q27_BC_All,
 		D3Q27_MACRO_Adjoint<TRAITS>>;
 
-	simAdjoint<ADJ_CONFIG>(hide, velocityProfileX, velocityProfileY, velocityProfileZ, lossFunction, eps, RES, print);
+	simAdjoint<ADJ_CONFIG>(hide, velocityProfileX, velocityProfileY, velocityProfileZ, lossFunction, eps, RES, print, adios_config);
 }
 
 void saveLossFunctionToFile(const std::string& dirname, int adjointIteration, double lossFunction)
@@ -657,7 +672,17 @@ void saveLossFunctionToFile(const std::string& dirname, int adjointIteration, do
 	lossFunctionFile.close();
 }
 
-int adjointEpoch(int resolution, double hide, double* guessX, double* guessY, double* guessZ, int iteration, double eps, bool print)
+int adjointEpoch(
+	int resolution,
+	double hide,
+	double* guessX,
+	double* guessY,
+	double* guessZ,
+	int iteration,
+	double eps,
+	bool print,
+	const std::string& adios_config
+)
 {
 	int Y = BLOCK_SIZE * resolution;
 	int Z = Y;
@@ -673,8 +698,8 @@ int adjointEpoch(int resolution, double hide, double* guessX, double* guessY, do
 		loadVelocityProfile(dirname, guessZ, Y, Z, 'Z');
 	}
 
-	run<TraitsDP>(guessX, guessY, guessZ, resolution, print);
-	runAdjoint<TraitsDP>(hide, guessX, guessY, guessZ, &lossFunction, eps, resolution, print);
+	run<TraitsDP>(guessX, guessY, guessZ, resolution, print, adios_config);
+	runAdjoint<TraitsDP>(hide, guessX, guessY, guessZ, &lossFunction, eps, resolution, print, adios_config);
 
 	if (prev_lossFunction < lossFunction) {
 		spdlog::warn("prev loss function = {}, loss function = {}", prev_lossFunction, lossFunction);
@@ -693,7 +718,7 @@ int adjointEpoch(int resolution, double hide, double* guessX, double* guessY, do
 	return 0;
 }
 
-void adjointFullSim(int resolution, std::size_t epochs, double eps, double hide)
+void adjointFullSim(int resolution, std::size_t epochs, double eps, double hide, const std::string& adios_config)
 {
 	int Y = BLOCK_SIZE * resolution;
 	int Z = Y;
@@ -711,15 +736,15 @@ void adjointFullSim(int resolution, std::size_t epochs, double eps, double hide)
 		std::filesystem::remove_all(dirname.c_str());
 
 		const bool print = (i == epochs);
-		if (adjointEpoch(resolution, hide, guessX.get(), guessY.get(), guessZ.get(), (int) i, step, print) != 0) {
+		if (adjointEpoch(resolution, hide, guessX.get(), guessY.get(), guessZ.get(), (int) i, step, print, adios_config) != 0) {
 			step /= 2.0;
 			spdlog::warn("Loss function increased instead of decreased - halving step size = {}", step);
 			if (step < MIN_STEP_SIZE) {
 				loadVelocityProfile(dirname, guessX.get(), Y, Z, 'X');
 				loadVelocityProfile(dirname, guessY.get(), Y, Z, 'Y');
 				loadVelocityProfile(dirname, guessZ.get(), Y, Z, 'Z');
-				run(guessX.get(), guessY.get(), guessZ.get(), resolution, true);
-				runAdjoint(hide, guessX.get(), guessY.get(), guessZ.get(), &step, eps, resolution, true);
+				run(guessX.get(), guessY.get(), guessZ.get(), resolution, true, adios_config);
+				runAdjoint(hide, guessX.get(), guessY.get(), guessZ.get(), &step, eps, resolution, true, adios_config);
 				spdlog::error("Step size too small - exiting");
 				return;
 			}
@@ -737,6 +762,7 @@ int main(int argc, char** argv)
 	program.add_argument("--epochs").help("number of epochs").scan<'i', int>().default_value(1000);
 	program.add_argument("--eps").help("epsilon for the inflow velocity profile").scan<'g', double>().default_value(0.001);
 	program.add_argument("--hide").help("fraction of hidden measured data (along the x-axis)").scan<'g', double>().default_value(0.2);
+	program.add_argument("--adios-config").help("path to ADIOS2 configuration file").default_value(std::string("adios2.xml")).nargs(1);
 
 	try {
 		program.parse_args(argc, argv);
@@ -771,7 +797,9 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
-	adjointFullSim(resolution, epochs, eps, hide);
+	const auto adios_config = program.get<std::string>("--adios-config");
+
+	adjointFullSim(resolution, epochs, eps, hide, adios_config);
 
 	return 0;
 }

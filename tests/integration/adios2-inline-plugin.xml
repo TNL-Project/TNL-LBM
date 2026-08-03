@@ -4,7 +4,7 @@
         <engine type="plugin">
             <parameter key="PluginName" value="fides"/>
             <parameter key="PluginLibrary" value="ParaViewADIOSInSituEngine"/>
-            <parameter key="Script" value="tests/integration/lbm-pipeline-test.py"/>
+            <parameter key="Script" value="tests/integration/catalyst-pipeline.py"/>
         </engine>
     </io>
 </adios-config>
