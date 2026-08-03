@@ -424,6 +424,21 @@ __global__ void cudaAMR_CoarseToFine(
 					Pi_yz += cqy * cqz * f_neq;
 				}
 
+				// The coarse DF state read above is post-collision (AB pattern reads
+				// df_out). For cumulant collision, the second-order cumulants are
+				// relaxed by (1-omega_1) relative to the pre-collision state; all five
+				// k-moments are non-equilibrium second-order quantities and inherit
+				// this scaling (with omega_c ~ 1.94 this flips their sign). Undo the
+				// relaxation by rescaling Pi_ab with 1/(1-omega_1) before computing
+				// the k-moments below.
+				const dreal pc_rescale = no1 / (no1 - omega_s);
+				Pi_xx *= pc_rescale;
+				Pi_yy *= pc_rescale;
+				Pi_zz *= pc_rescale;
+				Pi_xy *= pc_rescale;
+				Pi_xz *= pc_rescale;
+				Pi_yz *= pc_rescale;
+
 				// second-order moments from f_neq (Eqs. 7.5-7.9): the
 				// off-diagonals carry -3*omega_s, the diagonal
 				// differences -(3/2)*omega_s, where omega_s is the
