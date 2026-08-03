@@ -47,3 +47,12 @@ mypy_path = ["build/pytnl_lbm"]
 pythonVersion = "3.12"
 exclude = ["build", ".venv", "results_*"]
 extraPaths = ["build/pytnl_lbm"]
+
+# Configuration for pytest (native TOML, requires pytest 9)
+# https://docs.pytest.org/en/stable/reference/customize.html
+# https://docs.pytest.org/en/stable/reference/reference.html#configuration-options
+[tool.pytest]
+minversion = "9.0"
+addopts = ["--strict-markers"]
+log_level = "INFO"
+tmp_path_retention_policy = "failed"

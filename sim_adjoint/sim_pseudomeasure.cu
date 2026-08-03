@@ -40,7 +40,7 @@ struct StateLocal : State<NSE>
 
 	void setupBoundaries() override
 	{
-		nse.setBoundaryX(0, BC::GEO_INFLOW_BOUNCEBACK);  // left
+		nse.setBoundaryX(0, BC::GEO_INFLOW_BOUNCEBACK);	 // left
 
 		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_WALL);	 // right
 		nse.setBoundaryZ(0, BC::GEO_WALL);						 // top
@@ -104,7 +104,7 @@ struct StateLocal : State<NSE>
 };
 
 template <typename NSE>
-int sim(int resolution, double vy_amplitude, VelocityProfile vy_profile)
+int sim(int resolution, double vy_amplitude, VelocityProfile vy_profile, const std::string& adios_config)
 {
 	using idx = typename NSE::TRAITS::idx;
 	using real = typename NSE::TRAITS::real;
@@ -131,7 +131,7 @@ int sim(int resolution, double vy_amplitude, VelocityProfile vy_profile)
 	lat.physViscosity = PHYS_VISCOSITY;
 
 	const std::string state_id = fmt::format("sim_pseudomeasure_res{:02d}_np{:03d}", resolution, TNL::MPI::GetSize(MPI_COMM_WORLD));
-	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat);
+	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, adios_config);
 
 	// problem parameters
 	state.resolution = resolution;
@@ -212,7 +212,7 @@ int sim(int resolution, double vy_amplitude, VelocityProfile vy_profile)
 }
 
 template <typename TRAITS = TraitsDP>
-void run(int resolution, double vy_amplitude, VelocityProfile vy_profile)
+void run(int resolution, double vy_amplitude, VelocityProfile vy_profile, const std::string& adios_config)
 {
 	//	using COLL = D3Q27_CUM< TRAITS >;
 	using COLL = D3Q27_SRT<TRAITS, D3Q27_EQ<TRAITS>>;
@@ -227,7 +227,7 @@ void run(int resolution, double vy_amplitude, VelocityProfile vy_profile)
 		D3Q27_BC_All,
 		D3Q27_MACRO_Default<TRAITS>>;
 
-	sim<NSE_CONFIG>(resolution, vy_amplitude, vy_profile);
+	sim<NSE_CONFIG>(resolution, vy_amplitude, vy_profile, adios_config);
 }
 
 int main(int argc, char** argv)
@@ -239,6 +239,7 @@ int main(int argc, char** argv)
 	program.add_argument("--resolution").help("resolution of the lattice").scan<'i', int>().default_value(1);
 	program.add_argument("--vy-amplitude").help("parameter for the initial guess (velocity profile)").scan<'g', double>().default_value(0.1);
 	program.add_argument("--vy-profile").help("type of the velocity profile").choices("sinus", "block", "flat").default_value("sinus");
+	program.add_argument("--adios-config").help("path to ADIOS2 configuration file").default_value(std::string("adios2.xml")).nargs(1);
 
 	try {
 		program.parse_args(argc, argv);
@@ -268,7 +269,9 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
-	run(resolution, vy_amplitude, vy_profile.value());
+	const auto adios_config = program.get<std::string>("--adios-config");
+
+	run(resolution, vy_amplitude, vy_profile.value(), adios_config);
 
 	return 0;
 }

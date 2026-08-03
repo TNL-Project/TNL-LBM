@@ -8,7 +8,7 @@ foreach(target IN ITEMS ${TARGETS})
     target_link_libraries(${target} PUBLIC TNL::TNL_LBM)
 
     # force language to HIP
-    if(CMAKE_HIP_COMPILER)
+    if(TNL_LBM_BUILD_HIP)
         set_source_files_properties(${target}.cu PROPERTIES LANGUAGE HIP)
     endif()
 endforeach()

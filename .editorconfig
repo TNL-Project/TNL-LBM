@@ -13,6 +13,6 @@ indent_style = space
 indent_size = 4
 indent_style = tab
 
-[*.{yaml,yml},.clangd,.clang-tidy,.clang-format]
+[{*.yaml,*.yml,.clangd,.clang-tidy,.clang-format}]
 indent_size = 2
 indent_style = space

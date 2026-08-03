@@ -235,7 +235,16 @@ struct StateLocal : State<NSE>
 
 template <typename NSE>
 void
-sim(const std::string& adios_config, int RES, double Re, double discretization_ratio, IbmCompute computeVariant, int dirac, IbmMethod methodVariant)
+sim(const std::string& adios_config,
+	int RES,
+	double Re,
+	double discretization_ratio,
+	IbmCompute computeVariant,
+	int dirac,
+	IbmMethod methodVariant,
+	int n_spheres,
+	double final_time,
+	bool mtx_output)
 {
 	using idx = typename NSE::TRAITS::idx;
 	using real = typename NSE::TRAITS::real;
@@ -284,7 +293,15 @@ sim(const std::string& adios_config, int RES, double Re, double discretization_r
 	const auto compute_name = magic_enum::enum_name(computeVariant);
 	const auto method_name = magic_enum::enum_name(methodVariant);
 	const std::string state_id = fmt::format(
-		"sim_IBM2_{}_{}_dirac_{}_res_{}_Re_{}_nas_{:05.4f}_compute_{}", NSE::COLL::id, method_name, dirac, RES, Re, discretization_ratio, compute_name
+		"sim_IBM2_{}_{}_dirac_{}_res_{}_Re_{}_nas_{:05.4f}_compute_{}_spheres{}",
+		NSE::COLL::id,
+		method_name,
+		dirac,
+		RES,
+		Re,
+		discretization_ratio,
+		compute_name,
+		n_spheres
 	);
 	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, adios_config);
 
@@ -298,7 +315,7 @@ sim(const std::string& adios_config, int RES, double Re, double discretization_r
 
 	state.cnt[PRINT].period = 0.1;
 	state.cnt[PROBE1].period = 0.1;
-	state.nse.physFinalTime = 30.0;
+	state.nse.physFinalTime = final_time;
 
 	//state.cnt[OUT3D].period = 1.0;
 	state.cnt[OUT2D].period = 1.0;
@@ -316,10 +333,12 @@ sim(const std::string& adios_config, int RES, double Re, double discretization_r
 	real sigma = discretization_ratio * PHYS_DL;
 	ibmDrawSphere(state.ibm, state.ball_c, state.ball_diameter / 2.0, sigma);
 
-	// 2nd ball
+	// 2nd ball (only when --spheres 2)
 	// FIXME: computation of drag and lift coefficients assumes only one sphere
-	state.ball_c[0] = 5.5 * state.ball_diameter;
-	ibmDrawSphere(state.ibm, state.ball_c, state.ball_diameter / 2.0, sigma);
+	if (n_spheres == 2) {
+		state.ball_c[0] = 5.5 * state.ball_diameter;
+		ibmDrawSphere(state.ibm, state.ball_c, state.ball_diameter / 2.0, sigma);
+	}
 
 	state.writePoints("ball", 0, 0);
 
@@ -327,12 +346,24 @@ sim(const std::string& adios_config, int RES, double Re, double discretization_r
 	state.ibm.computeVariant = computeVariant;
 	state.ibm.diracDeltaTypeEL = dirac;
 	state.ibm.methodVariant = methodVariant;
+	// A/M matrix dump is opt-in via --mtx-output; the IBM matrix regression test relies on it
+	state.ibm.mtx_output = mtx_output;
 
 	execute(state);
 }
 
 template <typename TRAITS = TraitsSP>
-void run(const std::string& adios_config, int res, double Re, double discretization_ratio, IbmCompute compute, int dirac, IbmMethod method)
+void
+run(const std::string& adios_config,
+	int res,
+	double Re,
+	double discretization_ratio,
+	IbmCompute compute,
+	int dirac,
+	IbmMethod method,
+	int spheres,
+	double final_time,
+	bool mtx_output)
 {
 	using COLL = D3Q27_CUM<TRAITS>;
 	using NSE_CONFIG = LBM_CONFIG<
@@ -345,7 +376,7 @@ void run(const std::string& adios_config, int res, double Re, double discretizat
 		D3Q27_BC_All,
 		MacroLocal<TRAITS>>;
 
-	sim<NSE_CONFIG>(adios_config, res, Re, discretization_ratio, compute, dirac, method);
+	sim<NSE_CONFIG>(adios_config, res, Re, discretization_ratio, compute, dirac, method, spheres, final_time, mtx_output);
 }
 
 int main(int argc, char** argv)
@@ -353,10 +384,17 @@ int main(int argc, char** argv)
 	TNLMPI_INIT mpi(argc, argv);
 
 	argparse::ArgumentParser program("sim_IBM2");
-	program.add_description("IBM-LBM simulation with two spheres in 3D.");
+	program.add_description("IBM-LBM simulation with spheres in 3D.");
 	program.add_argument("--adios-config").help("path to ADIOS2 configuration file").default_value(std::string("adios2.xml")).nargs(1);
 	program.add_argument("--resolution").help("resolution of the lattice").scan<'i', int>().default_value(1).nargs(1);
 	program.add_argument("--Re").help("desired Reynolds number (affects the inflow velocity)").scan<'g', double>().default_value(100.0).nargs(1);
+	program.add_argument("--spheres")
+		.help("number of spheres: 1 = single sphere (default), 2 = upstream + downstream spheres")
+		.scan<'i', int>()
+		.default_value(1)
+		.nargs(1);
+	program.add_argument("--final-time").help("override the physical final time").scan<'g', double>().default_value(30.0).nargs(1);
+	program.add_argument("--mtx-output").help("write IBM A/M matrices to .mtx files (used by the IBM matrix regression test)").flag();
 	program.add_argument("--discretization-ratio")
 		.help("ratio between the Lagrangian spacing step and the Eulerian spacing step")
 		.scan<'g', double>()
@@ -382,6 +420,8 @@ int main(int argc, char** argv)
 	const auto compute = program.get<std::string>("--compute");
 	const auto dirac = program.get<int>("--dirac");
 	const auto method = program.get<std::string>("--method");
+	const auto spheres = program.get<int>("--spheres");
+	const auto final_time = program.get<double>("--final-time");
 
 	if (resolution < 1) {
 		fmt::println(stderr, "CLI error: resolution must be at least 1");
@@ -395,11 +435,15 @@ int main(int argc, char** argv)
 		fmt::println(stderr, "CLI error: discretization-ratio must be positive");
 		return 1;
 	}
+	if (spheres != 1 && spheres != 2) {
+		fmt::println(stderr, "CLI error: spheres must be 1 or 2");
+		return 1;
+	}
 
 	const IbmCompute computeEnum = magic_enum::enum_cast<IbmCompute>(compute).value_or(IbmCompute::GPU);
 	const IbmMethod methodEnum = magic_enum::enum_cast<IbmMethod>(method).value_or(IbmMethod::modified);
 
-	run(adios_config, resolution, Re, discretization_ratio, computeEnum, dirac, methodEnum);
+	run(adios_config, resolution, Re, discretization_ratio, computeEnum, dirac, methodEnum, spheres, final_time, program.get<bool>("--mtx-output"));
 
 	return 0;
 }
