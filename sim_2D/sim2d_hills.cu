@@ -59,15 +59,17 @@ struct StateLocal : State<NSE>
 
 	void setupBoundaries() override
 	{
-		nse.setBoundaryX(0, BC::GEO_INFLOW_LEFT);									// left: inflow
-		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT_INTERP);	// right: outflow
+		nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT);								 // left: inflow
+		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT_INTERP);	 // right: outflow
 
-		nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_SYM_TOP);	// top: symmetry
 		nse.setBoundaryY(1, BC::GEO_WALL);							// bottom: wall
+		nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_SYM_TOP);	// top: symmetry
 
 		// extra layer needed due to A-A pattern
-		nse.setBoundaryY(0, BC::GEO_NOTHING);						// bottom extra
-		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_NOTHING);	// top extra
+		nse.setBoundaryX(0, BC::GEO_NOTHING);						// left
+		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_NOTHING);	// right
+		nse.setBoundaryY(0, BC::GEO_NOTHING);						// bottom
+		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_NOTHING);	// top
 
 		// 3 identical hill-like bumps on the bottom wall, in the left half of the domain
 		// Each bump is a half-sine shape: h(x) = bump_height * sin(pi * (x - x0) / bump_width)
@@ -155,7 +157,7 @@ void sim(const std::string& adios_config, int RESOLUTION, typename NSE::TRAITS::
 	int block_size = 32;
 	int X = 4 * block_size * RESOLUTION;
 	int Y = block_size * RESOLUTION;
-	real LBM_VISCOSITY = 1e-4;
+	real LBM_VISCOSITY = 5e-4;
 	real PHYS_HEIGHT = 0.41;
 	real PHYS_VISCOSITY = 1.5e-5;
 	real PHYS_DL = PHYS_HEIGHT / ((real) Y - 2);

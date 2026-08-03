@@ -1,4 +1,6 @@
-#define AB_PATTERN
+#ifndef AA_PATTERN
+	#define AB_PATTERN
+#endif
 
 #include <argparse/argparse.hpp>
 #include <magic_enum/magic_enum.hpp>
@@ -40,13 +42,24 @@ struct StateLocal : State<NSE>
 
 	void setupBoundaries() override
 	{
-		nse.setBoundaryX(0, BC::GEO_INFLOW_BOUNCEBACK);	 // left
-
-		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_WALL);	 // right
-		nse.setBoundaryZ(0, BC::GEO_WALL);						 // top
-		nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_WALL);	 // bottom
-		nse.setBoundaryY(0, BC::GEO_WALL);						 // back
-		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_WALL);	 // front
+		// left
+		nse.setBoundaryX(0, BC::GEO_NOTHING);
+		nse.setBoundaryX(1, BC::GEO_INFLOW_BOUNCEBACK);
+		// right
+		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_WALL);
+		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_NOTHING);
+		// bottom
+		nse.setBoundaryZ(0, BC::GEO_NOTHING);
+		nse.setBoundaryZ(1, BC::GEO_WALL);
+		// top
+		nse.setBoundaryZ(nse.lat.global.z() - 2, BC::GEO_WALL);
+		nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_NOTHING);
+		// front
+		nse.setBoundaryY(0, BC::GEO_NOTHING);
+		nse.setBoundaryY(1, BC::GEO_WALL);
+		// back
+		nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_WALL);
+		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_NOTHING);
 	}
 
 	[[nodiscard]] std::vector<std::string> getOutputDataNames() const override

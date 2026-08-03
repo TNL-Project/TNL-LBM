@@ -156,6 +156,37 @@ PYTHONPATH=build/pytnl_lbm python -c "import pytnl_lbm"
 typos --color always --sort
 ```
 
+## A-A STREAMING PATTERN (TNL_LBM_AA_PATTERN)
+
+`-DTNL_LBM_AA_PATTERN=ON` (root CMakeLists.txt) compiles all simulations
+(except `sim_adjoint`, see below) and the Python bindings with the
+single-array A-A pattern; default OFF keeps A-B. The pattern must be selected
+via CMake — per-file `#define AB_PATTERN` was removed; `include/lbm3d/defs.h`
+provides the AB default when neither is set.
+
+**Requirements for sims under A-A (established by debugging, 2026-08):**
+
+- Boundary conditions must NOT sit on the outermost array layer: AA neighbor
+  indices are unclamped (`kernels.h`), so an edge BC wrap-writes into the
+  opposite column/row. Apply the ghost-layer idiom: outermost plane
+  `GEO_NOTHING`, BC on `1`/`N-2`.
+- Lateral `GEO_INFLOW_LEFT` moment BCs diverge under AA on ghost-adjacent planes.
+
+**Known limitations under A-A:**
+
+- `GEO_OUTFLOW_RIGHT` and `GEO_OUTFLOW_RIGHT_INTERP` (d2q9 and d3q27 `streaming_AA.h`):
+  the interp reads race with same-launch `postCollisionStreaming` writes
+  and read stale odd-parity slots → momentum pumped back into the domain
+  (recirculation, 0.5–5% mass drift, broken Y/Z symmetry in sim_1, degraded sim_2 errors, wrong sim2d_2 Poiseuille errors, wrong IBM drag).
+  Fix needs an AA-native outflow formulation, not another in-kernel reschedule (26+ variants tried).
+- Affected tests are RUN-TO-RUN nondeterministic under AA (e.g. sim_3 wake ratio flips sign) — do not tune tolerances against AA outputs.
+- `sim_adjoint` requires the A-B pattern and is EXCLUDED from AA builds (CMake-level; its pytest module skips via `AA_PATTERN`).
+  Findings for a future AA-native adjoint design:
+  `streamingAdjoint` even-phase two-step reads escape the 1-cell ghost layer (CUDA 700 at boundary-adjacent sites);
+  the reversed gather races with same-launch `postCollisionStreaming` writers in the single array (nondeterministic garbage profiles);
+  the `GEO_ADJOINT_INFLOW_BB_LEFT` refill in d3q27/bc.h must be parity-aware
+  (m-family from the site's own slot after an even/twisted write, matching p-slot one hop downstream after an odd push).
+
 ## NOTES
 
 - `include/lbm2d/` is a placeholder (unused); all 2D code lives under `include/lbm3d/d2q9/` — the `lbm3d` namespace is shared by 2D and 3D code.

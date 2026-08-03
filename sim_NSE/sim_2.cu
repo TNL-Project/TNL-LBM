@@ -133,28 +133,29 @@ struct StateLocal : State<NSE>
 
 	void setupBoundaries() override
 	{
-		//if (nse.blocks.front().data.inflow_vx != 0)
 		if (nse.blocks.front().data.vx_profile) {
-			nse.setBoundaryX(0, BC::GEO_INFLOW_LEFT);  // left
-			//nse.setBoundaryX(nse.lat.global.x()-1, BC::GEO_OUTFLOW_EQ);		// right
-			//nse.setBoundaryX(nse.lat.global.x()-1, BC::GEO_OUTFLOW_RIGHT);		// right
-			nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT_INTERP);	 // right
+			nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT);								 // left
+			nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT_INTERP);	 // right
 		}
 		else {
 			nse.setBoundaryX(0, BC::GEO_PERIODIC);						 // left
 			nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_PERIODIC);	 // right
 		}
 
-		nse.setBoundaryZ(1, BC::GEO_WALL);						 // top
-		nse.setBoundaryZ(nse.lat.global.z() - 2, BC::GEO_WALL);	 // bottom
-		nse.setBoundaryY(1, BC::GEO_WALL);						 // back
-		nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_WALL);	 // front
+		nse.setBoundaryZ(1, BC::GEO_WALL);						 // bottom
+		nse.setBoundaryZ(nse.lat.global.z() - 2, BC::GEO_WALL);	 // top
+		nse.setBoundaryY(1, BC::GEO_WALL);						 // front
+		nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_WALL);	 // back
 
 		// extra layer needed due to A-A pattern
-		nse.setBoundaryZ(0, BC::GEO_NOTHING);						// top
-		nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_NOTHING);	// bottom
-		nse.setBoundaryY(0, BC::GEO_NOTHING);						// back
-		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_NOTHING);	// front
+		if (nse.blocks.front().data.vx_profile) {
+			nse.setBoundaryX(0, BC::GEO_NOTHING);						// left
+			nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_NOTHING);	// right
+		}
+		nse.setBoundaryZ(0, BC::GEO_NOTHING);						// bottom
+		nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_NOTHING);	// top
+		nse.setBoundaryY(0, BC::GEO_NOTHING);						// front
+		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_NOTHING);	// back
 	}
 
 	[[nodiscard]] std::vector<std::string> getOutputDataNames() const override

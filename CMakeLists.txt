@@ -14,6 +14,7 @@ option(TNL_LBM_USE_HIP "Build with HIP support" ON)
 option(TNL_LBM_USE_MPI "Build with MPI support, if available" ON)
 option(TNL_LBM_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 option(TNL_LBM_BUILD_PYTHON "Build Python bindings" ON)
+option(TNL_LBM_AA_PATTERN "Build simulations with the A-A streaming pattern (default is A-B)" OFF)
 
 # Require C++17, and disable compiler-specific extensions (if possible).
 set(CMAKE_CXX_STANDARD 17)
@@ -290,6 +291,9 @@ else()
 endif()
 # Add special flags used in lbm3d
 target_compile_definitions(TNL_LBM INTERFACE "-DUSE_CUDA")
+if(TNL_LBM_AA_PATTERN)
+    target_compile_definitions(TNL_LBM INTERFACE AA_PATTERN)
+endif()
 
 # Add project subdirectories
 add_subdirectory(include)

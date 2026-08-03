@@ -24,12 +24,20 @@ struct StateLocal : State<NSE>
 
 	void setupBoundaries() override
 	{
-		nse.setBoundaryX(0, BC::GEO_INFLOW_LEFT);
-		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT);
-		nse.setBoundaryY(0, BC::GEO_PERIODIC);
-		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_PERIODIC);
-		nse.setBoundaryZ(0, BC::GEO_PERIODIC);
-		nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_PERIODIC);
+		nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT);						  // inflow
+		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT);  // outflow
+		nse.setBoundaryY(1, BC::GEO_WALL);								  // bottom
+		nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_WALL);			  // top
+		nse.setBoundaryZ(1, BC::GEO_WALL);								  // front
+		nse.setBoundaryZ(nse.lat.global.z() - 2, BC::GEO_WALL);			  // back
+
+		// extra layer needed due to A-A pattern
+		nse.setBoundaryX(0, BC::GEO_NOTHING);
+		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_NOTHING);
+		nse.setBoundaryY(0, BC::GEO_NOTHING);
+		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_NOTHING);
+		nse.setBoundaryZ(0, BC::GEO_NOTHING);
+		nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_NOTHING);
 	}
 
 	[[nodiscard]] std::vector<std::string> getOutputDataNames() const override

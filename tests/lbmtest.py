@@ -22,6 +22,23 @@ FieldData = dict[str, np.ndarray]
 DEFAULT_TIMEOUT = 900.0
 
 
+def _aa_pattern_enabled() -> bool:
+    """Detect TNL_LBM_AA_PATTERN=ON in BUILD_DIR's CMakeCache."""
+    cache = BUILD_DIR / "CMakeCache.txt"
+    try:
+        for line in cache.read_text().splitlines():
+            if line.strip() == "TNL_LBM_AA_PATTERN:BOOL=ON":
+                return True
+    except OSError:
+        pass
+    return False
+
+
+# True when the sim binaries use the A-A streaming pattern (some boundary
+# conditions are known to not be faithful under it; see AGENTS.md).
+AA_PATTERN = _aa_pattern_enabled()
+
+
 def run_sim(
     cmd: Sequence[str | pathlib.Path],
     *,

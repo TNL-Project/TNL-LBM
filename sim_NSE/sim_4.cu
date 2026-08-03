@@ -117,10 +117,10 @@ struct StateLocal : State<NSE>
 	{
 		nse.setBoundaryX(0, BC::GEO_PERIODIC);						 // left
 		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_PERIODIC);	 // right
-		nse.setBoundaryY(0, BC::GEO_PERIODIC);						 // back
-		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_PERIODIC);	 // front
-		nse.setBoundaryZ(0, BC::GEO_PERIODIC);						 // top
-		nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_PERIODIC);	 // bottom
+		nse.setBoundaryY(0, BC::GEO_PERIODIC);						 // front
+		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_PERIODIC);	 // back
+		nse.setBoundaryZ(0, BC::GEO_PERIODIC);						 // bottom
+		nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_PERIODIC);	 // top
 	}
 
 	void resetDFs() override

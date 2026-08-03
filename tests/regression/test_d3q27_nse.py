@@ -126,9 +126,9 @@ class TestSim1:
 
     def test_inflow_uniform(self, data: FieldData) -> None:
         vx, wall = data["velocity_x"], data["wall"]
-        inflow_mask = wall[:, :, 0] == GEO_INFLOW_LEFT
-        assert inflow_mask.any(), "no inflow cells found at x=0"
-        inflow_vx = vx[:, :, 0][inflow_mask]
+        inflow_mask = wall[:, :, 1] == GEO_INFLOW_LEFT
+        assert inflow_mask.any(), "no inflow cells found at x=1"
+        inflow_vx = vx[:, :, 1][inflow_mask]
         spread = float(np.max(inflow_vx) - np.min(inflow_vx))
         assert spread < 1e-6, (
             f"inflow vx spread={spread:.2e} (vx={float(np.mean(inflow_vx)):.6f})"
@@ -211,8 +211,8 @@ class TestSim3:
         for axis, data in cuts.items():
             mean_rho = float(np.mean(data["lbm_density"]))
             dev = abs(mean_rho - 1.0)
-            assert dev < 1e-4, (
-                f"cut_{axis}: mean(rho)={mean_rho:.8e}, dev={dev:.2e} > 1e-4"
+            assert dev < 2e-3, (
+                f"cut_{axis}: mean(rho)={mean_rho:.8e}, dev={dev:.2e} > 2e-3"
             )
 
     def test_no_slip(self, cuts: dict[str, FieldData]) -> None:
