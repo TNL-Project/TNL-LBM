@@ -26,7 +26,8 @@ with optional Python bindings via nanobind and distributed execution through CUD
 ├── sim_adjoint/         # 3D Adjoint-based sensitivity examples
 ├── sim_2D/              # 2D example simulations
 ├── pytnl_lbm/           # Python extension module
-├── tests/               # pytest regression & integration suites + subproject test
+├── tests/               # pytest unit, regression & integration suites + subproject test
+│   ├── unit/            # pytest unit tests (python_bindings/ under unit/; C++ unit tests may join later)
 │   ├── regression/      # pytest result checks (ibm, nse, d2q9, adjoint) + IBM matrix baselines
 │   ├── integration/     # end-to-end output-data pipeline test (pytest + CUDA driver sim)
 │   └── subproject/      # external consumption test via CMake FetchContent
@@ -145,6 +146,7 @@ mpirun -np 2 ./build/sim_NSE/sim_1 4
 # Run all tests (unit + regression + integration; default pytest collection)
 # All tests need a CUDA GPU (all executables are CUDA builds; suite skips itself without one).
 pytest
+pytest tests/unit tests/integration  # skip the heavier regression suite
 pytest tests/regression  # simulation result checks only
 
 # Python bindings (after build)
