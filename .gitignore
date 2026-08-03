@@ -9,3 +9,9 @@ __pycache__/
 .DS_Store
 *.swp
 *.tmp
+*.log
+log.*
+/.opencode/
+*.mtx
+.gitlab-ci-local/
+.debug-journal.md
