@@ -160,4 +160,6 @@ typos --color always --sort
 
 - `include/lbm2d/` is a placeholder (unused); all 2D code lives under `include/lbm3d/d2q9/` — the `lbm3d` namespace is shared by 2D and 3D code.
 - `CUDA` is always defined for `lbm3d` (`-DUSE_CUDA`), even when compiling with HIP.
+- When both CUDA and HIP compilers are detected, CMake enables CUDA and disables HIP (mirrors TNL's own handling); HIP is only enabled when no CUDA compiler is found.
+- Python bindings (`pytnl_lbm`) are built only for CUDA builds; HIP builds skip them entirely.
 - The CI matrix exercises CUDA Release/Debug, HIP Release/Debug, non-MPI, and subproject consumption.

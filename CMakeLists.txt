@@ -9,7 +9,9 @@ project(TNL-LBM LANGUAGES CXX)
 
 # Declare all CMake options for the project
 option(TNL_LBM_EXPORT_INTERFACE_TARGETS "Instruct CMake to generate rules to export the interface target" ${PROJECT_IS_TOP_LEVEL})
-option(TNL_LBM_ENABLE_MPI "Enable MPI support, if available" ON)
+option(TNL_LBM_USE_CUDA "Build with CUDA support" ON)
+option(TNL_LBM_USE_HIP "Build with HIP support" ON)
+option(TNL_LBM_USE_MPI "Build with MPI support, if available" ON)
 option(TNL_LBM_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 option(TNL_LBM_BUILD_PYTHON "Build Python bindings" ON)
 
@@ -45,73 +47,86 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR
     endif()
 endif()
 
-include(CheckLanguage)
+if(TNL_LBM_USE_CUDA)
+    include(CheckLanguage)
+    check_language(CUDA)
+    if(CMAKE_CUDA_COMPILER)
+        enable_language(CUDA)
+        set(TNL_LBM_BUILD_CUDA TRUE)
 
-check_language(CUDA)
-if(CMAKE_CUDA_COMPILER)
-    enable_language(CUDA)
+        # Require C++17, and disable compiler-specific extensions (if possible).
+        set(CMAKE_CUDA_STANDARD 17)
+        set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+        set(CMAKE_CUDA_EXTENSIONS OFF)
 
-    # Require C++17, and disable compiler-specific extensions (if possible).
-    set(CMAKE_CUDA_STANDARD 17)
-    set(CMAKE_CUDA_STANDARD_REQUIRED ON)
-    set(CMAKE_CUDA_EXTENSIONS OFF)
+        # Set build flags for CUDA
+        set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Wall")
+        set(CMAKE_CUDA_FLAGS_DEBUG "-g")
+        set(CMAKE_CUDA_FLAGS_RELEASE "-O3 -DNDEBUG")
+        set(CMAKE_CUDA_FLAGS_RELWITHDEBINFO "${CMAKE_CUDA_FLAGS_RELEASE} ${CMAKE_CUDA_FLAGS_DEBUG}")
 
-    # Set build flags for CUDA
-    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Wall")
-    set(CMAKE_CUDA_FLAGS_DEBUG "-g")
-    set(CMAKE_CUDA_FLAGS_RELEASE "-O3 -DNDEBUG")
-    set(CMAKE_CUDA_FLAGS_RELWITHDEBINFO "${CMAKE_CUDA_FLAGS_RELEASE} ${CMAKE_CUDA_FLAGS_DEBUG}")
-
-    # Enforce (more or less) warning-free builds
-    if(TNL_LBM_WARNINGS_AS_ERRORS)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wno-error=deprecated -Wno-error=deprecated-declarations -Wno-error=uninitialized")
-    endif()
-
-    if(CMAKE_CUDA_COMPILER_ID STREQUAL "NVIDIA")
-        set(CMAKE_CUDA_FLAGS_RELWITHDEBINFO "${CMAKE_CUDA_FLAGS_RELWITHDEBINFO} --generate-line-info")
-        if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
-            # Enforce (more or less) warning-free builds for host code
-            if(TNL_LBM_WARNINGS_AS_ERRORS)
-                set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler -Werror -Xcompiler -Wno-error=deprecated -Xcompiler -Wno-error=deprecated-declarations")
-            endif()
-        endif()
-        # Force colorized output for nvcc's host compiler (assuming it is GCC...)
-        set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler -fdiagnostics-color")
-    endif()
-
-    if(CMAKE_CUDA_COMPILER_ID STREQUAL "Clang")
         # Enforce (more or less) warning-free builds
         if(TNL_LBM_WARNINGS_AS_ERRORS)
-            set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Werror -Wno-error=deprecated -Wno-error=deprecated-declarations -Wno-error=unknown-cuda-version")
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wno-error=deprecated -Wno-error=deprecated-declarations -Wno-error=uninitialized")
         endif()
-        # workaround for Clang 15
-        # https://github.com/llvm/llvm-project/issues/58491
-        set(CMAKE_CUDA_FLAGS_DEBUG "-g -Xarch_device -g0")
+
+        if(CMAKE_CUDA_COMPILER_ID STREQUAL "NVIDIA")
+            set(CMAKE_CUDA_FLAGS_RELWITHDEBINFO "${CMAKE_CUDA_FLAGS_RELWITHDEBINFO} --generate-line-info")
+            if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
+                # Enforce (more or less) warning-free builds for host code
+                if(TNL_LBM_WARNINGS_AS_ERRORS)
+                    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler -Werror -Xcompiler -Wno-error=deprecated -Xcompiler -Wno-error=deprecated-declarations")
+                endif()
+            endif()
+            # Force colorized output for nvcc's host compiler (assuming it is GCC...)
+            set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler -fdiagnostics-color")
+        endif()
+
+        if(CMAKE_CUDA_COMPILER_ID STREQUAL "Clang")
+            # Enforce (more or less) warning-free builds
+            if(TNL_LBM_WARNINGS_AS_ERRORS)
+                set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Werror -Wno-error=deprecated -Wno-error=deprecated-declarations -Wno-error=unknown-cuda-version")
+            endif()
+            # workaround for Clang 15
+            # https://github.com/llvm/llvm-project/issues/58491
+            set(CMAKE_CUDA_FLAGS_DEBUG "-g -Xarch_device -g0")
+        endif()
     endif()
 endif()
 
-check_language(HIP)
-if(CMAKE_HIP_COMPILER)
-    enable_language(HIP)
+if(TNL_LBM_USE_HIP)
+    include(CheckLanguage)
+    check_language(HIP)
+    if(CMAKE_HIP_COMPILER)
+        enable_language(HIP)
+        set(TNL_LBM_BUILD_HIP TRUE)
 
-    # Require C++17, and disable compiler-specific extensions (if possible).
-    set(CMAKE_HIP_STANDARD 17)
-    set(CMAKE_HIP_STANDARD_REQUIRED ON)
-    set(CMAKE_HIP_EXTENSIONS OFF)
+        # Require C++17, and disable compiler-specific extensions (if possible).
+        set(CMAKE_HIP_STANDARD 17)
+        set(CMAKE_HIP_STANDARD_REQUIRED ON)
+        set(CMAKE_HIP_EXTENSIONS OFF)
 
-    # Set build flags for HIP
-    set(CMAKE_HIP_FLAGS "${CMAKE_HIP_FLAGS} -Wall")
-    # NOTE: cmake mirrors the hipcc.pl script and passes some flags to rocm-llvm
-    #       (--offload-arch=gfx803 -mllvm -amdgpu-early-inline-all=true -mllvm -amdgpu-function-calls=false)
-    #       which do not work with -O0 (leads to Memory access fault), hence -O1
-    set(CMAKE_HIP_FLAGS_DEBUG "-O1 -g -DHIP_ENABLE_PRINTF")
-    set(CMAKE_HIP_FLAGS_RELEASE "-O3 -DNDEBUG")
-    set(CMAKE_HIP_FLAGS_RELWITHDEBINFO "${CMAKE_HIP_FLAGS_RELEASE} -g")
+        # Set build flags for HIP
+        set(CMAKE_HIP_FLAGS "${CMAKE_HIP_FLAGS} -Wall")
+        # NOTE: cmake mirrors the hipcc.pl script and passes some flags to rocm-llvm
+        #       (--offload-arch=gfx803 -mllvm -amdgpu-early-inline-all=true -mllvm -amdgpu-function-calls=false)
+        #       which do not work with -O0 (leads to Memory access fault), hence -O1
+        set(CMAKE_HIP_FLAGS_DEBUG "-O1 -g -DHIP_ENABLE_PRINTF")
+        set(CMAKE_HIP_FLAGS_RELEASE "-O3 -DNDEBUG")
+        set(CMAKE_HIP_FLAGS_RELWITHDEBINFO "${CMAKE_HIP_FLAGS_RELEASE} -g")
 
-    # Enforce (more or less) warning-free builds
-    if(TNL_LBM_WARNINGS_AS_ERRORS)
-        set(CMAKE_HIP_FLAGS "${CMAKE_HIP_FLAGS} -Werror -Wno-error=deprecated -Wno-error=deprecated-declarations")
+        # Enforce (more or less) warning-free builds
+        if(TNL_LBM_WARNINGS_AS_ERRORS)
+            set(CMAKE_HIP_FLAGS "${CMAKE_HIP_FLAGS} -Werror -Wno-error=deprecated -Wno-error=deprecated-declarations")
+        endif()
     endif()
+endif()
+
+# Both CUDA and HIP compilers can be detected at the same time, but we cannot (do not want to)
+# build both at the same time. Some CMake targets for CUDA and HIP have the same name and conflict.
+if(TNL_LBM_BUILD_CUDA AND TNL_LBM_BUILD_HIP)
+    message(WARNING "CUDA is enabled, disabling HIP.")
+    set(TNL_LBM_BUILD_HIP FALSE)
 endif()
 
 # Make cache variable so it can be used in downstream projects
@@ -213,7 +228,7 @@ FetchContent_Declare(TNL
 set(TNL_EXPORT_INTERFACE_TARGETS ON)  # needed for adding to the interface target
 FetchContent_MakeAvailable(TNL)
 
-if(TNL_LBM_BUILD_PYTHON)
+if(TNL_LBM_BUILD_PYTHON AND NOT TNL_LBM_BUILD_HIP)
     # this must be called before find_package(nanobind)
     find_package(Python COMPONENTS Interpreter Development REQUIRED)
 
@@ -257,7 +272,7 @@ if(OPENMP_FOUND)
     # nvcc needs -Xcompiler
     target_compile_options(TNL_LBM INTERFACE $<$<COMPILE_LANG_AND_ID:CUDA,NVIDIA>: -Xcompiler=-fopenmp >)
 endif()
-if(MPI_FOUND AND TNL_LBM_ENABLE_MPI)
+if(MPI_FOUND AND TNL_LBM_USE_MPI)
     target_compile_definitions(TNL_LBM INTERFACE "-DHAVE_MPI")
     # the adios2::cxx11_mpi target is deprecated since adios2 2.11.0
     if(TARGET adios2::cxx_mpi)
@@ -283,6 +298,6 @@ add_subdirectory(sim_adjoint)
 add_subdirectory(sim_NSE)
 add_subdirectory(sim_NSE_ADE)
 add_subdirectory(tests)
-if(TNL_LBM_BUILD_PYTHON)
+if(TNL_LBM_BUILD_PYTHON AND NOT TNL_LBM_BUILD_HIP)
     add_subdirectory(pytnl_lbm)
 endif()

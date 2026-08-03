@@ -3,9 +3,9 @@ set(sources
 )
 
 foreach(source_file IN LISTS sources)
-    if(CMAKE_HIP_COMPILER)
+    if(TNL_LBM_BUILD_HIP)
         set_source_files_properties(${source_file} PROPERTIES LANGUAGE HIP)
-    elseif(CMAKE_CUDA_COMPILER)
+    elseif(TNL_LBM_BUILD_CUDA)
         set_source_files_properties(${source_file} PROPERTIES LANGUAGE CUDA)
     endif()
 endforeach(source_file)
@@ -60,7 +60,7 @@ install(TARGETS pytnl_lbm DESTINATION ${PyTNL_PYTHON_SITE_PACKAGES_DIR})
 install(FILES "${pytnl_lbm_stub}" DESTINATION ${PyTNL_PYTHON_SITE_PACKAGES_DIR})
 
 # Add include directory for mpi4py
-if(MPI_FOUND AND TNL_LBM_ENABLE_MPI)
+if(MPI_FOUND AND TNL_LBM_USE_MPI)
     find_package(Python 3 COMPONENTS Interpreter REQUIRED)
     execute_process(
         COMMAND "${Python_EXECUTABLE}" -m mpi4py --prefix

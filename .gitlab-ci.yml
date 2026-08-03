@@ -101,7 +101,7 @@ build_without_MPI:
     - cmake -B build -S . -G Ninja
             -DCMAKE_BUILD_TYPE=Debug
             -DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCH}
-            -DTNL_LBM_ENABLE_MPI=OFF
+            -DTNL_LBM_USE_MPI=OFF
     - cmake --build build
 
 build_subproject:
