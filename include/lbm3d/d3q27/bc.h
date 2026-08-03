@@ -47,6 +47,12 @@ struct D3Q27_BC_All
 		return mapgi == GEO_PERIODIC;
 	}
 
+	__cuda_callable__ static bool isSymmetric(map_t mapgi)
+	{
+		return mapgi == GEO_SYM_TOP || mapgi == GEO_SYM_BOTTOM || mapgi == GEO_SYM_LEFT || mapgi == GEO_SYM_RIGHT || mapgi == GEO_SYM_BACK
+			|| mapgi == GEO_SYM_FRONT;
+	}
+
 	__cuda_callable__ static bool isFluid(map_t mapgi)
 	{
 		return mapgi == GEO_FLUID;
@@ -439,7 +445,8 @@ struct D3Q27_BC_All
 	{
 		// by default, collision is done on non-BC sites only
 		// additionally, BCs which include the collision step should be specified here
-		return isFluid(mapgi) || isPeriodic(mapgi) || mapgi == GEO_OUTFLOW_RIGHT || mapgi == GEO_OUTFLOW_RIGHT_INTERP || mapgi == GEO_INFLOW_LEFT;
+		return isFluid(mapgi) || isPeriodic(mapgi) || isSymmetric(mapgi) || mapgi == GEO_OUTFLOW_RIGHT || mapgi == GEO_OUTFLOW_RIGHT_INTERP
+			|| mapgi == GEO_INFLOW_LEFT;
 	}
 
 	template <typename LBM_KS>
