@@ -206,10 +206,6 @@ class TestSim2dHills:
             f"|vx_max(SYM_TOP)|/|vx_max(fluid)|={ratio:.6f} (tol < 1.05)"
         )
 
-    @pytest.mark.xfail(
-        reason="SYM doCollision fix currently stashed (stash@{1})",
-        strict=False,
-    )
     def test_sym_top_continuity(self, data: FieldData) -> None:
         vx, wall = data["velocity_x"], data["wall"]
         y_sym = int(np.where((wall == GEO_SYM_TOP).any(axis=1))[0][0])
