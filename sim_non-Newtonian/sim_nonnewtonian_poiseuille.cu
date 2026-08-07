@@ -168,6 +168,7 @@ struct StateLocal : State<NSE>
 	using real = typename TRAITS::real;
 	using dreal = typename TRAITS::dreal;
 	using point_t = typename TRAITS::point_t;
+	using bool3d = typename TRAITS::bool3d;
 	using lat_t = Lattice<3, real, idx>;
 
 	dreal driving_force = 0;
@@ -189,7 +190,14 @@ struct StateLocal : State<NSE>
 	StateLocal(
 		const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, bool use_forcing, const std::string& adiosConfigPath = "adios2.xml"
 	)
-	: State<NSE>(id, communicator, std::move(lat), adiosConfigPath)
+	: State<NSE>(
+		  id,
+		  communicator,
+		  std::move(lat),
+		  adiosConfigPath,
+		  // conditional periodic domain in x-direction
+		  bool3d{use_forcing, true, false}
+	  )
 	{
 		this->use_forcing = use_forcing;
 		errors_count = 10;
@@ -294,14 +302,7 @@ struct StateLocal : State<NSE>
 
 	void setupBoundaries() override
 	{
-		nse.setBoundaryY(0, BC::GEO_PERIODIC);
-		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_PERIODIC);
-
-		if (use_forcing) {
-			nse.setBoundaryX(0, BC::GEO_PERIODIC);
-			nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_PERIODIC);
-		}
-		else {
+		if (! use_forcing) {
 			nse.setBoundaryX(0, BC::GEO_NOTHING);
 			nse.setBoundaryX(1, BC::GEO_INFLOW_MOMENT);
 			nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT_INTERP);
@@ -459,7 +460,7 @@ struct StateLocal : State<NSE>
 	void probe1() override
 	{
 		// compute L1 and L2 errors against the analytical solution
-		// (skip non-fluid and non-periodic sites — only count interior fluid cells)
+		// (skip non-fluid sites — only count interior fluid cells)
 		auto& block = nse.blocks.front();
 		real local_l1sum_vx = 0;
 		real local_l1sum_vy = 0;
@@ -626,21 +627,22 @@ void sim(
 		// → u_max = (Re · K / (2·ρ·R^n))^(1/(2-n))
 		u_max_phys_local = std::pow(Re * K_phys / (2.0 * std::pow(R_phys, n) * rho), 1.0 / (2.0 - n));
 	}
-	real gamma_ref = u_max_phys_local / R_phys;          // characteristic shear rate [1/s]
+	real gamma_ref = u_max_phys_local / R_phys;					  // characteristic shear rate [1/s]
 	real nu_ref = (K_phys / rho) * std::pow(gamma_ref, n - 1.0);  // [m²/s]
-	real PHYS_DT = lbm_viscosity * PHYS_DL * PHYS_DL / nu_ref;     // diffusive scaling
+	real PHYS_DT = lbm_viscosity * PHYS_DL * PHYS_DL / nu_ref;	  // diffusive scaling
 	real K_lbm = (K_phys / rho) * std::pow(PHYS_DT, 2.0 - n) / (PHYS_DL * PHYS_DL);
 
 	u_max_lbm = u_max_phys_local * PHYS_DT / PHYS_DL;
 	Ma = u_max_lbm / c_s;
 	Re = u_max_lbm * 2.0 * R_lbm / lbm_viscosity;  // Re_ref (resolution-invariant)
-	real PHYS_VISCOSITY = nu_ref;  // reference kinematic viscosity for t_steady
+	real PHYS_VISCOSITY = nu_ref;				   // reference kinematic viscosity for t_steady
 
 	real K = K_lbm;
 	real exponent = (n + 1.0) / n;
 	driving_force = K * std::pow(u_max_lbm * (n + 1.0) / n / std::pow(R_lbm, exponent), n);
 	spdlog::info(
-		"Power-law Poiseuille: n={}, K_phys={:.4e} Pa·s^n, K_lbm={:.4e}, nu_ref={:.4e} m²/s, gamma_ref={:.4e} 1/s, A={:.6e}, u_max={:.6e}, Ma={:.6f}, omega={:.4f}, Re={}",
+		"Power-law Poiseuille: n={}, K_phys={:.4e} Pa·s^n, K_lbm={:.4e}, nu_ref={:.4e} m²/s, gamma_ref={:.4e} 1/s, A={:.6e}, u_max={:.6e}, "
+		"Ma={:.6f}, omega={:.4f}, Re={}",
 		n,
 		K_phys,
 		K_lbm,
@@ -1033,7 +1035,7 @@ int main(int argc, char** argv)
 		fmt::println(stderr, "CLI error: resolution must be at least 1");
 		return 1;
 	}
-	if (!has_u_max && Re < 1) {
+	if (! has_u_max && Re < 1) {
 		fmt::println(stderr, "CLI error: Re must be at least 1");
 		return 1;
 	}
