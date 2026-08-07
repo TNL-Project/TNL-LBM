@@ -2,6 +2,7 @@ set(TARGETS
         sim_nonnewtonian_poiseuille
         sim_nonnewtonian_poiseuille_CY
         sim_nonnewtonian_poiseuille_Casson
+        sim_nonnewtonian_expansion
 )
 
 foreach(target IN ITEMS ${TARGETS})
