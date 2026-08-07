@@ -14,7 +14,10 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
-BUILD_DIR = PROJECT_ROOT / "build"
+# overridable so different configurations can be tested without moving build directories
+BUILD_DIR = pathlib.Path(
+    os.environ.get("TNL_LBM_BUILD_DIR", PROJECT_ROOT / "build")
+).resolve()
 
 FieldData = dict[str, np.ndarray]
 
