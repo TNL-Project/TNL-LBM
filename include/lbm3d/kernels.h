@@ -107,8 +107,68 @@ CUDA_HOSTDEV void LBMKernel(
 		NSE::COLL::collision(KS);
 	NSE::BC::postCollision(SD, KS, gi_map, xm, x, xp, ym, y, yp, zm, z, zp);
 
-	if (output_macro)
+	bool skip_macro = false;
+	// macro of outflow cells is authored by the outflow pass
+	if constexpr (NSE::BC::use_outflow_pass)
+		skip_macro = NSE::BC::isOutflowPassBC(gi_map);
+	if (output_macro && ! skip_macro)
 		NSE::MACRO::outputMacro(SD, KS, x, y, z);
+}
+
+template <typename NSE>
+#ifdef USE_CUDA
+__global__ void cudaLBMKernelOutflow(
+	typename NSE::DATA SD,
+	typename NSE::TRAITS::idx3d offset,
+	typename NSE::TRAITS::idx3d end,
+	typename NSE::TRAITS::bool3d distributed,
+	bool output_macro
+)
+#else
+CUDA_HOSTDEV void LBMKernelOutflow(
+	typename NSE::DATA SD,
+	typename NSE::TRAITS::idx x,
+	typename NSE::TRAITS::idx y,
+	typename NSE::TRAITS::idx z,
+	typename NSE::TRAITS::bool3d distributed,
+	bool output_macro
+)
+#endif
+{
+	if constexpr (! NSE::BC::use_outflow_pass) {
+		return;
+	}
+	else {
+		using dreal = typename NSE::TRAITS::dreal;
+		using idx = typename NSE::TRAITS::idx;
+		using map_t = typename NSE::TRAITS::map_t;
+
+#ifdef USE_CUDA
+		idx x = threadIdx.x + blockIdx.x * blockDim.x + offset.x();
+		idx y = threadIdx.y + blockIdx.y * blockDim.y + offset.y();
+		idx z = threadIdx.z + blockIdx.z * blockDim.z + offset.z();
+
+		if (x >= end.x() || y >= end.y() || z >= end.z())
+			return;
+#endif
+
+		map_t gi_map = SD.map(x, y, z);
+		if (! NSE::BC::isOutflowPassBC(gi_map))
+			return;
+
+		idx xp, xm, yp, ym, zp, zm;
+		kernelInitIndices<NSE>(SD, gi_map, distributed, x, y, z, xp, xm, yp, ym, zp, zm);
+
+		typename NSE::template KernelStruct<dreal> KS;
+
+		NSE::MACRO::copyQuantities(SD, KS, x, y, z);
+		NSE::MACRO::template computeForcing<typename NSE::BC>(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+
+		NSE::BC::outflowPass(SD, KS, gi_map, xm, x, xp, ym, y, yp, zm, z, zp);
+
+		if (output_macro)
+			NSE::MACRO::outputMacro(SD, KS, x, y, z);
+	}
 }
 
 template <typename NSE, typename ADE>

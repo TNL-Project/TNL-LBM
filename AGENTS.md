@@ -1,6 +1,6 @@
 # TNL-LBM PROJECT KNOWLEDGE BASE
 
-**Updated:** 2026-07-30
+**Updated:** 2026-08-07
 **Branch:** lbm2d
 
 ## OVERVIEW
@@ -176,12 +176,26 @@ provides the AB default when neither is set.
 
 **Known limitations under A-A:**
 
-- `GEO_OUTFLOW_RIGHT` and `GEO_OUTFLOW_RIGHT_INTERP` (d2q9 and d3q27 `streaming_AA.h`):
-  the interp reads race with same-launch `postCollisionStreaming` writes
-  and read stale odd-parity slots → momentum pumped back into the domain
-  (recirculation, 0.5–5% mass drift, broken Y/Z symmetry in sim_1, degraded sim_2 errors, wrong sim2d_2 Poiseuille errors, wrong IBM drag).
-  Fix needs an AA-native outflow formulation, not another in-kernel reschedule (26+ variants tried).
-- Affected tests are RUN-TO-RUN nondeterministic under AA (e.g. sim_3 wake ratio flips sign) — do not tune tolerances against AA outputs.
+- `GEO_OUTFLOW_RIGHT` and `GEO_OUTFLOW_RIGHT_INTERP` run through a
+  deterministic two-pass scheme in BOTH streaming patterns (it replaced the
+  legacy fused kernel path, which raced with same-launch
+  `postCollisionStreaming` writers in the A-A single array — the m-family
+  slots are owned by neighbour threads in both parities, so only
+  previous-launch state is race-free to gather; A-B never had the race but
+  shares the scheme so there is one outflow code path): `State::SimUpdate`
+  (state.hpp) launches `cudaLBMKernelOutflow` over the block's outflow
+  bounding box right before the main kernel; the main kernel skips outflow
+  cells, which the BC's `outflowPass` (d2q9/d3q27 `bc.h`) collides from
+  `streamingOutflowRight` / `streamingOutflowInterpRight` gathers in
+  `streaming_*.h` (translated parity-aware pulls under A-A, plain pulls of
+  the rotated `df_cur` slot under A-B). Gated per BC implementation by
+  `BC::use_outflow_pass` — true for d2q9 and d3q27, false for d3q7 which
+  stays legacy. `GEO_OUTFLOW_RIGHT` reproduces the legacy arithmetic
+  bitwise. The reference body lives in
+  `streaming_AB.h::streamingOutflowInterpRight` (wired into the pass).
+- NSE_ADE (`sim_T1`, `sim_T2`) is NOT covered by the two-pass scheme
+  (state_NSE_ADE.h launches no outflow kernel and its BC placement ignores
+  the ghost-layer idiom) — do not run these under AA.
 - `sim_adjoint` requires the A-B pattern and is EXCLUDED from AA builds (CMake-level; its pytest module skips via `AA_PATTERN`).
   Findings for a future AA-native adjoint design:
   `streamingAdjoint` even-phase two-step reads escape the 1-cell ghost layer (CUDA 700 at boundary-adjacent sites);

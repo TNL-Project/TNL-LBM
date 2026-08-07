@@ -51,6 +51,9 @@ struct D3Q7_BC_All
 		return mapgi == GEO_WALL;
 	}
 
+	// d3q7 uses the legacy fused outflow path (see d2q9 bc.h for the pass)
+	static constexpr bool use_outflow_pass = false;
+
 	__cuda_callable__ static bool isSolid(map_t mapgi)
 	{
 		return mapgi == GEO_SOLID;
@@ -203,7 +206,8 @@ struct D3Q7_BC_All
 	}
 
 	template <typename LBM_KS>
-	__cuda_callable__ static void postCollision(DATA& SD, LBM_KS& KS, map_t mapgi, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
+	__cuda_callable__ static void
+	postCollision(DATA& SD, LBM_KS& KS, map_t mapgi, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
 		if (mapgi == GEO_NOTHING)
 			return;

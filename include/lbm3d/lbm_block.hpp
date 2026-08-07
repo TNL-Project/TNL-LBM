@@ -388,6 +388,38 @@ void LBM_BLOCK<CONFIG>::copyMapToDevice()
 	dmap = hmap;
 	ddiffusionCoeff = hdiffusionCoeff;
 	dphiTransferDirection = hphiTransferDirection;
+
+	updateOutflowPassRegion();
+}
+
+template <typename CONFIG>
+void LBM_BLOCK<CONFIG>::updateOutflowPassRegion()
+{
+	outflow_pass_empty = true;
+	outflow_begin = 0;
+	outflow_end = 0;
+	if constexpr (CONFIG::BC::use_outflow_pass) {
+		idx x_min = local.x(), y_min = local.y(), z_min = local.z();
+		idx x_max = 0, y_max = 0, z_max = 0;
+		bool found = false;
+		for (idx gz = offset.z(); gz < offset.z() + local.z(); gz++)
+			for (idx gy = offset.y(); gy < offset.y() + local.y(); gy++)
+				for (idx gx = offset.x(); gx < offset.x() + local.x(); gx++)
+					if (CONFIG::BC::isOutflowPassBC(hmap(gx, gy, gz))) {
+						found = true;
+						x_min = TNL::min(x_min, gx - offset.x());
+						x_max = TNL::max(x_max, gx - offset.x() + 1);
+						y_min = TNL::min(y_min, gy - offset.y());
+						y_max = TNL::max(y_max, gy - offset.y() + 1);
+						z_min = TNL::min(z_min, gz - offset.z());
+						z_max = TNL::max(z_max, gz - offset.z() + 1);
+					}
+		if (found) {
+			outflow_pass_empty = false;
+			outflow_begin = idx3d{x_min, y_min, z_min};
+			outflow_end = idx3d{x_max, y_max, z_max};
+		}
+	}
 }
 
 template <typename CONFIG>

@@ -69,6 +69,13 @@ struct LBM_BLOCK
 	idx3d local;
 	idx3d offset;
 
+	// two-pass outflow (A-A pattern): bounding box in LOCAL indices of the
+	// sites handled by the outflow pass; the emptiness flag is the runtime
+	// gate for skipping the cudaLBMKernelOutflow launch entirely
+	bool outflow_pass_empty = true;
+	idx3d outflow_begin = 0;
+	idx3d outflow_end = 0;
+
 	// index of this block
 	int id;
 
@@ -156,6 +163,8 @@ struct LBM_BLOCK
 
 	void copyMapToHost();
 	void copyMapToDevice();
+	// recompute the bounding box of outflow-pass sites from the host map
+	void updateOutflowPassRegion();
 	void copyMacroToHost();
 	void copyMacroToDevice();
 	void copyDFsToHost(uint8_t dfty);
