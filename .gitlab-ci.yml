@@ -32,11 +32,15 @@ typos:
   script:
     - typos --color always --sort
 
-build_CUDA_Release:
+build_CUDA:
   stage: build
   tags:
     - docker
     - nvidia
+  parallel:
+    matrix:
+      - CMAKE_BUILD_TYPE: ["Release", "Debug"]
+        TNL_LBM_AA_PATTERN: ["OFF", "ON"]
   script:
     # extra dependencies for the test suite
     # ParaView provides the libcatalyst-paraview.so implementation required by the inline Catalyst plugin test.
@@ -44,8 +48,9 @@ build_CUDA_Release:
     # which otherwise conflicts with the mesa dependency of paraview.
     - pacman -Suy --needed --noconfirm --overwrite 'usr/lib/libGLX_indirect.so*' paraview python-pytest python-cuda-bindings
     - cmake -B build -S . -G Ninja
-            -DCMAKE_BUILD_TYPE=Release
+            -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
             -DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCH}
+            -DTNL_LBM_AA_PATTERN=${TNL_LBM_AA_PATTERN}
     - cmake --build build
     # pytest test suite
     - pytest
@@ -53,43 +58,18 @@ build_CUDA_Release:
     # CUDA builds run on runners with GPU passthrough
     OMPI_MCA_accelerator: "cuda"
 
-build_CUDA_Debug:
-  stage: build
-  tags:
-    - docker
-    - nvidia
-  script:
-    - cmake -B build -S . -G Ninja
-            -DCMAKE_BUILD_TYPE=Debug
-            -DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCH}
-    - cmake --build build
-  variables:
-    # CUDA builds run on runners with GPU passthrough
-    OMPI_MCA_accelerator: "cuda"
-
-build_HIP_Release:
+build_HIP:
   stage: build
   image: "registry.gitlab.com/tnl-project/container-images/archlinux-tnl-rocm:latest"
   tags:
     - docker
     - hip-rocm
+  parallel:
+    matrix:
+      - CMAKE_BUILD_TYPE: ["Release", "Debug"]
   script:
     - cmake -B build -S . -G Ninja
-            -DCMAKE_BUILD_TYPE=Release
-    - cmake --build build
-  variables:
-    # ROCm builds run on runners with AMD GPU passthrough
-    OMPI_MCA_accelerator: "rocm"
-
-build_HIP_Debug:
-  stage: build
-  image: "registry.gitlab.com/tnl-project/container-images/archlinux-tnl-rocm:latest"
-  tags:
-    - docker
-    - hip-rocm
-  script:
-    - cmake -B build -S . -G Ninja
-            -DCMAKE_BUILD_TYPE=Debug
+            -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
     - cmake --build build
   variables:
     # ROCm builds run on runners with AMD GPU passthrough
