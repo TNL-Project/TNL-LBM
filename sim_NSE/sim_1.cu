@@ -142,9 +142,9 @@ void sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	int X = 128 * RESOLUTION;		  // width in pixels
 	int Y = block_size * RESOLUTION;  // height in pixels --- top and bottom walls 1px
 	int Z = Y;						  // height in pixels --- top and bottom walls 1px
-	real LBM_VISCOSITY = 1e-4;	  //1.0/6.0; /// GIVEN: optimal is 1/6
-	real PHYS_HEIGHT = 0.41;		  // [m] domain height (physical)
-	real PHYS_VISCOSITY = 1.5e-5;	  // [m^2/s] fluid viscosity .... blood?
+	real LBM_VISCOSITY = 1e-4;
+	real PHYS_HEIGHT = 0.41;	   // [m] domain height (physical)
+	real PHYS_VISCOSITY = 1.5e-5;  // [m^2/s] fluid viscosity .... blood?
 	real PHYS_DL = PHYS_HEIGHT / ((real) Y - 2);
 	real PHYS_DT = LBM_VISCOSITY / PHYS_VISCOSITY * PHYS_DL * PHYS_DL;
 	point_t PHYS_ORIGIN = {0., 0., 0.};

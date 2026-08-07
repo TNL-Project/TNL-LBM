@@ -87,8 +87,8 @@ struct StateLocal : State<NSE>
 
 		idx wall_low = 1;
 		idx wall_high = nse.lat.global.y() - 2;
-		real R = (real)(wall_high - wall_low) / 2.0;
-		real y_rel = (real)lbm_y - (real)(wall_low + wall_high) / 2.0;
+		real R = (real) (wall_high - wall_low) / 2.0;
+		real y_rel = (real) lbm_y - (real) (wall_low + wall_high) / 2.0;
 
 		real G = nse.blocks.front().data.fx;
 		real nu = nse.lat.lbmViscosity();
@@ -328,7 +328,8 @@ void sim(const std::string& adios_config, int RESOLUTION, bool use_forcing, doub
 
 	const char* prec = (std::is_same_v<dreal, float>) ? "float" : "double";
 	const char* bc_variant = use_forcing ? "forcing" : "inflow";
-	const std::string state_id = fmt::format("sim2d_2_{}_{}_{}_res{:02d}_np{:03d}", NSE::COLL::id, prec, bc_variant, RESOLUTION, TNL::MPI::GetSize(MPI_COMM_WORLD));
+	const std::string state_id =
+		fmt::format("sim2d_2_{}_{}_{}_res{:02d}_np{:03d}", NSE::COLL::id, prec, bc_variant, RESOLUTION, TNL::MPI::GetSize(MPI_COMM_WORLD));
 	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, use_forcing, adios_config);
 
 	if (! state.canCompute())

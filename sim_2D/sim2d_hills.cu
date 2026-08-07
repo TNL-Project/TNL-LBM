@@ -185,11 +185,13 @@ void sim(const std::string& adios_config, int RESOLUTION, typename NSE::TRAITS::
 	state.add2Dcut_Z(0, "");
 
 	if (state.nse.rank == 0)
-		spdlog::info("Re={:.0f} Ma={:.4f} PHYS_VISCOSITY={:e} PHYS_VELOCITY={:e}",
+		spdlog::info(
+			"Re={:.0f} Ma={:.4f} PHYS_VISCOSITY={:e} PHYS_VELOCITY={:e}",
 			PHYS_VELOCITY * PHYS_HEIGHT / PHYS_VISCOSITY,
 			state.lbm_inflow_vx * sqrt(3.0),
 			PHYS_VISCOSITY,
-			PHYS_VELOCITY);
+			PHYS_VELOCITY
+		);
 
 	execute(state);
 }

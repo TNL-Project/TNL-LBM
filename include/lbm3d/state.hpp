@@ -1435,7 +1435,7 @@ void State<NSE>::AfterSimUpdate()
 		wait_for_pending_io_timed();
 
 	bool copy_macro = false;
-	if (!probe_needs_macro_on_host) {
+	if (! probe_needs_macro_on_host) {
 		for (int c = 0; c < MAX_COUNTER; c++)
 			if (c != PRINT && c != SAVESTATE && c != PROBE1)
 				if (cnt[c].action(nse.physTime()))
