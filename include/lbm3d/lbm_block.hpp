@@ -3,6 +3,9 @@
 #include "lbm_block.h"
 #include "block_size_optimizer.h"
 
+#include <map>
+#include <tuple>  // std::tie
+
 template <typename CONFIG>
 LBM_BLOCK<CONFIG>::LBM_BLOCK(const TNL::MPI::Comm& communicator, idx3d global, idx3d local, idx3d offset, int this_id)
 : communicator(communicator),
@@ -395,29 +398,186 @@ void LBM_BLOCK<CONFIG>::copyMapToDevice()
 template <typename CONFIG>
 void LBM_BLOCK<CONFIG>::updateOutflowPassRegion()
 {
-	outflow_pass_empty = true;
-	outflow_begin = 0;
-	outflow_end = 0;
+	outflow_boxes.clear();
 	if constexpr (CONFIG::BC::use_outflow_pass) {
-		idx x_min = local.x(), y_min = local.y(), z_min = local.z();
-		idx x_max = 0, y_max = 0, z_max = 0;
-		bool found = false;
-		for (idx gz = offset.z(); gz < offset.z() + local.z(); gz++)
-			for (idx gy = offset.y(); gy < offset.y() + local.y(); gy++)
-				for (idx gx = offset.x(); gx < offset.x() + local.x(); gx++)
-					if (CONFIG::BC::isOutflowPassBC(hmap(gx, gy, gz))) {
-						found = true;
-						x_min = TNL::min(x_min, gx - offset.x());
-						x_max = TNL::max(x_max, gx - offset.x() + 1);
-						y_min = TNL::min(y_min, gy - offset.y());
-						y_max = TNL::max(y_max, gy - offset.y() + 1);
-						z_min = TNL::min(z_min, gz - offset.z());
-						z_max = TNL::max(z_max, gz - offset.z() + 1);
+		// actual rectangle on a z-plane with exclusive x and y ends
+		struct PlaneRect
+		{
+			idx x_begin;
+			idx x_end;
+			idx y_begin;
+			idx y_end;
+
+			// the comparison must match std::array<idx, 4>{x_begin, x_end, y_begin, y_end} ordering
+			// (lexicographic) — it keys the phase-2 map where determinism depends on the iteration order
+			bool operator<(const PlaneRect& other) const
+			{
+				return std::tie(x_begin, x_end, y_begin, y_end) < std::tie(other.x_begin, other.x_end, other.y_begin, other.y_end);
+			}
+		};
+
+		// predicate in *global* map indexing, *local* box coordinates
+		auto isOutflowCell = [this](idx lx, idx ly, idx lz)
+		{
+			return CONFIG::BC::isOutflowPassBC(hmap(offset.x() + lx, offset.y() + ly, offset.z() + lz));
+		};
+
+		// phase 2 open boxes: plane rectangle -> index into outflow_boxes
+		std::map<PlaneRect, idx> open_boxes;
+
+		for (idx lz = 0; lz < local.z(); lz++) {
+			// phase 1: cover the z-plane by extending maximal contiguous
+			// x-runs of outflow cells along the y direction
+			std::map<std::pair<idx, idx>, PlaneRect> open_rects;
+			std::vector<PlaneRect> plane_rects;
+			for (idx ly = 0; ly < local.y(); ly++) {
+				// maximal contiguous x-runs of outflow cells on this row
+				std::vector<std::pair<idx, idx>> runs;
+				for (idx lx = 0; lx < local.x(); lx++)
+					if (isOutflowCell(lx, ly, lz)) {
+						const idx r_begin = lx;
+						while (lx + 1 < local.x() && isOutflowCell(lx + 1, ly, lz))
+							lx++;
+						runs.emplace_back(r_begin, lx + 1);
 					}
-		if (found) {
-			outflow_pass_empty = false;
-			outflow_begin = idx3d{x_min, y_min, z_min};
-			outflow_end = idx3d{x_max, y_max, z_max};
+
+				// merge-join the row's runs against the open rects:
+				// extend matches, close keys absent from the row, open new runs
+				auto it = open_rects.begin();
+				std::size_t r = 0;
+				while (it != open_rects.end() && r < runs.size()) {
+					if (runs[r] < it->first) {
+						open_rects[runs[r]] = PlaneRect{runs[r].first, runs[r].second, ly, ly + 1};
+						r++;
+					}
+					else if (it->first < runs[r]) {
+						plane_rects.push_back(it->second);
+						it = open_rects.erase(it);
+					}
+					else {
+						it->second.y_end = ly + 1;
+						++it;
+						r++;
+					}
+				}
+				while (it != open_rects.end()) {
+					plane_rects.push_back(it->second);
+					it = open_rects.erase(it);
+				}
+				for (; r < runs.size(); r++)
+					open_rects[runs[r]] = PlaneRect{runs[r].first, runs[r].second, ly, ly + 1};
+			}
+			// close all rects still open at the end of the plane
+			for (const auto& entry : open_rects)
+				plane_rects.push_back(entry.second);
+
+			// phase 2: extend open boxes with the same rect on the current plane,
+			// open new boxes, close boxes absent from the plane
+			std::map<PlaneRect, idx> matched_boxes;
+			for (const auto& rect : plane_rects) {
+				const auto kt = open_boxes.find(rect);
+				if (kt != open_boxes.end()) {
+					outflow_boxes[kt->second].end.z() = lz + 1;
+					matched_boxes.emplace(rect, kt->second);
+				}
+				else {
+					matched_boxes.emplace(rect, static_cast<idx>(outflow_boxes.size()));
+					outflow_boxes.push_back(OutflowBox{idx3d{rect.x_begin, rect.y_begin, lz}, idx3d{rect.x_end, rect.y_end, lz + 1}});
+				}
+			}
+			open_boxes = std::move(matched_boxes);
+		}
+
+		// pad each box side shorter than min_outflow_box_extent (but longer than a single cell) to reach it,
+		// clipped to the local grid;
+		// half of the growth goes to the lower side, subject to the clip
+		auto padBox = [this](OutflowBox& box)
+		{
+			for (int d = 0; d < 3; d++) {
+				const idx extent = box.end[d] - box.begin[d];
+				const idx target = TNL::min(min_outflow_box_extent, local[d]);
+				if (extent <= 1 || extent >= target)
+					continue;
+				const idx extra = target - extent;
+				box.begin[d] = TNL::max(box.begin[d] - extra / 2, 0);
+				box.end[d] = box.begin[d] + target;
+				if (box.end[d] > local[d]) {
+					box.end[d] = local[d];
+					box.begin[d] = local[d] - target;
+				}
+			}
+		};
+
+		// bounding box of two boxes
+		auto hull = [](const OutflowBox& a, const OutflowBox& b)
+		{
+			OutflowBox h;
+			for (int d = 0; d < 3; d++) {
+				h.begin[d] = TNL::min(a.begin[d], b.begin[d]);
+				h.end[d] = TNL::max(a.end[d], b.end[d]);
+			}
+			return h;
+		};
+
+		// box volume in cells (64-bit: products of large extents overflow idx)
+		auto volume = [](const OutflowBox& box) -> long
+		{
+			long v = 1;
+			for (int d = 0; d < 3; d++)
+				v *= box.end[d] - box.begin[d];
+			return v;
+		};
+
+		// absorb overlapping boxes pairwise (the hull only grows sides, so
+		// the min-extent invariant of padded boxes is preserved)
+		auto absorbOverlaps = [&hull](std::vector<OutflowBox>& outflow_boxes)
+		{
+			bool merged;
+			do {
+				merged = false;
+				for (std::size_t i = 0; i < outflow_boxes.size() && ! merged; i++)
+					for (std::size_t j = i + 1; j < outflow_boxes.size(); j++) {
+						bool overlap = true;
+						for (int d = 0; d < 3; d++)
+							overlap &= outflow_boxes[i].begin[d] < outflow_boxes[j].end[d] && outflow_boxes[j].begin[d] < outflow_boxes[i].end[d];
+						if (! overlap)
+							continue;
+						outflow_boxes[i] = hull(outflow_boxes[i], outflow_boxes[j]);
+						outflow_boxes.erase(outflow_boxes.begin() + j);
+						merged = true;
+						break;
+					}
+			} while (merged);
+		};
+
+		// phase 3: enforce the minimum box extent — padded cells harmlessly
+		// early-out on the kernel's per-cell isOutflowPassBC check
+		for (auto& box : outflow_boxes)
+			padBox(box);
+
+		// phase 4: padded boxes can overlap; merge them back to disjoint
+		absorbOverlaps(outflow_boxes);
+
+		// phase 5: too many boxes — repeatedly merge the pair whose bounding box adds the least dead volume
+		// (absorbing overlaps the hull creates);
+		// the greedy agglomeration keeps the total covered volume approximately minimal
+		// at the cost of potentially resulting in sides below min_outflow_box_extent
+		while (outflow_boxes.size() > static_cast<std::size_t>(max_outflow_boxes)) {
+			std::size_t bi = 0;
+			std::size_t bj = 1;
+			long best = -1;
+			for (std::size_t i = 0; i < outflow_boxes.size(); i++)
+				for (std::size_t j = i + 1; j < outflow_boxes.size(); j++) {
+					const long cost = volume(hull(outflow_boxes[i], outflow_boxes[j])) - volume(outflow_boxes[i]) - volume(outflow_boxes[j]);
+					if (best < 0 || cost < best) {
+						best = cost;
+						bi = i;
+						bj = j;
+					}
+				}
+			outflow_boxes[bi] = hull(outflow_boxes[bi], outflow_boxes[bj]);
+			outflow_boxes.erase(outflow_boxes.begin() + bj);
+			absorbOverlaps(outflow_boxes);
 		}
 	}
 }

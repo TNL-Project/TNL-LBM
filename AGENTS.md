@@ -27,7 +27,7 @@ with optional Python bindings via nanobind and distributed execution through CUD
 ├── sim_2D/              # 2D example simulations
 ├── pytnl_lbm/           # Python extension module
 ├── tests/               # pytest unit, regression & integration suites + subproject test
-│   ├── unit/            # pytest unit tests (python_bindings/ under unit/; C++ unit tests may join later)
+│   ├── unit/            # pytest unit tests: python_bindings/ + C++ unit tests
 │   ├── regression/      # pytest result checks (ibm, nse, d2q9, adjoint) + IBM matrix baselines
 │   ├── integration/     # end-to-end output-data pipeline test (pytest + CUDA driver sim)
 │   └── subproject/      # external consumption test via CMake FetchContent
@@ -183,9 +183,10 @@ provides the AB default when neither is set.
   slots are owned by neighbour threads in both parities, so only
   previous-launch state is race-free to gather; A-B never had the race but
   shares the scheme so there is one outflow code path): `State::SimUpdate`
-  (state.hpp) launches `cudaLBMKernelOutflow` over the block's outflow
-  bounding box right before the main kernel; the main kernel skips outflow
-  cells, which the BC's `outflowPass` (d2q9/d3q27 `bc.h`) collides from
+  (state.hpp) launches `cudaLBMKernelOutflow` over a per-block vector of
+  disjoint boxes from a greedy rectangle cover of the outflow-pass mask
+  right before the main kernel; the main kernel skips outflow cells,
+  which the BC's `outflowPass` (d2q9/d3q27 `bc.h`) collides from
   `streamingOutflowRight` / `streamingOutflowInterpRight` gathers in
   `streaming_*.h` (translated parity-aware pulls under A-A, plain pulls of
   the rotated `df_cur` slot under A-B). Gated per BC implementation by

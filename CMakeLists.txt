@@ -251,6 +251,15 @@ if(TNL_LBM_BUILD_PYTHON AND NOT TNL_LBM_BUILD_HIP)
     FetchContent_MakeAvailable(PyTNL)
 endif()
 
+# doctest is a test-only dependency
+FetchContent_Declare(doctest
+    GIT_REPOSITORY https://github.com/doctest/doctest.git
+    GIT_TAG v2.5.3
+    SYSTEM
+    FIND_PACKAGE_ARGS
+)
+FetchContent_MakeAvailable(doctest)
+
 find_package(PNG REQUIRED)
 find_package(OpenMP COMPONENTS CXX)
 find_package(MPI COMPONENTS CXX)

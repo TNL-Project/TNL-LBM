@@ -2,6 +2,7 @@
 
 #include "defs.h"
 #include "lattice.h"
+#include <vector>
 
 template <typename CONFIG>
 struct LBM_BLOCK
@@ -69,13 +70,6 @@ struct LBM_BLOCK
 	idx3d local;
 	idx3d offset;
 
-	// two-pass outflow (A-A pattern): bounding box in LOCAL indices of the
-	// sites handled by the outflow pass; the emptiness flag is the runtime
-	// gate for skipping the cudaLBMKernelOutflow launch entirely
-	bool outflow_pass_empty = true;
-	idx3d outflow_begin = 0;
-	idx3d outflow_end = 0;
-
 	// index of this block
 	int id;
 
@@ -104,6 +98,23 @@ struct LBM_BLOCK
 		idx3d size = 0;
 	};
 	std::map<TNL::Containers::SyncDirection, COMPUTE_DATA> computeData;
+
+	// disjoint [begin, end) boxes in *local* indices covering all outflow-pass sites;
+	// boxes may include non-outflow padding cells (the kernel early-outs those on the per-cell isOutflowPassBC check)
+	struct OutflowBox
+	{
+		idx3d begin = 0;
+		idx3d end = 0;
+	};
+	std::vector<OutflowBox> outflow_boxes;
+	// minimum extent of each box side: sides of a single cell (the degenerate
+	// mask direction, e.g. the wall-normal of a plane outlet) are exempt,
+	// and on smaller local grids the side is only grown to the grid extent
+	static constexpr idx min_outflow_box_extent = 32;
+	// upper bound of the rectangle cover: if the cover has more boxes,
+	// the pair whose bounding box adds the least dead volume is merged until it fits the bound
+	// (merging may result in box sides below min_outflow_box_extent — minimizing the covered volume takes precedence)
+	static constexpr idx max_outflow_boxes = 64;
 
 	// constructors
 	LBM_BLOCK() = delete;
@@ -163,7 +174,7 @@ struct LBM_BLOCK
 
 	void copyMapToHost();
 	void copyMapToDevice();
-	// recompute the bounding box of outflow-pass sites from the host map
+	// recompute the rectangle cover of outflow-pass sites from the host map
 	void updateOutflowPassRegion();
 	void copyMacroToHost();
 	void copyMacroToDevice();

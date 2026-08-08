@@ -1302,21 +1302,15 @@ void State<NSE>::SimUpdate()
 		if constexpr (NSE::BC::use_outflow_pass) {
 			// pass on the finalized previous-phase layout, before the main launch
 			for (auto& block : nse.blocks) {
-				if (block.outflow_pass_empty)
-					continue;
-				const auto direction = TNL::Containers::SyncDirection::None;
-				TNL::Backend::LaunchConfiguration launch_config;
-				launch_config.blockSize = block.computeData.at(direction).blockSize;
-				launch_config.gridSize = block.getCudaGridSize(block.outflow_end - block.outflow_begin, launch_config.blockSize);
-				TNL::Backend::launchKernelAsync(
-					cudaLBMKernelOutflow<NSE>,
-					launch_config,
-					block.data,
-					block.outflow_begin,
-					block.outflow_end,
-					block.is_distributed(),
-					compute_macro
-				);
+				for (const auto& box : block.outflow_boxes) {
+					const auto direction = TNL::Containers::SyncDirection::None;
+					TNL::Backend::LaunchConfiguration launch_config;
+					launch_config.blockSize = block.computeData.at(direction).blockSize;
+					launch_config.gridSize = block.getCudaGridSize(box.end - box.begin, launch_config.blockSize);
+					TNL::Backend::launchKernelAsync(
+						cudaLBMKernelOutflow<NSE>, launch_config, block.data, box.begin, box.end, block.is_distributed(), compute_macro
+					);
+				}
 			}
 			TNL::Backend::streamSynchronize(0);
 		}
@@ -1343,22 +1337,16 @@ void State<NSE>::SimUpdate()
 			// pass on the finalized previous-phase state: the previous SimUpdate
 			// synchronized all main-kernel computations and the overlap exchange
 			for (auto& block : nse.blocks) {
-				if (block.outflow_pass_empty)
-					continue;
-				const auto direction = TNL::Containers::SyncDirection::None;
-				TNL::Backend::LaunchConfiguration launch_config;
-				launch_config.blockSize = block.computeData.at(direction).blockSize;
-				launch_config.gridSize = block.getCudaGridSize(block.outflow_end - block.outflow_begin, launch_config.blockSize);
-				launch_config.stream = block.computeData.at(direction).stream;
-				TNL::Backend::launchKernelAsync(
-					cudaLBMKernelOutflow<NSE>,
-					launch_config,
-					block.data,
-					block.outflow_begin,
-					block.outflow_end,
-					block.is_distributed(),
-					compute_macro
-				);
+				for (const auto& box : block.outflow_boxes) {
+					const auto direction = TNL::Containers::SyncDirection::None;
+					TNL::Backend::LaunchConfiguration launch_config;
+					launch_config.blockSize = block.computeData.at(direction).blockSize;
+					launch_config.gridSize = block.getCudaGridSize(box.end - box.begin, launch_config.blockSize);
+					launch_config.stream = block.computeData.at(direction).stream;
+					TNL::Backend::launchKernelAsync(
+						cudaLBMKernelOutflow<NSE>, launch_config, block.data, box.begin, box.end, block.is_distributed(), compute_macro
+					);
+				}
 			}
 			for (auto& block : nse.blocks)
 				TNL::Backend::streamSynchronize(block.computeData.at(TNL::Containers::SyncDirection::None).stream);
@@ -1434,14 +1422,14 @@ void State<NSE>::SimUpdate()
 	timer_compute.start();
 	if constexpr (NSE::BC::use_outflow_pass) {
 		for (auto& block : nse.blocks) {
-			if (block.outflow_pass_empty)
-				continue;
+			for (const auto& box : block.outflow_boxes) {
 	#pragma omp parallel for schedule(static) collapse(2)
-			for (idx x = block.outflow_begin.x(); x < block.outflow_end.x(); x++)
-				for (idx z = block.outflow_begin.z(); z < block.outflow_end.z(); z++)
-					for (idx y = block.outflow_begin.y(); y < block.outflow_end.y(); y++) {
-						LBMKernelOutflow<NSE>(block.data, x, y, z, block.is_distributed(), compute_macro);
-					}
+				for (idx x = box.begin.x(); x < box.end.x(); x++)
+					for (idx z = box.begin.z(); z < box.end.z(); z++)
+						for (idx y = box.begin.y(); y < box.end.y(); y++) {
+							LBMKernelOutflow<NSE>(block.data, x, y, z, block.is_distributed(), compute_macro);
+						}
+			}
 		}
 	}
 	for (auto& block : nse.blocks) {
