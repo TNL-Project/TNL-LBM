@@ -1,0 +1,126 @@
+#!/bin/bash
+
+# do_expansion — re-run ALL nu-sweep samples of the Newtonian 3:1 sudden-expansion
+# study (sim_nonnewtonian_expansion): baseline, optimization sweep, fixed-Ma=0.1
+# series, and branch densification — 57 cases total (11+16+14+13+3).
+#
+# Intended use: cluster re-run in DOUBLE precision (TraitsDP), e.g. for an
+# SP-vs-DP comparison of the L1 convergence results.
+#
+# NOTE: current binaries encode the precision in the top-level results directory
+# (state_id prefix sim_nonnewtonian_expansion_SP|_DP/, i.e. runs write into
+# results_sim_nonnewtonian_expansion_SP or _DP automatically), so single- and
+# double-precision runs no longer share paths. Binaries predating this change
+# DO share paths across precisions.
+# IMPORTANT: the sim SKIPS a case SILENTLY (exit 0, "there is nothing to
+# compute") when the target dir already exists in terminated/finished state.
+# Run this script in a SEPARATE work tree / scratch checkout so it neither
+# clobbers nor silently skips against pre-existing results.
+#
+# Usage:
+#   ./do_expansion                      # run all 57 cases sequentially on this machine
+#   targetCase=17 ./do_expansion        # run only case 17 (0-based)
+#   targetCase=none ./do_expansion      # count cases -> log.caseCount (no GPU needed)
+#   PRECISION=single ./do_expansion     # force single precision (default: double)
+#   EXEC=path/to/binary ./do_expansion  # override the executable
+#
+# SLURM array jobs (one case per array index), repo do_slurm pattern:
+#   PRECISION=double ./do_slurm expansion   # counts cases and submits the array
+
+# exit as soon as some command fails
+set -o errexit
+set -o pipefail
+set -o nounset
+
+projectDir="$(dirname "${BASH_SOURCE[0]}")"
+
+# The config uses paths relative to the project directory, so *everything* has
+# to be executed from it.
+cd "$projectDir"
+
+# set the task ID: $SLURM_ARRAY_TASK_ID or $PBS_ARRAY_INDEX or -1
+taskID=${PBS_ARRAY_INDEX:-${SLURM_ARRAY_TASK_ID:--1}}
+
+# set up case counter and target
+# (targetCase may be set by the outside environment, otherwise it defaults to the task ID)
+targetCase=${targetCase:-${taskID}}
+caseCounter=0
+
+# Set up the runner based on environment
+if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+    runner="mpirun ${MPIRUN_FLAGS:-}"
+elif [[ -n "${PBS_JOBID:-}" ]]; then
+    runner="mpirun ${MPIRUN_FLAGS:-}"
+else
+    runner="mpirun -np 1 --mca accelerator cuda"
+fi
+
+# numerical precision: single (float, TraitsSP) or double (TraitsDP)
+precision=${PRECISION:-double}
+if [[ "$precision" != "single" && "$precision" != "double" ]]; then
+    echo "do_expansion: PRECISION must be 'single' or 'double' (got '$precision')" >&2
+    exit 1
+fi
+
+# executable (must be built with --precision support)
+    EXEC=${EXEC:-build/sim_non-Newtonian/sim_nonnewtonian_expansion}
+
+function run_case()
+{
+    # handle case counting
+    if [[ "$targetCase" != "-1" && "$targetCase" != "$caseCounter" ]]; then
+        # NOTE: this output is important for the self-starting in do_slurm
+        echo "targetCase = $targetCase, caseCounter = $caseCounter → skipping"
+        caseCounter=$(( caseCounter + 1 ))
+        return
+    fi
+    caseCounter=$(( caseCounter + 1 ))
+
+    $runner "$EXEC" "${EXEC_ARGS[@]}"
+}
+
+# Fixed physical parameters of the Newtonian study (Re = 40)
+function run_resolution()
+{
+    local res=$1
+    shift
+    for nu in "$@"; do
+        EXEC_ARGS=(--resolution "$res" --v-mean 0.5 --lbm-viscosity "$nu" --n 1.0 --K 0.0125 --precision "$precision")
+        run_case
+    done
+}
+
+function run_all()
+{
+    # resolution 1 (11): sweep + baseline/fixed-Ma (9.62e-3) + Ma=0.5 extension (4.81e-2)
+    run_resolution 1 \
+        2.00e-3 3.00e-3 4.50e-3 6.00e-3 7.50e-3 9.62e-3 \
+        1.35e-2 1.80e-2 2.69e-2 3.59e-2 4.81e-2
+
+    # resolution 2 (16): sweep + baseline (9.62e-3) + fixed-Ma (1.92e-2)
+    run_resolution 2 \
+        3.00e-3 5.00e-3 7.00e-3 9.62e-3 1.10e-2 1.50e-2 1.92e-2 2.00e-2 \
+        2.50e-2 3.50e-2 5.00e-2 6.00e-2 7.00e-2 8.00e-2 9.00e-2 1.00e-1
+
+    # resolution 3 (14): baseline (9.62e-3) + branch densification + fixed-Ma (2.89e-2) + sweep
+    run_resolution 3 \
+        9.62e-3 1.00e-2 1.50e-2 2.00e-2 2.50e-2 2.89e-2 \
+        5.00e-2 6.00e-2 7.00e-2 8.00e-2 9.00e-2 1.00e-1 1.20e-1 1.60e-1
+
+    # resolution 4 (13): baseline (9.62e-3) + branch densification + fixed-Ma (3.85e-2) + sweep
+    run_resolution 4 \
+        9.62e-3 1.50e-2 2.00e-2 2.50e-2 3.00e-2 3.85e-2 \
+        5.00e-2 6.00e-2 7.00e-2 8.00e-2 9.00e-2 1.20e-1 1.60e-1
+
+    # resolution 8 (3): baseline (9.62e-3) + fixed-Ma (7.70e-2) + optimum
+    # (9.00e-2, assumed same as resolution 4)
+    run_resolution 8 \
+        9.62e-3 7.70e-2 9.00e-2
+}
+
+run_all
+
+# write the case counter
+if [[ -z "${SLURM_JOB_ID:-}" && "$targetCase" != "-1" ]]; then
+    echo "$(( caseCounter - 1 ))" > log.caseCount
+fi
