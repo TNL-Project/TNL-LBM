@@ -1,0 +1,157 @@
+#!/bin/bash
+
+# exit as soon as some command fails
+set -o errexit
+set -o pipefail
+set -o nounset
+
+projectDir="$(dirname "${BASH_SOURCE[0]}")"
+
+# The config uses paths relative to the project directory, so *everything* has
+# to be executed from it.
+cd "$projectDir"
+
+# set the task ID: $SLURM_ARRAY_TASK_ID or $PBS_ARRAY_INDEX or -1
+taskID=${PBS_ARRAY_INDEX:-${SLURM_ARRAY_TASK_ID:--1}}
+
+# set up case counter and target
+# (targetCase may be set by the outside environment, otherwise it defaults to the task ID)
+targetCase=${targetCase:-${taskID}}
+caseCounter=0
+
+# Set up the runner based on environment
+if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+    runner="mpirun ${MPIRUN_FLAGS:-}"
+elif [[ -n "${PBS_JOBID:-}" ]]; then
+    runner="mpirun ${MPIRUN_FLAGS:-}"
+else
+    runner="mpirun -np 1 --mca accelerator cuda"
+fi
+
+function run_case()
+{
+    # handle case counting
+    if [[ "$targetCase" != "-1" && "$targetCase" != "$caseCounter" ]]; then
+        # NOTE: this output is important for the self-starting in do_slurm
+        echo "targetCase = $targetCase, caseCounter = $caseCounter → skipping"
+        caseCounter=$(( caseCounter + 1 ))
+        return
+    fi
+    caseCounter=$(( caseCounter + 1 ))
+
+    $runner "$EXEC" "${EXEC_ARGS[@]}"
+}
+
+# Run power-law non-Newtonian model
+function run_power_law()
+{
+    EXEC="build/sim_non-Newtonian/sim_nonnewtonian_poiseuille"
+
+    resolutions=(1 2 3 4)
+    #resolutions=(1 2 3)
+    u_max_phys=(1e-3)
+    lbm_viscosities=(5e-2)
+    # K must change for different n - it affects dt
+    n_K_pairs=("0.5 2e-3" "1.0 4e-2" "1.5 7e-1")
+    for res in "${resolutions[@]}"; do
+    for u_max in "${u_max_phys[@]}"; do
+    for mode_flag in "" "--use-forcing"; do
+    for nu in "${lbm_viscosities[@]}"; do
+    for pair in "${n_K_pairs[@]}"; do
+        n="${pair%% *}"
+        K="${pair##* }"
+
+        EXEC_ARGS=(--resolution "$res" --u-max "$u_max" --lbm-viscosity "$nu" --n "$n" --K "$K")
+        if [[ "$mode_flag" != "" ]]; then
+            EXEC_ARGS+=("$mode_flag")
+        fi
+        run_case
+
+    done
+    done
+    done
+    done
+    done
+}
+
+# Run Carreau-Yasuda non-Newtonian model
+function run_cy()
+{
+    EXEC="build/sim_non-Newtonian/sim_nonnewtonian_poiseuille_CY"
+
+    resolutions=(1 2 3 4)
+    #resolutions=(1 2 3)
+    u_max=(1e-3)
+    lbm_viscosities=(5e-2)
+    ns=(0.5 1.0)  # 1 is Newtonian limit
+    as=(3.91)
+    lambdas=(3.24e4 0)  # 0 is Newtonian limit
+    eta_0s=(3e-2)
+    eta_infs=(1e-5)
+    for res in "${resolutions[@]}"; do
+    for u_max in "${u_max_phys[@]}"; do
+    for mode_flag in "" "--use-forcing"; do
+    for nu in "${lbm_viscosities[@]}"; do
+    for n in "${ns[@]}"; do
+    for a in "${as[@]}"; do
+    for lambda in "${lambdas[@]}"; do
+    for eta_0 in "${eta_0s[@]}"; do
+    for eta_inf in "${eta_infs[@]}"; do
+
+        EXEC_ARGS=(--resolution "$res" --u-max "$u_max" --lbm-viscosity "$nu" --n "$n" --a "$a" --lambda "$lambda" --eta-0 "$eta_0" --eta-inf "$eta_inf")
+        if [[ "$mode_flag" != "" ]]; then
+            EXEC_ARGS+=("$mode_flag")
+        fi
+        run_case
+
+    done
+    done
+    done
+    done
+    done
+    done
+    done
+    done
+    done
+}
+
+# Run Casson non-Newtonian model
+function run_casson()
+{
+    EXEC="build/sim_non-Newtonian/sim_nonnewtonian_poiseuille_Casson"
+
+    resolutions=(1 2 3 4)
+    #resolutions=(1 2 3)
+    u_max_phys=(1e-3)
+    lbm_viscosities=(5e-2)
+    tau_ys=(0 1e-4)  # 0 is Newtonian limit
+    eta_cs=(5e-2)
+    for res in "${resolutions[@]}"; do
+    for u_max in "${u_max_phys[@]}"; do
+    for mode_flag in "" "--use-forcing"; do
+    for nu in "${lbm_viscosities[@]}"; do
+    for tau_y in "${tau_ys[@]}"; do
+    for eta_c in "${eta_cs[@]}"; do
+
+        EXEC_ARGS=(--resolution "$res" --u-max "$u_max" --lbm-viscosity "$nu" --tau-y "$tau_y" --eta-c "$eta_c")
+        if [[ "$mode_flag" != "" ]]; then
+            EXEC_ARGS+=("$mode_flag")
+        fi
+        run_case
+
+    done
+    done
+    done
+    done
+    done
+    done
+}
+
+run_power_law
+run_cy
+run_casson
+
+# write the case counter
+if [[ -z "${SLURM_JOB_ID:-}" && "$targetCase" != "-1" ]]; then
+    echo "$(( caseCounter - 1 ))" > log.caseCount
+fi
