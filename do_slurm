@@ -1,0 +1,65 @@
+#!/bin/bash
+
+#SBATCH --output=log.%x.job_%A_%a   # file name for stdout/stderr (%x will be replaced with the job name, %j with the job ID, "%A" with the array job ID and "%a" with the array index)
+#SBATCH --time=7-00:00:00           # maximum wall time allocated for the job (D-H:MM:SS)
+
+## #SBATCH --mail-type=ALL          # notify when reaching the BEGIN, END, FAIL, REQUEUE, or STAGE_OUT state
+## #SBATCH --mail-user=klinkovsky@mmg.fjfi.cvut.cz
+
+#SBATCH --partition=gp              # put the job into the gpu partition/queue
+#SBATCH --nodelist=gp[2,4-7,14-16]  # ampere + blackwell - gp3
+## #SBATCH --nodelist=gp[15-16]
+## #SBATCH --exclusive                 # request exclusive allocation of resources
+
+## nodes allocation
+#SBATCH --nodes=1                   # number of nodes
+#SBATCH --ntasks-per-node=2         # MPI processes per node
+## #SBATCH --ntasks-per-socket=2       # MPI processes per CPU socket
+
+## CPU allocation
+#SBATCH --threads-per-core=1        # do not use hyperthreads (i.e. CPUs = physical cores below)
+#SBATCH --cpus-per-task=4           # number of CPUs per process
+
+## GPU allocation
+#SBATCH --gres=gpu:2                # number of GPUs per node (gres=gpu:N)
+
+## NOTE: this does not work correctly, see
+## https://stackoverflow.com/questions/67091056/gpu-allocation-in-slurm-gres-vs-gpus-per-task-and-mpirun-vs-srun
+## #SBATCH --gpus-per-task=1           # number of GPUs per process
+## #SBATCH --gpu-bind=single:1         # bind each process to its own GPU (single:<tasks_per_gpu>)
+
+## RAM per node allocation (default: 2G, max: 60G)
+#SBATCH --mem=30G
+
+# exit as soon as some command fails
+set -o errexit
+set -o pipefail
+
+# start the job in the directory it was submitted from
+cd "${SLURM_SUBMIT_DIR:-.}"
+
+# some hosts have both NVIDIA and AMD GPUs and OpenMPI does not know which to use by default
+MPIRUN_FLAGS="--mca accelerator cuda"
+export MPIRUN_FLAGS
+
+# get name of the simulation from command-line arguments
+if (($# > 0)); then
+    name="$1"
+fi
+do_script="./do_$name"
+if ! [[ -f "$do_script" ]]; then
+    echo "$do_script does not exist" >&2
+    exit 1
+fi
+
+if [[ -n "$SLURM_JOB_ID" ]]; then
+    # run the application and provide its command line arguments
+    exec "$do_script"
+else
+    # invoked by the user - count all cases and submit the job array
+    echo "Counting all cases for the job array..."
+    targetCase=none "$do_script"
+    lastIndex=$(cat log.caseCount)
+    rm -f log.caseCount
+    sbatch --job-name="$name" --array="0-$lastIndex" "$0" "$name"
+fi

@@ -1,0 +1,76 @@
+#!/bin/bash
+
+# exit as soon as some command fails
+set -o errexit
+set -o pipefail
+set -o nounset
+
+projectDir="$(dirname "${BASH_SOURCE[0]}")"
+
+# The config uses paths relative to the project directory, so *everything* has
+# to be executed from it.
+cd "$projectDir"
+
+# set the task ID: $SLURM_ARRAY_TASK_ID or $PBS_ARRAY_INDEX or -1
+taskID=${PBS_ARRAY_INDEX:-${SLURM_ARRAY_TASK_ID:--1}}
+
+# set up case counter and target
+# (targetCase may be set by the outside environment, otherwise it defaults to the task ID)
+targetCase=${targetCase:-${taskID}}
+caseCounter=0
+
+# Set up the runner based on environment
+if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+    runner="mpirun ${MPIRUN_FLAGS:-}"
+elif [[ -n "${PBS_JOBID:-}" ]]; then
+    runner="mpirun ${MPIRUN_FLAGS:-}"
+else
+    runner="mpirun -np 1 --mca accelerator cuda"
+fi
+
+function run_case()
+{
+    # handle case counting
+    if [[ "$targetCase" != "-1" && "$targetCase" != "$caseCounter" ]]; then
+        # NOTE: this output is important for the self-starting in do_slurm
+        echo "targetCase = $targetCase, caseCounter = $caseCounter → skipping"
+        caseCounter=$(( caseCounter + 1 ))
+        return
+    fi
+    caseCounter=$(( caseCounter + 1 ))
+
+    $runner "$EXEC" "${EXEC_ARGS[@]}"
+}
+
+# Run expansion channel non-Newtonian model
+function run_expansion()
+{
+    EXEC="build/sim_non-Newtonian/sim_nonnewtonian_expansion"
+
+    resolutions=(1 2 3 4)
+    v_mean=0.5
+    ns=(0.5 1.0 1.5 2.0)
+    Ks=(0.008838835 0.0125 0.01767767 0.025)
+    lbm_viscosities=(0.0066 0.0096 0.0161 0.0289)
+
+    for res in "${resolutions[@]}"; do
+    for v_mean_val in "$v_mean"; do
+    for i in "${!ns[@]}"; do
+        n="${ns[$i]}"
+        K="${Ks[$i]}"
+        nu="${lbm_viscosities[$i]}"
+
+        EXEC_ARGS=(--resolution "$res" --v-mean "$v_mean_val" --lbm-viscosity "$nu" --n "$n" --K "$K")
+        run_case
+
+    done
+    done
+    done
+}
+
+run_expansion
+
+# write the case counter
+if [[ -z "${SLURM_JOB_ID:-}" && "$targetCase" != "-1" ]]; then
+    echo "$(( caseCounter - 1 ))" > log.caseCount
+fi
