@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lbm3d/defs.h"
+#include "lbm_common/rounding.h"
 
 // A-A pattern
 template <typename TRAITS>
@@ -122,12 +123,21 @@ struct D2Q9_STREAMING
 			KS.f[dir9::zp] = TNL::Backend::ldg(SD.df(df_cur, dir9::zp, x, y, z));
 			KS.f[dir9::zz] = TNL::Backend::ldg(SD.df(df_cur, dir9::zz, x, y, z));
 			KS.f[dir9::zm] = TNL::Backend::ldg(SD.df(df_cur, dir9::zm, x, y, z));
-			KS.f[dir9::mm] = SpeedOfSound * TNL::Backend::ldg(SD.df(df_cur, dir9::mm, xmm, y, z))
-						   + (1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, dir9::mm, xm, y, z));
-			KS.f[dir9::mz] = SpeedOfSound * TNL::Backend::ldg(SD.df(df_cur, dir9::mz, xmm, y, z))
-						   + (1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, dir9::mz, xm, y, z));
-			KS.f[dir9::mp] = SpeedOfSound * TNL::Backend::ldg(SD.df(df_cur, dir9::mp, xmm, y, z))
-						   + (1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, dir9::mp, xm, y, z));
+			KS.f[dir9::mm] = lbm_fma_rn(
+				SpeedOfSound,
+				TNL::Backend::ldg(SD.df(df_cur, dir9::mm, xmm, y, z)),
+				(1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, dir9::mm, xm, y, z))
+			);
+			KS.f[dir9::mz] = lbm_fma_rn(
+				SpeedOfSound,
+				TNL::Backend::ldg(SD.df(df_cur, dir9::mz, xmm, y, z)),
+				(1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, dir9::mz, xm, y, z))
+			);
+			KS.f[dir9::mp] = lbm_fma_rn(
+				SpeedOfSound,
+				TNL::Backend::ldg(SD.df(df_cur, dir9::mp, xmm, y, z)),
+				(1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, dir9::mp, xm, y, z))
+			);
 		}
 		else {
 			// twist layout: slot (opp(i), t) = postcoll_{n-1}(i, t)
@@ -137,12 +147,21 @@ struct D2Q9_STREAMING
 			KS.f[dir9::zp] = TNL::Backend::ldg(SD.df(df_cur, dir9::zm, x, ym, z));
 			KS.f[dir9::zz] = TNL::Backend::ldg(SD.df(df_cur, dir9::zz, x, y, z));
 			KS.f[dir9::zm] = TNL::Backend::ldg(SD.df(df_cur, dir9::zp, x, yp, z));
-			KS.f[dir9::mm] = SpeedOfSound * TNL::Backend::ldg(SD.df(df_cur, dir9::pp, xm, yp, z))
-						   + (1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, dir9::pp, x, yp, z));
-			KS.f[dir9::mz] = SpeedOfSound * TNL::Backend::ldg(SD.df(df_cur, dir9::pz, xm, y, z))
-						   + (1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, dir9::pz, x, y, z));
-			KS.f[dir9::mp] = SpeedOfSound * TNL::Backend::ldg(SD.df(df_cur, dir9::pm, xm, ym, z))
-						   + (1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, dir9::pm, x, ym, z));
+			KS.f[dir9::mm] = lbm_fma_rn(
+				SpeedOfSound,
+				TNL::Backend::ldg(SD.df(df_cur, dir9::pp, xm, yp, z)),
+				(1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, dir9::pp, x, yp, z))
+			);
+			KS.f[dir9::mz] = lbm_fma_rn(
+				SpeedOfSound,
+				TNL::Backend::ldg(SD.df(df_cur, dir9::pz, xm, y, z)),
+				(1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, dir9::pz, x, y, z))
+			);
+			KS.f[dir9::mp] = lbm_fma_rn(
+				SpeedOfSound,
+				TNL::Backend::ldg(SD.df(df_cur, dir9::pm, xm, ym, z)),
+				(1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, dir9::pm, x, ym, z))
+			);
 		}
 	}
 };

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lbm3d/defs.h"
+#include "lbm_common/rounding.h"
 
 // pull-scheme
 template <typename TRAITS>
@@ -82,14 +83,26 @@ struct D2Q9_STREAMING
 	{
 		// NOTE: velocity is neglected (for the case velocity << speed of sound)
 		constexpr dreal SpeedOfSound = 0.5773502691896257;
-		KS.f[dir9::mm] = SpeedOfSound * SD.df(df_cur, dir9::mm, xm, yp, z) + (1 - SpeedOfSound) * SD.df(df_cur, dir9::mm, x, yp, z);
-		KS.f[dir9::mz] = SpeedOfSound * SD.df(df_cur, dir9::mz, xm, y, z) + (1 - SpeedOfSound) * SD.df(df_cur, dir9::mz, x, y, z);
-		KS.f[dir9::mp] = SpeedOfSound * SD.df(df_cur, dir9::mp, xm, ym, z) + (1 - SpeedOfSound) * SD.df(df_cur, dir9::mp, x, ym, z);
-		KS.f[dir9::zm] = SD.df(df_cur, dir9::zm, x, yp, z);
-		KS.f[dir9::zz] = SD.df(df_cur, dir9::zz, x, y, z);
-		KS.f[dir9::zp] = SD.df(df_cur, dir9::zp, x, ym, z);
-		KS.f[dir9::pm] = SD.df(df_cur, dir9::pm, xm, yp, z);
-		KS.f[dir9::pz] = SD.df(df_cur, dir9::pz, xm, y, z);
-		KS.f[dir9::pp] = SD.df(df_cur, dir9::pp, xm, ym, z);
+		KS.f[dir9::mm] = lbm_fma_rn(
+			SpeedOfSound,
+			TNL::Backend::ldg(SD.df(df_cur, dir9::mm, xm, yp, z)),
+			(1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, dir9::mm, x, yp, z))
+		);
+		KS.f[dir9::mz] = lbm_fma_rn(
+			SpeedOfSound,
+			TNL::Backend::ldg(SD.df(df_cur, dir9::mz, xm, y, z)),
+			(1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, dir9::mz, x, y, z))
+		);
+		KS.f[dir9::mp] = lbm_fma_rn(
+			SpeedOfSound,
+			TNL::Backend::ldg(SD.df(df_cur, dir9::mp, xm, ym, z)),
+			(1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, dir9::mp, x, ym, z))
+		);
+		KS.f[dir9::zm] = TNL::Backend::ldg(SD.df(df_cur, dir9::zm, x, yp, z));
+		KS.f[dir9::zz] = TNL::Backend::ldg(SD.df(df_cur, dir9::zz, x, y, z));
+		KS.f[dir9::zp] = TNL::Backend::ldg(SD.df(df_cur, dir9::zp, x, ym, z));
+		KS.f[dir9::pm] = TNL::Backend::ldg(SD.df(df_cur, dir9::pm, xm, yp, z));
+		KS.f[dir9::pz] = TNL::Backend::ldg(SD.df(df_cur, dir9::pz, xm, y, z));
+		KS.f[dir9::pp] = TNL::Backend::ldg(SD.df(df_cur, dir9::pp, xm, ym, z));
 	}
 };

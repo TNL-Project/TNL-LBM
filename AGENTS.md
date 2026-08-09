@@ -1,6 +1,6 @@
 # TNL-LBM PROJECT KNOWLEDGE BASE
 
-**Updated:** 2026-08-07
+**Updated:** 2026-08-11
 **Branch:** lbm2d
 
 ## OVERVIEW
@@ -166,34 +166,30 @@ single-array A-A pattern; default OFF keeps A-B. The pattern must be selected
 via CMake — per-file `#define AB_PATTERN` was removed; `include/lbm3d/defs.h`
 provides the AB default when neither is set.
 
-**Requirements for sims under A-A (established by debugging, 2026-08):**
+**Considerations for boundary conditions under A-A:**
 
 - Boundary conditions must NOT sit on the outermost array layer: AA neighbor
   indices are unclamped (`kernels.h`), so an edge BC wrap-writes into the
   opposite column/row. Apply the ghost-layer idiom: outermost plane
   `GEO_NOTHING`, BC on `1`/`N-2`.
 - Lateral `GEO_INFLOW_LEFT` moment BCs diverge under AA on ghost-adjacent planes.
+- `GEO_OUTFLOW_RIGHT` and `GEO_OUTFLOW_RIGHT_INTERP` run through a
+  deterministic two-pass scheme in *both* A-A and A-B streaming patterns
+  (it replaced the legacy fused kernel path, which raced with same-launch
+  `postCollisionStreaming` writers in the A-A single array;
+  A-B never had the race but shares the scheme so there is one outflow code path).
+- `GEO_OUTFLOW_RIGHT_INTERP` blend arithmetic is pinned to a canonical rounding:
+  all 36 blend sites (AA 6+18, AB 3+9) use the canonical `lbm_fma_rn(cs,A,(1-cs)*B)` form
+  from `include/lbm_common/rounding.h`,
+  making D2Q9 bitwise-identical AA vs AB.
+  Originally, NVVM contracted the `cs*A + (1-cs)*B` blend in mixed operand orders per statement
+  on sm_75/sm_86 Release (`fma(A,cs,wB)` for most, `fma(B,w,csA)` for the mp blend),
+  giving 1-ulp-different values between mirrored direction pairs (mm/mp) at the outflow column;
+  the chaotic wake amplified this to 1e-3-class mirror-symmetry breakage.
+  Architecture codegen issue, not hardware: compute_86 PTX reproduced the failure bit-for-bit on sm_120.
 
 **Known limitations under A-A:**
 
-- `GEO_OUTFLOW_RIGHT` and `GEO_OUTFLOW_RIGHT_INTERP` run through a
-  deterministic two-pass scheme in BOTH streaming patterns (it replaced the
-  legacy fused kernel path, which raced with same-launch
-  `postCollisionStreaming` writers in the A-A single array — the m-family
-  slots are owned by neighbour threads in both parities, so only
-  previous-launch state is race-free to gather; A-B never had the race but
-  shares the scheme so there is one outflow code path): `State::SimUpdate`
-  (state.hpp) launches `cudaLBMKernelOutflow` over a per-block vector of
-  disjoint boxes from a greedy rectangle cover of the outflow-pass mask
-  right before the main kernel; the main kernel skips outflow cells,
-  which the BC's `outflowPass` (d2q9/d3q27 `bc.h`) collides from
-  `streamingOutflowRight` / `streamingOutflowInterpRight` gathers in
-  `streaming_*.h` (translated parity-aware pulls under A-A, plain pulls of
-  the rotated `df_cur` slot under A-B). Gated per BC implementation by
-  `BC::use_outflow_pass` — true for d2q9 and d3q27, false for d3q7 which
-  stays legacy. `GEO_OUTFLOW_RIGHT` reproduces the legacy arithmetic
-  bitwise. The reference body lives in
-  `streaming_AB.h::streamingOutflowInterpRight` (wired into the pass).
 - NSE_ADE (`sim_T1`, `sim_T2`) is NOT covered by the two-pass scheme
   (state_NSE_ADE.h launches no outflow kernel and its BC placement ignores
   the ghost-layer idiom) — do not run these under AA.
@@ -203,6 +199,30 @@ provides the AB default when neither is set.
   the reversed gather races with same-launch `postCollisionStreaming` writers in the single array (nondeterministic garbage profiles);
   the `GEO_ADJOINT_INFLOW_BB_LEFT` refill in d3q27/bc.h must be parity-aware
   (m-family from the site's own slot after an even/twisted write, matching p-slot one hop downstream after an odd push).
+- Residual AA-vs-AB divergence in D3Q27
+  (open; root cause known on both arch classes studied; fix decision *deferred*):
+  after the blend pin both patterns are individually mirror-perfect,
+  but AA and AB still drift apart through wake-amplified ulp seeds whose seeding site is arch-dependent:
+  - sm_75/86-class codegen (compute_86-virtual JIT'd on sm_120 reproduces the failures bit-for-bit):
+    a single ≤2-ulp flip authored inside `outflowPass` at step ~261 at the x=126 column
+    (from input state bitwise-identical between patterns),
+    then wake-amplified to max|d| ≈ 2.75e-4 (vx), ~1.55e-4 (vy/vz), 7.15e-7 (density) by final time;
+    seed rate ≈ 1 flip per (261 steps × 784 pass cells).
+    `D3Q27_CUM::collision` is provably bit-identical between builds;
+    the divergence lives in the *non*-blend part of the pass chain
+    — AA compiles it as 4 outlined `.func` calls vs fully-inlined under AB,
+    with different FMA/regrouping choices of the same source expressions
+    Forensics: `docs/aa-ab-outflow-divergence/`.
+  - native sm_120: the outflow pass is already bit-identical between patterns;
+    the divergence seeds in the *main* kernel — predominantly the `D3Q27_CUM` collision core (`col_cum.h`),
+    where NVVM makes per-expression FMA-contraction/CSE choices that differ between the AA and AB builds,
+    secondarily the `GEO_INFLOW_LEFT` moment BC;
+    macro helpers and all init kernels are bit-identical
+    and both streamings carry zero FP ops.
+    First field diff at frame ~1 (≈step 40) in the inflow/baffle region x=1..33,
+    ~72% of cells carry ulp diffs by mid-run, final max|d| ≈ 3.57e-4 (vx).
+    Codegen attribution: `docs/aa-ab-divergence-sm120-codegen/`.
+  Two candidate fixes `fix-outflow-unify-codegen` (`a164865`) and `fix-outflow-pin-arithmetic` (`aaaac43`).
 
 ## NOTES
 
