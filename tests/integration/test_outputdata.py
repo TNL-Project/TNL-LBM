@@ -27,7 +27,7 @@ from tests.lbmtest import BUILD_DIR, PROJECT_ROOT
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-SIMULATION = BUILD_DIR / "tests" / "test_outputdata"
+SIMULATION = BUILD_DIR / "tests" / "integration" / "test_outputdata"
 ADI_CONFIG_BP5 = PROJECT_ROOT / "adios2.xml"
 ADI_CONFIG_SST = PROJECT_ROOT / "adios2_sst.xml"
 ADI_CONFIG_INLINE = PROJECT_ROOT / "tests" / "integration" / "adios2-inline-plugin.xml"
