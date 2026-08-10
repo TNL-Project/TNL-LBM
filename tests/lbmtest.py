@@ -75,9 +75,12 @@ def run_sim(
             pytrace=False,
         )
     if proc.returncode != 0:
+        # Simulations can print long logs; keep only the tail of stdout (where
+        # the failure is usually visible) but show stderr in full.
+        stdout_tail = "\n".join(proc.stdout.splitlines()[-50:])
         pytest.fail(
             f"simulation failed with exit code {proc.returncode}: {' '.join(command)}\n"
-            f"--- stdout ---\n{proc.stdout}\n"
+            f"--- stdout (last 50 lines) ---\n{stdout_tail}\n"
             f"--- stderr ---\n{proc.stderr}",
             pytrace=False,
         )
