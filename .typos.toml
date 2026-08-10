@@ -10,6 +10,7 @@ extend-exclude = [
    "*.vtu",
    "*.pvti",
    "*.pvtu",
+   "*.csv",
 ]
 
 [default]
