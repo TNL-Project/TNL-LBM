@@ -52,29 +52,14 @@ struct D3Q27_BC_All
 		return mapgi == GEO_WALL;
 	}
 
-	__cuda_callable__ static bool isStreaming(map_t mapgi)
-	{
-		return isFluid(mapgi);
-	}
-
 	__cuda_callable__ static bool isInflow(map_t mapgi)
 	{
 		return mapgi == GEO_INFLOW || mapgi == GEO_INFLOW_MOMENT || mapgi == GEO_INFLOW_BOUNCEBACK || mapgi == GEO_INFLOW_EQ_LEFT;
 	}
 
-	__cuda_callable__ static bool isOutflowR(map_t mapgi)
+	__cuda_callable__ static bool isOutflow(map_t mapgi)
 	{
 		return mapgi == GEO_OUTFLOW_RIGHT || mapgi == GEO_OUTFLOW_RIGHT_INTERP || mapgi == GEO_OUTFLOW_EQ;
-	}
-
-	__cuda_callable__ static bool isNotFluid(map_t mapgi)
-	{
-		return ! isFluid(mapgi);
-	}
-
-	__cuda_callable__ static bool isComputeDensityAndVelocity(map_t mapgi)
-	{
-		return isFluid(mapgi);
 	}
 
 	// deterministic two-pass outflow: outflow cells are skipped in the main
