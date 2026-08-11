@@ -85,5 +85,12 @@ include/lbm3d/
   use `df_cur`, `df_out`, and `CONFIG::DFMAX` for the array count.
 - **Mixing physical and lattice units outside `Lattice`**;
   use `phys2lbmPoint`, `lbm2physPoint`, and the viscosity helpers.
+
 - **Using `bool` for periodicity instead of `bool3d`** in decomposition or kernel code;
   the per-dimension model is load-bearing for multi-rank correctness.
+## LIMITATIONS
+
+- **Inflow and outflow boundary placement in non-Newtonian simulations**;
+  custom per-simulation BC classes may define tags like `GEO_INFLOW_RIGHT`/`GEO_OUTFLOW_LEFT` and those work for pure NSE,
+  but the kernels in `nonNewtonian.h` assume inflow on the left face and outflow on the right
+  (see the header comment in `nonNewtonian.h`).
