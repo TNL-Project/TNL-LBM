@@ -57,42 +57,6 @@ struct D3Q27_STREAMING
 		streaming(df_cur, SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 	}
 
-	// Bounce-back streaming for the non-Newtonian kernel's wall cells.
-	// Performs pull-scheme streaming and then swaps all 13 opposite DF pairs,
-	// which is the same effect as the GEO_WALL bounce-back collision.
-	// The result is KS.f[opp(dir)] = pre-stream[dir] from the neighbor in dir.
-	template <typename LBM_DATA, typename LBM_KS>
-	__cuda_callable__ static void streamingBounceBack(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
-	{
-		KS.f[ppp] = TNL::Backend::ldg(SD.df(df_cur, mmm, xp, yp, zp));
-		KS.f[ppz] = TNL::Backend::ldg(SD.df(df_cur, mmz, xp, yp, z));
-		KS.f[ppm] = TNL::Backend::ldg(SD.df(df_cur, mmp, xp, yp, zm));
-		KS.f[pzp] = TNL::Backend::ldg(SD.df(df_cur, mzm, xp, y, zp));
-		KS.f[pzz] = TNL::Backend::ldg(SD.df(df_cur, mzz, xp, y, z));
-		KS.f[pzm] = TNL::Backend::ldg(SD.df(df_cur, mzp, xp, y, zm));
-		KS.f[pmp] = TNL::Backend::ldg(SD.df(df_cur, mpm, xp, ym, zp));
-		KS.f[pmz] = TNL::Backend::ldg(SD.df(df_cur, mpz, xp, ym, z));
-		KS.f[pmm] = TNL::Backend::ldg(SD.df(df_cur, mpp, xp, ym, zm));
-		KS.f[zpp] = TNL::Backend::ldg(SD.df(df_cur, zmm, x, yp, zp));
-		KS.f[zpz] = TNL::Backend::ldg(SD.df(df_cur, zmz, x, yp, z));
-		KS.f[zpm] = TNL::Backend::ldg(SD.df(df_cur, zmp, x, yp, zm));
-		KS.f[zzp] = TNL::Backend::ldg(SD.df(df_cur, zzm, x, y, zp));
-		KS.f[zzz] = TNL::Backend::ldg(SD.df(df_cur, zzz, x, y, z));
-		KS.f[zzm] = TNL::Backend::ldg(SD.df(df_cur, zzp, x, y, zm));
-		KS.f[zmp] = TNL::Backend::ldg(SD.df(df_cur, zpm, x, ym, zp));
-		KS.f[zmz] = TNL::Backend::ldg(SD.df(df_cur, zpz, x, ym, z));
-		KS.f[zmm] = TNL::Backend::ldg(SD.df(df_cur, zpp, x, ym, zm));
-		KS.f[mpp] = TNL::Backend::ldg(SD.df(df_cur, pmm, xm, yp, zp));
-		KS.f[mpz] = TNL::Backend::ldg(SD.df(df_cur, pmz, xm, yp, z));
-		KS.f[mpm] = TNL::Backend::ldg(SD.df(df_cur, pmp, xm, yp, zm));
-		KS.f[mzp] = TNL::Backend::ldg(SD.df(df_cur, pzm, xm, y, zp));
-		KS.f[mzz] = TNL::Backend::ldg(SD.df(df_cur, pzz, xm, y, z));
-		KS.f[mzm] = TNL::Backend::ldg(SD.df(df_cur, pzp, xm, y, zm));
-		KS.f[mmp] = TNL::Backend::ldg(SD.df(df_cur, ppm, xm, ym, zp));
-		KS.f[mmz] = TNL::Backend::ldg(SD.df(df_cur, ppz, xm, ym, z));
-		KS.f[mmm] = TNL::Backend::ldg(SD.df(df_cur, ppp, xm, ym, zm));
-	}
-
 	// Computes the post-stream density at position P = (xp, y, z) — the first
 	// fluid cell to the right of the inflow boundary.  Used by the non-Newtonian
 	// kernel to set KS.rho for inflow cells before calling setEquilibrium.

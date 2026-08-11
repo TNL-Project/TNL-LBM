@@ -9,6 +9,17 @@
 #include "lbm_data.h"
 
 // Extra kernels for the non-Newtonian fluid model
+//
+// BOUNDARY-ORIENTATION CONTRACT:
+// These kernels assume the channel orientation used by every non-Newtonian
+// simulation so far: inflow on the LEFT face (x-min) and outflow on the
+// RIGHT face (x-max). The reason is the directional streaming helpers
+// D3Q27_STREAMING::streamingRho / streamingVx / streamingVy / streamingVz
+// (d3q27/streaming_AB.h, d3q27/streaming_AA.h): they reconstruct macroscopic
+// quantities at fixed directional offsets — density at the first fluid cell
+// to the RIGHT of an inflow cell, velocity at the first fluid cell to the
+// LEFT of an outflow cell — so they are only meaningful for left-inflow /
+// right-outflow maps.
 
 template <typename NSE>
 #ifdef USE_CUDA
@@ -50,26 +61,28 @@ CUDA_HOSTDEV void LBMKernelVelocity(
 
 	NSE::MACRO::getForce(SD, KS, x, y, z);
 
-	// Streaming
-	if (NSE::BC::isStreaming(gi_map))
-		NSE::STREAMING::streaming(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
-	else if (NSE::BC::isWall(gi_map))
-		NSE::STREAMING::streamingBounceBack(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
-
-	// compute Density & Velocity
-	if (NSE::BC::isComputeDensityAndVelocity(gi_map))
-		NSE::COLL::computeDensityAndVelocity(KS);
-	else if (NSE::BC::isWall(gi_map))
+	if (NSE::BC::isWall(gi_map) || gi_map == NSE::BC::GEO_NOTHING) {
+		// Trivial wall handling (density=1, velocity=0)
 		NSE::COLL::computeDensityAndVelocity_Wall(KS);
-	else if (NSE::BC::isInflow(gi_map)) {
-		NSE::STREAMING::streamingRho(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
-		SD.inflow(KS, x, y, z);
 	}
-	else if (NSE::BC::isOutflowR(gi_map)) {
-		NSE::STREAMING::streamingVx(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
-		NSE::STREAMING::streamingVy(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
-		NSE::STREAMING::streamingVz(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
-		KS.rho = no1;
+	else {
+		// Compute density and velocity
+		// NOTE: inflow must be on the left and outflow on the right for this to work (see the header comment)
+		if (NSE::BC::isInflow(gi_map)) {
+			NSE::STREAMING::streamingRho(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+			SD.inflow(KS, x, y, z);
+		}
+		else if (NSE::BC::isOutflow(gi_map)) {
+			NSE::STREAMING::streamingVx(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+			NSE::STREAMING::streamingVy(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+			NSE::STREAMING::streamingVz(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+			KS.rho = no1;
+		}
+		else {
+			// All other sites behave like fluid sites (density and velocity computed from site-local streaming,
+			// no collision or relaxation involved)
+			NSE::BC::preCollision(SD, KS, gi_map, xm, x, xp, ym, y, yp, zm, z, zp);
+		}
 	}
 
 	NSE::MACRO::outputDensityAndVelocity(SD, KS, x, y, z);
@@ -130,80 +143,81 @@ CUDA_HOSTDEV void LBMKernelStress(
 	map_t gi_map_zp = SD.map(x, y, zp);
 	map_t gi_map_zm = SD.map(x, y, zm);
 
+	// Fluid, periodic, and symmetric cells have velocity computed from DDFs.
 	// Inflow cells have velocity imposed by SD.inflow().
 	// Wall cells have no-slip velocity (=0) but using them in central
 	// differences at wall-adjacent fluid cells degrades accuracy.
 	// GEO_NOTHING cells (outer ghost) have no meaningful velocity.
-	auto velocityUnknown = [](map_t m)
+	auto hasKnownVelocity = [](map_t m)
 	{
-		return NSE::BC::isNotFluid(m) && ! NSE::BC::isInflow(m);
+		return NSE::BC::isFluid(m) || NSE::BC::isPeriodic(m) || NSE::BC::isSymmetric(m) || NSE::BC::isInflow(m);
 	};
 
 	if (NSE::BC::isFluid(gi_map) || NSE::BC::isPeriodic(gi_map)) {
 		// derivative in x-direction
-		if (velocityUnknown(gi_map_xm)) {
-			if (velocityUnknown(gi_map_xp)) {
-				KS.S11 = 0.;
+		if (hasKnownVelocity(gi_map_xm)) {
+			if (hasKnownVelocity(gi_map_xp)) {
+				KS.S11 = n1o2 * (KSxp.vx - KSxm.vx);
+				KS.S12 += n1o4 * (KSxp.vy - KSxm.vy);
+				KS.S13 += n1o4 * (KSxp.vz - KSxm.vz);
 			}
 			else {
-				KS.S11 = (KSxp.vx - KS.vx);
-				KS.S12 += n1o2 * (KSxp.vy - KS.vy);
-				KS.S13 += n1o2 * (KSxp.vz - KS.vz);
+				KS.S11 = (KS.vx - KSxm.vx);
+				KS.S12 += n1o2 * (KS.vy - KSxm.vy);
+				KS.S13 += n1o2 * (KS.vz - KSxm.vz);
 			}
 		}
-		else if (velocityUnknown(gi_map_xp)) {
-			KS.S11 = (KS.vx - KSxm.vx);
-			KS.S12 += n1o2 * (KS.vy - KSxm.vy);
-			KS.S13 += n1o2 * (KS.vz - KSxm.vz);
+		else if (hasKnownVelocity(gi_map_xp)) {
+			KS.S11 = (KSxp.vx - KS.vx);
+			KS.S12 += n1o2 * (KSxp.vy - KS.vy);
+			KS.S13 += n1o2 * (KSxp.vz - KS.vz);
 		}
 		else {
-			KS.S11 = n1o2 * (KSxp.vx - KSxm.vx);
-			KS.S12 += n1o4 * (KSxp.vy - KSxm.vy);
-			KS.S13 += n1o4 * (KSxp.vz - KSxm.vz);
+			KS.S11 = 0.;
 		}
 
 		// derivative in y-direction
-		if (velocityUnknown(gi_map_ym)) {
-			if (velocityUnknown(gi_map_yp)) {
-				KS.S22 = 0.;
+		if (hasKnownVelocity(gi_map_ym)) {
+			if (hasKnownVelocity(gi_map_yp)) {
+				KS.S22 = n1o2 * (KSyp.vy - KSym.vy);
+				KS.S12 += n1o4 * (KSyp.vx - KSym.vx);
+				KS.S32 += n1o4 * (KSyp.vz - KSym.vz);
 			}
 			else {
-				KS.S22 = (KSyp.vy - KS.vy);
-				KS.S12 += n1o2 * (KSyp.vx - KS.vx);
-				KS.S32 += n1o2 * (KSyp.vz - KS.vz);
+				KS.S22 = (KS.vy - KSym.vy);
+				KS.S12 += n1o2 * (KS.vx - KSym.vx);
+				KS.S32 += n1o2 * (KS.vz - KSym.vz);
 			}
 		}
-		else if (velocityUnknown(gi_map_yp)) {
-			KS.S22 = (KS.vy - KSym.vy);
-			KS.S12 += n1o2 * (KS.vx - KSym.vx);
-			KS.S32 += n1o2 * (KS.vz - KSym.vz);
+		else if (hasKnownVelocity(gi_map_yp)) {
+			KS.S22 = (KSyp.vy - KS.vy);
+			KS.S12 += n1o2 * (KSyp.vx - KS.vx);
+			KS.S32 += n1o2 * (KSyp.vz - KS.vz);
 		}
 		else {
-			KS.S22 = n1o2 * (KSyp.vy - KSym.vy);
-			KS.S12 += n1o4 * (KSyp.vx - KSym.vx);
-			KS.S32 += n1o4 * (KSyp.vz - KSym.vz);
+			KS.S22 = 0.;
 		}
 
 		// derivative in z-direction
-		if (velocityUnknown(gi_map_zm)) {
-			if (velocityUnknown(gi_map_zp)) {
-				KS.S33 = 0.;
+		if (hasKnownVelocity(gi_map_zm)) {
+			if (hasKnownVelocity(gi_map_zp)) {
+				KS.S33 = n1o2 * (KSzp.vz - KSzm.vz);
+				KS.S13 += n1o4 * (KSzp.vx - KSzm.vx);
+				KS.S32 += n1o4 * (KSzp.vy - KSzm.vy);
 			}
 			else {
-				KS.S33 = (KSzp.vz - KS.vz);
-				KS.S13 += n1o2 * (KSzp.vx - KS.vx);
-				KS.S32 += n1o2 * (KSzp.vy - KS.vy);
+				KS.S33 = (KS.vz - KSzm.vz);
+				KS.S13 += n1o2 * (KS.vx - KSzm.vx);
+				KS.S32 += n1o2 * (KS.vy - KSzm.vy);
 			}
 		}
-		else if (velocityUnknown(gi_map_zp)) {
-			KS.S33 = (KS.vz - KSzm.vz);
-			KS.S13 += n1o2 * (KS.vx - KSzm.vx);
-			KS.S32 += n1o2 * (KS.vy - KSzm.vy);
+		else if (hasKnownVelocity(gi_map_zp)) {
+			KS.S33 = (KSzp.vz - KS.vz);
+			KS.S13 += n1o2 * (KSzp.vx - KS.vx);
+			KS.S32 += n1o2 * (KSzp.vy - KS.vy);
 		}
 		else {
-			KS.S33 = n1o2 * (KSzp.vz - KSzm.vz);
-			KS.S13 += n1o4 * (KSzp.vx - KSzm.vx);
-			KS.S32 += n1o4 * (KSzp.vy - KSzm.vy);
+			KS.S33 = 0.;
 		}
 	}
 
@@ -533,61 +547,67 @@ struct MacroNonNewtonianDefault : D3Q27_MACRO_Default<TRAITS>
 			dnu_zm = dnu_c;
 #endif
 
+			// Stress tensor S is computed only at fluid/periodic sites by LBMKernelStress.
+			auto hasKnownStress = [](map_t m)
+			{
+				return LBM_BC::isFluid(m) || LBM_BC::isPeriodic(m);
+			};
+
 			// x-direction: d/dx[(nu-nu0)*S]
-			if (LBM_BC::isNotFluid(gi_map_xm)) {
-				if (! LBM_BC::isNotFluid(gi_map_xp)) {
-					F1 += dnu_xp * KSxp.S11 - dnu_c * KS.S11;
-					F2 += dnu_xp * KSxp.S12 - dnu_c * KS.S12;
-					F3 += dnu_xp * KSxp.S13 - dnu_c * KS.S13;
+			if (hasKnownStress(gi_map_xm)) {
+				if (hasKnownStress(gi_map_xp)) {
+					F1 += n1o2 * (dnu_xp * KSxp.S11 - dnu_xm * KSxm.S11);
+					F2 += n1o2 * (dnu_xp * KSxp.S12 - dnu_xm * KSxm.S12);
+					F3 += n1o2 * (dnu_xp * KSxp.S13 - dnu_xm * KSxm.S13);
+				}
+				else {
+					F1 += dnu_c * KS.S11 - dnu_xm * KSxm.S11;
+					F2 += dnu_c * KS.S12 - dnu_xm * KSxm.S12;
+					F3 += dnu_c * KS.S13 - dnu_xm * KSxm.S13;
 				}
 			}
-			else if (LBM_BC::isNotFluid(gi_map_xp)) {
-				F1 += dnu_c * KS.S11 - dnu_xm * KSxm.S11;
-				F2 += dnu_c * KS.S12 - dnu_xm * KSxm.S12;
-				F3 += dnu_c * KS.S13 - dnu_xm * KSxm.S13;
-			}
-			else {
-				F1 += n1o2 * (dnu_xp * KSxp.S11 - dnu_xm * KSxm.S11);
-				F2 += n1o2 * (dnu_xp * KSxp.S12 - dnu_xm * KSxm.S12);
-				F3 += n1o2 * (dnu_xp * KSxp.S13 - dnu_xm * KSxm.S13);
+			else if (hasKnownStress(gi_map_xp)) {
+				F1 += dnu_xp * KSxp.S11 - dnu_c * KS.S11;
+				F2 += dnu_xp * KSxp.S12 - dnu_c * KS.S12;
+				F3 += dnu_xp * KSxp.S13 - dnu_c * KS.S13;
 			}
 
 			// y-direction: d/dy[(nu-nu0)*S]
-			if (LBM_BC::isNotFluid(gi_map_ym)) {
-				if (! LBM_BC::isNotFluid(gi_map_yp)) {
-					F1 += dnu_yp * KSyp.S12 - dnu_c * KS.S12;
-					F2 += dnu_yp * KSyp.S22 - dnu_c * KS.S22;
-					F3 += dnu_yp * KSyp.S32 - dnu_c * KS.S32;
+			if (hasKnownStress(gi_map_ym)) {
+				if (hasKnownStress(gi_map_yp)) {
+					F1 += n1o2 * (dnu_yp * KSyp.S12 - dnu_ym * KSym.S12);
+					F2 += n1o2 * (dnu_yp * KSyp.S22 - dnu_ym * KSym.S22);
+					F3 += n1o2 * (dnu_yp * KSyp.S32 - dnu_ym * KSym.S32);
+				}
+				else {
+					F1 += dnu_c * KS.S12 - dnu_ym * KSym.S12;
+					F2 += dnu_c * KS.S22 - dnu_ym * KSym.S22;
+					F3 += dnu_c * KS.S32 - dnu_ym * KSym.S32;
 				}
 			}
-			else if (LBM_BC::isNotFluid(gi_map_yp)) {
-				F1 += dnu_c * KS.S12 - dnu_ym * KSym.S12;
-				F2 += dnu_c * KS.S22 - dnu_ym * KSym.S22;
-				F3 += dnu_c * KS.S32 - dnu_ym * KSym.S32;
-			}
-			else {
-				F1 += n1o2 * (dnu_yp * KSyp.S12 - dnu_ym * KSym.S12);
-				F2 += n1o2 * (dnu_yp * KSyp.S22 - dnu_ym * KSym.S22);
-				F3 += n1o2 * (dnu_yp * KSyp.S32 - dnu_ym * KSym.S32);
+			else if (hasKnownStress(gi_map_yp)) {
+				F1 += dnu_yp * KSyp.S12 - dnu_c * KS.S12;
+				F2 += dnu_yp * KSyp.S22 - dnu_c * KS.S22;
+				F3 += dnu_yp * KSyp.S32 - dnu_c * KS.S32;
 			}
 
 			// z-direction: d/dz[(nu-nu0)*S]
-			if (LBM_BC::isNotFluid(gi_map_zm)) {
-				if (! LBM_BC::isNotFluid(gi_map_zp)) {
-					F1 += dnu_zp * KSzp.S13 - dnu_c * KS.S13;
-					F2 += dnu_zp * KSzp.S32 - dnu_c * KS.S32;
-					F3 += dnu_zp * KSzp.S33 - dnu_c * KS.S33;
+			if (hasKnownStress(gi_map_zm)) {
+				if (hasKnownStress(gi_map_zp)) {
+					F1 += n1o2 * (dnu_zp * KSzp.S13 - dnu_zm * KSzm.S13);
+					F2 += n1o2 * (dnu_zp * KSzp.S32 - dnu_zm * KSzm.S32);
+					F3 += n1o2 * (dnu_zp * KSzp.S33 - dnu_zm * KSzm.S33);
+				}
+				else {
+					F1 += dnu_c * KS.S13 - dnu_zm * KSzm.S13;
+					F2 += dnu_c * KS.S32 - dnu_zm * KSzm.S32;
+					F3 += dnu_c * KS.S33 - dnu_zm * KSzm.S33;
 				}
 			}
-			else if (LBM_BC::isNotFluid(gi_map_zp)) {
-				F1 += dnu_c * KS.S13 - dnu_zm * KSzm.S13;
-				F2 += dnu_c * KS.S32 - dnu_zm * KSzm.S32;
-				F3 += dnu_c * KS.S33 - dnu_zm * KSzm.S33;
-			}
-			else {
-				F1 += n1o2 * (dnu_zp * KSzp.S13 - dnu_zm * KSzm.S13);
-				F2 += n1o2 * (dnu_zp * KSzp.S32 - dnu_zm * KSzm.S32);
-				F3 += n1o2 * (dnu_zp * KSzp.S33 - dnu_zm * KSzm.S33);
+			else if (hasKnownStress(gi_map_zp)) {
+				F1 += dnu_zp * KSzp.S13 - dnu_c * KS.S13;
+				F2 += dnu_zp * KSzp.S32 - dnu_c * KS.S32;
+				F3 += dnu_zp * KSzp.S33 - dnu_c * KS.S33;
 			}
 		}
 

@@ -302,30 +302,6 @@ struct D3Q27_STREAMING
 		streamingAdjoint(df_cur, SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 	}
 
-	// Bounce-back streaming for the non-Newtonian kernel's wall cells.
-	// Delegates to streaming() (which handles even/odd branching) and then
-	// swaps all 13 opposite DF pairs — the same effect as the GEO_WALL
-	// bounce-back collision.  The pair swaps are local to KS.f, so no
-	// even/odd distinction is needed for the swap step.
-	template <typename LBM_DATA, typename LBM_KS>
-	__cuda_callable__ static void streamingBounceBack(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
-	{
-		streaming(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
-		TNL::swap(KS.f[mmm], KS.f[ppp]);
-		TNL::swap(KS.f[mmz], KS.f[ppz]);
-		TNL::swap(KS.f[mmp], KS.f[ppm]);
-		TNL::swap(KS.f[mzm], KS.f[pzp]);
-		TNL::swap(KS.f[mzz], KS.f[pzz]);
-		TNL::swap(KS.f[mzp], KS.f[pzm]);
-		TNL::swap(KS.f[mpm], KS.f[pmp]);
-		TNL::swap(KS.f[mpz], KS.f[pmz]);
-		TNL::swap(KS.f[mpp], KS.f[pmm]);
-		TNL::swap(KS.f[zmm], KS.f[zpp]);
-		TNL::swap(KS.f[zzm], KS.f[zzp]);
-		TNL::swap(KS.f[zmz], KS.f[zpz]);
-		TNL::swap(KS.f[zmp], KS.f[zpm]);
-	}
-
 	// Computes the post-stream density at position P = (xp, y, z) — the first
 	// fluid cell to the right of the inflow boundary.  Used by the non-Newtonian
 	// kernel to set KS.rho for inflow cells before calling setEquilibrium.

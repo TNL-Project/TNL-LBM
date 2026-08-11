@@ -39,22 +39,6 @@ struct D2Q9_STREAMING
 		streaming(df_cur, SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 	}
 
-	// streaming with bounce-back rule applied
-	template <typename LBM_DATA, typename LBM_KS>
-	__cuda_callable__ static void
-	streamingBounceBack(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm_unused, idx z, idx zp_unused)
-	{
-		KS.f[dir9::pp] = TNL::Backend::ldg(SD.df(df_cur, dir9::mm, xp, yp, z));
-		KS.f[dir9::pz] = TNL::Backend::ldg(SD.df(df_cur, dir9::mz, xp, y, z));
-		KS.f[dir9::pm] = TNL::Backend::ldg(SD.df(df_cur, dir9::mp, xp, ym, z));
-		KS.f[dir9::zp] = TNL::Backend::ldg(SD.df(df_cur, dir9::zm, x, yp, z));
-		KS.f[dir9::zz] = TNL::Backend::ldg(SD.df(df_cur, dir9::zz, x, y, z));
-		KS.f[dir9::zm] = TNL::Backend::ldg(SD.df(df_cur, dir9::zp, x, ym, z));
-		KS.f[dir9::mp] = TNL::Backend::ldg(SD.df(df_cur, dir9::pm, xm, yp, z));
-		KS.f[dir9::mz] = TNL::Backend::ldg(SD.df(df_cur, dir9::pz, xm, y, z));
-		KS.f[dir9::mm] = TNL::Backend::ldg(SD.df(df_cur, dir9::pp, xm, ym, z));
-	}
-
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void
 	streamingInterpRight(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm_unused, idx z, idx zp_unused)
