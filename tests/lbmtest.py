@@ -48,9 +48,16 @@ def run_sim(
     workdir: pathlib.Path,
     timeout: float = DEFAULT_TIMEOUT,
     env: dict[str, str] | None = None,
+    np_ranks: int = 1,
 ) -> str:
-    """Run a simulation executable in workdir; fail on error/timeout; return stdout."""
+    """Run a simulation executable in workdir; fail on error/timeout; return stdout.
+
+    With ``np_ranks`` greater than 1 the executable is launched under
+    ``mpirun`` so the distributed-domain code paths are exercised.
+    """
     command = [str(c) for c in cmd]
+    if np_ranks > 1:
+        command = ["mpirun", "-np", str(np_ranks), *command]
     run_env = os.environ.copy()
     # On nodes where both ROCm and CUDA are visible to Open MPI, select CUDA.
     run_env.setdefault("OMPI_MCA_accelerator", "cuda")

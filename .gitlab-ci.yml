@@ -17,6 +17,9 @@ default:
     - pacman -Suy --needed --noconfirm python-mpi4py
 
 variables:
+  # Open MPI refuses to launch as root (jobs run as root in the container)
+  OMPI_ALLOW_RUN_AS_ROOT: "1"
+  OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: "1"
   # avoid Open MPI abort on dual-accelerator hosts (both CUDA and ROCm detected)
   OMPI_MCA_accelerator: "null"
 
