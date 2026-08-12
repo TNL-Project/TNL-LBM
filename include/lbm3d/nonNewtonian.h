@@ -9,85 +9,9 @@
 #include "lbm_data.h"
 
 // Extra kernels for the non-Newtonian fluid model
-//
-// BOUNDARY-ORIENTATION CONTRACT:
-// These kernels assume the channel orientation used by every non-Newtonian
-// simulation so far: inflow on the LEFT face (x-min) and outflow on the
-// RIGHT face (x-max). The reason is the directional streaming helpers
-// D3Q27_STREAMING::streamingRho / streamingVx / streamingVy / streamingVz
-// (d3q27/streaming_AB.h, d3q27/streaming_AA.h): they reconstruct macroscopic
-// quantities at fixed directional offsets — density at the first fluid cell
-// to the RIGHT of an inflow cell, velocity at the first fluid cell to the
-// LEFT of an outflow cell — so they are only meaningful for left-inflow /
-// right-outflow maps.
 
-template <typename NSE>
-#ifdef USE_CUDA
-__global__ void cudaLBMKernelVelocity(
-	typename NSE::DATA SD, typename NSE::TRAITS::bool3d distributed, typename NSE::TRAITS::idx3d offset, typename NSE::TRAITS::idx3d end
-)
-#else
-CUDA_HOSTDEV void LBMKernelVelocity(
-	typename NSE::DATA SD,
-	typename NSE::TRAITS::idx x,
-	typename NSE::TRAITS::idx y,
-	typename NSE::TRAITS::idx z,
-	typename NSE::TRAITS::bool3d distributed
-)
-#endif
-{
-	using dreal = typename NSE::TRAITS::dreal;
-	using idx = typename NSE::TRAITS::idx;
-	using map_t = typename NSE::TRAITS::map_t;
-
-#ifdef USE_CUDA
-	idx x = threadIdx.x + blockIdx.x * blockDim.x + offset.x();
-	idx y = threadIdx.y + blockIdx.y * blockDim.y + offset.y();
-	idx z = threadIdx.z + blockIdx.z * blockDim.z + offset.z();
-
-	if (x >= end.x() || y >= end.y() || z >= end.z())
-		return;
-#endif
-
-	map_t gi_map = SD.map(x, y, z);
-
-	typename NSE::template KernelStruct<dreal> KS;
-
-	// copy quantities
-	NSE::MACRO::copyQuantities(SD, KS, x, y, z);
-
-	idx xp, xm, yp, ym, zp, zm;
-	kernelInitIndices<NSE>(SD, gi_map, distributed, x, y, z, xp, xm, yp, ym, zp, zm);
-
-	NSE::MACRO::getForce(SD, KS, x, y, z);
-
-	if (NSE::BC::isWall(gi_map) || gi_map == NSE::BC::GEO_NOTHING) {
-		// Trivial wall handling (density=1, velocity=0)
-		NSE::COLL::computeDensityAndVelocity_Wall(KS);
-	}
-	else {
-		// Compute density and velocity
-		// NOTE: inflow must be on the left and outflow on the right for this to work (see the header comment)
-		if (NSE::BC::isInflow(gi_map)) {
-			NSE::STREAMING::streamingRho(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
-			SD.inflow(KS, x, y, z);
-		}
-		else if (NSE::BC::isOutflow(gi_map)) {
-			NSE::STREAMING::streamingVx(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
-			NSE::STREAMING::streamingVy(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
-			NSE::STREAMING::streamingVz(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
-			KS.rho = no1;
-		}
-		else {
-			// All other sites behave like fluid sites (density and velocity computed from site-local streaming,
-			// no collision or relaxation involved)
-			NSE::BC::preCollision(SD, KS, gi_map, xm, x, xp, ym, y, yp, zm, z, zp);
-		}
-	}
-
-	NSE::MACRO::outputDensityAndVelocity(SD, KS, x, y, z);
-}
-
+// LBMKernelStress: computes the strain-rate tensor S from the second moment of f_i^neq
+// (local, no finite differences). S is written to the macro array for computeForcing.
 template <typename NSE>
 #ifdef USE_CUDA
 __global__ void cudaLBMKernelStress(
@@ -119,109 +43,85 @@ CUDA_HOSTDEV void LBMKernelStress(
 	map_t gi_map = SD.map(x, y, z);
 
 	typename NSE::template KernelStruct<dreal> KS;
+	constexpr int Q = decltype(KS)::Q;
 
-	typename NSE::template KernelStruct<dreal> KSxp, KSxm, KSyp, KSym, KSzp, KSzm;
-
-	// copy quantities
+	// copy quantities (loads lbmViscosity, fx, fy, fz)
 	NSE::MACRO::copyQuantities(SD, KS, x, y, z);
 
 	idx xp, xm, yp, ym, zp, zm;
 	kernelInitIndices<NSE>(SD, gi_map, distributed, x, y, z, xp, xm, yp, ym, zp, zm);
 
-	NSE::MACRO::getMacro(SD, KSxp, xp, y, z);
-	NSE::MACRO::getMacro(SD, KSxm, xm, y, z);
-	NSE::MACRO::getMacro(SD, KSyp, x, yp, z);
-	NSE::MACRO::getMacro(SD, KSym, x, ym, z);
-	NSE::MACRO::getMacro(SD, KSzp, x, y, zp);
-	NSE::MACRO::getMacro(SD, KSzm, x, y, zm);
-	NSE::MACRO::getMacro(SD, KS, x, y, z);
-
-	map_t gi_map_xp = SD.map(xp, y, z);
-	map_t gi_map_xm = SD.map(xm, y, z);
-	map_t gi_map_yp = SD.map(x, yp, z);
-	map_t gi_map_ym = SD.map(x, ym, z);
-	map_t gi_map_zp = SD.map(x, y, zp);
-	map_t gi_map_zm = SD.map(x, y, zm);
-
-	// Fluid, periodic, and symmetric cells have velocity computed from DDFs.
-	// Inflow cells have velocity imposed by SD.inflow().
-	// Wall cells have no-slip velocity (=0) but using them in central
-	// differences at wall-adjacent fluid cells degrades accuracy.
-	// GEO_NOTHING cells (outer ghost) have no meaningful velocity.
-	auto hasKnownVelocity = [](map_t m)
-	{
-		return NSE::BC::isFluid(m) || NSE::BC::isPeriodic(m) || NSE::BC::isSymmetric(m) || NSE::BC::isInflow(m);
-	};
-
 	if (NSE::BC::isFluid(gi_map) || NSE::BC::isPeriodic(gi_map)) {
-		// derivative in x-direction
-		if (hasKnownVelocity(gi_map_xm)) {
-			if (hasKnownVelocity(gi_map_xp)) {
-				KS.S11 = n1o2 * (KSxp.vx - KSxm.vx);
-				KS.S12 += n1o4 * (KSxp.vy - KSxm.vy);
-				KS.S13 += n1o4 * (KSxp.vz - KSxm.vz);
-			}
-			else {
-				KS.S11 = (KS.vx - KSxm.vx);
-				KS.S12 += n1o2 * (KS.vy - KSxm.vy);
-				KS.S13 += n1o2 * (KS.vz - KSxm.vz);
-			}
-		}
-		else if (hasKnownVelocity(gi_map_xp)) {
-			KS.S11 = (KSxp.vx - KS.vx);
-			KS.S12 += n1o2 * (KSxp.vy - KS.vy);
-			KS.S13 += n1o2 * (KSxp.vz - KS.vz);
-		}
-		else {
-			KS.S11 = 0.;
-		}
+		// Load post-streaming, pre-collision f_i into KS.f via the pull-scheme streaming.
+		// df_cur holds the populations from the previous step; the pull reads from
+		// upwind neighbors to give the post-stream f_i at the current cell.
+		NSE::STREAMING::streaming(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 
-		// derivative in y-direction
-		if (hasKnownVelocity(gi_map_ym)) {
-			if (hasKnownVelocity(gi_map_yp)) {
-				KS.S22 = n1o2 * (KSyp.vy - KSym.vy);
-				KS.S12 += n1o4 * (KSyp.vx - KSym.vx);
-				KS.S32 += n1o4 * (KSyp.vz - KSym.vz);
-			}
-			else {
-				KS.S22 = (KS.vy - KSym.vy);
-				KS.S12 += n1o2 * (KS.vx - KSym.vx);
-				KS.S32 += n1o2 * (KS.vz - KSym.vz);
-			}
-		}
-		else if (hasKnownVelocity(gi_map_yp)) {
-			KS.S22 = (KSyp.vy - KS.vy);
-			KS.S12 += n1o2 * (KSyp.vx - KS.vx);
-			KS.S32 += n1o2 * (KSyp.vz - KS.vz);
-		}
-		else {
-			KS.S22 = 0.;
-		}
+		// Compute (rho, vx, vy, vz) from the post-stream f_i.
+		// This ensures f^eq is consistent with f_i at ALL cells, including walls
+		// and inflow/outflow where the macro array may hold BC-imposed values
+		// rather than the actual moments of f_i.
+		NSE::COLL::computeDensityAndVelocity(KS);
 
-		// derivative in z-direction
-		if (hasKnownVelocity(gi_map_zm)) {
-			if (hasKnownVelocity(gi_map_zp)) {
-				KS.S33 = n1o2 * (KSzp.vz - KSzm.vz);
-				KS.S13 += n1o4 * (KSzp.vx - KSzm.vx);
-				KS.S32 += n1o4 * (KSzp.vy - KSzm.vy);
-			}
-			else {
-				KS.S33 = (KS.vz - KSzm.vz);
-				KS.S13 += n1o2 * (KS.vx - KSzm.vx);
-				KS.S32 += n1o2 * (KS.vy - KSzm.vy);
-			}
-		}
-		else if (hasKnownVelocity(gi_map_zp)) {
-			KS.S33 = (KSzp.vz - KS.vz);
-			KS.S13 += n1o2 * (KSzp.vx - KS.vx);
-			KS.S32 += n1o2 * (KSzp.vy - KS.vy);
-		}
-		else {
-			KS.S33 = 0.;
-		}
+		// Save f_i before setEquilibrium overwrites KS.f
+		dreal fneq[Q];
+		for (int i = 0; i < Q; i++)
+			fneq[i] = KS.f[i];
+
+		// Compute f_i^eq from (rho, vx, vy, vz) — overwrites KS.f
+		NSE::COLL::setEquilibrium(KS);
+
+		// fneq[i] = f_i - f_i^eq
+		for (int i = 0; i < Q; i++)
+			fneq[i] -= KS.f[i];
+
+		// Compute the non-equilibrium second moment:
+		//   Pi^neq_αβ = Σ_i c_{iα} c_{iβ} f_i^neq
+		//
+		// Direction naming: p=+1, z=0, m=-1 along x,y,z.
+		// c_α² = 1 for all directions with c_α ≠ 0 (diagonal components).
+		// c_α c_β = ±1 for directions with both c_α, c_β ≠ 0 (off-diagonal).
+
+		// Diagonal: sum f^neq over directions with c_x ≠ 0 (18 directions)
+		dreal Pi11 = (fneq[pzz] + fneq[mzz]) + (fneq[ppz] + fneq[mmz]) + (fneq[pmz] + fneq[mpz]) + (fneq[pzp] + fneq[mzm]) + (fneq[pzm] + fneq[mzp])
+				   + (fneq[ppp] + fneq[mmm]) + (fneq[ppm] + fneq[mmp]) + (fneq[pmp] + fneq[mpm]) + (fneq[pmm] + fneq[mpp]);
+
+		// Diagonal: sum f^neq over directions with c_y ≠ 0 (18 directions)
+		dreal Pi22 = (fneq[zpz] + fneq[zmz]) + (fneq[ppz] + fneq[mmz]) + (fneq[pmz] + fneq[mpz]) + (fneq[zpp] + fneq[zmm]) + (fneq[zpm] + fneq[zmp])
+				   + (fneq[ppp] + fneq[mmm]) + (fneq[ppm] + fneq[mmp]) + (fneq[pmp] + fneq[mpm]) + (fneq[pmm] + fneq[mpp]);
+
+		// Diagonal: sum f^neq over directions with c_z ≠ 0 (18 directions)
+		dreal Pi33 = (fneq[zzp] + fneq[zzm]) + (fneq[pzp] + fneq[mzm]) + (fneq[pzm] + fneq[mzp]) + (fneq[zpp] + fneq[zmm]) + (fneq[zpm] + fneq[zmp])
+				   + (fneq[ppp] + fneq[mmm]) + (fneq[ppm] + fneq[mmp]) + (fneq[pmp] + fneq[mpm]) + (fneq[pmm] + fneq[mpp]);
+
+		// Off-diagonal xy: c_x*c_y = +1 for ppz,mmz,ppp,mmm,ppm,mmp; -1 for pmz,mpz,pmp,mpm,pmm,mpp
+		dreal Pi12 = ((fneq[ppz] + fneq[mmz]) + (fneq[ppp] + fneq[mmm]) + (fneq[ppm] + fneq[mmp]))
+				   - ((fneq[pmz] + fneq[mpz]) + (fneq[pmp] + fneq[mpm]) + (fneq[pmm] + fneq[mpp]));
+
+		// Off-diagonal xz: c_x*c_z = +1 for pzp,mzm,ppp,mmm,pmp,mpm; -1 for pzm,mzp,ppm,mmp,pmm,mpp
+		dreal Pi13 = ((fneq[pzp] + fneq[mzm]) + (fneq[ppp] + fneq[mmm]) + (fneq[pmp] + fneq[mpm]))
+				   - ((fneq[pzm] + fneq[mzp]) + (fneq[ppm] + fneq[mmp]) + (fneq[pmm] + fneq[mpp]));
+
+		// Off-diagonal zy: c_z*c_y = +1 for zpp,zmm,ppp,mmm,pmm,mpp; -1 for zpm,zmp,ppm,mmp,pmp,mpm
+		dreal Pi32 = ((fneq[zpp] + fneq[zmm]) + (fneq[ppp] + fneq[mmm]) + (fneq[pmm] + fneq[mpp]))
+				   - ((fneq[zpm] + fneq[zmp]) + (fneq[ppm] + fneq[mmp]) + (fneq[pmp] + fneq[mpm]));
+
+		// Convert Pi^neq to strain rate:
+		//   D_αβ = -1/(2 ρ c_s² τ₀) · Pi^neq_αβ = -3/(2 ρ τ₀) · Pi^neq_αβ
+		// where τ₀ = 3·lbmViscosity + 1/2 (the relaxation time used in collision).
+		// Assumes shear second moments relax at 1/τ₀ (true for SRT and CUM's omega1).
+		dreal tau0 = no3 * KS.lbmViscosity + n1o2;
+		dreal factor = -n3o2 / (KS.rho * tau0);
+
+		KS.S11 = factor * Pi11;
+		KS.S12 = factor * Pi12;
+		KS.S13 = factor * Pi13;
+		KS.S22 = factor * Pi22;
+		KS.S32 = factor * Pi32;
+		KS.S33 = factor * Pi33;
 	}
 
-	NSE::MACRO::outputMacrodef(SD, KS, x, y, z);
+	NSE::MACRO::outputMacroStress(SD, KS, x, y, z);
 }
 
 template <typename STATE>
@@ -243,59 +143,12 @@ void computeNonNewtonianKernels(STATE& state)
 		TNL::Containers::SyncDirection::Right,
 	};
 
-	// compute on boundaries
-	for (auto& block : nse.blocks) {
-		for (auto direction : boundary_directions)
-			if (auto search = block.neighborIDs.find(direction); search != block.neighborIDs.end() && search->second >= 0) {
-				const dim3 blockSize = block.computeData.at(direction).blockSize;
-				const dim3 gridSize = block.computeData.at(direction).gridSize;
-				const auto& stream = block.computeData.at(direction).stream;
-				const idx3d offset = block.computeData.at(direction).offset;
-				const idx3d size = block.computeData.at(direction).size;
-				TNL::Backend::LaunchConfiguration launch_config;
-				launch_config.gridSize = gridSize;
-				launch_config.blockSize = blockSize;
-				launch_config.stream = stream;
-				TNL::Backend::launchKernelAsync(cudaLBMKernelVelocity<NSE>, launch_config, block.data, block.is_distributed(), offset, offset + size);
-			}
-	}
-
-	// compute on interior lattice sites
-	for (auto& block : nse.blocks) {
-		const auto direction = TNL::Containers::SyncDirection::None;
-		const dim3 blockSize = block.computeData.at(direction).blockSize;
-		const dim3 gridSize = block.computeData.at(direction).gridSize;
-		const auto& stream = block.computeData.at(direction).stream;
-		const idx3d offset = block.computeData.at(direction).offset;
-		const idx3d size = block.computeData.at(direction).size;
-		TNL::Backend::LaunchConfiguration launch_config;
-		launch_config.gridSize = gridSize;
-		launch_config.blockSize = blockSize;
-		launch_config.stream = stream;
-		TNL::Backend::launchKernelAsync(cudaLBMKernelVelocity<NSE>, launch_config, block.data, block.is_distributed(), offset, offset + size);
-	}
-
-	// wait for the computations on boundaries to finish
-	for (auto& block : nse.blocks)
-		for (auto direction : boundary_directions)
-			TNL::Backend::streamSynchronize(block.computeData.at(direction).stream);
-
-	// exchange macroscopic quantities on overlaps between blocks
-	// TODO: avoid communication of DFs here
+	// LBMKernelStress reads f_i via pull-scheme streaming, which accesses
+	// neighbor cells — df_cur must be synced on MPI overlaps first.
 #ifdef HAVE_MPI
 	if (nse.nproc > 1)
 		nse.synchronizeDFsAndMacroDevice(df_cur, true);
 #endif
-
-	// wait for the computation on the interior to finish
-	for (auto& block : nse.blocks) {
-		const auto& stream = block.computeData.at(TNL::Containers::SyncDirection::None).stream;
-		TNL::Backend::streamSynchronize(stream);
-	}
-
-	// synchronize the null-stream after all grids
-	TNL::Backend::streamSynchronize(0);
-	TNL_CHECK_CUDA_DEVICE;
 
 	// compute on boundaries
 	for (auto& block : nse.blocks) {
@@ -334,8 +187,8 @@ void computeNonNewtonianKernels(STATE& state)
 		for (auto direction : boundary_directions)
 			TNL::Backend::streamSynchronize(block.computeData.at(direction).stream);
 
-	// exchange macroscopic quantities on overlaps between blocks
-	// TODO: avoid communication of DFs here
+	// exchange S tensor on overlaps between blocks (needed by computeForcing in the main kernel)
+	// TODO: sync only macro, not DFs
 #ifdef HAVE_MPI
 	if (nse.nproc > 1)
 		nse.synchronizeDFsAndMacroDevice(df_cur, true);
@@ -413,33 +266,7 @@ struct MacroNonNewtonianDefault : D3Q27_MACRO_Default<TRAITS>
 	}
 
 	template <typename LBM_DATA, typename LBM_KS>
-	CUDA_HOSTDEV static void outputDensityAndVelocity(LBM_DATA& SD, LBM_KS& KS, idx x, idx y, idx z)
-	{
-		SD.macro(e_rho, x, y, z) = KS.rho;
-		SD.macro(e_vx, x, y, z) = KS.vx;
-		SD.macro(e_vy, x, y, z) = KS.vy;
-		SD.macro(e_vz, x, y, z) = KS.vz;
-	}
-
-	template <typename LBM_DATA, typename LBM_KS>
-	CUDA_HOSTDEV static void getForce(LBM_DATA& SD, LBM_KS& KS, idx x, idx y, idx z)
-	{
-		KS.fx = SD.macro(e_fx, x, y, z);
-		KS.fy = SD.macro(e_fy, x, y, z);
-		KS.fz = SD.macro(e_fz, x, y, z);
-	}
-
-	template <typename LBM_DATA, typename LBM_KS>
-	CUDA_HOSTDEV static void getMacro(LBM_DATA& SD, LBM_KS& KS, idx x, idx y, idx z)
-	{
-		KS.rho = SD.macro(e_rho, x, y, z);
-		KS.vx = SD.macro(e_vx, x, y, z);
-		KS.vy = SD.macro(e_vy, x, y, z);
-		KS.vz = SD.macro(e_vz, x, y, z);
-	}
-
-	template <typename LBM_DATA, typename LBM_KS>
-	CUDA_HOSTDEV static void outputMacrodef(LBM_DATA& SD, LBM_KS& KS, idx x, idx y, idx z)
+	CUDA_HOSTDEV static void outputMacroStress(LBM_DATA& SD, LBM_KS& KS, idx x, idx y, idx z)
 	{
 		SD.macro(e_S11, x, y, z) = KS.S11;
 		SD.macro(e_S12, x, y, z) = KS.S12;
@@ -450,9 +277,8 @@ struct MacroNonNewtonianDefault : D3Q27_MACRO_Default<TRAITS>
 	}
 
 	template <typename LBM_DATA, typename LBM_KS>
-	CUDA_HOSTDEV static void getDef(LBM_DATA& SD, LBM_KS& KS, idx x, idx y, idx z)
+	CUDA_HOSTDEV static void getStressFromMacro(LBM_DATA& SD, LBM_KS& KS, idx x, idx y, idx z)
 	{
-		// do globalniho S zapsat S
 		KS.S11 = SD.macro(e_S11, x, y, z);
 		KS.S12 = SD.macro(e_S12, x, y, z);
 		KS.S22 = SD.macro(e_S22, x, y, z);
@@ -470,6 +296,9 @@ struct MacroNonNewtonianDefault : D3Q27_MACRO_Default<TRAITS>
 		KS.fz = SD.fz;
 	}
 
+	// computeForcing: applies the split-viscosity body force
+	//   f = div( (nu - nu0) * S )
+	// via product-rule finite differences of the S tensor.
 	template <typename LBM_BC, typename LBM_DATA, typename LBM_KS>
 	CUDA_HOSTDEV static void computeForcing(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
@@ -483,13 +312,13 @@ struct MacroNonNewtonianDefault : D3Q27_MACRO_Default<TRAITS>
 
 		LBM_KS KSxp, KSxm, KSyp, KSym, KSzp, KSzm;
 
-		getDef(SD, KSxp, xp, y, z);
-		getDef(SD, KSxm, xm, y, z);
-		getDef(SD, KSyp, x, yp, z);
-		getDef(SD, KSym, x, ym, z);
-		getDef(SD, KSzp, x, y, zp);
-		getDef(SD, KSzm, x, y, zm);
-		getDef(SD, KS, x, y, z);
+		getStressFromMacro(SD, KSxp, xp, y, z);
+		getStressFromMacro(SD, KSxm, xm, y, z);
+		getStressFromMacro(SD, KSyp, x, yp, z);
+		getStressFromMacro(SD, KSym, x, ym, z);
+		getStressFromMacro(SD, KSzp, x, y, zp);
+		getStressFromMacro(SD, KSzm, x, y, zm);
+		getStressFromMacro(SD, KS, x, y, z);
 
 		dreal F1 = 0;
 		dreal F2 = 0;
