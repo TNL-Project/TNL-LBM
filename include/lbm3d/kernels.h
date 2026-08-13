@@ -5,7 +5,6 @@
 template <typename NSE>
 __cuda_callable__ void kernelInitIndices(
 	typename NSE::DATA SD,
-	typename NSE::TRAITS::map_t map,
 	typename NSE::TRAITS::bool3d distributed,
 	typename NSE::TRAITS::idx x,
 	typename NSE::TRAITS::idx y,
@@ -18,41 +17,51 @@ __cuda_callable__ void kernelInitIndices(
 	typename NSE::TRAITS::idx& zm
 )
 {
-	if (NSE::BC::isPeriodic(map)) {
-		xp = (! distributed.x() && x == SD.X() - 1) ? 0 : (x + 1);
-		xm = (! distributed.x() && x == 0) ? (SD.X() - 1) : (x - 1);
-		yp = (! distributed.y() && y == SD.Y() - 1) ? 0 : (y + 1);
-		ym = (! distributed.y() && y == 0) ? (SD.Y() - 1) : (y - 1);
-		zp = (! distributed.z() && z == SD.Z() - 1) ? 0 : (z + 1);
-		zm = (! distributed.z() && z == 0) ? (SD.Z() - 1) : (z - 1);
-	}
-	else {
 #ifdef AA_PATTERN
-		// NOTE: ghost layers of lattice sites are assumed in all directions, so these expressions always work
-		xp = x + 1;
-		xm = x - 1;
-		yp = y + 1;
-		ym = y - 1;
-		zp = z + 1;
-		zm = z - 1;
+	// NOTE: ghost layers of lattice sites are assumed in all directions, so these expressions always work
+	xp = x + 1;
+	xm = x - 1;
+	yp = y + 1;
+	ym = y - 1;
+	zp = z + 1;
+	zm = z - 1;
 #elif defined(HAVE_MPI)
-		const typename NSE::TRAITS::idx& overlap_x = SD.indexer.template getOverlap<0>();
-		const typename NSE::TRAITS::idx& overlap_y = SD.indexer.template getOverlap<1>();
-		const typename NSE::TRAITS::idx& overlap_z = SD.indexer.template getOverlap<2>();
-		xp = TNL::min(x + 1, SD.X() - 1 + overlap_x);
-		xm = TNL::max(x - 1, -overlap_x);
-		yp = TNL::min(y + 1, SD.Y() - 1 + overlap_y);
-		ym = TNL::max(y - 1, -overlap_y);
-		zp = TNL::min(z + 1, SD.Z() - 1 + overlap_z);
-		zm = TNL::max(z - 1, -overlap_z);
+	const typename NSE::TRAITS::idx& overlap_x = SD.indexer.template getOverlap<0>();
+	const typename NSE::TRAITS::idx& overlap_y = SD.indexer.template getOverlap<1>();
+	const typename NSE::TRAITS::idx& overlap_z = SD.indexer.template getOverlap<2>();
+	xp = TNL::min(x + 1, SD.X() - 1 + overlap_x);
+	xm = TNL::max(x - 1, -overlap_x);
+	yp = TNL::min(y + 1, SD.Y() - 1 + overlap_y);
+	ym = TNL::max(y - 1, -overlap_y);
+	zp = TNL::min(z + 1, SD.Z() - 1 + overlap_z);
+	zm = TNL::max(z - 1, -overlap_z);
 #else
-		xp = TNL::min(x + 1, SD.X() - 1);
-		xm = TNL::max(x - 1, 0);
-		yp = TNL::min(y + 1, SD.Y() - 1);
-		ym = TNL::max(y - 1, 0);
-		zp = TNL::min(z + 1, SD.Z() - 1);
-		zm = TNL::max(z - 1, 0);
+	xp = TNL::min(x + 1, SD.X() - 1);
+	xm = TNL::max(x - 1, 0);
+	yp = TNL::min(y + 1, SD.Y() - 1);
+	ym = TNL::max(y - 1, 0);
+	zp = TNL::min(z + 1, SD.Z() - 1);
+	zm = TNL::max(z - 1, 0);
 #endif
+	// wrap across the global seam in domain-periodic directions (unless distributed,
+	// where the periodic exchange goes through the inter-rank halo synchronization)
+	if (SD.periodic.x() && ! distributed.x()) {
+		if (x == SD.X() - 1)
+			xp = 0;
+		if (x == 0)
+			xm = SD.X() - 1;
+	}
+	if (SD.periodic.y() && ! distributed.y()) {
+		if (y == SD.Y() - 1)
+			yp = 0;
+		if (y == 0)
+			ym = SD.Y() - 1;
+	}
+	if (SD.periodic.z() && ! distributed.z()) {
+		if (z == SD.Z() - 1)
+			zp = 0;
+		if (z == 0)
+			zm = SD.Z() - 1;
 	}
 }
 
@@ -92,7 +101,7 @@ CUDA_HOSTDEV void LBMKernel(
 	map_t gi_map = SD.map(x, y, z);
 
 	idx xp, xm, yp, ym, zp, zm;
-	kernelInitIndices<NSE>(SD, gi_map, distributed, x, y, z, xp, xm, yp, ym, zp, zm);
+	kernelInitIndices<NSE>(SD, distributed, x, y, z, xp, xm, yp, ym, zp, zm);
 
 	typename NSE::template KernelStruct<dreal> KS;
 
@@ -157,7 +166,7 @@ CUDA_HOSTDEV void LBMKernelOutflow(
 			return;
 
 		idx xp, xm, yp, ym, zp, zm;
-		kernelInitIndices<NSE>(SD, gi_map, distributed, x, y, z, xp, xm, yp, ym, zp, zm);
+		kernelInitIndices<NSE>(SD, distributed, x, y, z, xp, xm, yp, ym, zp, zm);
 
 		typename NSE::template KernelStruct<dreal> KS;
 
@@ -210,7 +219,7 @@ CUDA_HOSTDEV void LBMKernel(
 	const map_t ADE_mapgi = ADE_SD.map(x, y, z);
 
 	idx xp, xm, yp, ym, zp, zm;
-	kernelInitIndices<NSE>(NSE_SD, NSE_mapgi, distributed, x, y, z, xp, xm, yp, ym, zp, zm);
+	kernelInitIndices<NSE>(NSE_SD, distributed, x, y, z, xp, xm, yp, ym, zp, zm);
 
 	// NSE part
 	typename NSE::template KernelStruct<dreal> NSE_KS;
@@ -289,7 +298,7 @@ void LBMComputeVelocitiesStarAndZeroForce(
 	NSE::MACRO::copyQuantities(SD, KS, x, y, z);
 
 	idx xp, xm, yp, ym, zp, zm;
-	kernelInitIndices<NSE>(SD, gi_map, distributed, x, y, z, xp, xm, yp, ym, zp, zm);
+	kernelInitIndices<NSE>(SD, distributed, x, y, z, xp, xm, yp, ym, zp, zm);
 
 	NSE::MACRO::zeroForcesInKS(KS);
 

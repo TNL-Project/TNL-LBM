@@ -29,12 +29,12 @@ if TYPE_CHECKING:
 # GEO enum values (must match include/lbm3d/d2q9/bc.h)
 GEO2D_WALL = 1
 GEO2D_INFLOW_LEFT = 3
-GEO2D_NOTHING = 8
+GEO2D_NOTHING = 7
 
 # GEO enum values (must match include/lbm3d/d3q27/bc.h)
 GEO3D_WALL = 1
 GEO3D_INFLOW_LEFT = 3
-GEO3D_NOTHING = 10
+GEO3D_NOTHING = 9
 
 ADIOS_CONFIG = str(PROJECT_ROOT / "adios2.xml")
 NP_RANKS = 3

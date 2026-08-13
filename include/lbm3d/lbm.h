@@ -18,6 +18,7 @@ struct LBM
 	using map_t = typename TRAITS::map_t;
 	using point_t = typename TRAITS::point_t;
 	using idx3d = typename TRAITS::idx3d;
+	using bool3d = typename TRAITS::bool3d;
 	using lat_t = Lattice<3, real, idx>;
 
 	// MPI
@@ -51,7 +52,7 @@ struct LBM
 	LBM() = delete;
 	LBM(const LBM&) = delete;
 	LBM(LBM&&) = default;
-	LBM(const TNL::MPI::Comm& communicator, lat_t lat, bool periodic_lattice = false);
+	LBM(const TNL::MPI::Comm& communicator, lat_t lat, const bool3d& periodic = {false, false, false});
 	LBM(const TNL::MPI::Comm& communicator, lat_t lat, std::vector<BLOCK>&& blocks);
 
 	real Re(real physvel)

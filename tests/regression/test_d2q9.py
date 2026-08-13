@@ -40,8 +40,8 @@ if TYPE_CHECKING:
 # GEO enum values (must match include/lbm3d/d2q9/bc.h)
 GEO_WALL = 1
 GEO_INFLOW_LEFT = 3
-GEO_NOTHING = 8
-GEO_SYM_TOP = 9
+GEO_NOTHING = 7
+GEO_SYM_TOP = 8
 
 SIMS = ["sim2d_1", "sim2d_2", "sim2d_hills", "sim2d_Taylor_Green"]
 

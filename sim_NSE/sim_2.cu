@@ -47,6 +47,7 @@ struct StateLocal : State<NSE>
 	using real = typename TRAITS::real;
 	using dreal = typename TRAITS::dreal;
 	using point_t = typename TRAITS::point_t;
+	using bool3d = typename TRAITS::bool3d;
 	using lat_t = Lattice<3, real, idx>;
 
 	// array for the inflow velocity profile (pointer is passed to the LBM kernel)
@@ -64,9 +65,16 @@ struct StateLocal : State<NSE>
 	int error_idx = 0;
 
 	StateLocal(
-		const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, bool periodic_lattice, const std::string& adiosConfigPath = "adios2.xml"
+		const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, bool use_forcing, const std::string& adiosConfigPath = "adios2.xml"
 	)
-	: State<NSE>(id, communicator, std::move(lat), adiosConfigPath, periodic_lattice)
+	: State<NSE>(
+		  id,
+		  communicator,
+		  std::move(lat),
+		  adiosConfigPath,
+		  // conditional periodic domain in x-direction
+		  bool3d{use_forcing, false, false}
+	  )
 	{
 		errors_count = 10;
 		l1errors = new real[errors_count];
@@ -136,10 +144,6 @@ struct StateLocal : State<NSE>
 		if (nse.blocks.front().data.vx_profile) {
 			nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT);								 // left
 			nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT_INTERP);	 // right
-		}
-		else {
-			nse.setBoundaryX(0, BC::GEO_PERIODIC);						 // left
-			nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_PERIODIC);	 // right
 		}
 
 		nse.setBoundaryZ(1, BC::GEO_WALL);						 // bottom
@@ -272,7 +276,7 @@ struct StateLocal : State<NSE>
 			for (int j = block.offset.y() + 1; j < block.offset.y() + block.local.y() - 1; j++)
 				for (int k = block.offset.z() + 1; k < block.offset.z() + block.local.z() - 1; k++) {
 					auto gi = block.hmap(i, j, k);
-					if (! (NSE::BC::isFluid(gi) || NSE::BC::isPeriodic(gi)))
+					if (! NSE::BC::isFluid(gi))
 						continue;
 					real an_vx = analytical_vx(j, k);
 					real diff_vx = fabs(block.hmacro(MACRO::e_vx, i, j, k) - an_vx);

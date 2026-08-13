@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 # D3Q27 GEO enum (must match include/lbm3d/d3q27/bc.h)
 GEO_WALL = 1
 GEO_INFLOW_LEFT = 3
-GEO_NOTHING = 10
+GEO_NOTHING = 9
 
 ADI_CONFIG = str(PROJECT_ROOT / "adios2.xml")
 

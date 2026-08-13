@@ -22,18 +22,12 @@ struct D2Q9_BC_All
 		GEO_OUTFLOW_EQ,
 		GEO_OUTFLOW_RIGHT,
 		GEO_OUTFLOW_RIGHT_INTERP,
-		GEO_PERIODIC,
 		GEO_NOTHING,
 		GEO_SYM_TOP,
 		GEO_SYM_BOTTOM,
 		GEO_SYM_LEFT,
 		GEO_SYM_RIGHT
 	};
-
-	__cuda_callable__ static bool isPeriodic(map_t mapgi)
-	{
-		return mapgi == GEO_PERIODIC;
-	}
 
 	__cuda_callable__ static bool isSymmetric(map_t mapgi)
 	{
@@ -170,7 +164,7 @@ struct D2Q9_BC_All
 	{
 		// by default, collision is done on non-BC sites only
 		// additionally, BCs which include the collision step should be specified here
-		return isFluid(mapgi) || isPeriodic(mapgi) || isSymmetric(mapgi) || mapgi == GEO_INFLOW_LEFT;
+		return isFluid(mapgi) || isSymmetric(mapgi) || mapgi == GEO_INFLOW_LEFT;
 	}
 
 	template <typename LBM_KS>

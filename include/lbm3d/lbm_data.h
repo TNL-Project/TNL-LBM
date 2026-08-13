@@ -15,6 +15,10 @@ struct LBM_Data
 	// even/odd iteration indicator for the A-A pattern
 	bool even_iter = true;
 
+	// domain-periodic directions: the kernel wraps neighbor indices across the global seam
+	// in these directions (per-dimension domain property, no per-cell map tags)
+	typename TRAITS::bool3d periodic = {false, false, false};
+
 	// indexing
 	indexer_t indexer;
 	idx XYZ;  // precomputed indexer.getStorageSize(), i.e. product of (X+overlaps_x)*(Y+overlaps_y)*(Z+overlaps_z)

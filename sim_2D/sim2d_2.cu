@@ -48,6 +48,7 @@ struct StateLocal : State<NSE>
 	using real = typename TRAITS::real;
 	using dreal = typename TRAITS::dreal;
 	using point_t = typename TRAITS::point_t;
+	using bool3d = typename TRAITS::bool3d;
 	using lat_t = Lattice<3, real, idx>;
 
 	TNL::Containers::Array<dreal, DeviceType, idx> vx_profile;
@@ -62,10 +63,15 @@ struct StateLocal : State<NSE>
 	real* l1errors;
 	int error_idx = 0;
 
-	StateLocal(
-		const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, bool periodic_lattice, const std::string& adios_config = "adios2.xml"
-	)
-	: State<NSE>(id, communicator, std::move(lat), adios_config, periodic_lattice)
+	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, bool use_forcing, const std::string& adios_config = "adios2.xml")
+	: State<NSE>(
+		  id,
+		  communicator,
+		  std::move(lat),
+		  adios_config,
+		  // conditional periodic domain in x-direction
+		  bool3d{use_forcing, false, false}
+	  )
 	{
 		errors_count = 10;
 		l1errors = new real[errors_count];
@@ -121,10 +127,6 @@ struct StateLocal : State<NSE>
 		if (nse.blocks.front().data.vx_profile) {
 			nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT);								 // left
 			nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT_INTERP);	 // right
-		}
-		else {
-			nse.setBoundaryX(0, BC::GEO_PERIODIC);						 // left
-			nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_PERIODIC);	 // right
 		}
 
 		nse.setBoundaryY(1, BC::GEO_WALL);						 // bottom
@@ -237,7 +239,7 @@ struct StateLocal : State<NSE>
 		for (int i = block.offset.x() + 1; i < block.offset.x() + block.local.x() - 1; i++)
 			for (int j = block.offset.y() + 1; j < block.offset.y() + block.local.y() - 1; j++) {
 				auto gi = block.hmap(i, j, 0);
-				if (! (NSE::BC::isFluid(gi) || NSE::BC::isPeriodic(gi)))
+				if (! NSE::BC::isFluid(gi))
 					continue;
 				real an_vx = analytical_vx(j);
 				real diff_vx = fabs(block.hmacro(MACRO::e_vx, i, j, 0) - an_vx);
