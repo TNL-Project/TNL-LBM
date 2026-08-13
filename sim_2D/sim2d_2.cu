@@ -377,8 +377,8 @@ void sim(const std::string& adios_config, int RESOLUTION, bool use_forcing, doub
 	}
 
 	state.nse.physFinalTime = final_time;
-	state.cnt[PRINT].period = 0.01;
-	state.cnt[PROBE1].period = 0.1;
+	state.cnt[PRINT].period = 10.0;
+	state.cnt[PROBE1].period = 1.0;
 
 	// 2D = cut in 3D at z=0
 	state.cnt[OUT2D].period = 10.0;
