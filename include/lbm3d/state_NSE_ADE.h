@@ -29,10 +29,7 @@ struct State_NSE_ADE : State<NSE>
 	)
 	: State<NSE>(id, communicator, lat_nse, adiosConfigPath),
 	  ade(communicator, lat_ade)
-	{
-		// ADE allocation
-		ade.allocateHostData();
-	}
+	{}
 
 	// TODO: override estimateMemoryDemands
 
@@ -101,6 +98,8 @@ struct State_NSE_ADE : State<NSE>
 		nse.iterations = 0;
 
 		// allocate before reset - it might initialize on the GPU...
+		nse.allocateHostData();
+		ade.allocateHostData();
 		nse.allocateDeviceData();
 		ade.allocateDeviceData();
 
