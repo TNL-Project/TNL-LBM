@@ -1,4 +1,6 @@
-#define AB_PATTERN
+#ifndef AA_PATTERN
+	#define AB_PATTERN
+#endif
 
 #include <argparse/argparse.hpp>
 #include <filesystem>
@@ -50,13 +52,24 @@ struct StateLocal : State<NSE>
 
 	void setupBoundaries() override
 	{
-		nse.setBoundaryX(0, BC::GEO_INFLOW_BOUNCEBACK);	 // left
-
-		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_WALL);	 // right
-		nse.setBoundaryZ(0, BC::GEO_WALL);						 // top
-		nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_WALL);	 // bottom
-		nse.setBoundaryY(0, BC::GEO_WALL);						 // back
-		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_WALL);	 // front
+		// left
+		nse.setBoundaryX(0, BC::GEO_NOTHING);
+		nse.setBoundaryX(1, BC::GEO_INFLOW_BOUNCEBACK);
+		// right
+		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_WALL);
+		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_NOTHING);
+		// bottom
+		nse.setBoundaryZ(0, BC::GEO_NOTHING);
+		nse.setBoundaryZ(1, BC::GEO_WALL);
+		// top
+		nse.setBoundaryZ(nse.lat.global.z() - 2, BC::GEO_WALL);
+		nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_NOTHING);
+		// front
+		nse.setBoundaryY(0, BC::GEO_NOTHING);
+		nse.setBoundaryY(1, BC::GEO_WALL);
+		// back
+		nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_WALL);
+		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_NOTHING);
 	}
 
 	[[nodiscard]] std::vector<std::string> getOutputDataNames() const override
@@ -130,13 +143,24 @@ struct StateLocalAdjoint : State<NSE>
 				for (int py = 1; py <= nse.lat.global.y() - 1; py++)
 					nse.setMap(px, py, pz, BC::GEO_ADJOINT_FLUID_m);
 
-		nse.setBoundaryX(0, BC::GEO_ADJOINT_INFLOW_BB_LEFT);  // left
-
-		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_ADJOINT_WALL);	 // right
-		nse.setBoundaryZ(0, BC::GEO_ADJOINT_WALL);						 // top
-		nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_ADJOINT_WALL);	 // bottom
-		nse.setBoundaryY(0, BC::GEO_ADJOINT_WALL);						 // back
-		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_ADJOINT_WALL);	 // front
+		// left
+		nse.setBoundaryX(0, BC::GEO_NOTHING);
+		nse.setBoundaryX(1, BC::GEO_ADJOINT_INFLOW_BB_LEFT);
+		// right
+		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_ADJOINT_WALL);
+		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_NOTHING);
+		// bottom
+		nse.setBoundaryZ(0, BC::GEO_NOTHING);
+		nse.setBoundaryZ(1, BC::GEO_ADJOINT_WALL);
+		// top
+		nse.setBoundaryZ(nse.lat.global.z() - 2, BC::GEO_ADJOINT_WALL);
+		nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_NOTHING);
+		// front
+		nse.setBoundaryY(0, BC::GEO_NOTHING);
+		nse.setBoundaryY(1, BC::GEO_ADJOINT_WALL);
+		// back
+		nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_ADJOINT_WALL);
+		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_NOTHING);
 	}
 
 	[[nodiscard]] std::vector<std::string> getOutputDataNames() const override

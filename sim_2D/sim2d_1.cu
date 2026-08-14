@@ -60,15 +60,17 @@ struct StateLocal : State<NSE>
 
 	void setupBoundaries() override
 	{
-		nse.setBoundaryX(0, BC::GEO_INFLOW_LEFT);									// left
-		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT_INTERP);	// right
+		nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT);								 // left
+		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT_INTERP);	 // right
 
-		nse.setBoundaryY(1, BC::GEO_WALL);						 // back
-		nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_WALL);	 // front
+		nse.setBoundaryY(1, BC::GEO_WALL);						 // bottom
+		nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_WALL);	 // top
 
 		// extra layer needed due to A-A pattern
-		nse.setBoundaryY(0, BC::GEO_NOTHING);						// back
-		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_NOTHING);	// front
+		nse.setBoundaryX(0, BC::GEO_NOTHING);						// left
+		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_NOTHING);	// right
+		nse.setBoundaryY(0, BC::GEO_NOTHING);						// bottom
+		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_NOTHING);	// top
 
 		// draw a wall with a hole
 		int cx = floor(0.20 / nse.lat.physDl);

@@ -1,11 +1,17 @@
 #pragma once
 
+#include "lbm3d/defs.h"
 #include "lbm3d/d3q27/bc.h"
 #include "lbm3d/d3q27/col_cum.h"
 #include "lbm3d/d3q27/eq_inv_cum.h"
 #include "lbm3d/d3q27/macro.h"
-#include "lbm3d/d3q27/streaming_AB.h"
-#include "lbm3d/defs.h"
+// exactly one streaming header must be included
+#ifdef AA_PATTERN
+	#include "lbm3d/d3q27/streaming_AA.h"
+#endif
+#ifdef AB_PATTERN
+	#include "lbm3d/d3q27/streaming_AB.h"
+#endif
 #include "lbm3d/lbm_data.h"
 
 using TRAITS = TraitsSP;

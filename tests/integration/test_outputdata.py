@@ -22,15 +22,20 @@ import adios2
 import numpy as np
 import pytest
 
-from tests.lbmtest import BUILD_DIR, PROJECT_ROOT
+from tests.lbmtest import (
+    ADIOS_CONFIG,
+    ADIOS_CONFIG_SST,
+    BUILD_DIR,
+    PROJECT_ROOT,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-SIMULATION = BUILD_DIR / "tests" / "test_outputdata"
-ADI_CONFIG_BP5 = PROJECT_ROOT / "adios2.xml"
-ADI_CONFIG_SST = PROJECT_ROOT / "adios2_sst.xml"
-ADI_CONFIG_INLINE = PROJECT_ROOT / "tests" / "integration" / "adios2-inline-plugin.xml"
+SIMULATION = BUILD_DIR / "tests" / "integration" / "test_outputdata"
+ADIOS_CONFIG_INLINE = (
+    PROJECT_ROOT / "tests" / "integration" / "adios2-inline-plugin.xml"
+)
 PIPELINE_SCRIPT = PROJECT_ROOT / "tests" / "integration" / "catalyst-pipeline.py"
 
 SIM_TIMEOUT = 900.0
@@ -337,7 +342,7 @@ def consume_sst_streams(
 def test_bp5_output(test_dir: pathlib.Path) -> None:
     """BP5 file-based output: all outputs written at once, validated post-run."""
     proc = launch_simulation(
-        ADI_CONFIG_BP5, output_kind="all", resolution=1, workdir=test_dir
+        ADIOS_CONFIG, output_kind="all", resolution=1, workdir=test_dir
     )
     try:
         wait_simulation(proc)
@@ -355,12 +360,12 @@ def test_bp5_output(test_dir: pathlib.Path) -> None:
 def test_sst_output(test_dir: pathlib.Path, output_kind: str) -> None:
     """SST streaming output: streams consumed while the simulation runs."""
     proc = launch_simulation(
-        ADI_CONFIG_SST, output_kind=output_kind, resolution=1, workdir=test_dir
+        ADIOS_CONFIG_SST, output_kind=output_kind, resolution=1, workdir=test_dir
     )
     try:
         results_dir = wait_for_results_directory(test_dir)
         streams = [(results_dir / name, kind) for name, kind in OUTPUTS[output_kind]]
-        consume_sst_streams(streams, ADI_CONFIG_SST)
+        consume_sst_streams(streams, ADIOS_CONFIG_SST)
         wait_simulation(proc)
     finally:
         if proc.poll() is None:
@@ -374,7 +379,7 @@ def test_inline_output(test_dir: pathlib.Path) -> None:
     # copy with an absolute path so the test can run from the scratch dir.
     adios_config = test_dir / "adios2-inline-plugin.xml"
     adios_config.write_text(
-        ADI_CONFIG_INLINE.read_text().replace(
+        ADIOS_CONFIG_INLINE.read_text().replace(
             "tests/integration/catalyst-pipeline.py",
             str(PROJECT_ROOT / "tests" / "integration" / "catalyst-pipeline.py"),
         )

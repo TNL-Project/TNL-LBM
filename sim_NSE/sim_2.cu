@@ -47,6 +47,7 @@ struct StateLocal : State<NSE>
 	using real = typename TRAITS::real;
 	using dreal = typename TRAITS::dreal;
 	using point_t = typename TRAITS::point_t;
+	using bool3d = typename TRAITS::bool3d;
 	using lat_t = Lattice<3, real, idx>;
 
 	// array for the inflow velocity profile (pointer is passed to the LBM kernel)
@@ -62,11 +63,19 @@ struct StateLocal : State<NSE>
 	int errors_count;
 	real* l1errors;
 	int error_idx = 0;
+	real l1error_initial = -1;
 
 	StateLocal(
-		const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, bool periodic_lattice, const std::string& adiosConfigPath = "adios2.xml"
+		const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, bool use_forcing, const std::string& adiosConfigPath = "adios2.xml"
 	)
-	: State<NSE>(id, communicator, std::move(lat), adiosConfigPath, periodic_lattice)
+	: State<NSE>(
+		  id,
+		  communicator,
+		  std::move(lat),
+		  adiosConfigPath,
+		  // conditional periodic domain in x-direction
+		  bool3d{use_forcing, false, false}
+	  )
 	{
 		errors_count = 10;
 		l1errors = new real[errors_count];
@@ -133,28 +142,25 @@ struct StateLocal : State<NSE>
 
 	void setupBoundaries() override
 	{
-		//if (nse.blocks.front().data.inflow_vx != 0)
 		if (nse.blocks.front().data.vx_profile) {
-			nse.setBoundaryX(0, BC::GEO_INFLOW_LEFT);  // left
-			//nse.setBoundaryX(nse.lat.global.x()-1, BC::GEO_OUTFLOW_EQ);		// right
-			//nse.setBoundaryX(nse.lat.global.x()-1, BC::GEO_OUTFLOW_RIGHT);		// right
-			nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT_INTERP);	 // right
-		}
-		else {
-			nse.setBoundaryX(0, BC::GEO_PERIODIC);						 // left
-			nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_PERIODIC);	 // right
+			nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT);								 // left
+			nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT_INTERP);	 // right
 		}
 
-		nse.setBoundaryZ(1, BC::GEO_WALL);						 // top
-		nse.setBoundaryZ(nse.lat.global.z() - 2, BC::GEO_WALL);	 // bottom
-		nse.setBoundaryY(1, BC::GEO_WALL);						 // back
-		nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_WALL);	 // front
+		nse.setBoundaryZ(1, BC::GEO_WALL);						 // bottom
+		nse.setBoundaryZ(nse.lat.global.z() - 2, BC::GEO_WALL);	 // top
+		nse.setBoundaryY(1, BC::GEO_WALL);						 // front
+		nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_WALL);	 // back
 
 		// extra layer needed due to A-A pattern
-		nse.setBoundaryZ(0, BC::GEO_NOTHING);						// top
-		nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_NOTHING);	// bottom
-		nse.setBoundaryY(0, BC::GEO_NOTHING);						// back
-		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_NOTHING);	// front
+		if (nse.blocks.front().data.vx_profile) {
+			nse.setBoundaryX(0, BC::GEO_NOTHING);						// left
+			nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_NOTHING);	// right
+		}
+		nse.setBoundaryZ(0, BC::GEO_NOTHING);						// bottom
+		nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_NOTHING);	// top
+		nse.setBoundaryY(0, BC::GEO_NOTHING);						// front
+		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_NOTHING);	// back
 	}
 
 	[[nodiscard]] std::vector<std::string> getOutputDataNames() const override
@@ -271,7 +277,7 @@ struct StateLocal : State<NSE>
 			for (int j = block.offset.y() + 1; j < block.offset.y() + block.local.y() - 1; j++)
 				for (int k = block.offset.z() + 1; k < block.offset.z() + block.local.z() - 1; k++) {
 					auto gi = block.hmap(i, j, k);
-					if (! (NSE::BC::isFluid(gi) || NSE::BC::isPeriodic(gi)))
+					if (! NSE::BC::isFluid(gi))
 						continue;
 					real an_vx = analytical_vx(j, k);
 					real diff_vx = fabs(block.hmacro(MACRO::e_vx, i, j, k) - an_vx);
@@ -307,6 +313,11 @@ struct StateLocal : State<NSE>
 
 		// dynamic stopping criterion (based on vx error, the primary component)
 		real l1error_phys = l1error_phys_vx;
+
+		// record the first probe's error as the initial reference value
+		if (l1error_initial < 0)
+			l1error_initial = l1error_phys;
+
 		real threshold = 1e-4;
 		real threshold_stddev = 1e-3;
 		real l1prev = 0.0;
@@ -320,7 +331,9 @@ struct StateLocal : State<NSE>
 		stddev = sqrt(stddev);
 		real stopping = l1error_phys > 0 ? abs(l1prev - l1error_phys) / l1error_phys : 0;
 		real stopping_stddev = l1prev > 0 ? stddev / l1prev : 0;
-		if (stopping < threshold && stopping_stddev < threshold_stddev)
+		// magnitude gate: do not allow termination until the error has actually
+		// dropped below half of the initial error
+		if (l1error_phys <= 0.5 * l1error_initial && stopping < threshold && stopping_stddev < threshold_stddev)
 			nse.terminate = true;
 
 		error_idx = (error_idx + 1) % errors_count;
@@ -419,10 +432,18 @@ void sim(const std::string& adios_config, int RES, bool use_forcing, Scaling sca
 	// NOTE: this is for NSE_Data_XProfileInflow
 	dreal force = 1e-4;
 	if (use_forcing) {
-		state.nse.blocks.front().data.fx = state.nse.lat.phys2lbmForce(force);
+		dreal fx_lbm = state.nse.lat.phys2lbmForce(force);
+		state.nse.blocks.front().data.fx = fx_lbm;
 		state.nse.blocks.front().data.fy = 0;
 		state.nse.blocks.front().data.fz = 0;
 		state.nse.blocks.front().data.vx_profile = nullptr;
+		state.cache_analytical();
+		if (std::abs(fx_lbm) < std::numeric_limits<dreal>::epsilon())
+			spdlog::warn(
+				"lattice force {:e} is below the precision floor {:e} — the body force will be lost in rounding",
+				fx_lbm,
+				std::numeric_limits<dreal>::epsilon()
+			);
 	}
 	else {
 		// calculate analytical solution using forcing just like above

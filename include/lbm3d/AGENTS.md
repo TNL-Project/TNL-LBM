@@ -1,7 +1,7 @@
 # include/lbm3d DIRECTORY KNOWLEDGE BASE
 
-**Updated:** 2026-07-30
-**Branch:** lbm2d
+**Updated:** 2026-08-14
+**Branch:** fix-aa-bc
 
 ## OVERVIEW
 
@@ -27,14 +27,16 @@ include/lbm3d/
 ├── lagrange_3D.h/.hpp       # IBM Lagrangian point cloud and sparse matrices
 ├── DataManager.h            # ADIOS2 IO/engine registry
 ├── checkpoint.h             # Save/load state and iteration counters
-├── kernels.h                # Main collide-and-stream kernel
+├── kernels.h                # Main collide-and-stream kernel + per-dimension periodic wrapping
 ├── ibm_kernels.h            # IBM interpolation/spreading CUDA kernels
 ├── dirac.h                  # Dirac-delta support checks and kernels
 ├── lattice.h                # Physical/lattice unit conversions
-├── lattice_decomposition.h  # Domain partitioning helpers
+├── lattice_decomposition.h  # Domain partitioning: findNeighbors (per-dimension periodicity), decomposeLattice_*
 ├── nonNewtonian.h           # Non-Newtonian fluid kernels
 ├── obstacles_lbm.h          # Eulerian obstacle setup (cube, sphere, cylinder)
 ├── obstacles_ibm.h          # Lagrangian obstacle setup (rectangle, cylinder)
+├── block_size_optimizer.h   # Heuristics for optimal CUDA block size
+├── DataWriter.h             # ADIOS2 writer base
 └── defs.h                   # Traits, policy config, streaming pattern defaults, dir9 enum
 ```
 
@@ -45,7 +47,7 @@ include/lbm3d/
 | Customize the driver loop | `core.h` + `state.h` | Override `State::SimInit`, `SimUpdate`, `AfterSimUpdate` |
 | Add a full lattice model | `d3q27/`, `d3q7/`, or `d2q9/` | Provide `col_*.h`, `eq_*.h`, `streaming_*.h`, `bc.h`, `macro.h`, `common*.h` |
 | Change policies (collision, streaming, BC, data) | `defs.h` | Specialize `LBM_CONFIG<TRAITS,MACRO,COLL,STREAMING,DATA>` |
-| Decompose the lattice across MPI ranks | `lattice_decomposition.h` | D1Q3 strip or optimal block decomposition |
+| Decompose the lattice across MPI ranks | `lattice_decomposition.h` | `findNeighbors` per-dimension periodicity |
 | Write simulation output | `DataManager.h` | IO/engine registry for ADIOS2 variables |
 | Save/resume a run | `checkpoint.h` | Attribute and array save/load via `DataManager` |
 | Add immersed-boundary geometry | `obstacles_ibm.h` | Rectangle and cylinder point-cloud builders |
@@ -53,6 +55,7 @@ include/lbm3d/
 | Expose types to Python | `py_*.h` | One `export_<Thing>(m, "Name")` per wrapper |
 | Implement non-Newtonian models | `nonNewtonian.h` | Viscosity update and map-check kernels |
 | Find D2Q9 direction constants | `defs.h` `struct dir9` | Enum: zz, pz, mz, zp, zm, pp, mm, pm, mp |
+| Outflow-region rectangle cover | `lbm_block.h` | `updateOutflowPassRegion()` — greedy cover merging to ≤64 boxes |
 
 ## CONVENTIONS
 
@@ -67,6 +70,9 @@ include/lbm3d/
 - **`LBM_Data`** is a base carrier for kernel data;
   concrete models extend it with Q-specific arrays.
 - **Python export headers** are named `py_<topic>.h` and expose one templated `export_<Thing>` function per class.
+- **Per-dimension periodicity**: `bool3d periodic` in `lbm_data.h` (default `{false,false,false}`) replaces the old global flag;
+  `kernels.h` uses canonical `(x + N) % N` wrapping per axis;
+  `lattice_decomposition.h` stamps it and finds neighbor ranks with per-axis self-match suppression.
 
 ## ANTI-PATTERNS
 
@@ -77,3 +83,5 @@ include/lbm3d/
   use `df_cur`, `df_out`, and `df_prev`.
 - **Mixing physical and lattice units outside `Lattice`**;
   use `phys2lbmPoint`, `lbm2physPoint`, and the viscosity helpers.
+- **Using `bool` for periodicity instead of `bool3d`** in decomposition or kernel code;
+  the per-dimension model is load-bearing for multi-rank correctness.

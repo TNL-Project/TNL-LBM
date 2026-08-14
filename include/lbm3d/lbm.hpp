@@ -4,7 +4,7 @@
 #include "lattice_decomposition.h"
 
 template <typename CONFIG>
-LBM<CONFIG>::LBM(const TNL::MPI::Comm& communicator, lat_t lat, bool periodic_lattice)
+LBM<CONFIG>::LBM(const TNL::MPI::Comm& communicator, lat_t lat, const bool3d& periodic)
 : communicator(communicator),
   lat(lat)
 {
@@ -13,8 +13,8 @@ LBM<CONFIG>::LBM(const TNL::MPI::Comm& communicator, lat_t lat, bool periodic_la
 	nproc = communicator.size();
 
 	// default lattice decomposition
-	//BLOCK block = decomposeLattice_D1Q3<CONFIG>(communicator, lat.global, periodic_lattice);
-	BLOCK block = decomposeLattice_D3Q27<CONFIG>(communicator, lat.global, periodic_lattice);
+	//BLOCK block = decomposeLattice_D1Q3<CONFIG>(communicator, lat.global, periodic);
+	BLOCK block = decomposeLattice_D3Q27<CONFIG>(communicator, lat.global, periodic);
 	blocks.push_back(std::move(block));
 	total_blocks = nproc;
 

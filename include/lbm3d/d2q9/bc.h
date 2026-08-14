@@ -22,18 +22,12 @@ struct D2Q9_BC_All
 		GEO_OUTFLOW_EQ,
 		GEO_OUTFLOW_RIGHT,
 		GEO_OUTFLOW_RIGHT_INTERP,
-		GEO_PERIODIC,
 		GEO_NOTHING,
 		GEO_SYM_TOP,
 		GEO_SYM_BOTTOM,
 		GEO_SYM_LEFT,
 		GEO_SYM_RIGHT
 	};
-
-	__cuda_callable__ static bool isPeriodic(map_t mapgi)
-	{
-		return mapgi == GEO_PERIODIC;
-	}
 
 	__cuda_callable__ static bool isSymmetric(map_t mapgi)
 	{
@@ -50,20 +44,49 @@ struct D2Q9_BC_All
 		return mapgi == GEO_WALL;
 	}
 
+	// deterministic two-pass outflow: outflow cells are skipped in the main
+	// kernel; State::SimUpdate launches cudaLBMKernelOutflow right before it,
+	// which applies outflowPass on state finalized by the previous launch
+	static constexpr bool use_outflow_pass = true;
+
+	__cuda_callable__ static bool isOutflowPassBC(map_t mapgi)
+	{
+		return mapgi == GEO_OUTFLOW_RIGHT || mapgi == GEO_OUTFLOW_RIGHT_INTERP;
+	}
+
+	// gathers read the postcollision state finalized by the previous launch
+	// and live in streaming_*.h; the BC body then follows the legacy cases
+	template <typename LBM_KS>
+	__cuda_callable__ static void outflowPass(DATA& SD, LBM_KS& KS, map_t mapgi, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
+	{
+		switch (mapgi) {
+			case GEO_OUTFLOW_RIGHT:
+				STREAMING::streamingOutflowRight(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+				COLL::computeDensityAndVelocity(KS);
+				KS.rho = 1;
+				COLL::collision(KS);
+				STREAMING::postCollisionStreaming(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+				break;
+			case GEO_OUTFLOW_RIGHT_INTERP:
+				STREAMING::streamingOutflowInterpRight(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+				COLL::computeDensityAndVelocity(KS);
+				COLL::setEquilibriumDecomposition(KS, 1);
+				KS.rho = 1;
+				COLL::collision(KS);
+				STREAMING::postCollisionStreaming(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+				break;
+		}
+	}
+
 	template <typename LBM_KS>
 	__cuda_callable__ static void preCollision(DATA& SD, LBM_KS& KS, map_t mapgi, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
-		if (mapgi == GEO_NOTHING) {
-			// does not affect the computation, only the output
+		if (mapgi == GEO_NOTHING || isOutflowPassBC(mapgi)) {
 			KS.rho = 1;
 			KS.vx = 0;
 			KS.vy = 0;
 			return;
 		}
-
-		// modify pull location for streaming
-		if (mapgi == GEO_OUTFLOW_RIGHT)
-			xp = x = xm;
 
 		if (mapgi != GEO_OUTFLOW_RIGHT_INTERP)
 			STREAMING::streaming(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
@@ -95,16 +118,6 @@ struct D2Q9_BC_All
 				COLL::computeDensityAndVelocity(KS);
 				KS.rho = 1;
 				COLL::setEquilibrium(KS);
-				break;
-			case GEO_OUTFLOW_RIGHT:
-				COLL::computeDensityAndVelocity(KS);
-				KS.rho = 1;
-				break;
-			case GEO_OUTFLOW_RIGHT_INTERP:
-				STREAMING::streamingInterpRight(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
-				COLL::computeDensityAndVelocity(KS);
-				COLL::setEquilibriumDecomposition(KS, 1);
-				KS.rho = 1;
 				break;
 			case GEO_WALL:
 				// does not affect the computation, only the output
@@ -151,15 +164,14 @@ struct D2Q9_BC_All
 	{
 		// by default, collision is done on non-BC sites only
 		// additionally, BCs which include the collision step should be specified here
-		return isFluid(mapgi) || isPeriodic(mapgi) || isSymmetric(mapgi) || mapgi == GEO_INFLOW_LEFT || mapgi == GEO_OUTFLOW_RIGHT
-			|| mapgi == GEO_OUTFLOW_RIGHT_INTERP;
+		return isFluid(mapgi) || isSymmetric(mapgi) || mapgi == GEO_INFLOW_LEFT;
 	}
 
 	template <typename LBM_KS>
 	__cuda_callable__ static void
 	postCollision(DATA& SD, LBM_KS& KS, map_t mapgi, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
-		if (mapgi == GEO_NOTHING)
+		if (mapgi == GEO_NOTHING || isOutflowPassBC(mapgi))
 			return;
 
 		STREAMING::postCollisionStreaming(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);

@@ -34,12 +34,21 @@ struct StateLocal : State<NSE>
 
 	void setupBoundaries() override
 	{
-		nse.setBoundaryX(0, BC::GEO_INFLOW_LEFT);								 // left
-		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT_INTERP);	 // right
-		nse.setBoundaryY(0, BC::GEO_INFLOW_LEFT);								 // back
-		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_INFLOW_LEFT);			 // front
-		nse.setBoundaryZ(0, BC::GEO_INFLOW_LEFT);								 // top
-		nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_INFLOW_LEFT);			 // bottom
+		nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT);								 // left
+		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT_INTERP);	 // right
+
+		nse.setBoundaryY(1, BC::GEO_SYM_FRONT);						 // front
+		nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_SYM_BACK);	 // back
+		nse.setBoundaryZ(1, BC::GEO_SYM_BOTTOM);					 // bottom
+		nse.setBoundaryZ(nse.lat.global.z() - 2, BC::GEO_SYM_TOP);	 // top
+
+		// extra layer needed due to A-A pattern
+		nse.setBoundaryX(0, BC::GEO_NOTHING);						// left
+		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_NOTHING);	// right
+		nse.setBoundaryZ(0, BC::GEO_NOTHING);						// bottom
+		nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_NOTHING);	// top
+		nse.setBoundaryY(0, BC::GEO_NOTHING);						// front
+		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_NOTHING);	// back
 
 		lbmDrawSphere(nse, BC::GEO_WALL, ball_c, ball_diameter * 0.5);
 	}

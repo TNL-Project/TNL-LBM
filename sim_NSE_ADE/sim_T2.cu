@@ -1,5 +1,3 @@
-#define AB_PATTERN
-
 #include <argparse/argparse.hpp>
 
 #include "lbm3d/core.h"

@@ -48,6 +48,7 @@ struct StateLocal : State<NSE>
 	using real = typename TRAITS::real;
 	using dreal = typename TRAITS::dreal;
 	using point_t = typename TRAITS::point_t;
+	using bool3d = typename TRAITS::bool3d;
 	using lat_t = Lattice<3, real, idx>;
 
 	// Taylor-Green vortex parameters
@@ -55,7 +56,14 @@ struct StateLocal : State<NSE>
 	dreal lbm_V_0 = 0;	// velocity amplitude in lattice units (set from sim())
 
 	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adios_config = "adios2.xml")
-	: State<NSE>(id, communicator, std::move(lat), adios_config)
+	: State<NSE>(
+		  id,
+		  communicator,
+		  std::move(lat),
+		  adios_config,
+		  // fully periodic domain, so no setupBoundaries() override
+		  bool3d{true, true, false}
+	  )
 	{}
 
 	// Analytical Taylor-Green decay factor F(t) = exp(-2 * nu * k^2 * t)
@@ -89,15 +97,6 @@ struct StateLocal : State<NSE>
 		const real px = nse.lat.lbm2physX(x) / (X * nse.lat.physDl);
 		const real py = nse.lat.lbm2physY(y) / (Y * nse.lat.physDl);
 		return -lbm_V_0 * TNL::cos(2 * TNL::pi * px) * TNL::sin(2 * TNL::pi * py) * F;
-	}
-
-	void setupBoundaries() override
-	{
-		// fully periodic domain
-		nse.setBoundaryX(0, BC::GEO_PERIODIC);
-		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_PERIODIC);
-		nse.setBoundaryY(0, BC::GEO_PERIODIC);
-		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_PERIODIC);
 	}
 
 	void resetDFs() override
@@ -285,7 +284,7 @@ struct StateLocal : State<NSE>
 		for (int i = block.offset.x() + 1; i < block.offset.x() + block.local.x() - 1; i++)
 			for (int j = block.offset.y() + 1; j < block.offset.y() + block.local.y() - 1; j++) {
 				auto gi = block.hmap(i, j, 0);
-				if (! (NSE::BC::isFluid(gi) || NSE::BC::isPeriodic(gi)))
+				if (! NSE::BC::isFluid(gi))
 					continue;
 				real an_vx = analytical_vx(i, j);
 				real an_vy = analytical_vy(i, j);
@@ -342,7 +341,7 @@ void sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 1)
 	real LBM_VISCOSITY = 0.01;
 	real PHYS_HEIGHT = 1.0;
 	real PHYS_VISCOSITY = 1.5e-5;
-	real PHYS_V_0 = 5e-3;	// velocity amplitude in physical units [m/s]
+	real PHYS_V_0 = 5e-3;  // velocity amplitude in physical units [m/s]
 	real PHYS_DL = PHYS_HEIGHT / Y;
 	real PHYS_DT = LBM_VISCOSITY / PHYS_VISCOSITY * PHYS_DL * PHYS_DL;
 	point_t PHYS_ORIGIN = {-PHYS_HEIGHT / 2. + PHYS_DL, -PHYS_HEIGHT / 2. + PHYS_DL, 0.};
@@ -398,7 +397,9 @@ int main(int argc, char** argv)
 	TNLMPI_INIT mpi(argc, argv);
 
 	argparse::ArgumentParser program("sim2d_Taylor_Green");
-	program.add_description("2D Taylor-Green vortex with periodic BCs using D2Q9_CLBM, compared against the analytical solution F(t) = exp(-2*nu*k^2*t).");
+	program.add_description(
+		"2D Taylor-Green vortex with periodic BCs using D2Q9_CLBM, compared against the analytical solution F(t) = exp(-2*nu*k^2*t)."
+	);
 	program.add_argument("--adios-config").help("path to ADIOS2 configuration file").default_value(std::string("adios2.xml")).nargs(1);
 	program.add_argument("--resolution").help("resolution of the lattice").scan<'i', int>().default_value(1).nargs(1);
 	program.add_argument("--precision")

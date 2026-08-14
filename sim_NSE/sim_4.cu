@@ -107,20 +107,17 @@ struct StateLocal : State<NSE>
 
 	std::shared_ptr<spdlog::logger> kinetic_energy_logger = nullptr;
 
-	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath, std::vector<BLOCK>&& blocks)
-	: State<NSE>(id, communicator, std::move(lat), adiosConfigPath, std::move(blocks))
+	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, const std::string& adiosConfigPath)
+	: State<NSE>(
+		  id,
+		  communicator,
+		  std::move(lat),
+		  adiosConfigPath,
+		  // fully periodic domain, so no setupBoundaries() override
+		  bool3d{true, true, true}
+	  )
 	{
 		this->probe_needs_macro_on_host = false;
-	}
-
-	void setupBoundaries() override
-	{
-		nse.setBoundaryX(0, BC::GEO_PERIODIC);						 // left
-		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_PERIODIC);	 // right
-		nse.setBoundaryY(0, BC::GEO_PERIODIC);						 // back
-		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_PERIODIC);	 // front
-		nse.setBoundaryZ(0, BC::GEO_PERIODIC);						 // top
-		nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_PERIODIC);	 // bottom
 	}
 
 	void resetDFs() override
@@ -317,7 +314,6 @@ void sim(
 	double LBM_VISCOSITY = 1e-4	 // [Δx^2/Δt]
 )
 {
-	using BLOCK = LBM_BLOCK<NSE>;
 	using idx = typename NSE::TRAITS::idx;
 	using real = typename NSE::TRAITS::real;
 	using dreal = typename NSE::TRAITS::dreal;
@@ -347,16 +343,10 @@ void sim(
 	lat.physDt = PHYS_DT;
 	lat.physViscosity = PHYS_VISCOSITY;
 
-	// periodic lattice decomposition
-	// (but do not add overlaps for single process simulations)
-	const bool periodic_lattice = TNL::MPI::GetSize(MPI_COMM_WORLD) > 1;
-	std::vector<BLOCK> blocks;
-	blocks.emplace_back(decomposeLattice_D1Q3<NSE>(MPI_COMM_WORLD, lat.global, periodic_lattice));
-
 	const std::string state_id = fmt::format(
 		"sim_4_{}_np{:03d}/res={:02d}_Re={:g}_nu={:e}", TNL::getType<dreal>(), TNL::MPI::GetSize(MPI_COMM_WORLD), RESOLUTION, Re, LBM_VISCOSITY
 	);
-	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, adios_config, std::move(blocks));
+	StateLocal<NSE> state(state_id, MPI_COMM_WORLD, lat, adios_config);
 	state.V_0 = V_0;
 	state.L = L;
 	spdlog::info("Physical parameters: L={}, V_0={}, Re={}, nu={}, dl={}, dt={}", L, V_0, Re, PHYS_VISCOSITY, PHYS_DL, PHYS_DT);

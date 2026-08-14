@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lbm3d/defs.h"
+#include "lbm_common/rounding.h"
 
 // pull-scheme
 template <typename TRAITS>
@@ -55,21 +56,53 @@ struct D2Q9_STREAMING
 		KS.f[dir9::mm] = TNL::Backend::ldg(SD.df(df_cur, dir9::pp, xm, ym, z));
 	}
 
+	// outflow pass gathers: the outflow cell takes the pulled state of its
+	// upstream neighbor column xm from df_cur (finalized by the previous
+	// launch, no race against the df_out writes of the current one)
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void
-	streamingInterpRight(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm_unused, idx z, idx zp_unused)
+	streamingOutflowRight(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x_unused, idx xp_unused, idx ym, idx y, idx yp, idx zm_unused, idx z, idx zp_unused)
 	{
-		// streaming: interpolation from Geier - CuLBM (2015)
+		KS.f[dir9::mm] = TNL::Backend::ldg(SD.df(df_cur, dir9::mm, xm, yp, z));
+		KS.f[dir9::mz] = TNL::Backend::ldg(SD.df(df_cur, dir9::mz, xm, y, z));
+		KS.f[dir9::mp] = TNL::Backend::ldg(SD.df(df_cur, dir9::mp, xm, ym, z));
+		KS.f[dir9::zm] = TNL::Backend::ldg(SD.df(df_cur, dir9::zm, xm, yp, z));
+		KS.f[dir9::zz] = TNL::Backend::ldg(SD.df(df_cur, dir9::zz, xm, y, z));
+		KS.f[dir9::zp] = TNL::Backend::ldg(SD.df(df_cur, dir9::zp, xm, ym, z));
+		KS.f[dir9::pm] = TNL::Backend::ldg(SD.df(df_cur, dir9::pm, xm, yp, z));
+		KS.f[dir9::pz] = TNL::Backend::ldg(SD.df(df_cur, dir9::pz, xm, y, z));
+		KS.f[dir9::pp] = TNL::Backend::ldg(SD.df(df_cur, dir9::pp, xm, ym, z));
+	}
+
+	// interpolated outflow (Geier 2015): the m-family blends postcoll_{n-1}
+	// from column xm with the outflow cell's own postcoll (column x), the
+	// z- and p-families come straight from df_cur like in ordinary streaming
+	template <typename LBM_DATA, typename LBM_KS>
+	__cuda_callable__ static void
+	streamingOutflowInterpRight(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp_unused, idx ym, idx y, idx yp, idx zm_unused, idx z, idx zp_unused)
+	{
 		// NOTE: velocity is neglected (for the case velocity << speed of sound)
 		constexpr dreal SpeedOfSound = 0.5773502691896257;
-		KS.f[dir9::mm] = SpeedOfSound * SD.df(df_cur, dir9::mm, xm, yp, z) + (1 - SpeedOfSound) * SD.df(df_cur, dir9::mm, x, yp, z);
-		KS.f[dir9::mz] = SpeedOfSound * SD.df(df_cur, dir9::mz, xm, y, z) + (1 - SpeedOfSound) * SD.df(df_cur, dir9::mz, x, y, z);
-		KS.f[dir9::mp] = SpeedOfSound * SD.df(df_cur, dir9::mp, xm, ym, z) + (1 - SpeedOfSound) * SD.df(df_cur, dir9::mp, x, ym, z);
-		KS.f[dir9::zm] = SD.df(df_cur, dir9::zm, x, yp, z);
-		KS.f[dir9::zz] = SD.df(df_cur, dir9::zz, x, y, z);
-		KS.f[dir9::zp] = SD.df(df_cur, dir9::zp, x, ym, z);
-		KS.f[dir9::pm] = SD.df(df_cur, dir9::pm, xm, yp, z);
-		KS.f[dir9::pz] = SD.df(df_cur, dir9::pz, xm, y, z);
-		KS.f[dir9::pp] = SD.df(df_cur, dir9::pp, xm, ym, z);
+		KS.f[dir9::mm] = lbm_fma_rn(
+			SpeedOfSound,
+			TNL::Backend::ldg(SD.df(df_cur, dir9::mm, xm, yp, z)),
+			(1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, dir9::mm, x, yp, z))
+		);
+		KS.f[dir9::mz] = lbm_fma_rn(
+			SpeedOfSound,
+			TNL::Backend::ldg(SD.df(df_cur, dir9::mz, xm, y, z)),
+			(1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, dir9::mz, x, y, z))
+		);
+		KS.f[dir9::mp] = lbm_fma_rn(
+			SpeedOfSound,
+			TNL::Backend::ldg(SD.df(df_cur, dir9::mp, xm, ym, z)),
+			(1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, dir9::mp, x, ym, z))
+		);
+		KS.f[dir9::zm] = TNL::Backend::ldg(SD.df(df_cur, dir9::zm, x, yp, z));
+		KS.f[dir9::zz] = TNL::Backend::ldg(SD.df(df_cur, dir9::zz, x, y, z));
+		KS.f[dir9::zp] = TNL::Backend::ldg(SD.df(df_cur, dir9::zp, x, ym, z));
+		KS.f[dir9::pm] = TNL::Backend::ldg(SD.df(df_cur, dir9::pm, xm, yp, z));
+		KS.f[dir9::pz] = TNL::Backend::ldg(SD.df(df_cur, dir9::pz, xm, y, z));
+		KS.f[dir9::pp] = TNL::Backend::ldg(SD.df(df_cur, dir9::pp, xm, ym, z));
 	}
 };

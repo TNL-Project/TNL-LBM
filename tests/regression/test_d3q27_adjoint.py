@@ -23,6 +23,7 @@ import numpy as np
 import pytest
 
 from tests.lbmtest import (
+    AA_PATTERN,
     BUILD_DIR,
     PROJECT_ROOT,
     assert_all_finite,
@@ -33,6 +34,10 @@ from tests.regression.bp5 import read_last_step
 
 if TYPE_CHECKING:
     import pathlib
+
+pytestmark = pytest.mark.skipif(
+    AA_PATTERN, reason="sim_adjoint requires the A-B streaming pattern"
+)
 
 # D3Q27 GEO enum (subset relevant to adjoint sims)
 GEO_WALL = 1

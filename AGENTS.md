@@ -1,7 +1,7 @@
 # TNL-LBM PROJECT KNOWLEDGE BASE
 
-**Updated:** 2026-07-30
-**Branch:** lbm2d
+**Updated:** 2026-08-14
+**Branch:** fix-aa-bc
 
 ## OVERVIEW
 
@@ -27,8 +27,8 @@ with optional Python bindings via nanobind and distributed execution through CUD
 ├── sim_2D/              # 2D example simulations
 ├── pytnl_lbm/           # Python extension module
 ├── tests/               # pytest unit, regression & integration suites + subproject test
-│   ├── unit/            # pytest unit tests (python_bindings/ under unit/; C++ unit tests may join later)
-│   ├── regression/      # pytest result checks (ibm, nse, d2q9, adjoint) + IBM matrix baselines
+│   ├── unit/            # pytest unit tests: python_bindings/ + C++ unit tests (.cu → doctest)
+│   ├── regression/      # pytest result checks (ibm, nse, d2q9, mpi, adjoint) + IBM matrix baselines
 │   ├── integration/     # end-to-end output-data pipeline test (pytest + CUDA driver sim)
 │   └── subproject/      # external consumption test via CMake FetchContent
 ├── CMakeLists.txt       # Root build configuration
@@ -50,7 +50,8 @@ with optional Python bindings via nanobind and distributed execution through CUD
 | Python binding surface | `pytnl_lbm/pytnl_lbm.cpp` | Exports one concrete `SP_D3Q27_CUM_ConstInflow` instantiation |
 | 3D example simulations | `sim_NSE/*.cu`, `sim_NSE_ADE/*.cu`, `sim_adjoint/*.cu` | Each `int main()` is a standalone CMake executable |
 | 2D example simulations | `sim_2D/*.cu` | sim2d_1 (channel+hole), sim2d_2 (Poiseuille), sim2d_Taylor_Green, sim2d_hills |
-| Regression tests | `tests/regression/` | pytest suites: IBM matrices vs `baseline_ibm_matrices/` + IBM flow-field checks, D3Q27 NSE (sim_1..sim_4) checks, D2Q9 verification checks |
+| Unit-test C++ binary | `tests/unit/*.cu` | doctest cases compiled into one binary; `test_outflowcover.cu` (`TEST_SUITE("outflowcover")`), `test_decomposition.cu` (`TEST_SUITE("decomposition")`) |
+| Regression tests | `tests/regression/` | pytest suites: IBM matrices vs `baseline_ibm_matrices/` + IBM flow-field checks, D3Q27 NSE (sim_1..sim_4 + forcing variants) checks, D2Q9 verification checks + forcing variant, MPI multi-rank checks (test_mpi.py) |
 | Output-data pipeline test | `tests/integration/` | pytest suite driving `test_outputdata` (BP5, SST, Catalyst inline/plugin engines) |
 | External consumption test | `tests/subproject/` | Verifies TNL-LBM works via CMake `FetchContent` |
 
@@ -92,6 +93,7 @@ with optional Python bindings via nanobind and distributed execution through CUD
 - **C++ source suffixes**: Headers use `.h` (not `.hpp`); `.hpp` files are template implementations included from `.h`.
 - **Formatting**: Tabs for C++/CUDA, 2 spaces for YAML/config;
   `.clang-format` disables `SortIncludes` due to cyclic includes.
+- **Comments**: descriptive comments documenting non-obvious functionality.
 - **Column limit**: 150 (with a `TODO` to lower to 128).
 - **C++17 required**, compiler extensions off (`CMAKE_CXX_EXTENSIONS OFF`).
 - **Dependencies**: Fetched via `FetchContent` (fmt, spdlog, nlohmann_json, argparse, magic_enum, TNL, nanobind, PyTNL);
@@ -100,6 +102,7 @@ with optional Python bindings via nanobind and distributed execution through CUD
 - **HIP debug builds**: Use `-O1 -g`, not `-O0`, to avoid ROCm memory-access faults.
 - **Python**: `pyproject.toml` targets Python 3.12; bindings are optional via `TNL_LBM_BUILD_PYTHON`.
 - **No CTest**: Tests are shell scripts invoked post-build, not registered with CMake.
+- **doctest**: C++ unit tests (tests/unit/*.cu) use doctest `TEST_SUITE_BEGIN`/`TEST_SUITE_END`; one binary per module (`test_cpp_units`).
 
 ## ANTI-PATTERNS (THIS PROJECT)
 
@@ -110,6 +113,7 @@ with optional Python bindings via nanobind and distributed execution through CUD
 - **Using `-O0` for HIP debug**: Causes memory-access faults; use `-O1`.
 - **Ignoring `isDDNonZero` / `is3DiracNonZero`**: Dirac-delta callers must check non-zero support explicitly.
 - **Unrestricted viscosity**: `LBM_VISCOSITY` must stay below `1/6` for stability in some setups.
+- **Fenced comments**: Do not add decorative comments with "fences", e.g. `# -----------------` or `// -----------------`.
 
 ## UNIQUE STYLES
 
@@ -148,6 +152,8 @@ mpirun -np 2 ./build/sim_NSE/sim_1 4
 pytest
 pytest tests/unit tests/integration  # skip the heavier regression suite
 pytest tests/regression  # simulation result checks only
+# Test the A-B reference build without moving directories:
+TNL_LBM_BUILD_DIR=build-ab pytest
 
 # Python bindings (after build)
 PYTHONPATH=build/pytnl_lbm python -c "import pytnl_lbm"
@@ -155,6 +161,72 @@ PYTHONPATH=build/pytnl_lbm python -c "import pytnl_lbm"
 # Spell-check (CI lint job)
 typos --color always --sort
 ```
+
+## A-A STREAMING PATTERN (TNL_LBM_AA_PATTERN)
+
+`-DTNL_LBM_AA_PATTERN=ON` (root CMakeLists.txt) compiles all simulations
+(except `sim_adjoint`, see below) and the Python bindings with the
+single-array A-A pattern; default OFF keeps A-B. The pattern must be selected
+via CMake — per-file `#define AB_PATTERN` was removed; `include/lbm3d/defs.h`
+provides the AB default when neither is set.
+
+**Considerations for boundary conditions under A-A:**
+
+- Boundary conditions must NOT sit on the outermost array layer: AA neighbor
+  indices are unclamped (`kernels.h`), so an edge BC wrap-writes into the
+  opposite column/row. Apply the ghost-layer idiom: outermost plane
+  `GEO_NOTHING`, BC on `1`/`N-2`.
+- Lateral `GEO_INFLOW_LEFT` moment BCs diverge under AA on ghost-adjacent planes.
+- `GEO_OUTFLOW_RIGHT` and `GEO_OUTFLOW_RIGHT_INTERP` run through a
+  deterministic two-pass scheme in *both* A-A and A-B streaming patterns
+  (it replaced the legacy fused kernel path, which raced with same-launch
+  `postCollisionStreaming` writers in the A-A single array;
+  A-B never had the race but shares the scheme so there is one outflow code path).
+- `GEO_OUTFLOW_RIGHT_INTERP` blend arithmetic is pinned to a canonical rounding:
+  all 36 blend sites (AA 6+18, AB 3+9) use the canonical `lbm_fma_rn(cs,A,(1-cs)*B)` form
+  from `include/lbm_common/rounding.h`,
+  making D2Q9 bitwise-identical AA vs AB.
+  Originally, NVVM contracted the `cs*A + (1-cs)*B` blend in mixed operand orders per statement
+  on sm_75/sm_86 Release (`fma(A,cs,wB)` for most, `fma(B,w,csA)` for the mp blend),
+  giving 1-ulp-different values between mirrored direction pairs (mm/mp) at the outflow column;
+  the chaotic wake amplified this to 1e-3-class mirror-symmetry breakage.
+  Architecture codegen issue, not hardware: compute_86 PTX reproduced the failure bit-for-bit on sm_120.
+
+**Known limitations under A-A:**
+
+- NSE_ADE (`sim_T1`, `sim_T2`) is NOT covered by the two-pass scheme
+  (state_NSE_ADE.h launches no outflow kernel and its BC placement ignores
+  the ghost-layer idiom) — do not run these under AA.
+- `sim_adjoint` requires the A-B pattern and is EXCLUDED from AA builds (CMake-level; its pytest module skips via `AA_PATTERN`).
+  Findings for a future AA-native adjoint design:
+  `streamingAdjoint` even-phase two-step reads escape the 1-cell ghost layer (CUDA 700 at boundary-adjacent sites);
+  the reversed gather races with same-launch `postCollisionStreaming` writers in the single array (nondeterministic garbage profiles);
+  the `GEO_ADJOINT_INFLOW_BB_LEFT` refill in d3q27/bc.h must be parity-aware
+  (m-family from the site's own slot after an even/twisted write, matching p-slot one hop downstream after an odd push).
+- Residual AA-vs-AB divergence in D3Q27
+  (open; root cause known on both arch classes studied; fix decision *deferred*):
+  after the blend pin both patterns are individually mirror-perfect,
+  but AA and AB still drift apart through wake-amplified ulp seeds whose seeding site is arch-dependent:
+  - sm_75/86-class codegen (compute_86-virtual JIT'd on sm_120 reproduces the failures bit-for-bit):
+    a single ≤2-ulp flip authored inside `outflowPass` at step ~261 at the x=126 column
+    (from input state bitwise-identical between patterns),
+    then wake-amplified to max|d| ≈ 2.75e-4 (vx), ~1.55e-4 (vy/vz), 7.15e-7 (density) by final time;
+    seed rate ≈ 1 flip per (261 steps × 784 pass cells).
+    `D3Q27_CUM::collision` is provably bit-identical between builds;
+    the divergence lives in the *non*-blend part of the pass chain
+    — AA compiles it as 4 outlined `.func` calls vs fully-inlined under AB,
+    with different FMA/regrouping choices of the same source expressions
+    Forensics: `docs/aa-ab-outflow-divergence/`.
+  - native sm_120: the outflow pass is already bit-identical between patterns;
+    the divergence seeds in the *main* kernel — predominantly the `D3Q27_CUM` collision core (`col_cum.h`),
+    where NVVM makes per-expression FMA-contraction/CSE choices that differ between the AA and AB builds,
+    secondarily the `GEO_INFLOW_LEFT` moment BC;
+    macro helpers and all init kernels are bit-identical
+    and both streamings carry zero FP ops.
+    First field diff at frame ~1 (≈step 40) in the inflow/baffle region x=1..33,
+    ~72% of cells carry ulp diffs by mid-run, final max|d| ≈ 3.57e-4 (vx).
+    Codegen attribution: `docs/aa-ab-divergence-sm120-codegen/`.
+  Two candidate fixes `fix-outflow-unify-codegen` (`a164865`) and `fix-outflow-pin-arithmetic` (`aaaac43`).
 
 ## NOTES
 

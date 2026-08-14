@@ -14,8 +14,11 @@
 #include "lbm_block.h"
 
 template <typename CONFIG, typename idx>
-LBM_BLOCK<CONFIG>
-decomposeLattice_D1Q3(const TNL::MPI::Comm& communicator, const TNL::Containers::StaticVector<3, idx>& global_size, bool periodic_boundaries)
+LBM_BLOCK<CONFIG> decomposeLattice_D1Q3(
+	const TNL::MPI::Comm& communicator,
+	const TNL::Containers::StaticVector<3, idx>& global_size,
+	const TNL::Containers::StaticVector<3, bool>& periodic
+)
 {
 	using idx3d = TNL::Containers::StaticVector<3, idx>;
 
@@ -41,15 +44,17 @@ decomposeLattice_D1Q3(const TNL::MPI::Comm& communicator, const TNL::Containers:
 
 	// set synchronization pattern
 	std::map<TNL::Containers::SyncDirection, int> neighbors;
-	if (periodic_boundaries || rank > 0)
+	// at nproc == 1 the strip has no MPI peer even when x is periodic
+	if ((periodic.x() || rank > 0) && nproc > 1)
 		neighbors[TNL::Containers::SyncDirection::Left] = (rank - 1 + nproc) % nproc;
 	else
 		neighbors[TNL::Containers::SyncDirection::Left] = -1;
-	if (periodic_boundaries || rank < nproc - 1)
-		neighbors[TNL::Containers::SyncDirection::Right] = (rank + 1 + nproc) % nproc;
+	if ((periodic.x() || rank < nproc - 1) && nproc > 1)
+		neighbors[TNL::Containers::SyncDirection::Right] = (rank + 1) % nproc;
 	else
 		neighbors[TNL::Containers::SyncDirection::Right] = -1;
 	block.setLatticeDecomposition(TNL::Containers::NDArraySyncPatterns::D1Q3, neighbors, neighbors);
+	block.data.periodic = periodic;
 
 	return block;
 }
@@ -135,7 +140,7 @@ std::map<TNL::Containers::SyncDirection, int> findNeighbors(
 	int rank,
 	const std::vector<BlockType>& decomposition,
 	const BlockType& global,
-	bool periodic_lattice
+	const TNL::Containers::StaticVector<3, bool>& periodic
 )
 {
 	using namespace TNL::Containers;
@@ -145,16 +150,20 @@ std::map<TNL::Containers::SyncDirection, int> findNeighbors(
 
 	auto find = [&](SyncDirection direction, typename BlockType::CoordinatesType point, SyncDirection vertexDirection)
 	{
-		if (periodic_lattice) {
-			// handle periodic boundaries
+		// wrap the vertex search across the global boundary in each periodic dimension
+		if (periodic.x()) {
 			if ((direction & SyncDirection::Left) != SyncDirection::None && point.x() == global.begin.x())
 				point.x() = global.end.x();
 			if ((direction & SyncDirection::Right) != SyncDirection::None && point.x() == global.end.x())
 				point.x() = global.begin.x();
+		}
+		if (periodic.y()) {
 			if ((direction & SyncDirection::Bottom) != SyncDirection::None && point.y() == global.begin.y())
 				point.y() = global.end.y();
 			if ((direction & SyncDirection::Top) != SyncDirection::None && point.y() == global.end.y())
 				point.y() = global.begin.y();
+		}
+		if (periodic.z()) {
 			if ((direction & SyncDirection::Back) != SyncDirection::None && point.z() == global.begin.z())
 				point.z() = global.end.z();
 			if ((direction & SyncDirection::Front) != SyncDirection::None && point.z() == global.end.z())
@@ -164,13 +173,34 @@ std::map<TNL::Containers::SyncDirection, int> findNeighbors(
 		for (std::size_t i = 0; i < decomposition.size(); i++) {
 			const auto vertex = getBlockVertex(decomposition[i], vertexDirection);
 			if (point == vertex) {
-				neighbors[direction] = i;
+				// Self-match is only reachable after the periodic wrap above:
+				// the own block then spans the full global extent in that direction,
+				// so the dimension is not distributed and has no MPI peer.
+				// (Periodic dims are wrapped in-kernel by kernelInitIndices;
+				// non-periodic dims are owned by the boundary conditions.)
+				// Registering the own rank would corrupt the boundary/interior compute partition in lbm_block
+				// and post self-sends in the distributed synchronizers.
+				if (int(i) == rank)
+					neighbors[direction] = -1;
+				else
+					neighbors[direction] = int(i);
 				return;
 			}
 		}
 
-		// no neighbor found in this direction
-		if (periodic_lattice)
+		// no neighbor found in this direction:
+		// legitimate on wall boundaries and in directions combining wall components
+		// (there is no halo past a wall either way);
+		// with all components periodic the wrap must land on some block,
+		// else the decomposition does not tile the global block
+		bool directionPeriodic = true;
+		if ((direction & (SyncDirection::Left | SyncDirection::Right)) != SyncDirection::None && ! periodic.x())
+			directionPeriodic = false;
+		else if ((direction & (SyncDirection::Bottom | SyncDirection::Top)) != SyncDirection::None && ! periodic.y())
+			directionPeriodic = false;
+		else if ((direction & (SyncDirection::Back | SyncDirection::Front)) != SyncDirection::None && ! periodic.z())
+			directionPeriodic = false;
+		if (directionPeriodic)
 			throw std::runtime_error(fmt::format("coordinate [{},{},{}] was not found in the decomposition", point.x(), point.y(), point.z()));
 		else
 			neighbors[direction] = -1;
@@ -251,8 +281,11 @@ std::map<TNL::Containers::SyncDirection, int> findNeighbors(
 }
 
 template <typename CONFIG, typename idx>
-LBM_BLOCK<CONFIG>
-decomposeLattice_D3Q27(const TNL::MPI::Comm& communicator, const TNL::Containers::StaticVector<3, idx>& global_size, bool periodic_lattice)
+LBM_BLOCK<CONFIG> decomposeLattice_D3Q27(
+	const TNL::MPI::Comm& communicator,
+	const TNL::Containers::StaticVector<3, idx>& global_size,
+	const TNL::Containers::StaticVector<3, bool>& periodic
+)
 {
 	using idx3d = TNL::Containers::StaticVector<3, idx>;
 
@@ -276,8 +309,9 @@ decomposeLattice_D3Q27(const TNL::MPI::Comm& communicator, const TNL::Containers
 
 	// set synchronization pattern
 	const std::map<TNL::Containers::SyncDirection, int> neighbors =
-		findNeighbors(TNL::Containers::NDArraySyncPatterns::D3Q27, rank, decomposition, globalBoundingBox, periodic_lattice);
+		findNeighbors(TNL::Containers::NDArraySyncPatterns::D3Q27, rank, decomposition, globalBoundingBox, periodic);
 	block.setLatticeDecomposition(TNL::Containers::NDArraySyncPatterns::D3Q27, neighbors, neighbors);
+	block.data.periodic = periodic;
 
 	return block;
 }

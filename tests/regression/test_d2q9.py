@@ -25,8 +25,8 @@ import numpy as np
 import pytest
 
 from tests.lbmtest import (
+    ADIOS_CONFIG,
     BUILD_DIR,
-    PROJECT_ROOT,
     FieldData,
     assert_all_finite,
     assert_mass_conserved,
@@ -40,20 +40,16 @@ if TYPE_CHECKING:
 # GEO enum values (must match include/lbm3d/d2q9/bc.h)
 GEO_WALL = 1
 GEO_INFLOW_LEFT = 3
-GEO_NOTHING = 8
-GEO_SYM_TOP = 9
+GEO_NOTHING = 7
+GEO_SYM_TOP = 8
 
 SIMS = ["sim2d_1", "sim2d_2", "sim2d_hills", "sim2d_Taylor_Green"]
-
-# Taylor-Green decays a vortex for a long physical time even at resolution 1.
-SIM_TIMEOUT = 3600.0
 
 
 @pytest.fixture(scope="module")
 def d2q9_results(workspace: pathlib.Path) -> dict[str, pathlib.Path]:
     """Run all D2Q9 example simulations and return their results directories."""
     outputs: dict[str, pathlib.Path] = {}
-    adios_config = str(PROJECT_ROOT / "adios2.xml")
     for sim in SIMS:
         run_sim(
             [
@@ -61,10 +57,9 @@ def d2q9_results(workspace: pathlib.Path) -> dict[str, pathlib.Path]:
                 "--resolution",
                 "1",
                 "--adios-config",
-                adios_config,
+                ADIOS_CONFIG,
             ],
             workdir=workspace,
-            timeout=SIM_TIMEOUT,
         )
         candidates = sorted(workspace.glob(f"results_{sim}_*"))
         assert candidates, f"{sim} produced no results directory"
@@ -121,9 +116,9 @@ class TestSim2d1:
 
     def test_inflow_uniform(self, data: FieldData) -> None:
         vx, wall = data["velocity_x"], data["wall"]
-        inflow_mask = wall[:, 0] == GEO_INFLOW_LEFT
-        assert inflow_mask.any(), "no inflow cells found at x=0"
-        inflow_vx = vx[inflow_mask, 0]
+        inflow_mask = wall[:, 1] == GEO_INFLOW_LEFT
+        assert inflow_mask.any(), "no inflow cells found at x=1"
+        inflow_vx = vx[inflow_mask, 1]
         spread = float(np.max(inflow_vx) - np.min(inflow_vx))
         assert spread < 1e-6, (
             f"inflow vx spread={spread:.2e} (vx={float(np.mean(inflow_vx)):.6f})"
@@ -158,11 +153,15 @@ class TestSim2d2:
         assert_mass_conserved(data["lbm_density"], tolerance=1e-3)
 
     def test_analytical_error_phys(self, data: FieldData) -> None:
-        max_err = float(np.max(data["error_vx"]))
+        # GEO_NOTHING ghost cells hold v=0, so their error equals the full
+        # analytical profile; the tolerance was calibrated on interior cells.
+        mask = data["wall"] != GEO_NOTHING
+        max_err = float(np.max(data["error_vx"][mask]))
         assert max_err < 5e-3, f"max|error_vx|(phys)={max_err:.2e} (tol=5e-3)"
 
     def test_analytical_error_lbm(self, data: FieldData) -> None:
-        max_err = float(np.max(data["lbm_error_vx"]))
+        mask = data["wall"] != GEO_NOTHING
+        max_err = float(np.max(data["lbm_error_vx"][mask]))
         assert max_err < 3e-3, f"max|lbm_error_vx|(lattice)={max_err:.2e} (tol=3e-3)"
 
     def test_wall_no_slip(self, data: FieldData) -> None:
@@ -197,7 +196,7 @@ class TestSim2dHills:
         y_sym, nx = int(sym_rows[0]), vx.shape[1]
         y_fluid = y_sym - 1
         # Compare vx magnitudes in the interior (skip inflow/outflow columns).
-        x_start, x_end = nx // 4, 3 * nx // 4
+        x_start, x_end = (15 * nx) // 100, (85 * nx) // 100
         ratio = float(
             np.max(np.abs(vx[y_sym, x_start:x_end]))
             / max(np.max(np.abs(vx[y_fluid, x_start:x_end])), 1e-30)
@@ -209,7 +208,13 @@ class TestSim2dHills:
     def test_sym_top_continuity(self, data: FieldData) -> None:
         vx, wall = data["velocity_x"], data["wall"]
         y_sym = int(np.where((wall == GEO_SYM_TOP).any(axis=1))[0][0])
-        row_diff = float(np.max(np.abs(vx[y_sym, :] - vx[y_sym - 1, :])))
+        # Interior columns only: the bump wake reaches the slip row near the
+        # inflow/outflow ends and would dominate the maximum there.
+        nx = vx.shape[1]
+        x_start, x_end = (15 * nx) // 100, (85 * nx) // 100
+        row_diff = float(
+            np.max(np.abs(vx[y_sym, x_start:x_end] - vx[y_sym - 1, x_start:x_end]))
+        )
         peak = float(np.max(np.abs(vx)))
         assert peak > 0
         rel = row_diff / peak * 100
@@ -219,13 +224,70 @@ class TestSim2dHills:
 
     def test_inflow_uniform(self, data: FieldData) -> None:
         vx, wall = data["velocity_x"], data["wall"]
-        inflow_mask = wall[:, 0] == GEO_INFLOW_LEFT
-        assert inflow_mask.any(), "no inflow cells found at x=0"
-        inflow_vx = vx[inflow_mask, 0]
+        inflow_mask = wall[:, 1] == GEO_INFLOW_LEFT
+        assert inflow_mask.any(), "no inflow cells found at x=1"
+        inflow_vx = vx[inflow_mask, 1]
         spread = float(np.max(inflow_vx) - np.min(inflow_vx))
         assert spread < 1e-6, (
             f"inflow vx spread={spread:.2e} (vx={float(np.mean(inflow_vx)):.6f})"
         )
+
+    def test_wall_no_slip(self, data: FieldData) -> None:
+        max_v = wall_velocity_max(data["velocity_x"], data["velocity_y"], data["wall"])
+        assert max_v < 1e-10, f"max|v| in wall/nothing cells={max_v:.2e}"
+
+
+@pytest.fixture(scope="module")
+def sim2d_2_forcing_dir(workspace: pathlib.Path) -> pathlib.Path:
+    """Run sim2d_2 with body force on a periodic domain."""
+    run_sim(
+        [
+            BUILD_DIR / "sim_2D" / "sim2d_2",
+            "--resolution",
+            "1",
+            "--adios-config",
+            ADIOS_CONFIG,
+            "--use-forcing",
+        ],
+        workdir=workspace,
+    )
+    candidates = sorted(workspace.glob("results_sim2d_2_*_forcing_*"))
+    assert candidates, "sim2d_2 --use-forcing produced no results directory"
+    return candidates[0]
+
+
+class TestSim2d2Forcing:
+    """sim2d_2 --use-forcing: checks mirror TestSim2d2."""
+
+    @pytest.fixture(scope="class")
+    def data(self, sim2d_2_forcing_dir: pathlib.Path) -> FieldData:
+        return read_2d_fields(
+            sim2d_2_forcing_dir,
+            [
+                "lbm_density",
+                "velocity_x",
+                "velocity_y",
+                "error_vx",
+                "lbm_error_vx",
+                "wall",
+            ],
+        )
+
+    def test_finiteness(self, data: FieldData) -> None:
+        assert_all_finite(data)
+
+    def test_mass_conservation(self, data: FieldData) -> None:
+        assert_mass_conserved(data["lbm_density"], tolerance=1e-3)
+
+    def test_analytical_error_phys(self, data: FieldData) -> None:
+        mask = data["wall"] != GEO_NOTHING
+        max_err = float(np.max(data["error_vx"][mask]))
+        assert max_err < 5e-2, f"max|error_vx|(phys)={max_err:.2e} (tol=5e-2)"
+
+    def test_analytical_error_lbm(self, data: FieldData) -> None:
+        mask = data["wall"] != GEO_NOTHING
+        max_err = float(np.max(data["lbm_error_vx"][mask]))
+        assert max_err < 5e-2, f"max|lbm_error_vx|(lattice)={max_err:.2e} (tol=5e-2)"
 
     def test_wall_no_slip(self, data: FieldData) -> None:
         max_v = wall_velocity_max(data["velocity_x"], data["velocity_y"], data["wall"])

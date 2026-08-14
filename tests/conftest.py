@@ -7,6 +7,8 @@ import pathlib
 import cuda.bindings.driver as cuda_driver
 import pytest
 
+from tests.lbmtest import _SIM_RUNS, SimRun
+
 
 def _gpu_available() -> bool:
     try:
@@ -28,6 +30,42 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     skip_gpu = pytest.mark.skip(reason="no CUDA-capable GPU available")
     for item in items:
         item.add_marker(skip_gpu)
+
+
+def pytest_terminal_summary(
+    terminalreporter: pytest.TerminalReporter,
+    exitstatus: pytest.ExitCode,
+    config: pytest.Config,
+) -> None:
+    """Append a summary of simulation runs with their elapsed wall time."""
+    if not _SIM_RUNS:
+        return
+    tr = terminalreporter
+    tr.write_sep("=", "simulation runs", bold=True)
+
+    def _format(cmd: list[str]) -> str:
+        # Strip the mpirun prefix; rank count is shown in the ranks column.
+        args = (
+            cmd[3:] if len(cmd) >= 3 and cmd[0] == "mpirun" and cmd[1] == "-np" else cmd
+        )
+        parts = [
+            pathlib.Path(a).name if "/" in a and not a.startswith("-") else a
+            for a in args
+        ]
+        return " ".join(parts)
+
+    def _status(run: SimRun) -> str:
+        if run.status == "failed":
+            return f"FAILED({run.exit_code})"
+        return run.status
+
+    for run in _SIM_RUNS:
+        elapsed = f"{run.elapsed:>9.1f}s"
+        status = f"{_status(run):<14}"
+        cmd = _format(run.command)
+        tr.write_line(f"  {run.np_ranks:>2} ranks  {elapsed}  {status}  {cmd}")
+    total = sum(r.elapsed for r in _SIM_RUNS)
+    tr.write_line(f"  {'':>7}   {total:>9.1f}s  {'total':<14}  ({len(_SIM_RUNS)} runs)")
 
 
 @pytest.fixture(scope="session")

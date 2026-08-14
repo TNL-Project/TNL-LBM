@@ -1,5 +1,3 @@
-//#define AB_PATTERN
-
 #include <argparse/argparse.hpp>
 
 #include "lbm3d/core.h"
@@ -66,29 +64,34 @@ void LBMComputeQCriterion(
 	idx y = threadIdx.y + blockIdx.y * blockDim.y;
 	idx z = threadIdx.z + blockIdx.z * blockDim.z;
 	#endif
-	map_t gi_map = SD.map(x, y, z);
-
 	idx xp,xm,yp,ym,zp,zm;
-	if (NSE::BC::isPeriodic(gi_map))
-	{
-		// handle overlaps between GPUs
-		//xp = (!SD.overlap_right && x == SD.X-1) ? 0 : (x+1);
-		//xm = (!SD.overlap_left && x == 0) ? (SD.X-1) : (x-1);
-		xp = (nproc == 1 && x == SD.X()-1) ? 0 : (x+1);
-		xm = (nproc == 1 && x == 0) ? (SD.X()-1) : (x-1);
-		yp = (y == SD.Y()-1) ? 0 : (y+1);
-		ym = (y == 0) ? (SD.Y()-1) : (y-1);
-		zp = (z == SD.Z()-1) ? 0 : (z+1);
-		zm = (z == 0) ? (SD.Z()-1) : (z-1);
-	} else {
-		// handle overlaps between GPUs
-		// NOTE: ghost layers of lattice sites are assumed in the x-direction, so x+1 and x-1 always work
-		xp = x+1;
-		xm = x-1;
-		yp = TNL::min(y+1, SD.Y()-1);
-		ym = TNL::max(y-1,0);
-		zp = TNL::min(z+1, SD.Z()-1);
-		zm = TNL::max(z-1,0);
+	// handle overlaps between GPUs
+	// NOTE: ghost layers of lattice sites are assumed in the x-direction, so x+1 and x-1 always work
+	xp = x+1;
+	xm = x-1;
+	yp = TNL::min(y+1, SD.Y()-1);
+	ym = TNL::max(y-1,0);
+	zp = TNL::min(z+1, SD.Z()-1);
+	zm = TNL::max(z-1,0);
+	if (nproc == 1) {
+		if (SD.periodic.x()) {
+			if (x == SD.X()-1)
+				xp = 0;
+			if (x == 0)
+				xm = SD.X()-1;
+		}
+		if (SD.periodic.y()) {
+			if (y == SD.Y()-1)
+				yp = 0;
+			if (y == 0)
+				ym = SD.Y()-1;
+		}
+		if (SD.periodic.z()) {
+			if (z == SD.Z()-1)
+				zp = 0;
+			if (z == 0)
+				zm = SD.Z()-1;
+		}
 	}
 
 		struct Tensor
@@ -184,29 +187,34 @@ void cudaLBMComputePhiGradMag(
 	idx y = threadIdx.y + blockIdx.y * blockDim.y;
 	idx z = threadIdx.z + blockIdx.z * blockDim.z;
 	#endif
-	map_t gi_map = SD.map(x, y, z);
-
 	idx xp,xm,yp,ym,zp,zm;
-	if (ADE::BC::isPeriodic(gi_map))
-	{
-		// handle overlaps between GPUs
-		//xp = (!SD.overlap_right && x == SD.X-1) ? 0 : (x+1);
-		//xm = (!SD.overlap_left && x == 0) ? (SD.X-1) : (x-1);
-		xp = (nproc == 1 && x == SD.X()-1) ? 0 : (x+1);
-		xm = (nproc == 1 && x == 0) ? (SD.X()-1) : (x-1);
-		yp = (y == SD.Y()-1) ? 0 : (y+1);
-		ym = (y == 0) ? (SD.Y()-1) : (y-1);
-		zp = (z == SD.Z()-1) ? 0 : (z+1);
-		zm = (z == 0) ? (SD.Z()-1) : (z-1);
-	} else {
-		// handle overlaps between GPUs
-		// NOTE: ghost layers of lattice sites are assumed in the x-direction, so x+1 and x-1 always work
-		xp = x+1;
-		xm = x-1;
-		yp = TNL::min(y+1, SD.Y()-1);
-		ym = TNL::max(y-1,0);
-		zp = TNL::min(z+1, SD.Z()-1);
-		zm = TNL::max(z-1,0);
+	// handle overlaps between GPUs
+	// NOTE: ghost layers of lattice sites are assumed in the x-direction, so x+1 and x-1 always work
+	xp = x+1;
+	xm = x-1;
+	yp = TNL::min(y+1, SD.Y()-1);
+	ym = TNL::max(y-1,0);
+	zp = TNL::min(z+1, SD.Z()-1);
+	zm = TNL::max(z-1,0);
+	if (nproc == 1) {
+		if (SD.periodic.x()) {
+			if (x == SD.X()-1)
+				xp = 0;
+			if (x == 0)
+				xm = SD.X()-1;
+		}
+		if (SD.periodic.y()) {
+			if (y == SD.Y()-1)
+				yp = 0;
+			if (y == 0)
+				ym = SD.Y()-1;
+		}
+		if (SD.periodic.z()) {
+			if (z == SD.Z()-1)
+				zp = 0;
+			if (z == 0)
+				zm = SD.Z()-1;
+		}
 	}
 
 		struct Vector

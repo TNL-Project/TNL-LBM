@@ -30,19 +30,21 @@ struct StateLocal : State<NSE>
 
 	void setupBoundaries() override
 	{
-		nse.setBoundaryX(0, BC::GEO_INFLOW_LEFT);							// left
-		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_OUTFLOW_RIGHT_INTERP);	// right
+		nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT);								 // left
+		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT_INTERP);	 // right
 
-		nse.setBoundaryZ(1, BC::GEO_WALL);						 // top
-		nse.setBoundaryZ(nse.lat.global.z() - 2, BC::GEO_WALL);	 // bottom
-		nse.setBoundaryY(1, BC::GEO_WALL);						 // back
-		nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_WALL);	 // front
+		nse.setBoundaryZ(1, BC::GEO_WALL);						 // bottom
+		nse.setBoundaryZ(nse.lat.global.z() - 2, BC::GEO_WALL);	 // top
+		nse.setBoundaryY(1, BC::GEO_WALL);						 // front
+		nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_WALL);	 // back
 
 		// extra layer needed due to A-A pattern
-		nse.setBoundaryZ(0, BC::GEO_NOTHING);						// top
-		nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_NOTHING);	// bottom
-		nse.setBoundaryY(0, BC::GEO_NOTHING);						// back
-		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_NOTHING);	// front
+		nse.setBoundaryX(0, BC::GEO_NOTHING);						// left
+		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_NOTHING);	// right
+		nse.setBoundaryZ(0, BC::GEO_NOTHING);						// bottom
+		nse.setBoundaryZ(nse.lat.global.z() - 1, BC::GEO_NOTHING);	// top
+		nse.setBoundaryY(0, BC::GEO_NOTHING);						// front
+		nse.setBoundaryY(nse.lat.global.y() - 1, BC::GEO_NOTHING);	// back
 
 		// draw a wall with a hole
 		int cx = floor(0.20 / nse.lat.physDl);
@@ -140,9 +142,9 @@ void sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 2)
 	int X = 128 * RESOLUTION;		  // width in pixels
 	int Y = block_size * RESOLUTION;  // height in pixels --- top and bottom walls 1px
 	int Z = Y;						  // height in pixels --- top and bottom walls 1px
-	real LBM_VISCOSITY = 1e-4;	  //1.0/6.0; /// GIVEN: optimal is 1/6
-	real PHYS_HEIGHT = 0.41;		  // [m] domain height (physical)
-	real PHYS_VISCOSITY = 1.5e-5;	  // [m^2/s] fluid viscosity .... blood?
+	real LBM_VISCOSITY = 1e-4;
+	real PHYS_HEIGHT = 0.41;	   // [m] domain height (physical)
+	real PHYS_VISCOSITY = 1.5e-5;  // [m^2/s] fluid viscosity .... blood?
 	real PHYS_DL = PHYS_HEIGHT / ((real) Y - 2);
 	real PHYS_DT = LBM_VISCOSITY / PHYS_VISCOSITY * PHYS_DL * PHYS_DL;
 	point_t PHYS_ORIGIN = {0., 0., 0.};
