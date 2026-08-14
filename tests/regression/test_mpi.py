@@ -3,7 +3,8 @@
 Every other regression module executes simulations single-rank. This module
 runs a subset under multiple MPI ranks (domain decomposition along X, rank
 synchronization, subfile-aggregated BP5 output) and checks the same physical
-properties with the same tolerances as the single-rank modules.
+properties as the single-rank modules, including the forced (periodic)
+variants whose seam crosses rank boundaries.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from tests.lbmtest import (
     run_sim,
 )
 from tests.regression.bp5 import read_last_step, squeeze_2d
+from tests.regression.test_d3q27_nse import TestSim2Forcing as _TestSim2Forcing
 
 if TYPE_CHECKING:
     import pathlib
@@ -130,6 +132,58 @@ class TestPoiseuilleMPI:
         assert max_v < 1e-10, f"max|v| in wall/nothing cells={max_v:.2e}"
 
 
+@pytest.fixture(scope="module")
+def poiseuille_forcing_dir(mpi_workspace: pathlib.Path) -> pathlib.Path:
+    """Run the forced (periodic) sim2d_2 under multiple ranks.
+
+    S cut to 10s (vs 1500s single-rank) since the MPI test only checks that
+    the periodic seam does not corrupt the solution — the flow is already
+    well-resolved at 10s for that purpose.
+    """
+    run_sim(
+        [
+            BUILD_DIR / "sim_2D" / "sim2d_2",
+            "--resolution",
+            "1",
+            "--adios-config",
+            ADIOS_CONFIG,
+            "--use-forcing",
+            "--final-time",
+            "10",
+        ],
+        workdir=mpi_workspace,
+        np_ranks=NP_RANKS,
+    )
+    candidates = sorted(mpi_workspace.glob("results_sim2d_2_*forcing*"))
+    assert candidates, "sim2d_2 --use-forcing produced no results directory"
+    return candidates[0]
+
+
+@pytest.fixture(scope="module")
+def channel_forcing_stdout(mpi_workspace: pathlib.Path) -> str:
+    """Run the forced (periodic) sim_2 under multiple ranks.
+
+    Cut to 10s final time — sufficient to verify the periodic seam does not
+    corrupt the solution.
+    """
+    return run_sim(
+        [
+            BUILD_DIR / "sim_NSE" / "sim_2",
+            "--min-resolution",
+            "1",
+            "--max-resolution",
+            "1",
+            "--adios-config",
+            ADIOS_CONFIG,
+            "--use-forcing",
+            "--final-time",
+            "10",
+        ],
+        workdir=mpi_workspace,
+        np_ranks=NP_RANKS,
+    )
+
+
 class TestChannelMPI:
     """Multi-rank sim_1: checks mirror the single-rank TestSim1."""
 
@@ -190,3 +244,74 @@ class TestChannelMPI:
             float(np.max(np.abs(data["velocity_z"][solid_mask]))),
         )
         assert max_v < 1e-10, f"max|v| in wall/nothing cells={max_v:.2e}"
+
+
+class TestPoiseuilleForcingMPI:
+    """Multi-rank forced sim2d_2: checks mirror TestSim2d2Forcing.
+
+    Final time is 10s (vs 1500s single-rank), so the flow is still developing
+    and error tolerances are much looser — the test verifies the periodic seam
+    does not corrupt the solution, not steady-state accuracy.
+    """
+
+    @pytest.fixture(scope="class")
+    def data(self, poiseuille_forcing_dir: pathlib.Path) -> FieldData:
+        data = read_last_step(
+            poiseuille_forcing_dir / "output_2D_.bp",
+            [
+                "lbm_density",
+                "velocity_x",
+                "velocity_y",
+                "error_vx",
+                "lbm_error_vx",
+                "wall",
+            ],
+        )
+        return {name: squeeze_2d(arr) for name, arr in data.items()}
+
+    def test_finiteness(self, data: FieldData) -> None:
+        assert_all_finite(data)
+
+    def test_mass_conservation(self, data: FieldData) -> None:
+        assert_mass_conserved(data["lbm_density"], tolerance=1e-3)
+
+    def test_analytical_error_phys(self, data: FieldData) -> None:
+        mask = data["wall"] != GEO2D_NOTHING
+        max_err = float(np.max(data["error_vx"][mask]))
+        assert max_err < 1e-1, f"max|error_vx|(phys)={max_err:.2e} (tol=1e-1)"
+
+    def test_analytical_error_lbm(self, data: FieldData) -> None:
+        mask = data["wall"] != GEO2D_NOTHING
+        max_err = float(np.max(data["lbm_error_vx"][mask]))
+        assert max_err < 5e-2, f"max|lbm_error_vx|(lattice)={max_err:.2e} (tol=5e-2)"
+
+    def test_wall_no_slip(self, data: FieldData) -> None:
+        solid_mask = (data["wall"] == GEO2D_WALL) | (data["wall"] == GEO2D_NOTHING)
+        assert solid_mask.any(), "no wall/nothing cells found"
+        max_v = max(
+            float(np.max(np.abs(data["velocity_x"][solid_mask]))),
+            float(np.max(np.abs(data["velocity_y"][solid_mask]))),
+        )
+        assert max_v < 1e-10, f"max|v| in wall/nothing cells={max_v:.2e}"
+
+
+class TestDuctForcingMPI(_TestSim2Forcing):
+    """Multi-rank forced sim_2: inherits test methods from TestSim2Forcing.
+
+    Final time is 10s (vs default single-rank), sufficient to verify the
+    periodic seam does not corrupt the solution.
+    """
+
+    @pytest.fixture(scope="class")
+    def errors(
+        self, channel_forcing_stdout: str
+    ) -> dict[str, tuple[float, float, float]]:
+        matches = self.ERROR_RE.findall(channel_forcing_stdout)
+        assert matches, "no l1/l2 error lines found in sim_2 --use-forcing output"
+        out: dict[str, tuple[float, float, float]] = {}
+        for kind in ("l1", "l2"):
+            kind_matches = [m for m in matches if m[0] == kind]
+            assert kind_matches, f"no {kind} error line found in sim_2 forcing output"
+            _, vx, vy, vz = kind_matches[-1]
+            out[kind] = (float(vx), float(vy), float(vz))
+        return out

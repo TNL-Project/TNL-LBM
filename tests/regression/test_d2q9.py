@@ -238,6 +238,63 @@ class TestSim2dHills:
         assert max_v < 1e-10, f"max|v| in wall/nothing cells={max_v:.2e}"
 
 
+@pytest.fixture(scope="module")
+def sim2d_2_forcing_dir(workspace: pathlib.Path) -> pathlib.Path:
+    """Run sim2d_2 with body force on a periodic domain."""
+    run_sim(
+        [
+            BUILD_DIR / "sim_2D" / "sim2d_2",
+            "--resolution",
+            "1",
+            "--adios-config",
+            str(PROJECT_ROOT / "adios2.xml"),
+            "--use-forcing",
+        ],
+        workdir=workspace,
+    )
+    candidates = sorted(workspace.glob("results_sim2d_2_*_forcing_*"))
+    assert candidates, "sim2d_2 --use-forcing produced no results directory"
+    return candidates[0]
+
+
+class TestSim2d2Forcing:
+    """sim2d_2 --use-forcing: checks mirror TestSim2d2."""
+
+    @pytest.fixture(scope="class")
+    def data(self, sim2d_2_forcing_dir: pathlib.Path) -> FieldData:
+        return read_2d_fields(
+            sim2d_2_forcing_dir,
+            [
+                "lbm_density",
+                "velocity_x",
+                "velocity_y",
+                "error_vx",
+                "lbm_error_vx",
+                "wall",
+            ],
+        )
+
+    def test_finiteness(self, data: FieldData) -> None:
+        assert_all_finite(data)
+
+    def test_mass_conservation(self, data: FieldData) -> None:
+        assert_mass_conserved(data["lbm_density"], tolerance=1e-3)
+
+    def test_analytical_error_phys(self, data: FieldData) -> None:
+        mask = data["wall"] != GEO_NOTHING
+        max_err = float(np.max(data["error_vx"][mask]))
+        assert max_err < 5e-2, f"max|error_vx|(phys)={max_err:.2e} (tol=5e-2)"
+
+    def test_analytical_error_lbm(self, data: FieldData) -> None:
+        mask = data["wall"] != GEO_NOTHING
+        max_err = float(np.max(data["lbm_error_vx"][mask]))
+        assert max_err < 5e-2, f"max|lbm_error_vx|(lattice)={max_err:.2e} (tol=5e-2)"
+
+    def test_wall_no_slip(self, data: FieldData) -> None:
+        max_v = wall_velocity_max(data["velocity_x"], data["velocity_y"], data["wall"])
+        assert max_v < 1e-10, f"max|v| in wall/nothing cells={max_v:.2e}"
+
+
 class TestSim2dTaylorGreen:
     """sim2d_Taylor_Green: decaying vortex on a periodic domain."""
 

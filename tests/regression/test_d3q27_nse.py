@@ -48,6 +48,21 @@ SIMS: dict[str, list[str]] = {
     "sim_2": ["--min-resolution", "1", "--max-resolution", "1"],
     "sim_3": ["--resolution", "1"],
     "sim_4": ["--resolution", "1"],
+    "sim_2_forcing": [
+        "--min-resolution",
+        "1",
+        "--max-resolution",
+        "1",
+        "--use-forcing",
+    ],
+}
+
+# executable names different from the SIMS keys
+SIM_EXE = {"sim_2_forcing": "sim_2"}
+# results-directory globs different from the default results_<sim>_*
+SIM_GLOB = {
+    "sim_2": "results_sim_2_*_velocity_*",
+    "sim_2_forcing": "results_sim_2_*_forcing_*",
 }
 
 
@@ -61,15 +76,22 @@ class SimRun:
 
 @pytest.fixture(scope="module")
 def nse_results(workspace: pathlib.Path) -> dict[str, SimRun]:
-    """Run sim_1 .. sim_4 and return their results artifacts."""
+    """Run sim_1 .. sim_4 (and forcing variants) and return their artifacts."""
     outputs: dict[str, SimRun] = {}
     for sim, args in SIMS.items():
         stdout = run_sim(
-            [BUILD_DIR / "sim_NSE" / sim, *args, "--adios-config", ADI_CONFIG],
+            [
+                BUILD_DIR / "sim_NSE" / SIM_EXE.get(sim, sim),
+                *args,
+                "--adios-config",
+                ADI_CONFIG,
+            ],
             workdir=workspace,
         )
         # sim_4 nests outputs under a res= subdirectory of its results dir
-        pattern = f"results_{sim}_*" if sim != "sim_4" else f"results_{sim}_*/res=*"
+        pattern = SIM_GLOB.get(sim)
+        if pattern is None:
+            pattern = f"results_{sim}_*" if sim != "sim_4" else f"results_{sim}_*/res=*"
         candidates = sorted(workspace.glob(pattern))
         assert candidates, f"{sim} produced no results matching {pattern}"
         outputs[sim] = SimRun(candidates[0], stdout)
@@ -179,6 +201,37 @@ class TestSim2:
 
     def test_l2_vx(self, errors: dict[str, tuple[float, float, float]]) -> None:
         assert errors["l2"][0] < 2e-4, f"l2 error vx={errors['l2'][0]:.2e} (tol=2e-4)"
+
+
+class TestSim2Forcing(TestSim2):
+    """sim_2 --use-forcing: square duct driven by body force.
+
+    The forcing variant converges to a looser plateau than the inflow-driven
+    duct (measured l1=6.9e-5, l2=9.5e-4 at resolution 1, vs 6.0e-6/6.8e-5 for
+    the inflow variant), so the tolerances are forcing-specific.
+    """
+
+    @pytest.fixture(scope="class")
+    def errors(
+        self, nse_results: dict[str, SimRun]
+    ) -> dict[str, tuple[float, float, float]]:
+        matches = self.ERROR_RE.findall(nse_results["sim_2_forcing"].stdout)
+        assert matches, "no l1/l2 error lines found in sim_2 --use-forcing output"
+        out: dict[str, tuple[float, float, float]] = {}
+        for kind in ("l1", "l2"):
+            kind_matches = [m for m in matches if m[0] == kind]
+            assert kind_matches, f"no {kind} error line found in sim_2 forcing output"
+            _, vx, vy, vz = kind_matches[-1]
+            out[kind] = (float(vx), float(vy), float(vz))
+        return out
+
+    def test_l1_vx(self, errors: dict[str, tuple[float, float, float]]) -> None:
+        assert errors["l1"][0] < 1e-4, f"l1 error vx={errors['l1'][0]:.2e} (tol=1e-4)"
+
+    def test_l2_vx(self, errors: dict[str, tuple[float, float, float]]) -> None:
+        assert errors["l2"][0] < 1.5e-3, (
+            f"l2 error vx={errors['l2'][0]:.2e} (tol=1.5e-3)"
+        )
 
 
 class TestSim3:
