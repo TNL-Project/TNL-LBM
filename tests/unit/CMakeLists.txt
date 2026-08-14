@@ -2,6 +2,7 @@
 # (doctest_main.cu carries the runner main function, the rest are test cases)
 set(unit_test_sources
     test_outflowcover.cu
+    test_decomposition.cu
     doctest_main.cu
 )
 

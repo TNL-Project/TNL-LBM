@@ -45,13 +45,13 @@
  * ## Running
  *
  * Each case is a doctest TEST_CASE registered under the same kebab-case
- * name. Running the binary without arguments executes all cases,
- * `--list-test-cases` prints the registered names, and `--test-case=<name>`
- * runs exactly one case. The pytest driver
- * (tests/unit/test_cpp_units.py) discovers the names from
- * `--list-test-cases` at collection time and runs one item per case. On a
- * failed check the mask and the box list are dumped to stderr (see
- * dumpContext), which pytest surfaces in full in the failure report.
+ * name within the "outflowcover" TEST_SUITE. Running the binary without
+ * arguments executes all cases, `--test-suite=outflowcover` filters to the
+ * suite. The pytest driver groups cases by suite and comma-joins selected
+ * names into a single `--test-case=` flag (doctest's flag is last-flag-wins),
+ * so each pytest item runs one suite in one subprocess. On a failed check
+ * the mask and the box list are dumped to stderr (see dumpContext), which
+ * pytest surfaces in full in the failure report.
  */
 
 #include <array>
@@ -259,6 +259,8 @@ static TestBox padToMinExtent(TestBox box, const idx3d& local)
 	}
 	return box;
 }
+
+TEST_SUITE_BEGIN("outflowcover");
 
 TEST_CASE("empty")
 {
@@ -562,3 +564,5 @@ TEST_CASE("boundary-65")
 	}
 	checkInvariants(block, ref, local);
 }
+
+TEST_SUITE_END();
