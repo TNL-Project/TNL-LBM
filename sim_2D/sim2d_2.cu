@@ -62,6 +62,7 @@ struct StateLocal : State<NSE>
 	int errors_count;
 	real* l1errors;
 	int error_idx = 0;
+	real l1error_initial = -1;
 
 	StateLocal(const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat, bool use_forcing, const std::string& adios_config = "adios2.xml")
 	: State<NSE>(
@@ -269,6 +270,11 @@ struct StateLocal : State<NSE>
 
 		// dynamic stopping criterion (based on vx error, the primary component)
 		real l1error_phys = l1error_phys_vx;
+
+		// record the first probe's error as the initial reference value
+		if (l1error_initial < 0)
+			l1error_initial = l1error_phys;
+
 		real threshold = 1e-4;
 		real threshold_stddev = 1e-3;
 		real l1prev = 0.0;
@@ -282,7 +288,9 @@ struct StateLocal : State<NSE>
 		stddev = sqrt(stddev);
 		real stopping = l1error_phys > 0 ? abs(l1prev - l1error_phys) / l1error_phys : 0;
 		real stopping_stddev = l1prev > 0 ? stddev / l1prev : 0;
-		if (stopping < threshold && stopping_stddev < threshold_stddev)
+		// magnitude gate: do not allow termination until the error has actually
+		// dropped below half of the first recorded error
+		if (l1error_phys <= 0.5 * l1error_initial && stopping < threshold && stopping_stddev < threshold_stddev)
 			nse.terminate = true;
 
 		error_idx = (error_idx + 1) % errors_count;
@@ -341,10 +349,17 @@ void sim(const std::string& adios_config, int RESOLUTION, bool use_forcing, doub
 	// where G is the forcing term, R is half the channel height, nu is viscosity
 	dreal force = 1e-4;
 	if (use_forcing) {
-		state.nse.blocks.front().data.fx = state.nse.lat.phys2lbmForce(force);
+		dreal fx_lbm = state.nse.lat.phys2lbmForce(force);
+		state.nse.blocks.front().data.fx = fx_lbm;
 		state.nse.blocks.front().data.fy = 0;
 		state.nse.blocks.front().data.vx_profile = nullptr;
 		state.cache_analytical();
+		if (std::abs(fx_lbm) < std::numeric_limits<dreal>::epsilon())
+			spdlog::warn(
+				"lattice force {:e} is below the precision floor {:e} — the body force will be lost in rounding",
+				fx_lbm,
+				std::numeric_limits<dreal>::epsilon()
+			);
 	}
 	else {
 		// compute the analytical solution using the forcing term
