@@ -1,7 +1,7 @@
 # TNL-LBM PROJECT KNOWLEDGE BASE
 
-**Updated:** 2026-08-11
-**Branch:** lbm2d
+**Updated:** 2026-08-14
+**Branch:** fix-aa-bc
 
 ## OVERVIEW
 
@@ -27,8 +27,8 @@ with optional Python bindings via nanobind and distributed execution through CUD
 ├── sim_2D/              # 2D example simulations
 ├── pytnl_lbm/           # Python extension module
 ├── tests/               # pytest unit, regression & integration suites + subproject test
-│   ├── unit/            # pytest unit tests: python_bindings/ + C++ unit tests
-│   ├── regression/      # pytest result checks (ibm, nse, d2q9, adjoint) + IBM matrix baselines
+│   ├── unit/            # pytest unit tests: python_bindings/ + C++ unit tests (.cu → doctest)
+│   ├── regression/      # pytest result checks (ibm, nse, d2q9, mpi, adjoint) + IBM matrix baselines
 │   ├── integration/     # end-to-end output-data pipeline test (pytest + CUDA driver sim)
 │   └── subproject/      # external consumption test via CMake FetchContent
 ├── CMakeLists.txt       # Root build configuration
@@ -50,7 +50,8 @@ with optional Python bindings via nanobind and distributed execution through CUD
 | Python binding surface | `pytnl_lbm/pytnl_lbm.cpp` | Exports one concrete `SP_D3Q27_CUM_ConstInflow` instantiation |
 | 3D example simulations | `sim_NSE/*.cu`, `sim_NSE_ADE/*.cu`, `sim_adjoint/*.cu` | Each `int main()` is a standalone CMake executable |
 | 2D example simulations | `sim_2D/*.cu` | sim2d_1 (channel+hole), sim2d_2 (Poiseuille), sim2d_Taylor_Green, sim2d_hills |
-| Regression tests | `tests/regression/` | pytest suites: IBM matrices vs `baseline_ibm_matrices/` + IBM flow-field checks, D3Q27 NSE (sim_1..sim_4) checks, D2Q9 verification checks |
+| Unit-test C++ binary | `tests/unit/*.cu` | doctest cases compiled into one binary; `test_outflowcover.cu` (`TEST_SUITE("outflowcover")`), `test_decomposition.cu` (`TEST_SUITE("decomposition")`) |
+| Regression tests | `tests/regression/` | pytest suites: IBM matrices vs `baseline_ibm_matrices/` + IBM flow-field checks, D3Q27 NSE (sim_1..sim_4 + forcing variants) checks, D2Q9 verification checks + forcing variant, MPI multi-rank checks (test_mpi.py) |
 | Output-data pipeline test | `tests/integration/` | pytest suite driving `test_outputdata` (BP5, SST, Catalyst inline/plugin engines) |
 | External consumption test | `tests/subproject/` | Verifies TNL-LBM works via CMake `FetchContent` |
 
@@ -92,6 +93,7 @@ with optional Python bindings via nanobind and distributed execution through CUD
 - **C++ source suffixes**: Headers use `.h` (not `.hpp`); `.hpp` files are template implementations included from `.h`.
 - **Formatting**: Tabs for C++/CUDA, 2 spaces for YAML/config;
   `.clang-format` disables `SortIncludes` due to cyclic includes.
+- **Comments**: descriptive comments documenting non-obvious functionality.
 - **Column limit**: 150 (with a `TODO` to lower to 128).
 - **C++17 required**, compiler extensions off (`CMAKE_CXX_EXTENSIONS OFF`).
 - **Dependencies**: Fetched via `FetchContent` (fmt, spdlog, nlohmann_json, argparse, magic_enum, TNL, nanobind, PyTNL);
@@ -100,6 +102,7 @@ with optional Python bindings via nanobind and distributed execution through CUD
 - **HIP debug builds**: Use `-O1 -g`, not `-O0`, to avoid ROCm memory-access faults.
 - **Python**: `pyproject.toml` targets Python 3.12; bindings are optional via `TNL_LBM_BUILD_PYTHON`.
 - **No CTest**: Tests are shell scripts invoked post-build, not registered with CMake.
+- **doctest**: C++ unit tests (tests/unit/*.cu) use doctest `TEST_SUITE_BEGIN`/`TEST_SUITE_END`; one binary per module (`test_cpp_units`).
 
 ## ANTI-PATTERNS (THIS PROJECT)
 
@@ -110,6 +113,7 @@ with optional Python bindings via nanobind and distributed execution through CUD
 - **Using `-O0` for HIP debug**: Causes memory-access faults; use `-O1`.
 - **Ignoring `isDDNonZero` / `is3DiracNonZero`**: Dirac-delta callers must check non-zero support explicitly.
 - **Unrestricted viscosity**: `LBM_VISCOSITY` must stay below `1/6` for stability in some setups.
+- **Fenced comments**: Do not add decorative comments with "fences", e.g. `# -----------------` or `// -----------------`.
 
 ## UNIQUE STYLES
 
