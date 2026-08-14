@@ -5,7 +5,9 @@ from __future__ import annotations
 import os
 import pathlib
 import subprocess
-from typing import TYPE_CHECKING
+import time
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 import pytest
@@ -22,7 +24,24 @@ BUILD_DIR = pathlib.Path(
 FieldData = dict[str, np.ndarray]
 
 # Simulations are relatively heavy; guard against hangs in CI.
-DEFAULT_TIMEOUT = 900.0
+# All test simulations are expected to finish well below this limit.
+DEFAULT_TIMEOUT = 200.0
+
+
+@dataclass
+class SimRun:
+    """Record of a single simulation execution for the end-of-session summary."""
+
+    command: list[str]
+    np_ranks: int
+    elapsed: float
+    status: Literal["ok", "failed", "timeout", "launch-error"]
+    exit_code: int | None
+    timeout: float
+
+
+# Populated by run_sim(); printed by the pytest_terminal_summary hook in conftest.py.
+_SIM_RUNS: list[SimRun] = []
 
 
 def _aa_pattern_enabled() -> bool:
@@ -64,6 +83,7 @@ def run_sim(
     if env is not None:
         run_env.update(env)
     print(f"Running simulation: {' '.join(command)}")
+    t0 = time.perf_counter()
     try:
         proc = subprocess.run(
             command,
@@ -74,17 +94,39 @@ def run_sim(
             check=False,
             timeout=timeout,
         )
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
+        elapsed = time.perf_counter() - t0
+        _SIM_RUNS.append(SimRun(command, np_ranks, elapsed, "timeout", None, timeout))
+        # Simulations can print long logs; keep only the tail of stdout (where
+        # the stall is usually visible) but show stderr in full.
+        # The exception may carry partial output as bytes or None depending on timing.
+        exc_stdout = exc.stdout or ""
+        exc_stderr = exc.stderr or ""
+        if isinstance(exc_stdout, bytes):
+            exc_stdout = exc_stdout.decode(errors="replace")
+        if isinstance(exc_stderr, bytes):
+            exc_stderr = exc_stderr.decode(errors="replace")
+        stdout_tail = "\n".join(exc_stdout.splitlines()[-50:])
         pytest.fail(
-            f"simulation timed out after {timeout:.0f}s: {' '.join(command)}",
+            f"simulation timed out after {timeout:.0f}s: {' '.join(command)}\n"
+            f"--- stdout (last 50 lines) ---\n{stdout_tail}\n"
+            f"--- stderr ---\n{exc_stderr}",
             pytrace=False,
         )
     except OSError as exc:
+        elapsed = time.perf_counter() - t0
+        _SIM_RUNS.append(
+            SimRun(command, np_ranks, elapsed, "launch-error", None, timeout)
+        )
         pytest.fail(
             f"cannot launch simulation: {command[0]} ({exc}) — build the project first",
             pytrace=False,
         )
+    elapsed = time.perf_counter() - t0
     if proc.returncode != 0:
+        _SIM_RUNS.append(
+            SimRun(command, np_ranks, elapsed, "failed", proc.returncode, timeout)
+        )
         # Simulations can print long logs; keep only the tail of stdout (where
         # the failure is usually visible) but show stderr in full.
         stdout_tail = "\n".join(proc.stdout.splitlines()[-50:])
@@ -94,6 +136,7 @@ def run_sim(
             f"--- stderr ---\n{proc.stderr}",
             pytrace=False,
         )
+    _SIM_RUNS.append(SimRun(command, np_ranks, elapsed, "ok", proc.returncode, timeout))
     return proc.stdout
 
 

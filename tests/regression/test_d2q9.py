@@ -45,9 +45,6 @@ GEO_SYM_TOP = 8
 
 SIMS = ["sim2d_1", "sim2d_2", "sim2d_hills", "sim2d_Taylor_Green"]
 
-# Taylor-Green decays a vortex for a long physical time even at resolution 1.
-SIM_TIMEOUT = 3600.0
-
 
 @pytest.fixture(scope="module")
 def d2q9_results(workspace: pathlib.Path) -> dict[str, pathlib.Path]:
@@ -64,7 +61,6 @@ def d2q9_results(workspace: pathlib.Path) -> dict[str, pathlib.Path]:
                 adios_config,
             ],
             workdir=workspace,
-            timeout=SIM_TIMEOUT,
         )
         candidates = sorted(workspace.glob(f"results_{sim}_*"))
         assert candidates, f"{sim} produced no results directory"
