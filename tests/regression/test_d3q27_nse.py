@@ -24,8 +24,8 @@ import numpy as np
 import pytest
 
 from tests.lbmtest import (
+    ADIOS_CONFIG,
     BUILD_DIR,
-    PROJECT_ROOT,
     FieldData,
     assert_all_finite,
     assert_mass_conserved,
@@ -40,8 +40,6 @@ if TYPE_CHECKING:
 GEO_WALL = 1
 GEO_INFLOW_LEFT = 3
 GEO_NOTHING = 9
-
-ADI_CONFIG = str(PROJECT_ROOT / "adios2.xml")
 
 SIMS: dict[str, list[str]] = {
     "sim_1": ["--resolution", "1"],
@@ -84,7 +82,7 @@ def nse_results(workspace: pathlib.Path) -> dict[str, SimRun]:
                 BUILD_DIR / "sim_NSE" / SIM_EXE.get(sim, sim),
                 *args,
                 "--adios-config",
-                ADI_CONFIG,
+                ADIOS_CONFIG,
             ],
             workdir=workspace,
         )

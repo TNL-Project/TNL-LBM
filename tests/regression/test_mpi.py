@@ -15,8 +15,8 @@ import numpy as np
 import pytest
 
 from tests.lbmtest import (
+    ADIOS_CONFIG,
     BUILD_DIR,
-    PROJECT_ROOT,
     FieldData,
     assert_all_finite,
     assert_mass_conserved,
@@ -38,7 +38,6 @@ GEO3D_WALL = 1
 GEO3D_INFLOW_LEFT = 3
 GEO3D_NOTHING = 9
 
-ADIOS_CONFIG = str(PROJECT_ROOT / "adios2.xml")
 NP_RANKS = 3
 
 

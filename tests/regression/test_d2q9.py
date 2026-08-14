@@ -25,8 +25,8 @@ import numpy as np
 import pytest
 
 from tests.lbmtest import (
+    ADIOS_CONFIG,
     BUILD_DIR,
-    PROJECT_ROOT,
     FieldData,
     assert_all_finite,
     assert_mass_conserved,
@@ -50,7 +50,6 @@ SIMS = ["sim2d_1", "sim2d_2", "sim2d_hills", "sim2d_Taylor_Green"]
 def d2q9_results(workspace: pathlib.Path) -> dict[str, pathlib.Path]:
     """Run all D2Q9 example simulations and return their results directories."""
     outputs: dict[str, pathlib.Path] = {}
-    adios_config = str(PROJECT_ROOT / "adios2.xml")
     for sim in SIMS:
         run_sim(
             [
@@ -58,7 +57,7 @@ def d2q9_results(workspace: pathlib.Path) -> dict[str, pathlib.Path]:
                 "--resolution",
                 "1",
                 "--adios-config",
-                adios_config,
+                ADIOS_CONFIG,
             ],
             workdir=workspace,
         )
@@ -247,7 +246,7 @@ def sim2d_2_forcing_dir(workspace: pathlib.Path) -> pathlib.Path:
             "--resolution",
             "1",
             "--adios-config",
-            str(PROJECT_ROOT / "adios2.xml"),
+            ADIOS_CONFIG,
             "--use-forcing",
         ],
         workdir=workspace,

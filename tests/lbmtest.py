@@ -21,6 +21,9 @@ BUILD_DIR = pathlib.Path(
     os.environ.get("TNL_LBM_BUILD_DIR", PROJECT_ROOT / "build")
 ).resolve()
 
+ADIOS_CONFIG = PROJECT_ROOT / "adios2.xml"
+ADIOS_CONFIG_SST = PROJECT_ROOT / "adios2_sst.xml"
+
 FieldData = dict[str, np.ndarray]
 
 # Simulations are relatively heavy; guard against hangs in CI.
