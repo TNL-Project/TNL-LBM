@@ -685,12 +685,12 @@ typename State_AMR<NSE>::BLOCK_NSE* State_AMR<NSE>::findBlockById(int level, int
 template <typename NSE>
 void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level, bool c2f_time_centered)
 {
-	for (const InterLevelCoupling& coupling : couplings) {
+	for (InterLevelCoupling& coupling : couplings) {
 		if (coupling.fine_level != fine_level)
 			continue;
 
 		for (std::size_t i = 0; i < coupling.patches.size(); i++) {
-			const AMR_InterfacePatch<NSE>& patch = coupling.patches[i];
+			AMR_InterfacePatch<NSE>& patch = coupling.patches[i];
 			BLOCK_NSE* fine = findBlockById(coupling.fine_level, coupling.fine_block_ids[i]);
 			BLOCK_NSE* coarse = findBlockById(coupling.coarse_level, coupling.coarse_block_ids[i]);
 			if (fine == nullptr || coarse == nullptr)
@@ -719,9 +719,18 @@ void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level, bool c2f_time_c
 
 			const idx3d size{end.x() - begin.x(), end.y() - begin.y(), end.z() - begin.z()};
 
+			// call-site launch-config cache (2026-08-18): the patch extent is
+			// immutable after SimInit, so the logging optimizer runs once
+			// per patch instead of once per fill launch (~12 of 18
+			// per-iteration optimizer calls in the AMR schedule)
+			if (patch.cached_block_size.x == 0)
+				patch.cached_block_size = fine->getCudaBlockSize(size);
+			if (patch.cached_grid_size.x == 0)
+				patch.cached_grid_size = fine->getCudaGridSize(size, patch.cached_block_size);
+
 			TNL::Backend::LaunchConfiguration launch_config;
-			launch_config.blockSize = fine->getCudaBlockSize(size);
-			launch_config.gridSize = fine->getCudaGridSize(size, launch_config.blockSize);
+			launch_config.blockSize = patch.cached_block_size;
+			launch_config.gridSize = patch.cached_grid_size;
 			TNL::Backend::launchKernelAsync(
 				cudaAMR_CoarseToFine<NSE>,
 				launch_config,
@@ -773,12 +782,12 @@ void State_AMR<NSE>::launchFineToCoarseTransfersInterior(int fine_level)
 {
 	const int coarse_level = fine_level - 1;
 
-	for (const InterLevelCoupling& coupling : couplings) {
+	for (InterLevelCoupling& coupling : couplings) {
 		if (coupling.fine_level != fine_level)
 			continue;
 
 		for (std::size_t i = 0; i < coupling.interior_patches.size(); i++) {
-			const AMR_InterfacePatch<NSE>& patch = coupling.interior_patches[i];
+			AMR_InterfacePatch<NSE>& patch = coupling.interior_patches[i];
 			BLOCK_NSE* fine = findBlockById(coupling.fine_level, coupling.interior_fine_block_ids[i]);
 			BLOCK_NSE* coarse = findBlockById(coupling.coarse_level, coupling.interior_coarse_block_ids[i]);
 			if (fine == nullptr || coarse == nullptr)
@@ -800,9 +809,16 @@ void State_AMR<NSE>::launchFineToCoarseTransfersInterior(int fine_level)
 				continue;
 
 			const idx3d size{end.x() - begin.x(), end.y() - begin.y(), end.z() - begin.z()};
+			// call-site launch-config cache (2026-08-18), same rationale as
+			// the C2F launcher (6 of 18 per-iteration optimizer calls)
+			if (patch.cached_block_size.x == 0)
+				patch.cached_block_size = coarse->getCudaBlockSize(size);
+			if (patch.cached_grid_size.x == 0)
+				patch.cached_grid_size = coarse->getCudaGridSize(size, patch.cached_block_size);
+
 			TNL::Backend::LaunchConfiguration launch_config;
-			launch_config.blockSize = coarse->getCudaBlockSize(size);
-			launch_config.gridSize = coarse->getCudaGridSize(size, launch_config.blockSize);
+			launch_config.blockSize = patch.cached_block_size;
+			launch_config.gridSize = patch.cached_grid_size;
 			TNL::Backend::launchKernelAsync(
 				cudaAMR_FineToCoarse<NSE>,
 				launch_config,
