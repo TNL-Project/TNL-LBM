@@ -269,7 +269,6 @@ int main(int argc, char** argv)
 		.scan<'f', float>()
 		.default_value(-1.0f)
 		.nargs(1);
-	program.add_argument("--precision").help("floating point precision").choices("float", "double").default_value(std::string("float")).nargs(1);
 
 	try {
 		program.parse_args(argc, argv);
@@ -283,7 +282,6 @@ int main(int argc, char** argv)
 	const auto adios_config = program.get<std::string>("--adios-config");
 	const auto resolution = program.get<int>("--resolution");
 	const auto max_level = program.get<int>("--max-level");
-	const auto precision = program.get<std::string>("--precision");
 	const auto lattice_viscosity = program.get<float>("--lattice-viscosity");
 
 	if (resolution < 1) {
@@ -291,10 +289,9 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
-	if (precision == "double")
-		run<TraitsDP>(adios_config, resolution, max_level, lattice_viscosity);
-	else
-		run<TraitsSP>(adios_config, resolution, max_level, lattice_viscosity);
+	// SP only (2026-08-18): the DP branch doubled the device-code
+	// instantiation cost of this TU (build-time investigation)
+	run<TraitsSP>(adios_config, resolution, max_level, lattice_viscosity);
 
 	return 0;
 }
