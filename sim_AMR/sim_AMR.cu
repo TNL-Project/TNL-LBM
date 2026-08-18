@@ -97,7 +97,14 @@ struct StateLocal_AMR : State_AMR<NSE>
 };
 
 template <typename NSE>
-void sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 1, int max_level = 1, float lattice_viscosity_override = -1.0f)
+void sim(
+	const std::string& adios_config = "adios2.xml",
+	int RESOLUTION = 1,
+	int max_level = 1,
+	float lattice_viscosity_override = -1.0f,
+	float phys_final_time = 0.5f,
+	float convective_times = 0.0f
+)
 {
 	using idx = typename NSE::TRAITS::idx;
 	using real = typename NSE::TRAITS::real;
@@ -133,9 +140,19 @@ void sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 1, int
 	state.V_0 = PHYS_VELOCITY;
 	state.k = 2 * TNL::pi / (N * PHYS_DL);
 
-	state.nse.physFinalTime = 0.5;	// [s]
+	state.nse.physFinalTime = phys_final_time;	// [s]
 	state.cnt[PRINT].period = 0.01;
 	state.cnt[OUT3D].period = 0.05;
+
+	// convective-time mode (the sim_4 convention, 2026-08-18): with
+	// --convective-times N the run lasts N * L/V_0 seconds and the cadence
+	// scales with the final time (PRINT at final/1000, OUT3D at final/10)
+	if (convective_times > 0) {
+		const real convective_time = PHYS_HEIGHT / PHYS_VELOCITY;	// [s]
+		state.nse.physFinalTime = convective_times * convective_time;
+		state.cnt[PRINT].period = state.nse.physFinalTime / 1000;
+		state.cnt[OUT3D].period = state.nse.physFinalTime / 10;
+	}
 
 	// AMR setup before execute: allocate, set the coarse boundary map, create
 	// the fine block, tag the interface cells, initialize all levels;
@@ -153,7 +170,14 @@ void sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 1, int
 }
 
 template <typename TRAITS = TraitsSP>
-void run(const std::string& adios_config, int resolution, int max_level = 1, float lattice_viscosity = -1.0f)
+void run(
+	const std::string& adios_config,
+	int resolution,
+	int max_level = 1,
+	float lattice_viscosity = -1.0f,
+	float phys_final_time = 0.5f,
+	float convective_times = 0.0f
+)
 {
 	using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
 
@@ -167,7 +191,7 @@ void run(const std::string& adios_config, int resolution, int max_level = 1, flo
 		D3Q27_BC_All,
 		D3Q27_MACRO_Default<TRAITS>>;
 
-	sim<NSE_CONFIG>(adios_config, resolution, max_level, lattice_viscosity);
+	sim<NSE_CONFIG>(adios_config, resolution, max_level, lattice_viscosity, phys_final_time, convective_times);
 }
 
 int main(int argc, char** argv)
@@ -185,6 +209,12 @@ int main(int argc, char** argv)
 		.default_value(-1.0f)
 		.nargs(1);
 	program.add_argument("--precision").help("floating point precision").choices("float", "double").default_value(std::string("float")).nargs(1);
+	program.add_argument("--phys-final-time").help("physical final time [s]").scan<'f', float>().default_value(0.5f).nargs(1);
+	program.add_argument("--convective-times")
+		.help("run N convective times L/V_0 with the sim_4 output cadence (overrides --phys-final-time; 0 = off)")
+		.scan<'f', float>()
+		.default_value(0.0f)
+		.nargs(1);
 
 	try {
 		program.parse_args(argc, argv);
@@ -200,6 +230,8 @@ int main(int argc, char** argv)
 	const auto max_level = program.get<int>("--max-level");
 	const auto precision = program.get<std::string>("--precision");
 	const auto lattice_viscosity = program.get<float>("--lattice-viscosity");
+	const auto phys_final_time = program.get<float>("--phys-final-time");
+	const auto convective_times = program.get<float>("--convective-times");
 
 	if (resolution < 1) {
 		fmt::println(stderr, "CLI error: resolution must be at least 1");
@@ -207,9 +239,9 @@ int main(int argc, char** argv)
 	}
 
 	if (precision == "double")
-		run<TraitsDP>(adios_config, resolution, max_level, lattice_viscosity);
+		run<TraitsDP>(adios_config, resolution, max_level, lattice_viscosity, phys_final_time, convective_times);
 	else
-		run<TraitsSP>(adios_config, resolution, max_level, lattice_viscosity);
+		run<TraitsSP>(adios_config, resolution, max_level, lattice_viscosity, phys_final_time, convective_times);
 
 	return 0;
 }
