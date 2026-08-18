@@ -165,6 +165,32 @@ void createAMRBlocks(LBM<CONFIG>& lbm, const std::vector<AMR_Region<CONFIG>>& re
 		if (region.size_coarse.x() <= 0 || region.size_coarse.y() <= 0 || region.size_coarse.z() <= 0)
 			reject("region size must be positive in all axes");
 
+		// the F2C filter (cudaAMR_FineToCoarse) evaluates a 4-node window
+		// along every axis of the fine interior; a 1-cell-thin axis (fine
+		// interior size 2 with a 1-cell storage overlap) leaves the min-side
+		// skin cell's clamped window reading past the storable fine-DF range
+		if (region.size_coarse.x() < 2)
+			reject(
+				fmt::format(
+					"AMR footprint size below the 2-coarse-cell minimum required by the F2C 4-node filter window on axis X (got {})",
+					region.size_coarse.x()
+				)
+			);
+		if (region.size_coarse.y() < 2)
+			reject(
+				fmt::format(
+					"AMR footprint size below the 2-coarse-cell minimum required by the F2C 4-node filter window on axis Y (got {})",
+					region.size_coarse.y()
+				)
+			);
+		if (region.size_coarse.z() < 2)
+			reject(
+				fmt::format(
+					"AMR footprint size below the 2-coarse-cell minimum required by the F2C 4-node filter window on axis Z (got {})",
+					region.size_coarse.z()
+				)
+			);
+
 		// nesting: the region must be fully contained in the coarsest-level global domain
 		if (region.origin_coarse.x() < 0 || region.origin_coarse.y() < 0 || region.origin_coarse.z() < 0
 			|| region.origin_coarse.x() + region.size_coarse.x() > lbm.lat.global.x()

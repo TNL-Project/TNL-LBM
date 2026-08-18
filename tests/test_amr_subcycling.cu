@@ -31,7 +31,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <set>
 #include <string>
+#include <tuple>
 
 #include <fmt/core.h>
 
@@ -370,6 +372,46 @@ double maxAbsDiffSnapshot(const BLOCK& block, const HostSnapshot& snap)
 	return max_diff;
 }
 
+using dreal = typename TRAITS::dreal;
+
+// snapshot-vs-snapshot variant of maxAbsDiffSnapshot (the subject's init is
+// gone by the time the reference state exists -- the State constructor
+// registers a global spdlog logger per instance, so the two states are
+// compared through their snapshots)
+double maxAbsDiffSnapshots(const HostSnapshot& a, const HostSnapshot& b)
+{
+	double max_diff = 0;
+	for (std::size_t i = 0; i < a.dfs.size(); i++)
+		max_diff = std::max(max_diff, std::abs(a.dfs[i] - b.dfs[i]));
+	for (std::size_t i = 0; i < a.macro.size(); i++)
+		max_diff = std::max(max_diff, std::abs(a.macro[i] - b.macro[i]));
+	return max_diff;
+}
+
+// scan-order capture of a coarse block's (map tag, macro quad) per local
+// cell -- the cross-state comparison carrier of Test 4's kernels-only
+// reference lock (B.5)
+struct CoarseMacroScan
+{
+	std::vector<int> map;
+	std::vector<double> vals;  // 4 entries per cell (rho, vx, vy, vz), scan order
+};
+
+CoarseMacroScan captureCoarseMacros(const BLOCK& block)
+{
+	CoarseMacroScan scan;
+	for (idx z = 0; z < block.local.z(); z++)
+		for (idx y = 0; y < block.local.y(); y++)
+			for (idx x = 0; x < block.local.x(); x++) {
+				scan.map.push_back(block.hmap(x, y, z));
+				scan.vals.push_back(block.hmacro(NSE_CONFIG::MACRO::e_rho, x, y, z));
+				scan.vals.push_back(block.hmacro(NSE_CONFIG::MACRO::e_vx, x, y, z));
+				scan.vals.push_back(block.hmacro(NSE_CONFIG::MACRO::e_vy, x, y, z));
+				scan.vals.push_back(block.hmacro(NSE_CONFIG::MACRO::e_vz, x, y, z));
+			}
+	return scan;
+}
+
 // Test 3: max_level == 0 fallthrough must be identical to the base driver.
 // The AMR state and the plain base State run SEQUENTIALLY (one instance at
 // a time) and the AMR snapshots are compared against the sibling's live
@@ -460,93 +502,565 @@ void test_max_level_zero_fallthrough()
 	}
 }
 
-// Test 4: after one Berger-Colella cycle every coarse cell tagged
-// GEO_AMR_INTERFACE must hold real macroscopic values, not the
-// (rho = 1, v = 0) initialization state. The interface ring is
-// collision-active (D3Q27_BC_All::doCollision returns true since
-// commit 5237b2f), so the kernel streams and collides these cells;
-// the fine-to-coarse transfer additionally overwrites their DFs
-// and macros at the end of each coarse step.
+// Test 4 (B.5 lock, sole variant since D.1): after one Berger-Colella
+// cycle every ring cell's macros must equal the KERNEL-PRODUCED values.
+// Ring cells are collision-active, and no coupling channel writes them
+// (the skin F2C rectangles lie inside the footprint = GEO_NOTHING region,
+// disjoint from the ring; C2F writes fine ghost cells only), so the kernel
+// is their only writer. Detection: compare against a DETERMINISTIC
+// kernels-only reference -- the same initialization advanced by the SAME
+// SimUpdate with ALL coupling launches disabled (couplings.clear() after
+// SimInit; every transfer helper is then a silent no-op with empty
+// couplings, while the parity, counter, and kernel flow of SimUpdate stay
+// identical). Bitwise equality is the fp-tightest form of "fp-level": in
+// both runs the only writer of ring cells is the coarse kernel on
+// identical input, so the expected maximum difference is exactly 0
+// (assert == 0 and print the max). NOTE: the reference's FOOTPRINT cells
+// intentionally diverge (frozen init state, never skin-written), so every
+// cross-state comparison below is map-selected on GEO_AMR_INTERFACE.
 //
-// This exercises the production pipeline end to end: the fine block's
-// storage overlap allocation in createAMRBlocks (commit 089e47a raised
-// it to 2 for level > 0), the coarse-to-fine fill extent, and the
-// fine-to-coarse storability guard. Regression guard: with a 1-cell
-// fine overlap the F2C kernel skips every ring cell (subcells 2 cells
-// deep are not storable) and the ring keeps stale init values; with
-// collision-inactive bc.h the kernel writes a (rho=1, v=0) placeholder
-// that F2C was supposed to overwrite but couldn't reach.
+// Why not the placeholder probe alone: the (rho = 1, v = 0) freshness the
+// historical test asserts does NOT detect a coupling channel's absence on
+// this driver path -- on the non-uniform sine IC the collision-active
+// kernel computes real macros at ring cells and evicts (1,0,0,0) either
+// way (B.1 finding, mock-matrix.md subcycling item 4). The kernels-only
+// reference comparison closes that blind spot and keeps this test the
+// regression lock for the placeholder-defect class: a resurrected coupling
+// write onto ring cells (e.g. a re-added ring launch) overwrites the ring
+// macros with F2C-filtered values (trips the reference comparison), a
+// collision-inactive kernel regression produces placeholders at ring cells
+// (trips the kept placeholder probe), and a coupling channel misfiring
+// onto ring cells trips the reference comparison.
+//
+// D.1 (2026-08-16, gate B ruling): the ring fine-to-coarse launch this
+// test's former detection demonstration emulated was HARD-DELETED. The
+// demonstration block (a third state + one manual emulation of the retired
+// ring launch + its teeth/confinement assertions) was removed with it: at
+// storage_overlap = 1 the emulated launch is a no-op BY DESIGN (the F2C
+// kernel's per-cell storability guard skips every ring cell), which is the
+// one red assertion this file carried (issues.md, Phase C.3). The gate-
+// relevant LOCK-1 (bitwise kernels-only reference) and LOCK-2 (placeholder
+// probe) assertions below are unchanged and remain green.
 void test_interface_ring_freshness()
 {
 	lat_t lat = makeLattice();
-	const std::string id = fmt::format("test_amr_subcycling_{}_ring", pattern_name);
-	StateLocal_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/1);
-	if (! state.canCompute()) {
-		report(false, "Test 4 setup: state.canCompute()");
-		return;
-	}
 
-	// one centered level-1 region with the coarse footprint [4, 12)^3: the
-	// GEO_AMR_INTERFACE ring is the 10^3 - 8^3 = 488 shell cells around it
-	createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>("1 4 4 4 8 8 8"));
-
-	state.SimInit();
-	if (state.nse.terminate) {
-		report(false, "Test 4 setup: SimInit triggered the terminate flag");
-		return;
-	}
-
-	BLOCK* coarse = state.nse.getBlocksAtLevel(0).front();
-
-	// force macroscopic output inside the kernel so that the
-	// GEO_AMR_INTERFACE cells' macro state is visible in dmacro on
-	// the host after one cycle: the kernel computes real macros for
-	// these collision-active cells, and the fine-to-coarse transfer
-	// overwrites them at the end of the cycle. (Test 3 uses the same
-	// flag to make single-step kernel effects observable.)
-	state.cnt[OUT3DCUT].period = 1e-30;
-
-	// one coupled Berger-Colella cycle (1 coarse step + 2 fine substeps
-	// with the inter-level transfers in between)
-	state.updateKernelData();
-	state.SimUpdate();
-	if (state.nse.terminate) {
-		report(false, "Test 4: SimUpdate triggered the terminate flag");
-		return;
-	}
-
-	coarse->copyMapToHost();
-	coarse->copyMacroToHost();
-
-	idx ring_cells = 0;
-	idx placeholder_cells = 0;
-	for (idx z = 0; z < coarse->local.z(); z++) {
-		for (idx y = 0; y < coarse->local.y(); y++) {
-			for (idx x = 0; x < coarse->local.x(); x++) {
-				if (coarse->hmap(x, y, z) != NSE_CONFIG::BC::GEO_AMR_INTERFACE)
-					continue;
-				ring_cells++;
-				const auto rho = coarse->hmacro(NSE_CONFIG::MACRO::e_rho, x, y, z);
-				const auto vx = coarse->hmacro(NSE_CONFIG::MACRO::e_vx, x, y, z);
-				const auto vy = coarse->hmacro(NSE_CONFIG::MACRO::e_vy, x, y, z);
-				const auto vz = coarse->hmacro(NSE_CONFIG::MACRO::e_vz, x, y, z);
-				if (rho == static_cast<real>(1) && vx == static_cast<real>(0) && vy == static_cast<real>(0) && vz == static_cast<real>(0)) {
-					if (placeholder_cells < 3)
-						fmt::println("  placeholder at ring cell ({}, {}, {})", x, y, z);
-					placeholder_cells++;
-				}
-			}
+	// subject: one full coupled Berger-Colella cycle
+	CoarseMacroScan subject;
+	HostSnapshot subject_init;
+	{
+		const std::string id = fmt::format("test_amr_subcycling_{}_ring", pattern_name);
+		StateLocal_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/1);
+		if (! state.canCompute()) {
+			report(false, "Test 4 setup: state.canCompute()");
+			return;
 		}
+
+		// one centered level-1 region with the coarse footprint [4, 12)^3: the
+		// GEO_AMR_INTERFACE ring is the 10^3 - 8^3 = 488 shell cells around it
+		createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>("1 4 4 4 8 8 8"));
+
+		state.SimInit();
+		if (state.nse.terminate) {
+			report(false, "Test 4 setup: SimInit triggered the terminate flag");
+			return;
+		}
+
+		BLOCK* coarse = state.nse.getBlocksAtLevel(0).front();
+		subject_init = snapshotBlock(*coarse);
+
+		// force macroscopic output inside the kernel (same flag as the
+		// default variant) so the kernel-produced ring macros land in dmacro
+		state.cnt[OUT3DCUT].period = 1e-30;
+
+		// one coupled Berger-Colella cycle (1 coarse step + 2 fine substeps;
+		// ring F2C removed in D.1, the skin F2C transfer runs unconditionally
+		// as the only fine-to-coarse channel)
+		state.updateKernelData();
+		state.SimUpdate();
+		if (state.nse.terminate) {
+			report(false, "Test 4: SimUpdate triggered the terminate flag");
+			return;
+		}
+
+		coarse->copyMapToHost();
+		coarse->copyMacroToHost();
+		subject = captureCoarseMacros(*coarse);
 	}
 
-	// the tag layout is fixed by markAMRInterface: without the 1-cell shell
-	// the freshness check below would be vacuous
-	report(ring_cells == 10 * 10 * 10 - 8 * 8 * 8, fmt::format("Test 4 setup: GEO_AMR_INTERFACE shell has 488 cells around the 8^3 footprint (got {})", ring_cells));
-	// the core assertion: no ring cell may keep the placeholder after a
-	// coupled cycle -- the fine-to-coarse transfer must cover all of them
+	// deterministic kernels-only reference (the plan's construction):
+	// same initialization, advanced by the SAME SimUpdate with ALL coupling
+	// launches disabled
+	CoarseMacroScan reference;
+	{
+		const std::string id = fmt::format("test_amr_subcycling_{}_ringref", pattern_name);
+		StateLocal_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/1);
+		if (! state.canCompute()) {
+			report(false, "Test 4 setup: reference state.canCompute()");
+			return;
+		}
+		createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>("1 4 4 4 8 8 8"));
+		state.SimInit();
+		if (state.nse.terminate) {
+			report(false, "Test 4 setup: reference SimInit triggered the terminate flag");
+			return;
+		}
+
+		// deterministic-initialization anchor (Test 3 proves the init is
+		// reproducible bitwise across instances)
+		const HostSnapshot reference_init = snapshotBlock(*state.nse.getBlocksAtLevel(0).front());
+		const double init_diff = maxAbsDiffSnapshots(subject_init, reference_init);
+		report(
+			init_diff == 0,
+			fmt::format("Test 4 reference init: kernels-only reference is bitwise identical to the subject after SimInit (max |diff| = {:.3e})", init_diff)
+		);
+
+		// disable ALL coupling launches (C2F, ring F2C, interior/skin F2C):
+		// clear() after SimInit leaves the SimUpdate parity/counter/kernel
+		// flow untouched and makes every transfer launch a no-op
+		state.couplings.clear();
+		state.cnt[OUT3DCUT].period = 1e-30;
+		state.updateKernelData();
+		state.SimUpdate();
+		if (state.nse.terminate) {
+			report(false, "Test 4: reference SimUpdate triggered the terminate flag");
+			return;
+		}
+
+		BLOCK* coarse = state.nse.getBlocksAtLevel(0).front();
+		coarse->copyMapToHost();
+		coarse->copyMacroToHost();
+		reference = captureCoarseMacros(*coarse);
+	}
+
+	// assertions
+	// the ring layout is fixed by markAMRInterface: 488 shell cells around
+	// the 8^3 footprint (same geometry in all three scans)
+	idx ring_cells = 0;
+	for (const int tag : subject.map)
+		if (tag == NSE_CONFIG::BC::GEO_AMR_INTERFACE)
+			ring_cells++;
+	report(
+		ring_cells == 10 * 10 * 10 - 8 * 8 * 8,
+		fmt::format("Test 4 setup: GEO_AMR_INTERFACE shell has 488 cells around the 8^3 footprint (got {})", ring_cells)
+	);
+
+	// LOCK 1 (the plan's B.5 replacement assertion): every ring cell's
+	// macros equal the kernels-only reference, bitwise; LOCK 2 (kept): no
+	// ring cell holds the (rho = 1, v = 0) placeholder (collision-inactive
+	// defect class: ring cells would hold fresh IC values when their only
+	// writer regressed)
+	double max_ring_diff = 0;
+	idx placeholder_cells = 0;
+	for (std::size_t i = 0, c = 0; i < subject.map.size(); i++, c += 4) {
+		if (subject.map[i] != NSE_CONFIG::BC::GEO_AMR_INTERFACE)
+			continue;
+		for (int m = 0; m < 4; m++)
+			max_ring_diff = std::max(max_ring_diff, std::abs(subject.vals[c + m] - reference.vals[c + m]));
+		if (subject.vals[c] == static_cast<real>(1) && subject.vals[c + 1] == static_cast<real>(0) && subject.vals[c + 2] == static_cast<real>(0)
+			&& subject.vals[c + 3] == static_cast<real>(0))
+			placeholder_cells++;
+	}
+	report(
+		max_ring_diff == 0,
+		fmt::format(
+			"Test 4 ring macros kernel-produced (ring F2C removed, D.1): all {} GEO_AMR_INTERFACE cells' macros are bitwise identical to the kernels-only reference (max |diff| = {:.3e})",
+			ring_cells,
+			max_ring_diff
+		)
+	);
 	report(
 		placeholder_cells == 0,
-		fmt::format("Test 4 freshness: all {} GEO_AMR_INTERFACE cells hold coupling-produced macros ({} still hold the rho=1, v=0 placeholder)", ring_cells, placeholder_cells)
+		fmt::format(
+			"Test 4 freshness: all {} GEO_AMR_INTERFACE cells hold kernel-produced macros ({} still hold the rho=1, v=0 placeholder)",
+			ring_cells,
+			placeholder_cells
+		)
+	);
+
+}
+
+// Test 5: State_AMR::computeConservationStats must EXCLUDE the coarse cells
+// hidden under the fine footprint (tagged GEO_NOTHING) from the mass,
+// momentum, and per-level kinetic-energy sums - the same physical region is
+// already counted on the fine level, so adding the coarse-level (frozen
+// placeholder) hidden cells double-counts it. The GEO_AMR_INTERFACE ring
+// cells are real coarse fluid cells and must KEEP counting (they are part
+// of the reference sums below).
+// [B.5 catalog note (mock-matrix.md subcycling items 1-3), updated for the
+// D.1 single-configuration reality: the printed conservation values are the
+// skin-era numbers (mass 4.120695e+03, KE L0 4.285964e-04, KE L1
+// 2.435120e-04 bitwise) -- the ring macros are kernel-produced since the
+// ring-F2C launch was removed (gate B ruling, D.1 hard-delete); the
+// pre-deletion default-arm values (mass 4.120714e+03, KE L0 4.170924e-04)
+// are historical. The SimInit geometry line reads "6 interface patches, 6
+// interior patches" (the 8^3 footprint's skin rectangles). This test's
+// assertions are metric-vs-reference internal consistency and do not pin
+// the feedback path, so NOTHING was adapted here in either transition.]
+//
+// Production-pipeline setup identical to Test 4: one coupled Berger-Colella
+// cycle populates real macros everywhere; then the hidden cells' macros are
+// replaced by unmistakable sentinel values (pushed to the device, because
+// the metric refreshes the host mirrors from the device) and the metric is
+// re-evaluated. The metric must be INVARIANT to the sentinel injection and
+// equal to a direct host-side reference sum that excludes exactly the
+// GEO_NOTHING cells. A single-level (max_level == 0) sibling verifies that
+// the exclusion is keyed to the tag, not to "has a finer level": with no
+// GEO_NOTHING cells present, the full mass is still counted.
+struct RefStats
+{
+	double mass = 0, mx = 0, my = 0, mz = 0;
+	std::vector<double> ke;
+	long hidden = 0;
+};
+
+// direct host-side reference of the intended metric semantics: sum rho,
+// rho*u and per-level 0.5*rho*|u|^2 over every local lattice site EXCEPT
+// cells tagged GEO_NOTHING, with the same per-level volume weighting (1/8^L)
+template <typename STATE>
+RefStats computeReferenceStats(const STATE& state)
+{
+	RefStats ref;
+	ref.ke.assign(state.nse.max_level + 1, 0.0);
+	for (const auto& block : state.nse.blocks) {
+		const double volume_factor = std::pow(0.5, 3.0 * block.level);
+		for (idx x = block.offset.x(); x < block.offset.x() + block.local.x(); x++)
+			for (idx z = block.offset.z(); z < block.offset.z() + block.local.z(); z++)
+				for (idx y = block.offset.y(); y < block.offset.y() + block.local.y(); y++) {
+					if (block.hmap(x, y, z) == NSE_CONFIG::BC::GEO_NOTHING) {
+						ref.hidden++;
+						continue;
+					}
+					const double rho = block.hmacro(NSE_CONFIG::MACRO::e_rho, x, y, z);
+					const double vx = block.hmacro(NSE_CONFIG::MACRO::e_vx, x, y, z);
+					const double vy = block.hmacro(NSE_CONFIG::MACRO::e_vy, x, y, z);
+					const double vz = block.hmacro(NSE_CONFIG::MACRO::e_vz, x, y, z);
+					ref.mass += rho * volume_factor;
+					ref.mx += rho * vx * volume_factor;
+					ref.my += rho * vy * volume_factor;
+					ref.mz += rho * vz * volume_factor;
+					ref.ke[block.level] += 0.5 * rho * (vx * vx + vy * vy + vz * vz);
+				}
+	}
+	return ref;
+}
+
+// relative-or-absolute closeness: the metric accumulates via OpenMP atomics
+// (summation order varies between calls), so exact equality is not expected;
+// the double-count signal (512 hidden cells with sentinel rho) exceeds 9e4
+// and dwarfs both this tolerance and any reassociation noise
+bool closeRel(double a, double b)
+{
+	return std::abs(a - b) <= 1e-6 * std::max({1.0, std::abs(a), std::abs(b)});
+}
+
+void test_conservation_hidden_cell_exclusion()
+{
+	lat_t lat = makeLattice();
+
+	// two-level state (scope-limited: the State constructor registers a
+	// global spdlog logger per instance - see Test 3)
+	{
+		const std::string id = fmt::format("test_amr_subcycling_{}_cons", pattern_name);
+		StateLocal_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/1);
+		if (! state.canCompute()) {
+			report(false, "Test 5 setup: state.canCompute()");
+			return;
+		}
+
+		// same centered level-1 region as Test 4: coarse footprint [4, 12)^3
+		createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>("1 4 4 4 8 8 8"));
+
+		state.SimInit();
+		if (state.nse.terminate) {
+			report(false, "Test 5 setup: SimInit triggered the terminate flag");
+			return;
+		}
+
+		// one coupled Berger-Colella cycle populates real macros everywhere
+		// on both levels (same flag as Tests 3 and 4)
+		state.cnt[OUT3DCUT].period = 1e-30;
+		state.updateKernelData();
+		state.SimUpdate();
+		if (state.nse.terminate) {
+			report(false, "Test 5: SimUpdate triggered the terminate flag");
+			return;
+		}
+
+		BLOCK* coarse = state.nse.getBlocksAtLevel(0).front();
+		coarse->copyMapToHost();
+
+		// metric BEFORE the sentinel injection (the metric refreshes the
+		// block host mirrors from the device itself)
+		const AMRConservationStats s0 = state.computeConservationStats();
+
+		idx hidden = 0;
+		for (idx z = 0; z < coarse->local.z(); z++)
+			for (idx y = 0; y < coarse->local.y(); y++)
+				for (idx x = 0; x < coarse->local.x(); x++)
+					if (coarse->hmap(x, y, z) == NSE_CONFIG::BC::GEO_NOTHING)
+						hidden++;
+		report(hidden == 8 * 8 * 8, fmt::format("Test 5 setup: GEO_NOTHING footprint has exactly 512 coarse cells (got {})", hidden));
+		if (hidden == 0)
+			return;
+
+		// unmistakable sentinel macros on the hidden cells: written to the
+		// host mirror and pushed to the device (the metric's own D2H copy
+		// would clobber host-side writes otherwise)
+		const real sentinel_rho = 177.0f;
+		const real sentinel_vx = 0.5f, sentinel_vy = -0.25f, sentinel_vz = 0.125f;
+		for (idx z = 0; z < coarse->local.z(); z++)
+			for (idx y = 0; y < coarse->local.y(); y++)
+				for (idx x = 0; x < coarse->local.x(); x++) {
+					if (coarse->hmap(x, y, z) != NSE_CONFIG::BC::GEO_NOTHING)
+						continue;
+					coarse->hmacro(NSE_CONFIG::MACRO::e_rho, x, y, z) = sentinel_rho;
+					coarse->hmacro(NSE_CONFIG::MACRO::e_vx, x, y, z) = sentinel_vx;
+					coarse->hmacro(NSE_CONFIG::MACRO::e_vy, x, y, z) = sentinel_vy;
+					coarse->hmacro(NSE_CONFIG::MACRO::e_vz, x, y, z) = sentinel_vz;
+				}
+		coarse->copyMacroToDevice();
+
+		// metric AFTER the sentinel injection (refreshes the host mirrors
+		// again - the reference below reads the same mirrors)
+		const AMRConservationStats s1 = state.computeConservationStats();
+		const RefStats ref = computeReferenceStats(state);
+		report(ref.hidden == 8 * 8 * 8, fmt::format("Test 5 reference: exactly 512 hidden cells excluded from the reference sums (got {})", ref.hidden));
+
+		// the sentinel injection must be invisible to the metric on every
+		// accumulated quantity (pre-fix the shift is ~9e4 on the mass)
+		const double inv_diff = std::max(
+			{std::abs(s1.total_mass - s0.total_mass),
+			 std::abs(s1.total_momentum_x - s0.total_momentum_x),
+			 std::abs(s1.total_momentum_y - s0.total_momentum_y),
+			 std::abs(s1.total_momentum_z - s0.total_momentum_z),
+			 std::abs(s1.per_level_kinetic_energy.at(0) - s0.per_level_kinetic_energy.at(0)),
+			 std::abs(s1.per_level_kinetic_energy.at(1) - s0.per_level_kinetic_energy.at(1))});
+		report(
+			closeRel(s1.total_mass, s0.total_mass) && closeRel(s1.total_momentum_x, s0.total_momentum_x)
+				&& closeRel(s1.total_momentum_y, s0.total_momentum_y) && closeRel(s1.total_momentum_z, s0.total_momentum_z)
+				&& closeRel(s1.per_level_kinetic_energy.at(0), s0.per_level_kinetic_energy.at(0))
+				&& closeRel(s1.per_level_kinetic_energy.at(1), s0.per_level_kinetic_energy.at(1)),
+			fmt::format("Test 5 hidden-cell exclusion: conservation stats are invariant to sentinel macros injected into GEO_NOTHING cells (max |diff| = {:.3e})", inv_diff)
+		);
+
+		// the metric must equal the reference that excludes exactly the
+		// GEO_NOTHING cells (this also proves the GEO_AMR_INTERFACE ring
+		// cells keep counting: they are part of the reference sums)
+		report(
+			closeRel(s1.total_mass, ref.mass),
+			fmt::format("Test 5 mass: metric equals the reference sum that excludes exactly the GEO_NOTHING cells (metric = {:.6e}, ref = {:.6e})", s1.total_mass, ref.mass)
+		);
+		report(
+			closeRel(s1.total_momentum_x, ref.mx) && closeRel(s1.total_momentum_y, ref.my) && closeRel(s1.total_momentum_z, ref.mz),
+			fmt::format(
+				"Test 5 momentum: metric equals the reference sum that excludes exactly the GEO_NOTHING cells (metric = {:.6e}, {:.6e}, {:.6e}; ref = {:.6e}, {:.6e}, {:.6e})",
+				s1.total_momentum_x, s1.total_momentum_y, s1.total_momentum_z, ref.mx, ref.my, ref.mz
+			)
+		);
+		report(
+			s1.per_level_kinetic_energy.size() == 2 && ref.ke.size() == 2 && closeRel(s1.per_level_kinetic_energy.at(0), ref.ke.at(0))
+				&& closeRel(s1.per_level_kinetic_energy.at(1), ref.ke.at(1)),
+			fmt::format("Test 5 per-level kinetic energy: metric matches the reference (L0 metric = {:.6e} ref = {:.6e}; L1 metric = {:.6e} ref = {:.6e})",
+				s1.per_level_kinetic_energy.at(0),
+				ref.ke.at(0),
+				s1.per_level_kinetic_energy.at(1),
+				ref.ke.at(1))
+		);
+		report(s0.total_mass > 0 && s1.total_mass > 0, "Test 5 sanity: total mass is nonzero with two levels");
+	}
+
+	// single-level sibling: no fine block, hence no GEO_NOTHING cells - the
+	// exclusion must be keyed to the tag, not to "has a finer level", so ALL
+	// of the mass is still counted
+	{
+		const std::string id = fmt::format("test_amr_subcycling_{}_cons0", pattern_name);
+		StateLocal_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true});
+		if (! state.canCompute()) {
+			report(false, "Test 5 single-level setup: state.canCompute()");
+			return;
+		}
+
+		state.SimInit();
+		if (state.nse.terminate) {
+			report(false, "Test 5 single-level setup: SimInit triggered the terminate flag");
+			return;
+		}
+
+		state.cnt[OUT3DCUT].period = 1e-30;
+		state.updateKernelData();
+		state.SimUpdate();
+		if (state.nse.terminate) {
+			report(false, "Test 5 single-level: SimUpdate triggered the terminate flag");
+			return;
+		}
+
+		const AMRConservationStats s = state.computeConservationStats();
+		const RefStats ref = computeReferenceStats(state);
+		report(ref.hidden == 0, fmt::format("Test 5 single-level: no GEO_NOTHING cells present (got {})", ref.hidden));
+		report(
+			closeRel(s.total_mass, ref.mass) && s.total_mass > 1000,
+			fmt::format("Test 5 single-level: the full mass is counted when no exclusion tag exists (metric = {:.6e}, ref = {:.6e})", s.total_mass, ref.mass)
+		);
+		report(s.per_level_kinetic_energy.size() == 1, "Test 5 single-level: one per-level kinetic-energy entry");
+	}
+}
+
+// Test 6 (F3 F-2 lock): the interior_patches built by buildCouplings must
+// be a DISJOINT partition of the 1-coarse-cell-deep face shell INSIDE the
+// fine footprint (volume = prod(gs) - prod(max(gs - 2, 0)) coarse cells),
+// for on-cube and thin-axis footprints alike. Every pushed rectangle must
+// bounds-check against the footprint and be non-empty (the clip must DROP
+// zero-extent degenerate rectangles - a thin axis yields neither empty nor
+// duplicate rectangles). Exact integer geometry - no tolerances.
+void check_skin_partition(const char* config, const idx3d& go, const idx3d& gs, int expected_rects, const char* label)
+{
+	lat_t lat = makeLattice();
+	const std::string id = fmt::format("test_amr_subcycling_{}_skin_{}", pattern_name, label);
+	StateLocal_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/1);
+	if (! state.canCompute()) {
+		report(false, fmt::format("Test 6 {} setup: state.canCompute()", label));
+		return;
+	}
+	createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>(config));
+	state.SimInit();
+	if (state.nse.terminate) {
+		report(false, fmt::format("Test 6 {} setup: SimInit triggered the terminate flag", label));
+		return;
+	}
+
+	if (state.couplings.size() != 1) {
+		report(false, fmt::format("Test 6 {} setup: exactly one inter-level coupling was built (got {})", label, state.couplings.size()));
+		return;
+	}
+	const auto& coupling = state.couplings.front();
+	const auto& rects = coupling.interior_patches;
+
+	// (iii) every rectangle bounds-checks against the footprint and is
+	// non-empty; collect cell coverage as a set of global coarse coordinates
+	std::set<std::tuple<idx, idx, idx>> covered;
+	std::size_t pushed_cells = 0;
+	bool refs_ok = rects.size() == coupling.interior_coarse_block_ids.size() && rects.size() == coupling.interior_fine_block_ids.size();
+	bool bounds_ok = true;
+	for (std::size_t i = 0; i < rects.size(); i++) {
+		const BLOCK* coarse = state.findBlockById(coupling.coarse_level, coupling.interior_coarse_block_ids[i]);
+		const BLOCK* fine = state.findBlockById(coupling.fine_level, coupling.interior_fine_block_ids[i]);
+		if (coarse == nullptr || fine == nullptr) {
+			refs_ok = false;
+			continue;
+		}
+		const idx3d begin{
+			rects[i].coarse_origin.x() + coarse->offset.x(), rects[i].coarse_origin.y() + coarse->offset.y(), rects[i].coarse_origin.z() + coarse->offset.z()};
+		const idx3d end{begin.x() + rects[i].coarse_size.x(), begin.y() + rects[i].coarse_size.y(), begin.z() + rects[i].coarse_size.z()};
+		// non-empty and fully inside the footprint [go, go + gs)
+		if (rects[i].coarse_size.x() <= 0 || rects[i].coarse_size.y() <= 0 || rects[i].coarse_size.z() <= 0 || begin.x() < go.x()
+			|| begin.y() < go.y() || begin.z() < go.z() || end.x() > go.x() + gs.x() || end.y() > go.y() + gs.y() || end.z() > go.z() + gs.z())
+			bounds_ok = false;
+		for (idx x = begin.x(); x < end.x(); x++)
+			for (idx y = begin.y(); y < end.y(); y++)
+				for (idx z = begin.z(); z < end.z(); z++) {
+					covered.insert({x, y, z});
+					pushed_cells++;
+				}
+	}
+	report(
+		refs_ok && static_cast<int>(rects.size()) == expected_rects,
+		fmt::format("Test 6 {}: exactly {} non-degenerate skin rectangles pushed (got {})", label, expected_rects, rects.size())
+	);
+	report(bounds_ok, fmt::format("Test 6 {}: every skin rectangle is non-empty and lies inside the footprint", label));
+
+	// (i) pairwise disjoint: the number of pushed cells equals the set size
+	// (an overlap or a duplicate rectangle would shrink the set)
+	report(
+		pushed_cells == covered.size(),
+		fmt::format("Test 6 {}: skin rectangles are pairwise disjoint ({} cells pushed, {} distinct)", label, pushed_cells, covered.size())
+	);
+
+	// (ii) the union equals exactly the 1-cell-deep face shell INSIDE the
+	// footprint: footprint volume minus the (gs - 2) interior volume
+	std::set<std::tuple<idx, idx, idx>> shell;
+	for (idx x = go.x(); x < go.x() + gs.x(); x++)
+		for (idx y = go.y(); y < go.y() + gs.y(); y++)
+			for (idx z = go.z(); z < go.z() + gs.z(); z++)
+				if (x == go.x() || x == go.x() + gs.x() - 1 || y == go.y() || y == go.y() + gs.y() - 1 || z == go.z() || z == go.z() + gs.z() - 1)
+					shell.insert({x, y, z});
+	const idx3d inner{std::max(gs.x() - 2, idx(0)), std::max(gs.y() - 2, idx(0)), std::max(gs.z() - 2, idx(0))};
+	const long analytic = static_cast<long>(gs.x()) * gs.y() * gs.z() - static_cast<long>(inner.x()) * inner.y() * inner.z();
+	report(shell.size() == static_cast<std::size_t>(analytic), fmt::format("Test 6 {} sanity: analytic shell size {} matches the enumerated shell", label, analytic));
+	report(
+		covered == shell,
+		fmt::format(
+			"Test 6 {}: skin-rectangle union equals exactly the 1-cell-deep face shell of the footprint ({} of {} cells)",
+			label,
+			covered.size(),
+			shell.size()
+		)
+	);
+}
+
+void test_skin_partition_geometry()
+{
+	check_skin_partition("1 4 4 4 8 8 8", {4, 4, 4}, {8, 8, 8}, 6, "8x8x8");
+	check_skin_partition("1 4 4 4 3 3 3", {4, 4, 4}, {3, 3, 3}, 6, "3x3x3");
+	// thin x-axis (2 coarse cells = the F2C-window minimum): only the two
+	// x-normal faces survive the clip (the y/z interior ranges are empty)
+	check_skin_partition("1 4 4 4 2 8 8", {4, 4, 4}, {2, 8, 8}, 2, "2x8x8");
+}
+
+// Test 7 (F3 F-1 lock): a refinement region below the 2-coarse-cell minimum
+// on ANY axis is rejected by createAMRBlocks' validation (the F2C 4-node
+// filter window would otherwise read out of the storable fine-DF range);
+// the rejection must happen in the read-only phase (no partial block
+// creation) and the minimum valid [2,...] footprint must still pass.
+void test_footprint_min_size_validation()
+{
+	lat_t lat = makeLattice();
+	const std::string id = fmt::format("test_amr_subcycling_{}_minfp", pattern_name);
+	StateLocal_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/1);
+	if (! state.canCompute()) {
+		report(false, "Test 7 setup: state.canCompute()");
+		return;
+	}
+
+	const std::size_t level0_blocks = state.nse.blocks.size();
+	for (const auto& [config, axis] : {
+			 std::pair{"1 4 4 4 1 8 8", "X"},
+			 std::pair{"1 4 4 4 8 1 8", "Y"},
+			 std::pair{"1 4 4 4 8 8 1", "Z"},
+		 }) {
+		std::string message;
+		try {
+			createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>(config));
+		}
+		catch (const std::runtime_error& e) {
+			message = e.what();
+		}
+		const std::string expected = fmt::format(
+			"AMR footprint size below the 2-coarse-cell minimum required by the F2C 4-node filter window on axis {} (got 1)", axis
+		);
+		report(
+			message.find(expected) != std::string::npos && state.nse.blocks.size() == level0_blocks,
+			fmt::format(
+				"Test 7: a 1-coarse-cell-thin footprint on axis {} is rejected in the read-only validation phase ({})",
+				axis,
+				message.empty() ? "no exception thrown" : fmt::format("threw: {}", message)
+			)
+		);
+	}
+
+	// the minimum valid footprint ([2, 8, 8] coarse cells) must be accepted
+	std::string message;
+	try {
+		createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>("1 4 4 4 2 8 8"));
+	}
+	catch (const std::runtime_error& e) {
+		message = e.what();
+	}
+	report(message.empty(), fmt::format("Test 7: the minimum [2, 8, 8] footprint is accepted ({})", message.empty() ? "no exception" : message));
+	const std::vector<BLOCK*> level1 = state.nse.getBlocksAtLevel(1);
+	report(
+		level1.size() == 1 && level1.front()->local == idx3d{4, 16, 16},
+		fmt::format("Test 7: the accepted [2, 8, 8] footprint created one level-1 block of 4x16x16 fine cells (got {} blocks)", level1.size())
 	);
 }
 
@@ -564,6 +1078,9 @@ int main(int argc, char** argv)
 	test_subcycling_schedule();
 	test_max_level_zero_fallthrough();
 	test_interface_ring_freshness();
+	test_conservation_hidden_cell_exclusion();
+	test_skin_partition_geometry();
+	test_footprint_min_size_validation();
 
 	if (g_failures == 0) {
 		fmt::println("RESULT: all AMR subcycling tests passed");

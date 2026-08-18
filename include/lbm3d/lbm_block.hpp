@@ -48,7 +48,14 @@ void LBM_BLOCK<CONFIG>::initLevelLattice(const lat_t& base_lat, int level)
 	// refinement-level blocks own the inter-level ghost ring that the
 	// coupling kernels fill/read (see d3q27/amr_coupling.h)
 	if (level > 0)
-		this->storage_overlap = 2;
+		// change 4 of the AMR interface redesign (Phase C): exactly one
+		// ghost cell deep. The library default (1 with MPI, 0 without,
+		// i.e. NO ghost on non-MPI builds and a silent no-fill C2F) is
+		// never relied upon; 2 was needed only by the ring fine-to-coarse
+		// filter window, which gate B deleted by outcome. The C2F
+		// storability clip (df_overlap_* in amr_state.h) adapts
+		// automatically and fills only this layer.
+		this->storage_overlap = 1;
 
 	// per-level lattice parameters with the standard 2:1 refinement ratio:
 	// both the spatial and temporal steps are halved on each finer level

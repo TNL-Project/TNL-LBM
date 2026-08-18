@@ -163,13 +163,17 @@ struct LBM_BLOCK
 
 	// Actual width of overlaps allocated for this block's arrays (map, DF and
 	// macro storages all share one indexer, so they must all use this width).
-	// Defaults to `overlap_width`; blocks at refinement level > 0 use 2 so
+	// Defaults to `overlap_width`; blocks at refinement level > 0 use 1 so
 	// that the inter-level coupling kernels can fill (coarse-to-fine) and read
-	// (fine-to-coarse) a 2-cell-deep ghost ring around the block's footprint
-	// -- see initLevelLattice and the kernels in d3q27/amr_coupling.h. The
-	// allocation only materializes the overlap on axes where the block is a
-	// proper subdomain (`local != global`), so always query the allocated
-	// indexer (`df_overlap_X/Y/Z`) instead of assuming this value everywhere.
+	// (fine-to-coarse) the ghost ring around the block's footprint (since
+	// change 4 of the interface redesign: a 1-cell ring suffices once the
+	// ring fine-to-coarse launch is retired; the only kernel still reaching
+	// a ghost cell is the max-side skin window, +1 deep, and the streaming
+	// 1-hop neighborhood) -- see initLevelLattice and the kernels in
+	// d3q27/amr_coupling.h. The allocation only materializes the overlap on
+	// axes where the block is a proper subdomain (`local != global`), so
+	// always query the allocated indexer (`df_overlap_X/Y/Z`) instead of
+	// assuming this value everywhere.
 	int storage_overlap = overlap_width;
 
 	int df_overlap_X()

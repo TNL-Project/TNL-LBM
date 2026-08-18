@@ -42,6 +42,18 @@ struct D3Q27_BC_All
 		GEO_AMR_INTERFACE
 	};
 
+	// Bitmask of ghost half-spaces adjacent to a GEO_SYMMETRY cell.
+	// Each bit marks a side where the neighbor cell is GEO_NOTHING (the domain-frame ghost layer).
+	enum SYM_SIDES : std::uint8_t
+	{
+		SYM_XM = 1 << 0,  // ghost at x-1
+		SYM_XP = 1 << 1,  // ghost at x+1
+		SYM_YM = 1 << 2,  // ghost at y-1
+		SYM_YP = 1 << 3,  // ghost at y+1
+		SYM_ZM = 1 << 4,  // ghost at z-1
+		SYM_ZP = 1 << 5,  // ghost at z+1
+	};
+
 	__cuda_callable__ static bool isSymmetric(map_t mapgi)
 	{
 		return mapgi == GEO_SYMMETRY;
@@ -92,18 +104,6 @@ struct D3Q27_BC_All
 				break;
 		}
 	}
-
-	// Bitmask of ghost half-spaces adjacent to a GEO_SYMMETRY cell.
-	// Each bit marks a side where the neighbor cell is GEO_NOTHING (the domain-frame ghost layer).
-	enum SYM_SIDES : std::uint8_t
-	{
-		SYM_XM = 1 << 0,  // ghost at x-1
-		SYM_XP = 1 << 1,  // ghost at x+1
-		SYM_YM = 1 << 2,  // ghost at y-1
-		SYM_YP = 1 << 3,  // ghost at y+1
-		SYM_ZM = 1 << 4,  // ghost at z-1
-		SYM_ZP = 1 << 5,  // ghost at z+1
-	};
 
 	// direction slot for the letter trits (ex, ey, ez) in {m=0, z=1, p=2} packed as 9*ex + 3*ey + ez
 	__cuda_callable__ static constexpr std::uint8_t sym_dir_slot(int code)
@@ -226,9 +226,11 @@ struct D3Q27_BC_All
 			return;
 		}
 
-		// GEO_AMR_INTERFACE cells proceed through the normal streaming path:
-		// the inter-level fine-to-coarse transfer still overwrites their DF
-		// state at the end of each coarse step (collision-active interface)
+		// GEO_AMR_INTERFACE cells (the collision-active ring around each fine
+		// footprint) proceed through the normal streaming path; the coarse
+		// kernel is their only writer since the ring fine-to-coarse launch
+		// was removed (gate B ruling, D.1 hard-delete) -- fine feedback
+		// reaches them through streaming from the F2C-written skin cells
 
 		// modify pull location for streaming
 		if (mapgi == GEO_ADJOINT_OUTFLOW_RIGHT)
