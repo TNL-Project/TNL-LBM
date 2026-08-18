@@ -1321,11 +1321,14 @@ void test_f2c_df_store_map_guard()
 	}
 }
 
-// Tests 8-13 + 17: compact-moment (CM, C2F_COMPACT_MOMENT) and carve
-// (C2F_CARVE) exactness -- Experiment A item 2 (adjudicator of the A.2 TG
+// Tests 8-13 + 17: compact-moment (CM; the default C2F branch since the
+// 2026-08-18 flip) and carve (default-on; opt-out C2F_NO_CARVE) exactness --
+// Experiment A item 2 (adjudicator of the A.2 TG
 // smoke blow-up:
 // synthetic-field exactness separates carve-math bugs from carve physics).
-// The default build (neither define) compiles this whole block out.
+// (Pre-flip note: before the 2026-08-18 default flip, the default build
+// compiled this whole block out; the mirror conditions below now include it
+// whenever the production branch is CM -- including the default build.)
 //
 // EXACTNESS CLASS (from the CM machinery, amr_coupling.h:321-334): the
 // 8-coefficient density polynomial is the plain trilinear fit of the 8 nodal
@@ -1527,7 +1530,7 @@ void tagNothingCells(MockBlock& block, const std::vector<idx3d>& cells)
 	block.dmap = block.hmap;
 }
 
-#ifdef C2F_COMPACT_MOMENT
+#if defined(C2F_COMPACT_MOMENT) || (!defined(C2F_LAGRANGE) && !defined(C2F_TRILINEAR) && !defined(C2F_LINEAR_EXPLOSION) && !defined(C2F_UNIFORM_EXPLOSION))
 
 // analytic fields (see the block comment for the exactness class): every
 // struct provides `fill(x,y,z) -> {rho,vx,vy,vz,Gxx,Gyy,Gzz,Gxy,Gxz,Gyz}`
@@ -1617,7 +1620,7 @@ void coverPlaneYZ(MockBlock& coarse, idx cx, idx lo, idx hi)
 	tagNothingCells(coarse, cells);
 }
 
-#ifdef C2F_CARVE
+#if !defined(C2F_NO_CARVE) && !defined(TNL_TEST_NO_CARVE)
 void coverCellList(MockBlock& coarse, const std::vector<idx3d>& cells)
 {
 	for (const idx3d& c : cells)
@@ -1671,7 +1674,7 @@ void test_cm_exactness_nominal()
 	}
 }
 
-#ifdef C2F_CARVE
+#if !defined(C2F_NO_CARVE) && !defined(TNL_TEST_NO_CARVE)
 
 // Test 10: 1-axis carved window exactness -- covered plane x = 2 (y,z in
 // [0,8]) taints the x-window of every fine ghost cell whose per-axis x
@@ -1885,8 +1888,8 @@ void test_cm_exactness_carve_2axis_edge()
 	}
 }
 
-#endif	// C2F_CARVE
-#endif	// C2F_COMPACT_MOMENT
+#endif	// carve active
+#endif	// CM semantics active
 
 // Tests 14-16 + 18: F2C skin-launch coverage (changes 2+3 of the AMR
 // interface redesign, unconditional since D.1 retired the ring path) --
@@ -2379,16 +2382,17 @@ int main()
 	test_f2c_skin_df_store_map_guard();
 	test_f2c_skin_edge2pair_clamp_exactness();
 
-#ifdef C2F_COMPACT_MOMENT
+#if defined(C2F_COMPACT_MOMENT) || (!defined(C2F_LAGRANGE) && !defined(C2F_TRILINEAR) && !defined(C2F_LINEAR_EXPLOSION) && !defined(C2F_UNIFORM_EXPLOSION))
+	// production CM semantics (default since the 2026-08-18 flip, user ruling)
 	test_cm_exactness_nominal();
-#ifdef C2F_CARVE
+#if !defined(C2F_NO_CARVE) && !defined(TNL_TEST_NO_CARVE)
 	test_cm_exactness_carve_1axis();
 	test_cm_exactness_carve_3axis_corner();
 	test_cm_exactness_carve_degenerate_storage_edge();
 	test_cm_exactness_carve_degenerate_residual();
 	test_cm_exactness_carve_2axis_edge();
-#endif
-#endif
+#endif	// carve active (TNL_TEST_NO_CARVE escape hatch)
+#endif	// CM semantics active
 
 	if (g_failures == 0) {
 		fmt::println("RESULT: all AMR coupling tests passed");
