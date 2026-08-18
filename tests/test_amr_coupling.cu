@@ -18,7 +18,9 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <string>
+#include <vector>
 
 #include <fmt/core.h>
 
@@ -388,6 +390,20 @@ void launchFineToCoarse(MockBlock& coarse, MockBlock& fine, idx3d begin, idx3d e
 	TNL::Backend::streamSynchronize(0);
 }
 
+// tag a coarse-cell rectangle as GEO_AMR_INTERFACE ring cells and upload the
+// map to the device: the production coupling restricts the F2C writes to
+// coupling cells (GEO_AMR_INTERFACE ring cells and GEO_NOTHING frozen hidden
+// cells, see the allowed-GEO store guard in cudaAMR_FineToCoarse), so mock
+// blocks must mark the processed rectangle as ring cells to receive writes
+void tagCouplingCells(MockBlock& block, idx3d begin, idx3d end)
+{
+	for (idx z = begin.z(); z < end.z(); z++)
+		for (idx y = begin.y(); y < end.y(); y++)
+			for (idx x = begin.x(); x < end.x(); x++)
+				block.hmap(x, y, z) = NSE_CONFIG::BC::GEO_AMR_INTERFACE;
+	block.dmap = block.hmap;
+}
+
 // relative-error comparison with a small absolute floor (rounding-level
 // agreement of two float computations on host vs. device)
 bool closeEnough(dreal actual, dreal expected, dreal rtol, dreal atol)
@@ -462,6 +478,9 @@ void test_uniform_fine_to_coarse()
 			coarse.allocate(COARSE_N);
 			fillUniform(fine, fine_even_iter, rho0, u0, v0, w0);
 			fine.copyToDevice();
+			// F2C writes are restricted to coupling cells: the whole
+			// processed block acts as the ring (mock of the production map)
+			tagCouplingCells(coarse, {0, 0, 0}, {COARSE_N, COARSE_N, COARSE_N});
 
 			launchFineToCoarse(
 				coarse,
@@ -588,16 +607,21 @@ void test_linear_gradient_coarse_to_fine()
 	);
 }
 
-// Test 4a: mass conservation, fine-to-coarse -- the coarse cell DF moment
-// after the transfer must equal the volume-weighted (1/8) sum of the fine
-// subcell DF moments before the transfer, for every coarse cell; the
-// non-equilibrium rescaling preserves the zeroth moment by construction
+// Test 4a: quadratic density field, fine-to-coarse -- with the default 4x4x4
+// Lagrava filter the coarse cell DF moment after the transfer equals the
+// fine field value at the coarse cell center (the projection is exact for
+// cubic fields, hence for this quadratic one); the non-equilibrium
+// rescaling preserves the zeroth moment by construction. (Polarity fix
+// P0.1: this test previously asserted the 1/8 box average of the 8
+// subcells, which the field's quadratic content deliberately distinguishes
+// from the projection; the Lagrava projection is the intended default.)
 void test_mass_conservation_fine_to_coarse()
 {
 	const bool fine_even_iter = false, coarse_even_iter = true;
 
-	// non-uniform (quadratic) density field on the fine level: the Lagrava
-	// averaging is conservative for ANY field, unlike interpolation
+	// non-uniform (quadratic) density field on the fine level: both filters
+	// are globally conservative for ANY field, but only the Lagrava
+	// projection reproduces the coarse-center value of a quadratic exactly
 	const auto rho_fine = [](double x) -> double
 	{
 		const double dx = (x - 7.5) / 4.0;
@@ -619,20 +643,9 @@ void test_mass_conservation_fine_to_coarse()
 		}
 	);
 	fine.copyToDevice();
-
-	// volume-weighted fine mass per coarse cell BEFORE the transfer (from the
-	// host copy, which the kernel does not modify)
-	double fine_mass[COARSE_N][COARSE_N][COARSE_N];
-	for (idx z = 0; z < COARSE_N; z++)
-		for (idx y = 0; y < COARSE_N; y++)
-			for (idx x = 0; x < COARSE_N; x++) {
-				double m = 0;
-				for (int bz = 0; bz < 2; bz++)
-					for (int by = 0; by < 2; by++)
-						for (int bx = 0; bx < 2; bx++)
-							m += rhoMomentFilled(fine, fine_even_iter, 2 * x + bx, 2 * y + by, 2 * z + bz);
-				fine_mass[z][y][x] = m / 8.0;
-			}
+	// F2C writes are restricted to coupling cells: the whole processed
+	// block acts as the ring (mock of the production map)
+	tagCouplingCells(coarse, {0, 0, 0}, {COARSE_N, COARSE_N, COARSE_N});
 
 	launchFineToCoarse(
 		coarse,
@@ -646,20 +659,38 @@ void test_mass_conservation_fine_to_coarse()
 	);
 	coarse.copyToHost();
 
+	// exact expectation: the Lagrange projection reproduces the quadratic
+	// field at the coarse cell center t = 2x + 0.5 (fine indexer
+	// coordinates) -- valid on every window, see the kernel docstring
+	// [B.5 re-scope, window-clamp class, mock-matrix.md coupling case 1,
+	// unconditional since D.1 retired the ring-F2C path (gate B ruling):
+	// the axis_window LOWER bound is 0 (the pre-skin default was -ov), so
+	// the coarse cells at x == 0 (fx0 == 0) evaluate on the interior-clamped
+	// window {0,1,2,3} instead of the nominal {-1,0,1,2}. The pinned
+	// expectation is UNCHANGED: a quadratic is reproduced exactly at the
+	// fixed evaluation point by ANY 4-node window, so the clamp manifests
+	// only as an fp re-shuffle (measured 1.901e-07 -> 2.783e-07 when it
+	// landed), ~36x below the 1e-5 gate. The x == 7 cells' hi-side window
+	// {13,14,15,16} still INCLUDES the fine ghost node 16 (the upper bound
+	// was never loosened) -- the load-bearing control that the shift sits
+	// exactly at the lo site.]
 	double max_rel = 0;
 	idx bad = 0;
 	for (idx z = 0; z < COARSE_N; z++)
 		for (idx y = 0; y < COARSE_N; y++)
 			for (idx x = 0; x < COARSE_N; x++) {
 				const dreal rho_c = f2cWrittenRho(coarse, coarse_even_iter, x, y, z);
-				const double rel = std::abs(rho_c - fine_mass[z][y][x]) / fine_mass[z][y][x];
+				const double rho_e = rho_fine(2 * x + 0.5);
+				const double rel = std::abs(rho_c - rho_e) / rho_e;
 				max_rel = std::max(max_rel, rel);
 				if (rel > 1e-5)
 					bad++;
 			}
 	report(
 		bad == 0,
-		fmt::format("Test 4a mass conservation fine-to-coarse: coarse mass == 1/8 * fine subcell mass (max rel err = {:.3e})", max_rel)
+		fmt::format(
+			"Test 4a quadratic reproduction fine-to-coarse: coarse rho == fine field at the coarse cell center (max rel err = {:.3e})", max_rel
+		)
 	);
 }
 
@@ -935,7 +966,34 @@ void test_nested_geometry_coupling()
 	// fine-to-coarse: FULL halo face extents extended past both storable and
 	// non-storable cells -- the per-cell kernel guard replaces the former
 	// launch-extent clip (c = 2 and c = 13 are skipped by the guard as their
-	// 2x2x2 fine subcell block is not fully storable)
+	// 2x2x2 fine subcell block is not fully storable). F2C writes are
+	// restricted to coupling cells: tag the launch rectangles as ring cells
+	// (mock of the production GEO_AMR_INTERFACE ring).
+	// [B.5 re-scope, window-clamp class, mock-matrix.md coupling cases 2-3,
+	// re-scoped to kernel-machinery coverage in D.1 (gate B ruling):
+	// production no longer launches these halo (ring) rectangles AT ALL --
+	// the ring-F2C launch was hard-deleted with F2C_SKIN_ONLY. The mock
+	// keeps the direct kernel launch as coverage of LIVE machinery that no
+	// surviving skin test (14-16/18, small ov=1 fixtures, always-storable
+	// subcells) exercises: the per-cell storability guard's SKIP path
+	// (c = 2/13 stay at the marker IC), the A-B wrong-array trap below
+	// (writes land df_out, df_cur sentinel untouched), and the lo = 0
+	// clamped window's shifts at hard NEST edges. The pinned host replica
+	// correctF2Crho is the analytic coarse-center value of the linear
+	// marker, reproduced exactly by EVERY 4-node window (window-
+	// independent), so NO assertion value changes across the clamp; the
+	// moving windows are (case 2) the c = 3 column's x-window (fx0 = -2:
+	// storage-clamped {-2,-1,0,1} -> interior-clamped {0,1,2,3}) plus the
+	// asserted y = 4 / z = 4 rows' tangent windows (fy0 = 0: nominal
+	// {-1,0,1,2} -> {0,1,2,3}), and (case 3) ONLY the c = 12 assertions'
+	// y = 4 / z = 4 rows -- the c = 12 x-window {14,15,16,17} is hi-clamped
+	// INCLUDING the ghost nodes in every configuration and the lo clamp
+	// cannot move it (control: the x-window is invariant yet the err moved,
+	// naming the y/z rows as the mechanism). Measured re-shuffles
+	// 2.384e-07 -> 2.861e-06 (c = 3) and 9.537e-07 -> 2.384e-06 (c = 12)
+	// when the clamp landed, ~30x below the 1e-4/1e-5 gates.]
+	tagCouplingCells(coarse, {2, 3, 3}, {4, 13, 13});
+	tagCouplingCells(coarse, {12, 3, 3}, {14, 13, 13});
 	launchFineToCoarse(coarse, fine, {2, 3, 3}, {4, 13, 13}, fine_off, coarse_off, fine_even_iter, next_coarse_even_iter);
 	launchFineToCoarse(coarse, fine, {12, 3, 3}, {14, 13, 13}, fine_off, coarse_off, fine_even_iter, next_coarse_even_iter);
 
@@ -1026,6 +1084,1280 @@ void test_nested_geometry_coupling()
 	);
 }
 
+// Test 6: exact cubic reproduction, fine-to-coarse -- the default F2C filter
+// is the tensor-product 4-node-per-axis Lagrange projection onto the coarse
+// cell center, which reproduces cubic fields exactly (the 1/8 box average is
+// only linear-exact). A fine field carrying exact cubic content must
+// therefore come through the transfer exactly on a nominal interior window
+// (centered {-1,9,9,-1}/16 per-axis weights); on a box-average build this
+// test fails, pinning the filter polarity (Lagrava default,
+// F2C_BOX_AVERAGE opt-out).
+void test_cubic_reproduction_fine_to_coarse()
+{
+	// rho(x) = rho0 + A*dx^3 with dx = (x - 7.5)/4 in fine indexer
+	// coordinates, constant velocities: the DF equilibrium is linear in
+	// rho, so the projected DFs are exactly the equilibrium of the cubic
+	// field evaluated at the coarse cell center t = 2x + 0.5
+	const dreal rho0 = 1.0, A = 0.1;
+	const dreal u0 = 0.01, v0 = -0.02, w0 = 0.03;
+	const std::array<bool, 2> parities = {true, false};
+
+	const auto rho_fine = [&](double x) -> double
+	{
+		const double dx = (x - 7.5) / 4.0;
+		return rho0 + A * dx * dx * dx;
+	};
+
+	for (const bool fine_even_iter : parities) {
+		for (const bool coarse_even_iter : parities) {
+			MockBlock fine, coarse;
+			fine.allocate(FINE_N);
+			coarse.allocate(COARSE_N);
+			fillField(
+				fine,
+				fine_even_iter,
+				[&](idx x, idx /*y*/, idx /*z*/, dreal& rho, dreal& vx, dreal& vy, dreal& vz)
+				{
+					rho = static_cast<dreal>(rho_fine(x));
+					vx = u0;
+					vy = v0;
+					vz = w0;
+				}
+			);
+			fine.copyToDevice();
+			// F2C writes are restricted to coupling cells: the whole
+			// processed block acts as the ring (mock of the production map)
+			tagCouplingCells(coarse, {0, 0, 0}, {COARSE_N, COARSE_N, COARSE_N});
+
+			launchFineToCoarse(
+				coarse,
+				fine,
+				{0, 0, 0},
+				{COARSE_N, COARSE_N, COARSE_N},
+				{0, 0, 0},
+				{0, 0, 0},
+				fine_even_iter,
+				coarse_even_iter
+			);
+			coarse.copyToHost();
+
+			// nominal interior window only: coarse cells [1, COARSE_N-1)
+			// see the centered 4x4x4 stencil
+			double max_err = 0;
+			idx bad = 0;
+			for (idx z = 1; z < COARSE_N - 1; z++)
+				for (idx y = 1; y < COARSE_N - 1; y++)
+					for (idx x = 1; x < COARSE_N - 1; x++) {
+						const dreal rho_e = static_cast<dreal>(rho_fine(2 * x + 0.5));
+						const std::array<dreal, 27> eq = equilibriumOnHost(rho_e, u0, v0, w0);
+						for (int q = 0; q < 27; q++) {
+							const dreal actual = coarse.hfs[f2cWriteArray()](coarseWriteSlot(q, coarse_even_iter), x, y, z);
+							if (! closeEnough(actual, eq[q], 1e-5, 1e-6)) {
+								if (bad == 0)
+									fmt::println(
+										"  first mismatch (fine_even={}, coarse_even={}): cell=({},{},{}), q={}, actual={:.9e}, expected={:.9e}",
+										fine_even_iter, coarse_even_iter, x, y, z, q, actual, eq[q]
+									);
+								bad++;
+							}
+							max_err = std::max<double>(max_err, std::abs(actual - eq[q]));
+						}
+					}
+			report(
+				bad == 0,
+				fmt::format(
+					"Test 6 cubic reproduction fine-to-coarse (fine_even={}, coarse_even={}): "
+					"interior coarse DFs match the exactly-projected cubic field (max |err| = {:.3e})",
+					fine_even_iter, coarse_even_iter, max_err
+				)
+			);
+		}
+	}
+}
+
+// Test 7: Defect-2 DF-store map guard (NEST lock) -- the coarse DF store of
+// cudaAMR_FineToCoarse must be guarded by the SAME allowed-GEO predicate as
+// the macro store: only GEO_AMR_INTERFACE ring cells and GEO_NOTHING frozen
+// hidden cells are coupling storage; cells tagged with any other GEO (a
+// boundary-condition tag such as GEO_WALL, but also plain GEO_FLUID) own
+// their DFs and macros and must not be clobbered when a coupling rectangle
+// covers them. The geometry is the Test 5 NEST setup with one processed
+// column (c = 3) holding one cell per map class.
+// [B.5 re-scope, window-clamp class, mock-matrix.md coupling case 4,
+// unconditional since D.1 retired the ring path (gate B ruling): the
+// processed column c = 3 (fx0 = -2) is the same lo-clamp site as case 2 --
+// with the lo = 0 lower bound its x-window moves from the storage-clamped
+// {-2,-1,0,1} to {0,1,2,3}; the asserted class cells' y/z windows (y in
+// {8,9,10,11}, z = 8, tangent window starts >= 7) cannot engage a
+// LOWER-bound clamp, so the x-window is the SOLE moving site for the
+// asserted cells (case 2's y/z = 4-row mechanism does not appear among
+// Test 7's asserted cells). The expectations (correctF2Crho replica,
+// marker IC) are window-independent and UNCHANGED; measured re-shuffles
+// DF 2.384e-07 -> 2.146e-06 and macros 9.537e-07 -> 7.629e-06 stay ~100x
+// below the gates, and the protected-class assertions (GEO_WALL/GEO_FLUID
+// kept, max |err| = 0.000e+00) are clamp-independent -- the Defect-2
+// 4-class guard this test locks is untouched by the window clamp. The
+// Test 5 halo-geography note applies: production never F2C-launches halo
+// (ring) cells (the ring path is deleted); the mock pins the kernel
+// directly.]
+void test_f2c_df_store_map_guard()
+{
+	// post-stream natural orientation on the fine level, spatial (twisted)
+	// coarse consumer -- same orientation state as the Test 5 F2C phase
+	const bool fine_even_iter = false;
+	const bool next_coarse_even_iter = false;
+
+	// processed halo column and the exercised map classes in it
+	constexpr idx CX = 3, CZ = 8;
+	constexpr idx Y_WALL = 8, Y_FLUID = 9, Y_NOTHING = 10, Y_INTERFACE = 11;
+
+	MockBlock coarse, fine;
+	coarse.allocate(NEST_N, NEST_OV);
+	fine.allocate(NEST_N, NEST_OV);
+	fillMarkerNested(coarse, false, false);
+	fillMarkerNested(fine, true, fine_even_iter);
+
+	// one cell per map class in the processed column
+	coarse.hmap(CX, Y_WALL, CZ) = NSE_CONFIG::BC::GEO_WALL;
+	coarse.hmap(CX, Y_FLUID, CZ) = NSE_CONFIG::BC::GEO_FLUID;
+	coarse.hmap(CX, Y_NOTHING, CZ) = NSE_CONFIG::BC::GEO_NOTHING;
+	coarse.hmap(CX, Y_INTERFACE, CZ) = NSE_CONFIG::BC::GEO_AMR_INTERFACE;
+	coarse.dmap = coarse.hmap;
+
+	// poison the macro array so untouched macros are recognizable after
+	// the launch
+	constexpr dreal MACRO_SENTINEL = -123;
+	coarse.hmacro.setValue(MACRO_SENTINEL);
+	coarse.dmacro = coarse.hmacro;
+
+	coarse.copyToDevice();
+	fine.copyToDevice();
+
+	const idx3d fine_off{NEST_FINE_OFF, NEST_FINE_OFF, NEST_FINE_OFF};
+	const idx3d coarse_off{0, 0, 0};
+	launchFineToCoarse(coarse, fine, {2, 3, 3}, {4, 13, 13}, fine_off, coarse_off, fine_even_iter, next_coarse_even_iter);
+
+	coarse.copyToHost();
+	coarse.hmacro = coarse.dmacro;
+
+	// marker IC of the coarse column (rho of coarse cell c = c + NEST_RHO0)
+	// and the exact F2C transfer result (host replica from Test 5)
+	const std::array<dreal, 27> eq_marker = equilibriumOnHost(static_cast<dreal>(CX) + NEST_RHO0, NEST_VX, 0, 0);
+	const dreal rho_transfer = correctF2Crho(CX, 0, NEST_FINE_OFF);
+	const std::array<dreal, 27> eq_transfer = equilibriumOnHost(rho_transfer, NEST_VX, 0, 0);
+
+	// DF check per map class: protected cells must still hold the marker
+	// IC in the kernel's write slot of every direction, coupling cells
+	// must hold the transfer result there
+	const idx case_ys[4] = {Y_WALL, Y_FLUID, Y_NOTHING, Y_INTERFACE};
+	const bool case_write[4] = {false, false, true, true};
+	const char* case_names[4] = {"GEO_WALL", "GEO_FLUID", "GEO_NOTHING", "GEO_AMR_INTERFACE"};
+	for (int cse = 0; cse < 4; cse++) {
+		const idx y = case_ys[cse];
+		const bool expect_write = case_write[cse];
+		double max_err = 0;
+		idx bad = 0;
+		bool first_mismatch = true;
+		for (int q = 0; q < 27; q++) {
+			// the kernel's write slot of direction q; the marker IC stored
+			// eq of direction `slot` in that slot (natural fill)
+			const int slot = coarseWriteSlot(q, next_coarse_even_iter);
+			const dreal actual = coarse.hfs[f2cWriteArray()](slot, CX, y, CZ);
+			const dreal expected = expect_write ? eq_transfer[q] : eq_marker[slot];
+			if (! closeEnough(actual, expected, 1e-4, 1e-5)) {
+				if (first_mismatch) {
+					fmt::println("  first mismatch: cell=({}, {}, {}), q={}, actual={:.9e}, expected={:.9e}", CX, y, CZ, q, actual, expected);
+					first_mismatch = false;
+				}
+				bad++;
+			}
+			max_err = std::max<double>(max_err, std::abs(actual - expected));
+		}
+		report(
+			bad == 0,
+			fmt::format(
+				"Test 7 F2C DF-store map guard: {} cell {} (max |err| = {:.3e})",
+				case_names[cse],
+				expect_write ? "received the transfer" : "kept its DFs (not overwritten)",
+				max_err
+			)
+		);
+	}
+
+	// macro check under the same predicate: protected cells keep the
+	// sentinel, coupling cells hold the transfer macros
+	const int macro_ids[4] = {NSE_CONFIG::MACRO::e_rho, NSE_CONFIG::MACRO::e_vx, NSE_CONFIG::MACRO::e_vy, NSE_CONFIG::MACRO::e_vz};
+	for (int cse = 0; cse < 4; cse++) {
+		const idx y = case_ys[cse];
+		const bool expect_write = case_write[cse];
+		const std::array<dreal, 4> expected =
+			expect_write ? std::array<dreal, 4>{rho_transfer, NEST_VX, 0, 0} :
+							std::array<dreal, 4>{MACRO_SENTINEL, MACRO_SENTINEL, MACRO_SENTINEL, MACRO_SENTINEL};
+		double max_err = 0;
+		idx bad = 0;
+		bool first_mismatch = true;
+		for (int m = 0; m < 4; m++) {
+			const dreal actual = coarse.hmacro(macro_ids[m], CX, y, CZ);
+			if (! closeEnough(actual, expected[m], 1e-4, 1e-5)) {
+				if (first_mismatch) {
+					fmt::println(
+						"  first macro mismatch: cell=({}, {}, {}), id={}, actual={:.9e}, expected={:.9e}", CX, y, CZ, macro_ids[m], actual, expected[m]
+					);
+					first_mismatch = false;
+				}
+				bad++;
+			}
+			max_err = std::max<double>(max_err, std::abs(actual - expected[m]));
+		}
+		report(
+			bad == 0,
+			fmt::format(
+				"Test 7 F2C macro-store map guard: {} macros {} (max |err| = {:.3e})",
+				case_names[cse],
+				expect_write ? "written by the transfer" : "kept the sentinel",
+				max_err
+			)
+		);
+	}
+}
+
+// Tests 8-13 + 17: compact-moment (CM, C2F_COMPACT_MOMENT) and carve
+// (C2F_CARVE) exactness -- Experiment A item 2 (adjudicator of the A.2 TG
+// smoke blow-up:
+// synthetic-field exactness separates carve-math bugs from carve physics).
+// The default build (neither define) compiles this whole block out.
+//
+// EXACTNESS CLASS (from the CM machinery, amr_coupling.h:321-334): the
+// 8-coefficient density polynomial is the plain trilinear fit of the 8 nodal
+// values (no moment corrections), so it is exact only for LINEAR density.
+// The three 11-coefficient velocity polynomials additionally carry the
+// second-order non-equilibrium moments (the k values = strain combos when
+// the source DFs carry the Chapman-Enskog non-equilibrium), which supply
+// the curvature information that the 2x2x2 nodal values alone cannot
+// distinguish from a constant: velocity is exact for LINEAR and PURE
+// QUADRATIC fields (quadratic in the separate coordinates, no cross terms)
+// under CE-consistent source states. A pure quadratic DENSITY is outside
+// the exactness class by construction (the trilinear fit absorbs nodal
+// quadratics into the constant), so quadratic-rho exactness is NOT asserted
+// anywhere below -- density stays linear or constant in every test field.
+//
+// CE-CONSISTENT SOURCE FILL: each coarse cell carries
+//   f_q = eq_q(rho,u) - [rho / (3*omega_s)] * [w_q / (2*cs^4)] * Q_ab(q)*G_ab,
+// with Q_ab = c_qa*c_qb - cs^2*delta_ab, cs^2 = 1/3, omega_s = 1/tau_coarse,
+// G_ab = du_b/dx_a + du_a/dx_b evaluated at the coarse cell center. The
+// f_neq term has zero zeroth and first moments (isotropy of the D3Q27
+// weights), so the macros of the fill are exactly (rho,u), and its second
+// moment equals -(rho/(3*omega_s))*G_ab, i.e. the kernel's k_xy/k_xx_yy/...
+// combinations evaluate to the strain field derivatives the polynomial fit
+// expects (verified by hand against Steps B-D of the CM branch: for linear
+// fields a_0/a_x/a_y/... all coincide with the analytic coefficients, for
+// pure quadratic velocity fields additionally a_xx/a_yy/a_xx = the
+// curvature).
+//
+// WINDOW/t_rel TABLE (all geometries: coarse 8^3 with 1-cell overlap,
+// storage [-1,9); fine 16^3; offsets zero; fine cell center = fg*0.5-0.25 in
+// coarse indexer coords):
+//   Tests 8/9 (nominal): covered plane x=-1 far from every window -> inert
+//   (in the carve build this is the "carved nominal == uncarved" case);
+//   launch fg in [2,15)^3 -> nominal windows subset of [0,8], |t_rel|=0.25.
+//   Test 10 (1-axis carve): covered plane x=2 (y,z in [0,8]); e.g. probe
+//   fg=6: window {2,3} -> {3,4}, t_rel -0.75 (the Schönherr offset case);
+//   fg=3: {1,2} -> {0,1}, t_rel +0.75; fg=4/5 shift to |t_rel|=1.25
+//   (home cell covered); fg>=7: no taint (control). Tangent axes see taint
+//   at both window ends (full plane) and stay nominal.
+//   Test 11 (3-axis corner carve): covered corner cell (2,2,2) only; probe
+//   (6,6,6): tuple {2,3}^3 tainted at the lo-lo-lo corner only -> all three
+//   axes shift +1, tuple {3,4}^3, t_rel = (-0.75,-0.75,-0.75); probe
+//   (7,7,7): tuple {3,4}^3 untouched (control).
+//   Test 12 (degenerate storage edge): covered {(7,5,5),(7,5,6)}; single
+//   fine cell (15,12,12), home (7,6,6), windows x{7,8},y{5,6},z{5,6}:
+//   x tainted lo-only -> shift to {8,9} blocked by the storage edge
+//   (hi=8) -> x collapses to the mirrored home cell + ONE warning
+//   (axis 0); y tainted lo-only after x-collapse reads -> carves to {6,7};
+//   z tainted at both ends -> stays {5,6}. Final tuple {(7),(6,7),(5,6)}
+//   clean. Field is x-independent so the collapsed x-dependence keeps the
+//   exactness analytic and tight.
+//   Test 13 (degenerate residual tuple): covered = {2,3}^3 minus the home
+//   cell (3,3,3); single fine cell (6,6,6): every axis tainted at BOTH
+//   ends -> no axis shifts; final rescan finds the covered cells ->
+//   whole-tuple collapse to the mirrored home + ONE warning (axis id 3).
+//   Output equals the analytic field AT THE HOME CELL CENTER (3,3,3).
+//   Test 17 (2-axis edge carve, added by D.2): covered column {(2,2,z) :
+//   z in [0,8]} (the intersection line of two covered faces x=2, y=2);
+//   probes with BOTH tangents in {3,4,5,6} shift the two NORMAL axes (each
+//   tainted at exactly one end; mixed-sign shift directions included),
+//   z stays nominal (column taints both ends); probes with a tangent
+//   outside {3..6} are the inert controls.
+// Covered cells' DFs are poisoned with NaN in every array/slot: any read of
+// a covered cell contaminates the output with NaN and fails the finiteness
+// assertion ("no covered data contaminates the output").
+//
+// WARNING BUDGET: the kernel's rate-limited warning budget is 16 prints per
+// process per kernel instantiation; Tests 12/13 trigger exactly ONE warning
+// each from exactly ONE thread (deterministic content and order), so the
+// budget is never the assertion target -- degenerate assertions are on the
+// collapse RESULT semantics; the warning text is verified in the run logs.
+//
+// EXISTING TESTS: untouched; they pin the default Lagrange path and are
+// compiled identically under the defines (Tests 1-7 pass unchanged in the
+// a1/a2 builds, verified by the run logs).
+// B.5 hoist: the six helpers below (d3q27Weight, fillFieldCE,
+// poisonCellDFs, fineGhostMacros, checkFineMacrosExact, tagNothingCells)
+// are shared by the CM exactness tests (Tests 8-13, define-gated below)
+// and the F2C skin tests (Tests 14-16 + 18). Unconditional since D.1
+// retired F2C_SKIN_ONLY (gate B ruling): the skin tests now compile in
+// every build.
+
+// D3Q27 lattice weight of direction q (product weights: 8/27 rest, 2/27
+// axis, 1/54 face diagonal, 1/216 corner)
+dreal d3q27Weight(int q)
+{
+	const int l2 = VELOCITY[q][0] * VELOCITY[q][0] + VELOCITY[q][1] * VELOCITY[q][1] + VELOCITY[q][2] * VELOCITY[q][2];
+	if (l2 == 0)
+		return dreal(8) / dreal(27);
+	if (l2 == 1)
+		return dreal(2) / dreal(27);
+	if (l2 == 2)
+		return dreal(1) / dreal(54);
+	return dreal(1) / dreal(216);
+}
+
+// fill the whole stored extent of the coarse mock block with the
+// CE-consistent DF state f_eq + f_neq of the field returned by
+// `FIELD::fill(x,y,z) = {rho, vx, vy, vz, Gxx, Gyy, Gzz, Gxy, Gxz, Gyz}`
+// (see the block comment for the f_neq construction)
+template <typename FIELD>
+void fillFieldCE(MockBlock& block, bool even_iter, const FIELD& field)
+{
+	constexpr dreal cs2 = dreal(1) / dreal(3);
+	const dreal omega_s = dreal(1) / TAU_COARSE;
+	for (idx z = -block.ov; z < block.size + block.ov; z++) {
+		for (idx y = -block.ov; y < block.size + block.ov; y++) {
+			for (idx x = -block.ov; x < block.size + block.ov; x++) {
+				const std::array<dreal, 10> fld = field.fill(x, y, z);
+				const dreal rho = fld[0];
+				const std::array<dreal, 27> eq = equilibriumOnHost(rho, fld[1], fld[2], fld[3]);
+				for (int q = 0; q < 27; q++) {
+					const dreal qx = VELOCITY[q][0], qy = VELOCITY[q][1], qz = VELOCITY[q][2];
+					const dreal QG = (qx * qx - cs2) * fld[4] + (qy * qy - cs2) * fld[5] + (qz * qz - cs2) * fld[6]
+								   + 2 * qx * qy * fld[7] + 2 * qx * qz * fld[8] + 2 * qy * qz * fld[9];
+					const dreal f_neq = -(rho / (3 * omega_s)) * (d3q27Weight(q) / (2 * cs2 * cs2)) * QG;
+					storePostCollisionDF(block, even_iter, q, x, y, z, eq[q] + f_neq);
+				}
+			}
+		}
+	}
+}
+
+// poison one coarse cell's DFs with NaN in every array/slot (covered-cell
+// contamination trap: any kernel read of this cell lands NaN in the output)
+void poisonCellDFs(MockBlock& block, idx x, idx y, idx z)
+{
+	const dreal nan = std::numeric_limits<dreal>::quiet_NaN();
+	for (uint8_t dfty = 0; dfty < DFMAX; dfty++)
+		for (int q = 0; q < 27; q++)
+			block.hfs[dfty](q, x, y, z) = nan;
+}
+
+// macros (rho, u, v, w) of the DF state the C2F fill wrote at a fine cell
+void fineGhostMacros(const MockBlock& fine, idx x, idx y, idx z, dreal& rho, dreal& u, dreal& v, dreal& w)
+{
+	rho = 0;
+	dreal jx = 0, jy = 0, jz = 0;
+	for (int q = 0; q < 27; q++) {
+		const dreal f = fine.hfs[df_cur](c2fWriteSlot(q), x, y, z);
+		rho += f;
+		jx += VELOCITY[q][0] * f;
+		jy += VELOCITY[q][1] * f;
+		jz += VELOCITY[q][2] * f;
+	}
+	u = jx / rho;
+	v = jy / rho;
+	w = jz / rho;
+}
+
+// assert that the reconstructed macros of every fine cell in
+// [begin,end) equal the analytic field `FIELD::exact(X,Y,Z) = {rho,vx,vy,vz}`
+// (evaluated at the fine cell center in coarse indexer coords,
+// X = fx*0.5-0.25), and that every value is finite (NaN-poison guard)
+template <typename FIELD>
+bool checkFineMacrosExact(const MockBlock& fine, idx3d begin, idx3d end, const FIELD& field, dreal rtol, dreal atol, const char* what)
+{
+	double max_rel_rho = 0, max_abs_u = 0;
+	idx bad = 0;
+	bool first_mismatch = true;
+	for (idx z = begin.z(); z < end.z(); z++) {
+		for (idx y = begin.y(); y < end.y(); y++) {
+			for (idx x = begin.x(); x < end.x(); x++) {
+				dreal rho_m, u_m, v_m, w_m;
+				fineGhostMacros(fine, x, y, z, rho_m, u_m, v_m, w_m);
+				const std::array<double, 4> e = field.exact(x * 0.5 - 0.25, y * 0.5 - 0.25, z * 0.5 - 0.25);
+				const bool finite = std::isfinite(rho_m) && std::isfinite(u_m) && std::isfinite(v_m) && std::isfinite(w_m);
+				const double rel_rho = std::abs(rho_m - e[0]) / e[0];
+				const double abs_du = std::max({std::abs(u_m - e[1]), std::abs(v_m - e[2]), std::abs(w_m - e[3])});
+				max_rel_rho = std::max(max_rel_rho, rel_rho);
+				max_abs_u = std::max(max_abs_u, abs_du);
+				const bool ok = finite && closeEnough(rho_m, static_cast<dreal>(e[0]), rtol, atol) && abs_du <= atol + rtol * 0.03;
+				if (! ok) {
+					if (first_mismatch) {
+						fmt::println(
+							"  first mismatch: cell=({},{},{}), finite={}, rho={:.9e} (expected {:.9e}), "
+							"u=({:.9e},{:.9e},{:.9e}) (expected {:.9e},{:.9e},{:.9e})",
+							x, y, z, finite, rho_m, e[0], u_m, v_m, w_m, e[1], e[2], e[3]
+						);
+						first_mismatch = false;
+					}
+					bad++;
+				}
+			}
+		}
+	}
+	report(bad == 0, fmt::format("{}: reconstructed fine macros match the analytic field (max rel rho err = {:.3e}, max abs vel err = {:.3e})", what, max_rel_rho, max_abs_u));
+	return bad == 0;
+}
+
+// tag a coarse-cell list as GEO_NOTHING and upload the map (MockBlock maps
+// default to GEO_FLUID, see tagCouplingCells): the C2F carve pre-pass
+// queries the coarse map through coarse_SD.map, and the F2C allowed-GEO
+// store guard lets GEO_NOTHING cells RECEIVE skin writes (Tests 14-16)
+void tagNothingCells(MockBlock& block, const std::vector<idx3d>& cells)
+{
+	for (const idx3d& c : cells)
+		block.hmap(c.x(), c.y(), c.z()) = NSE_CONFIG::BC::GEO_NOTHING;
+	block.dmap = block.hmap;
+}
+
+#ifdef C2F_COMPACT_MOMENT
+
+// analytic fields (see the block comment for the exactness class): every
+// struct provides `fill(x,y,z) -> {rho,vx,vy,vz,Gxx,Gyy,Gzz,Gxy,Gxz,Gyz}`
+// in dreal (coarse cell centers = integer indexer coords) and
+// `exact(X,Y,Z) -> {rho,vx,vy,vz}` in double at arbitrary coordinates.
+
+// Test 8 field: everything linear in all three coordinates
+struct CMLinearField {
+	std::array<dreal, 10> fill(idx x, idx y, idx z) const
+	{
+		const std::array<double, 4> e = exact(x, y, z);
+		// constant strain: Gij from the linear velocity gradients
+		return {static_cast<dreal>(e[0]), static_cast<dreal>(e[1]), static_cast<dreal>(e[2]), static_cast<dreal>(e[3]),
+			dreal(2 * 0.002), dreal(2 * 0.0018), dreal(2 * 0.0014),										// Gxx, Gyy, Gzz
+			dreal(0.001 + (-0.0015)), dreal(-0.0009 + 0.001), dreal(0.0011 + (-0.0012))};					// Gxy, Gxz, Gyz
+	}
+	std::array<double, 4> exact(double X, double Y, double Z) const
+	{
+		return {
+			1.0 + 0.01 * X - 0.008 * Y + 0.006 * Z,
+			0.03 + 0.002 * X - 0.0015 * Y + 0.001 * Z,
+			-0.02 + 0.001 * X + 0.0018 * Y - 0.0012 * Z,
+			0.015 - 0.0009 * X + 0.0011 * Y + 0.0014 * Z,
+		};
+	}
+};
+
+// Test 9 field: linear density, velocities linear + pure quadratic in each
+// coordinate (no cross terms, inside the CM exactness class)
+struct CMQuadraticField {
+	std::array<dreal, 10> fill(idx x, idx y, idx z) const
+	{
+		const std::array<double, 4> e = exact(x, y, z);
+		const double dudx = 0.002 + 2 * 0.0008 * x, dudy = -0.0015 - 2 * 0.0006 * y, dudz = 0.001 + 2 * 0.0004 * z;
+		const double dvdx = 0.001 - 2 * 0.0007 * x, dvdy = 0.0018 + 2 * 0.0005 * y, dvdz = -0.0012 + 2 * 0.0003 * z;
+		const double dwdx = -0.0009 + 2 * 0.0006 * x, dwdy = 0.0011 - 2 * 0.0005 * y, dwdz = 0.0014 + 2 * 0.00045 * z;
+		return {static_cast<dreal>(e[0]), static_cast<dreal>(e[1]), static_cast<dreal>(e[2]), static_cast<dreal>(e[3]),
+			static_cast<dreal>(2 * dudx), static_cast<dreal>(2 * dvdy), static_cast<dreal>(2 * dwdz),
+			static_cast<dreal>(dvdx + dudy), static_cast<dreal>(dwdx + dudz), static_cast<dreal>(dwdy + dvdz)};
+	}
+	std::array<double, 4> exact(double X, double Y, double Z) const
+	{
+		return {
+			1.0 + 0.01 * X - 0.008 * Y + 0.006 * Z,
+			0.03 + 0.002 * X - 0.0015 * Y + 0.001 * Z + 0.0008 * X * X - 0.0006 * Y * Y + 0.0004 * Z * Z,
+			-0.02 + 0.001 * X + 0.0018 * Y - 0.0012 * Z - 0.0007 * X * X + 0.0005 * Y * Y + 0.0003 * Z * Z,
+			0.015 - 0.0009 * X + 0.0011 * Y + 0.0014 * Z + 0.0006 * X * X - 0.0005 * Y * Y + 0.00045 * Z * Z,
+		};
+	}
+};
+
+// Test 12 field: x-INDEPENDENT (the storage-edge collapse mirrors the home
+// cell along x; with no x-dependence the collapse keeps the exactness
+// analytic and tight)
+struct CMEdgeField {
+	std::array<dreal, 10> fill(idx /*x*/, idx y, idx z) const
+	{
+		const std::array<double, 4> e = exact(0, y, z);
+		const double dudy = 0.001 + 2 * 0.0006 * y, dudz = 0.0007 - 2 * 0.0005 * z;
+		const double dvdy = 0.0012 - 2 * 0.0004 * y, dvdz = -0.0009 + 2 * 0.0006 * z;
+		const double dwdy = 0.0011 + 2 * 0.0005 * y, dwdz = 0.0008 + 2 * 0.0004 * z;
+		return {static_cast<dreal>(e[0]), static_cast<dreal>(e[1]), static_cast<dreal>(e[2]), static_cast<dreal>(e[3]),
+			dreal(0), static_cast<dreal>(2 * dvdy), static_cast<dreal>(2 * dwdz),		// Gxx = 2 du/dx = 0
+			static_cast<dreal>(dudy), static_cast<dreal>(dudz), static_cast<dreal>(dwdy + dvdz)};
+	}
+	std::array<double, 4> exact(double /*X*/, double Y, double Z) const
+	{
+		return {
+			1.0 + 0.008 * Y - 0.006 * Z,
+			0.025 + 0.001 * Y + 0.0007 * Z + 0.0006 * Y * Y - 0.0005 * Z * Z,
+			-0.018 + 0.0012 * Y - 0.0009 * Z - 0.0004 * Y * Y + 0.0006 * Z * Z,
+			0.012 + 0.0011 * Y + 0.0008 * Z + 0.0005 * Y * Y + 0.0004 * Z * Z,
+		};
+	}
+};
+
+// covered-plane helper for Tests 8/9 (far plane x=-1) and Test 10 (x=2):
+// tag + NaN-poison a y-z plane of coarse cells
+void coverPlaneYZ(MockBlock& coarse, idx cx, idx lo, idx hi)
+{
+	std::vector<idx3d> cells;
+	for (idx z = lo; z <= hi; z++)
+		for (idx y = lo; y <= hi; y++)
+			cells.push_back({cx, y, z});
+	for (const idx3d& c : cells)
+		poisonCellDFs(coarse, c.x(), c.y(), c.z());
+	tagNothingCells(coarse, cells);
+}
+
+#ifdef C2F_CARVE
+void coverCellList(MockBlock& coarse, const std::vector<idx3d>& cells)
+{
+	for (const idx3d& c : cells)
+		poisonCellDFs(coarse, c.x(), c.y(), c.z());
+	tagNothingCells(coarse, cells);
+}
+#endif
+
+// Tests 8 and 9: nominal-window CM exactness -- CE-consistent linear (8) and
+// linear-rho + pure-quadratic-velocity (9) fields, launch over fg in
+// [2,15)^3: every nominal window is inside [0,8], never clamped or carved
+// (|t_rel| = 0.25 everywhere). A GEO_NOTHING plane at x = -1 (outside
+// every candidate window, NaN-poisoned) proves the carve pre-pass is inert
+// far from the windows in the carve build; in the uncarved build it is a
+// no-op. The reconstructed macros must match the analytic field at every
+// fine cell center to fp tolerance.
+void test_cm_exactness_nominal()
+{
+	const bool even_iter = false;
+
+	struct Case
+	{
+		const char* name;
+		bool quadratic;
+	};
+	const Case cases[2] = {{"linear field", false}, {"linear rho + pure quadratic velocity field", true}};
+
+	for (const Case& cse : cases) {
+		MockBlock coarse, fine;
+		coarse.allocate(COARSE_N);
+		fine.allocate(FINE_N);
+		if (cse.quadratic)
+			fillFieldCE(coarse, even_iter, CMQuadraticField{});
+		else
+			fillFieldCE(coarse, even_iter, CMLinearField{});
+		// far-away covered plane: inert for every candidate window
+		coverPlaneYZ(coarse, -1, -1, COARSE_N);
+		coarse.copyToDevice();
+
+		launchCoarseToFine(fine, coarse, {2, 2, 2}, {15, 15, 15}, {0, 0, 0}, {0, 0, 0}, even_iter);
+		fine.copyToHost();
+
+		if (cse.quadratic)
+			checkFineMacrosExact(
+				fine, {2, 2, 2}, {15, 15, 15}, CMQuadraticField{}, 1e-4, 1e-6, fmt::format("Test 9 CM nominal-window exactness ({}; far-away GEO_NOTHING inert)", cse.name).c_str()
+			);
+		else
+			checkFineMacrosExact(
+				fine, {2, 2, 2}, {15, 15, 15}, CMLinearField{}, 1e-4, 1e-6, fmt::format("Test 8 CM nominal-window exactness ({}; far-away GEO_NOTHING inert)", cse.name).c_str()
+			);
+	}
+}
+
+#ifdef C2F_CARVE
+
+// Test 10: 1-axis carved window exactness -- covered plane x = 2 (y,z in
+// [0,8]) taints the x-window of every fine ghost cell whose per-axis x
+// window contains 2; the tangent windows see covered cells at BOTH ends and
+// stay nominal (per-axis XOR joint rule), so exactly the x axis is carved.
+// Headline probe fg = 6: window {2,3} -> {3,4}, |t_rel| = 0.75. The whole
+// launch region stays in the linear/quadratic exactness class.
+void test_cm_exactness_carve_1axis()
+{
+	const bool even_iter = false;
+
+	struct Case
+	{
+		const char* name;
+		bool quadratic;
+	};
+	const Case cases[2] = {{"linear field", false}, {"linear rho + pure quadratic velocity field", true}};
+
+	for (const Case& cse : cases) {
+		MockBlock coarse, fine;
+		coarse.allocate(COARSE_N);
+		fine.allocate(FINE_N);
+		if (cse.quadratic)
+			fillFieldCE(coarse, even_iter, CMQuadraticField{});
+		else
+			fillFieldCE(coarse, even_iter, CMLinearField{});
+		coverPlaneYZ(coarse, 2, 0, COARSE_N);
+		coarse.copyToDevice();
+
+		launchCoarseToFine(fine, coarse, {2, 2, 2}, {15, 15, 15}, {0, 0, 0}, {0, 0, 0}, even_iter);
+		fine.copyToHost();
+
+		if (cse.quadratic)
+			checkFineMacrosExact(
+				fine, {2, 2, 2}, {15, 15, 15}, CMQuadraticField{}, 1e-4, 1e-6, "Test 10 carve 1-axis exactness (covered plane x=2; quadratic)"
+			);
+		else
+			checkFineMacrosExact(
+				fine, {2, 2, 2}, {15, 15, 15}, CMLinearField{}, 1e-4, 1e-6, "Test 10 carve 1-axis exactness (covered plane x=2; linear)"
+			);
+	}
+}
+
+// Test 11: 3-axis corner-carved window exactness -- the single covered
+// corner cell (2,2,2) sits at the lo-lo-lo corner of the nominal tuple of
+// probe (6,6,6): every per-axis window sees taint at exactly its lo end, so
+// all three axes shift +1 (tuple {3,4}^3, t_rel = (-0.75,-0.75,-0.75)).
+void test_cm_exactness_carve_3axis_corner()
+{
+	const bool even_iter = false;
+
+	struct Case
+	{
+		const char* name;
+		bool quadratic;
+	};
+	const Case cases[2] = {{"linear field", false}, {"linear rho + pure quadratic velocity field", true}};
+
+	for (const Case& cse : cases) {
+		MockBlock coarse, fine;
+		coarse.allocate(COARSE_N);
+		fine.allocate(FINE_N);
+		if (cse.quadratic)
+			fillFieldCE(coarse, even_iter, CMQuadraticField{});
+		else
+			fillFieldCE(coarse, even_iter, CMLinearField{});
+		coverCellList(coarse, {{2, 2, 2}});
+		coarse.copyToDevice();
+
+		launchCoarseToFine(fine, coarse, {2, 2, 2}, {15, 15, 15}, {0, 0, 0}, {0, 0, 0}, even_iter);
+		fine.copyToHost();
+
+		if (cse.quadratic)
+			checkFineMacrosExact(
+				fine, {2, 2, 2}, {15, 15, 15}, CMQuadraticField{}, 1e-4, 1e-6, "Test 11 carve 3-axis corner exactness (covered corner (2,2,2); quadratic)"
+			);
+		else
+			checkFineMacrosExact(
+				fine, {2, 2, 2}, {15, 15, 15}, CMLinearField{}, 1e-4, 1e-6, "Test 11 carve 3-axis corner exactness (covered corner (2,2,2); linear)"
+			);
+	}
+}
+
+// Test 12: degenerate carve, storage edge -- covered {(7,5,5),(7,5,6)}
+// taints the lo end of the x window {7,8} of the single fine ghost cell
+// (15,12,12); the cure window {8,9} overreaches the coarse storage extent
+// (max storable coarse index = 8), so the x axis shortens to the mirrored
+// home cell 7 with ONE warning (axis 0). The y window carves lo-tainted
+// {5,6} -> {6,7}, the z window stays: final tuple {(7),(6,7),(5,6)} clean.
+// The field is x-independent, so the collapsed x-dependence (all monomial
+// coefficients containing x vanish, mirrored-cell idiom) still reproduces
+// the analytic field exactly; any read of a covered cell poisons the
+// output with NaN.
+void test_cm_exactness_carve_degenerate_storage_edge()
+{
+	const bool even_iter = false;
+
+	MockBlock coarse, fine;
+	coarse.allocate(COARSE_N);
+	fine.allocate(FINE_N);
+	fillFieldCE(coarse, even_iter, CMEdgeField{});
+	coverCellList(coarse, {{7, 5, 5}, {7, 5, 6}});
+	coarse.copyToDevice();
+
+	launchCoarseToFine(fine, coarse, {15, 12, 12}, {16, 13, 13}, {0, 0, 0}, {0, 0, 0}, even_iter);
+	fine.copyToHost();
+
+	checkFineMacrosExact(
+		fine, {15, 12, 12}, {16, 13, 13}, CMEdgeField{}, 1e-4, 1e-6,
+		"Test 12 carve degenerate storage-edge collapse (x shortened to home 7 + warning; output finite == analytic field at (Y,Z) = (5.75,5.75))"
+	);
+}
+
+// Test 13: degenerate carve, residual covered cell in the carved tuple --
+// covered = {2,3}^3 minus the home cell (3,3,3): every axis of the nominal
+// tuple of the single fine ghost cell (6,6,6) is tainted at BOTH ends, so
+// no axis can shift (footprint < 3 coarse cells thick idiom); the final
+// tuple rescan finds covered cells and collapses ALL axes to the mirrored
+// home cell with ONE warning (axis id 3). Fallback semantics: the output
+// equals the analytic field AT THE HOME CELL CENTER (3,3,3), finite, with
+// no covered (NaN) data read.
+void test_cm_exactness_carve_degenerate_residual()
+{
+	const bool even_iter = false;
+
+	MockBlock coarse, fine;
+	coarse.allocate(COARSE_N);
+	fine.allocate(FINE_N);
+	fillFieldCE(coarse, even_iter, CMQuadraticField{});
+	std::vector<idx3d> cells;
+	for (idx z = 2; z <= 3; z++)
+		for (idx y = 2; y <= 3; y++)
+			for (idx x = 2; x <= 3; x++)
+				if (x != 3 || y != 3 || z != 3)
+					cells.push_back({x, y, z});
+	coverCellList(coarse, cells);
+	coarse.copyToDevice();
+
+	launchCoarseToFine(fine, coarse, {6, 6, 6}, {7, 7, 7}, {0, 0, 0}, {0, 0, 0}, even_iter);
+	fine.copyToHost();
+
+	// mirrored-home fallback expectation: constant field at the home center
+	struct CMHomeField
+	{
+		std::array<double, 4> v;
+		std::array<double, 4> exact(double, double, double) const
+		{
+			return v;
+		}
+	};
+	checkFineMacrosExact(
+		fine, {6, 6, 6}, {7, 7, 7}, CMHomeField{CMQuadraticField{}.exact(3, 3, 3)}, 1e-4, 1e-6,
+		"Test 13 carve degenerate residual-tuple collapse (all axes mirrored to home (3,3,3) + warning; output finite == analytic field at the home cell)"
+	);
+}
+
+// Test 17: 2-axis edge-carved window exactness -- the covered EDGE column
+// {(2,2,z) : z in [0,8]} (the intersection line of two covered faces x=2
+// and y=2) taints the two NORMAL-axis windows of every fine ghost cell
+// having BOTH tangent indices in {3,4,5,6} at exactly ONE end each:
+// fgx,fgy in {3,4}: windows {1,2} covered at the hi ends -> shift -1 to
+// {0,1}; fgx,fgy in {5,6}: windows {2,3} covered at the lo ends -> shift
+// +1 to {3,4}; mixed pairs shift in opposite directions (all four sign
+// combinations appear in the launch region). The z window sees the column
+// at BOTH ends (full column span) and stays nominal (per-axis XOR joint
+// rule) -- the two-shifted-axes edge geometry no sibling exercises (Test
+// 10 shifts ONE axis, Test 11 shifts all THREE, Test 12 mixes one shift
+// with a degenerate shorten). Cells (fgx,fgy) in {4,5}^2 have the home
+// cell itself covered (|t_rel| = 1.25 class, still exact -- the Test 10
+// fg=4/5 mechanism). Every carved tuple leaves the column cells, so no
+// degenerate path triggers and no warning fires; the NaN-poisoned column
+// proves no covered cell is read. Tangents outside {3..6} are inert
+// controls. Runs only in the carve build(s); the carve is a retained
+// non-default option after gate A falsified CM+carve for the direct path.
+void test_cm_exactness_carve_2axis_edge()
+{
+	const bool even_iter = false;
+
+	struct Case
+	{
+		const char* name;
+		bool quadratic;
+	};
+	const Case cases[2] = {{"linear field", false}, {"linear rho + pure quadratic velocity field", true}};
+
+	for (const Case& cse : cases) {
+		MockBlock coarse, fine;
+		coarse.allocate(COARSE_N);
+		fine.allocate(FINE_N);
+		if (cse.quadratic)
+			fillFieldCE(coarse, even_iter, CMQuadraticField{});
+		else
+			fillFieldCE(coarse, even_iter, CMLinearField{});
+		std::vector<idx3d> column;
+		for (idx cz = 0; cz <= COARSE_N; cz++)
+			column.push_back({2, 2, cz});
+		coverCellList(coarse, column);
+		coarse.copyToDevice();
+
+		launchCoarseToFine(fine, coarse, {2, 2, 2}, {15, 15, 15}, {0, 0, 0}, {0, 0, 0}, even_iter);
+		fine.copyToHost();
+
+		if (cse.quadratic)
+			checkFineMacrosExact(
+				fine, {2, 2, 2}, {15, 15, 15}, CMQuadraticField{}, 1e-4, 1e-6, "Test 17 carve 2-axis edge exactness (covered column x=y=2, z in [0,8]; quadratic)"
+			);
+		else
+			checkFineMacrosExact(
+				fine, {2, 2, 2}, {15, 15, 15}, CMLinearField{}, 1e-4, 1e-6, "Test 17 carve 2-axis edge exactness (covered column x=y=2, z in [0,8]; linear)"
+			);
+	}
+}
+
+#endif	// C2F_CARVE
+#endif	// C2F_COMPACT_MOMENT
+
+// Tests 14-16 + 18: F2C skin-launch coverage (changes 2+3 of the AMR
+// interface redesign, unconditional since D.1 retired the ring path) --
+// Experiment B item 5 (B.5, D.2). Production launches
+// cudaAMR_FineToCoarse over the 6 disjoint inset-face SKIN rectangles of
+// each fine footprint (one coarse cell deep INSIDE the frozen GEO_NOTHING
+// region, amr_state.h buildCouplings); the pre-B.5 mock suite had NO
+// interior-F2C geography coverage at all (the NEST cases cover C2F ghost
+// faces and the former ring-F2C halo faces only). These tests hand-emulate
+// production skin launches with the basic mock fixture (coarse 8^3, fine
+// 16^3, OV = 1, zero offsets as Tests 1-4/6): the footprint is the coarse
+// block interior [0,8)^3 exactly covered by the fine block, and the
+// production fine block covering a footprint at go = (0,0,0) has fine
+// offset 2*go = (0,0,0), so the zero-offset mock reproduces the production
+// skin window positions EXACTLY (fx0 = 2x per axis; min-face cells sit at
+// fx0 = 0).
+//
+// WINDOW/WEIGHT TABLE (x-min skin face launch {0}x{0..8}x{0..8}, the
+// production x-min rectangle of this footprint):
+//   every cell: x-window nominal {-1,0,1,2} -- the axis_window LOWER bound
+//     is 0 (unconditional since D.1; the pre-skin default was -ov), so the
+//     window clamps to
+//     {0,1,2,3} and the SHARED weight machinery re-evaluates the Lagrange
+//     weights at the FIXED evaluation point t = fx0 + 0.5 = 0.5 (the
+//     centered {-1,9,9,-1}/16 become the shifted window's {5,15,-5,1}/16
+//     at runtime, never special-cased -- the plan's "do not reuse the ring
+//     path's shifted-face weights" warning is honored by construction;
+//     cubic content is still projected exactly);
+//   tangent cells with y,z in {1..6}: y/z windows nominal, start >= 1 -- a
+//     LOWER-bound-only clamp cannot engage ("the clamp changes nothing
+//     away from edges"; the nominal code path, sharing Test 6's interior
+//     fp class 1.192e-07);
+//   tangent cells with y or z == 0: that axis's window clamps to {0,1,2,3};
+//   tangent cells with y or z == 7: hi-side window {13,14,15,16} INCLUDING
+//     the fine ghost node 16 (the upper bound was never loosened) -- the
+//     lo-only clamp's documented upper-bound asymmetry (max-side windows
+//     still read the C2F-filled ghost; analytically filled here, so exact).
+//   Test 15's y-min/z-min launches mirror the same table per axis.
+//
+// TOLERANCE CLASS: additive-separable cubic density (any 4-node window
+// reproduces it exactly at the fixed evaluation point), constant
+// velocities, zero strain (the CE fill reduces to the equilibrium). The
+// expectations are ANALYTIC (the coarse-center field value); gates
+// rtol = 1e-5 / atol = 1e-6 separate the fp-exact class (Test 6 measured
+// 1.192e-07) from the box average (measured 1.7e-03 there) and from any
+// shortened or otherwise mismachined window (~1e-03 for this marker) by
+// ~2 decades. Test 15 additionally makes a lower-bound REGRESSION
+// positively detectable via sentinel-poisoned ghost planes.
+
+// skin-test field: rho = 1 + 0.1*(dx^3 + dy^3 + dz^3) with dx = (x - 7.5)/4
+// in fine indexer coordinates (Test 6's cubic, extended separably to all
+// axes so every axis's window machinery is load-bearing for exactness);
+// constant velocities, zero velocity gradient (G == 0 -> f_neq == 0, so the
+// projected DFs are exactly the equilibrium of the projected macros)
+struct SkinCubicField {
+	std::array<dreal, 10> fill(idx x, idx y, idx z) const
+	{
+		return {
+			static_cast<dreal>(rhoAt(x, y, z)), U0, V0, W0, dreal(0), dreal(0), dreal(0), dreal(0), dreal(0), dreal(0)
+		};
+	}
+
+	std::array<double, 4> exact(double X, double Y, double Z) const
+	{
+		return {rhoAt(X, Y, Z), U0, V0, W0};
+	}
+
+	static double rhoAt(double x, double y, double z)
+	{
+		const double dx = (x - 7.5) / 4.0, dy = (y - 7.5) / 4.0, dz = (z - 7.5) / 4.0;
+		return 1.0 + 0.1 * (dx * dx * dx + dy * dy * dy + dz * dz * dz);
+	}
+
+	static constexpr dreal U0 = dreal(0.01);
+	static constexpr dreal V0 = dreal(-0.02);
+	static constexpr dreal W0 = dreal(0.03);
+};
+
+// overwrite one negative fine ghost plane (axis 0/1/2 at index -1) with a
+// large sentinel on every DF array/slot: under the lo = 0 clamp no skin
+// window may read these nodes, so a lower-bound REGRESSION is positively
+// detected -- a read shifts the transfer result by O(10..100), decades
+// above the fp-exactness gates (fillMarkerNested's wrong-array sentinel
+// idiom from Test 5)
+void sentinelFineGhostPlane(MockBlock& fine, int axis)
+{
+	constexpr dreal SENTINEL = 1000;
+	for (uint8_t dfty = 0; dfty < DFMAX; dfty++)
+		for (int q = 0; q < 27; q++)
+			for (idx b = -fine.ov; b < fine.size + fine.ov; b++)
+				for (idx a = -fine.ov; a < fine.size + fine.ov; a++) {
+					if (axis == 0)
+						fine.hfs[dfty](q, -1, a, b) = SENTINEL;
+					else if (axis == 1)
+						fine.hfs[dfty](q, a, -1, b) = SENTINEL;
+					else
+						fine.hfs[dfty](q, a, b, -1) = SENTINEL;
+				}
+}
+
+// Test-6-style per-cell assertion of the DFs the F2C transfer wrote in its
+// parity-dependent write slot against the equilibrium of the analytically
+// projected skin-test field (the coarse-center value of the cubic marker is
+// window-independent in exact arithmetic -- see the block comment)
+bool checkCoarseTransferExact(const MockBlock& coarse, const std::vector<idx3d>& cells, bool coarse_even_iter, const char* what)
+{
+	double max_err = 0;
+	idx bad = 0;
+	bool first_mismatch = true;
+	for (const idx3d& c : cells) {
+		const std::array<dreal, 27> eq = equilibriumOnHost(
+			static_cast<dreal>(SkinCubicField::rhoAt(2 * c.x() + 0.5, 2 * c.y() + 0.5, 2 * c.z() + 0.5)),
+			SkinCubicField::U0,
+			SkinCubicField::V0,
+			SkinCubicField::W0
+		);
+		for (int q = 0; q < 27; q++) {
+			const dreal actual = coarse.hfs[f2cWriteArray()](coarseWriteSlot(q, coarse_even_iter), c.x(), c.y(), c.z());
+			if (! (std::isfinite(actual) && closeEnough(actual, eq[q], 1e-5, 1e-6))) {
+				if (first_mismatch) {
+					fmt::println("  first mismatch: cell=({},{},{}), q={}, actual={:.9e}, expected={:.9e}", c.x(), c.y(), c.z(), q, actual, eq[q]);
+					first_mismatch = false;
+				}
+				bad++;
+			}
+			max_err = std::max<double>(max_err, std::abs(actual - eq[q]));
+		}
+	}
+	report(bad == 0, fmt::format("{}: written DFs match the analytically projected cubic field (max |err| = {:.3e})", what, max_err));
+	return bad == 0;
+}
+
+// Test 14: skin-launch exactness, interior -- the production x-min skin
+// rectangle {0}x{0..8}x{0..8} launched into GEO_NOTHING-tagged coarse
+// cells (see the block comment for the window table). Asserts cubic
+// exactness on all 64 face cells: tangent-interior axes share the
+// nominal window semantics (a lower-bound clamp cannot engage away from
+// edges -- mock-matrix.md's coupling case-1 class made a POSITIVE skin
+// test), and the lo-/hi-edge tangent cells stay exact on their shifted
+// windows. The GEO_NOTHING tagging proves the Defect-2 allowed class
+// RECEIVES the writes (Tests 2/4a/6 tag GEO_AMR_INTERFACE instead; Test 7
+// has one GEO_NOTHING cell) -- the coarse block is pre-filled with the
+// (rho = 1, v = 0) placeholder, so a skipped write fails the gate.
+void test_f2c_skin_exactness_interior()
+{
+	const std::array<bool, 2> parities = {true, false};
+
+	for (const bool fine_even_iter : parities) {
+		for (const bool coarse_even_iter : parities) {
+			MockBlock coarse, fine;
+			coarse.allocate(COARSE_N);
+			fine.allocate(FINE_N);
+			fillFieldCE(fine, fine_even_iter, SkinCubicField{});
+			fine.copyToDevice();
+			fillUniform(coarse, true, 1.0, 0.0, 0.0, 0.0);
+
+			// the production x-min skin rectangle of the footprint: frozen
+			// GEO_NOTHING cells (markAMRInterface tags the under-footprint
+			// region GEO_NOTHING; the skin rectangles partition it one cell
+			// deep)
+			std::vector<idx3d> face;
+			for (idx z = 0; z < COARSE_N; z++)
+				for (idx y = 0; y < COARSE_N; y++)
+					face.push_back({0, y, z});
+			tagNothingCells(coarse, face);
+			coarse.copyToDevice();
+
+			launchFineToCoarse(
+				coarse, fine, {0, 0, 0}, {1, COARSE_N, COARSE_N}, {0, 0, 0}, {0, 0, 0}, fine_even_iter, coarse_even_iter
+			);
+			coarse.copyToHost();
+
+			checkCoarseTransferExact(
+				coarse,
+				face,
+				coarse_even_iter,
+				fmt::format(
+					"Test 14 skin x-min face F2C exactness (fine_even={}, coarse_even={}): all 64 GEO_NOTHING cells received the transfer",
+					fine_even_iter,
+					coarse_even_iter
+				)
+					.c_str()
+			);
+		}
+	}
+}
+
+// Test 15: footprint-lo-EDGE clamp exactness with a POSITIVE ghost-read
+// detector -- the three production min-face skin rectangles (x-min over
+// the full y/z range, y-min over interior x, z-min over interior x/y --
+// overlap-free; production's corner ownership by the x-faces is immaterial
+// here since a re-write would be idempotent) are launched while the
+// negative fine ghost planes x = y = z = -1 carry the +1000 sentinel on
+// every DF array/slot. Under the lo = 0 clamp every nominal window
+// {f0-1,...,f0+2} with f0 == 0 becomes {0,1,2,3} and never touches the
+// sentinel planes; a lower-bound REGRESSION reads a sentinel node and
+// shifts the transfer by O(10..100), decades above the gates. Exactness at
+// the probes therefore proves the clamp CHOSE the shifted window with the
+// shared weight machinery (cubic-exact at the fixed evaluation point --
+// same machinery class as Test 6), not a degenerate shorten and not the
+// box average.
+void test_f2c_skin_edge_clamp_exactness()
+{
+	const bool coarse_even_iter = false;
+
+	for (const bool fine_even_iter : {true, false}) {
+		MockBlock coarse, fine;
+		coarse.allocate(COARSE_N);
+		fine.allocate(FINE_N);
+		fillFieldCE(fine, fine_even_iter, SkinCubicField{});
+		sentinelFineGhostPlane(fine, 0);
+		sentinelFineGhostPlane(fine, 1);
+		sentinelFineGhostPlane(fine, 2);
+		fine.copyToDevice();
+		fillUniform(coarse, true, 1.0, 0.0, 0.0, 0.0);
+
+		std::vector<idx3d> rect;
+		for (idx z = 0; z < COARSE_N; z++)
+			for (idx y = 0; y < COARSE_N; y++)
+				rect.push_back({0, y, z});	// x-min face (full y/z)
+		for (idx z = 0; z < COARSE_N; z++)
+			for (idx x = 1; x < COARSE_N; x++)
+				rect.push_back({x, 0, z});	// y-min face (interior x)
+		for (idx y = 1; y < COARSE_N; y++)
+			for (idx x = 1; x < COARSE_N; x++)
+				rect.push_back({x, y, 0});	// z-min face (interior x/y)
+		tagNothingCells(coarse, rect);
+		coarse.copyToDevice();
+
+		launchFineToCoarse(coarse, fine, {0, 0, 0}, {1, COARSE_N, COARSE_N}, {0, 0, 0}, {0, 0, 0}, fine_even_iter, coarse_even_iter);
+		launchFineToCoarse(coarse, fine, {1, 0, 0}, {COARSE_N, 1, COARSE_N}, {0, 0, 0}, {0, 0, 0}, fine_even_iter, coarse_even_iter);
+		launchFineToCoarse(coarse, fine, {1, 1, 0}, {COARSE_N, COARSE_N, 1}, {0, 0, 0}, {0, 0, 0}, fine_even_iter, coarse_even_iter);
+		coarse.copyToHost();
+
+		// per-axis single-clamp probes plus the triple-clamped corner: each
+		// probes one shifted {0,1,2,3} window on tangent-interior axes
+		// (windows that would read the sentinel planes on a clamp failure)
+		const std::vector<idx3d> probes = {{0, 4, 4}, {4, 0, 4}, {4, 4, 0}, {0, 0, 0}};
+		checkCoarseTransferExact(
+			coarse,
+			probes,
+			coarse_even_iter,
+			fmt::format(
+				"Test 15 footprint lo-edge clamp exactness (fine_even={}): probes (0,4,4) x / (4,0,4) y / (4,4,0) z / (0,0,0) corner on windows {{0,1,2,3}}, sentinel-guarded",
+				fine_even_iter
+			)
+				.c_str()
+		);
+	}
+}
+
+// Test 16: skin-launch Defect-2 DF/macro-store map guard (the Test 7
+// 4-class lock, skin variant) -- a skin-like x-min rectangle
+// {0}x{0..8}x{0..8} tagged GEO_NOTHING throughout (the production skin
+// geography) with one cell per map class inside it: GEO_WALL and GEO_FLUID
+// are PROTECTED (their DFs and macros were NaN-poisoned before the launch,
+// so ANY forbidden write trips the isnan assertion), GEO_NOTHING and
+// GEO_AMR_INTERFACE RECEIVE the transfer. The allowed-GEO predicate itself
+// (Phase 0.4, amr_coupling.h) is unaffected by the ring-path removal -- this
+// test pins it on the skin geography production actually launches over.
+void test_f2c_skin_df_store_map_guard()
+{
+	// post-stream natural orientation on the fine level, spatial (twisted)
+	// coarse consumer -- same orientation state as Tests 5 and 7
+	const bool fine_even_iter = false;
+	const bool next_coarse_even_iter = false;
+
+	// one cell per map class in the launched x-min face (z == 3 row); the
+	// receiving cells' tangent windows are nominal (fy0 in {10,12}), the
+	// class assertion is window-independent (cubic marker)
+	constexpr idx Y_WALL = 3, Y_FLUID = 4, Y_NOTHING = 5, Y_INTERFACE = 6, CZ = 3;
+
+	MockBlock coarse, fine;
+	coarse.allocate(COARSE_N);
+	fine.allocate(FINE_N);
+	fillFieldCE(fine, fine_even_iter, SkinCubicField{});
+	fine.copyToDevice();
+	fillUniform(coarse, true, 1.0, 0.0, 0.0, 0.0);
+
+	// production skin rectangle tagged GEO_NOTHING, with the four class
+	// cells overwriting their map tags
+	std::vector<idx3d> face;
+	for (idx z = 0; z < COARSE_N; z++)
+		for (idx y = 0; y < COARSE_N; y++)
+			face.push_back({0, y, z});
+	tagNothingCells(coarse, face);
+	coarse.hmap(0, Y_WALL, CZ) = NSE_CONFIG::BC::GEO_WALL;
+	coarse.hmap(0, Y_FLUID, CZ) = NSE_CONFIG::BC::GEO_FLUID;
+	coarse.hmap(0, Y_INTERFACE, CZ) = NSE_CONFIG::BC::GEO_AMR_INTERFACE;
+	coarse.dmap = coarse.hmap;
+
+	// NaN-poison the protected cells' DFs (every array/slot) and macros:
+	// the guard keeps them NaN; any forbidden write lands a finite value
+	// (the kernel's inputs are finite) and trips the finiteness check
+	const dreal nan = std::numeric_limits<dreal>::quiet_NaN();
+	poisonCellDFs(coarse, 0, Y_WALL, CZ);
+	poisonCellDFs(coarse, 0, Y_FLUID, CZ);
+	for (int m = 0; m < NSE_CONFIG::MACRO::N; m++) {
+		coarse.hmacro(m, 0, Y_WALL, CZ) = nan;
+		coarse.hmacro(m, 0, Y_FLUID, CZ) = nan;
+	}
+	coarse.dmacro = coarse.hmacro;
+	coarse.copyToDevice();
+
+	launchFineToCoarse(coarse, fine, {0, 0, 0}, {1, COARSE_N, COARSE_N}, {0, 0, 0}, {0, 0, 0}, fine_even_iter, next_coarse_even_iter);
+
+	coarse.copyToHost();
+	coarse.hmacro = coarse.dmacro;
+
+	// DF check per map class: protected cells must still hold the NaN
+	// poison in the kernel's write slot of every direction, coupling cells
+	// must hold the analytic transfer result there (Test 7's structure)
+	const idx case_ys[4] = {Y_WALL, Y_FLUID, Y_NOTHING, Y_INTERFACE};
+	const bool case_write[4] = {false, false, true, true};
+	const char* case_names[4] = {"GEO_WALL", "GEO_FLUID", "GEO_NOTHING", "GEO_AMR_INTERFACE"};
+	for (int cse = 0; cse < 4; cse++) {
+		const idx y = case_ys[cse];
+		const bool expect_write = case_write[cse];
+		const std::array<dreal, 27> eq_transfer = equilibriumOnHost(
+			static_cast<dreal>(SkinCubicField::rhoAt(0.5, 2 * y + 0.5, 2 * CZ + 0.5)),
+			SkinCubicField::U0,
+			SkinCubicField::V0,
+			SkinCubicField::W0
+		);
+		double max_err = 0;
+		idx bad = 0;
+		bool first_mismatch = true;
+		for (int q = 0; q < 27; q++) {
+			const int slot = coarseWriteSlot(q, next_coarse_even_iter);
+			const dreal actual = coarse.hfs[f2cWriteArray()](slot, 0, y, CZ);
+			const bool ok = expect_write ? (std::isfinite(actual) && closeEnough(actual, eq_transfer[q], 1e-4, 1e-5))
+										 : static_cast<bool>(std::isnan(actual));
+			if (! ok) {
+				if (first_mismatch) {
+					fmt::println(
+						"  first mismatch: cell=(0, {}, {}), q={}, actual={:.9e} (expected {})",
+						y,
+						CZ,
+						q,
+						actual,
+						expect_write ? "transfer value" : "NaN poison"
+					);
+					first_mismatch = false;
+				}
+				bad++;
+			}
+			if (expect_write)
+				max_err = std::max<double>(max_err, std::abs(actual - eq_transfer[q]));
+		}
+		report(
+			bad == 0,
+			fmt::format(
+				"Test 16 skin F2C DF-store map guard: {} cell {} (max |err| = {:.3e})",
+				case_names[cse],
+				expect_write ? "received the transfer (finite)" : "kept the NaN poison (not overwritten)",
+				max_err
+			)
+		);
+	}
+
+	// macro store under the same predicate: protected macros stay NaN,
+	// receiving macros hold the transfer macros
+	const int macro_ids[4] = {NSE_CONFIG::MACRO::e_rho, NSE_CONFIG::MACRO::e_vx, NSE_CONFIG::MACRO::e_vy, NSE_CONFIG::MACRO::e_vz};
+	for (int cse = 0; cse < 4; cse++) {
+		const idx y = case_ys[cse];
+		const bool expect_write = case_write[cse];
+		const std::array<dreal, 4> expected = {
+			static_cast<dreal>(SkinCubicField::rhoAt(0.5, 2 * y + 0.5, 2 * CZ + 0.5)),
+			SkinCubicField::U0,
+			SkinCubicField::V0,
+			SkinCubicField::W0
+		};
+		double max_err = 0;
+		idx bad = 0;
+		bool first_mismatch = true;
+		for (int m = 0; m < 4; m++) {
+			const dreal actual = coarse.hmacro(macro_ids[m], 0, y, CZ);
+			const bool ok = expect_write ? (std::isfinite(actual) && closeEnough(actual, expected[m], 1e-4, 1e-5))
+										 : static_cast<bool>(std::isnan(actual));
+			if (! ok) {
+				if (first_mismatch) {
+					fmt::println(
+						"  first macro mismatch: cell=(0, {}, {}), id={}, actual={:.9e} (expected {})",
+						y,
+						CZ,
+						macro_ids[m],
+						actual,
+						expect_write ? "transfer macro" : "NaN poison"
+					);
+					first_mismatch = false;
+				}
+				bad++;
+			}
+			if (expect_write)
+				max_err = std::max<double>(max_err, std::abs(actual - expected[m]));
+		}
+		report(
+			bad == 0,
+			fmt::format(
+				"Test 16 skin F2C macro-store map guard: {} macros {} (max |err| = {:.3e})",
+				case_names[cse],
+				expect_write ? "written by the transfer" : "kept the NaN poison",
+				max_err
+			)
+		);
+	}
+}
+
+// Test 18: footprint lo-lo EDGE clamp exactness (2-face-adjacent probes),
+// sentinel-guarded -- Test 15's machinery (same launches, same +1000
+// sentinel planes, same gates) with the probe set swapped to the footprint
+// lo-lo edges: (0,0,4) and (0,4,0) land in the x-min launch, (4,0,0) in
+// the y-min launch. Each probe has exactly TWO windows clamped to
+// {0,1,2,3} (the two edge axes with f0 == 0) and the third window nominal
+// -- a clamp-multiplicity class no sibling positively locks: Test 14
+// asserts these same cells but is clamp-blind there (the unclamped
+// {-1,0,1,2} window reproduces the analytically filled additive-separable
+// cubic exactly as well as the clamped {0,1,2,3} one), while Test 15's
+// probes clamp ONE axis (face probes) or all THREE (the (0,0,0) corner).
+// A lower-bound regression on either clamped axis reads a sentinel node
+// and shifts the transfer by O(10..100), decades above the gates.
+void test_f2c_skin_edge2pair_clamp_exactness()
+{
+	const bool coarse_even_iter = false;
+
+	for (const bool fine_even_iter : {true, false}) {
+		MockBlock coarse, fine;
+		coarse.allocate(COARSE_N);
+		fine.allocate(FINE_N);
+		fillFieldCE(fine, fine_even_iter, SkinCubicField{});
+		sentinelFineGhostPlane(fine, 0);
+		sentinelFineGhostPlane(fine, 1);
+		sentinelFineGhostPlane(fine, 2);
+		fine.copyToDevice();
+		fillUniform(coarse, true, 1.0, 0.0, 0.0, 0.0);
+
+		std::vector<idx3d> rect;
+		for (idx z = 0; z < COARSE_N; z++)
+			for (idx y = 0; y < COARSE_N; y++)
+				rect.push_back({0, y, z});	// x-min face (full y/z)
+		for (idx z = 0; z < COARSE_N; z++)
+			for (idx x = 1; x < COARSE_N; x++)
+				rect.push_back({x, 0, z});	// y-min face (interior x)
+		for (idx y = 1; y < COARSE_N; y++)
+			for (idx x = 1; x < COARSE_N; x++)
+				rect.push_back({x, y, 0});	// z-min face (interior x/y)
+		tagNothingCells(coarse, rect);
+		coarse.copyToDevice();
+
+		launchFineToCoarse(coarse, fine, {0, 0, 0}, {1, COARSE_N, COARSE_N}, {0, 0, 0}, {0, 0, 0}, fine_even_iter, coarse_even_iter);
+		launchFineToCoarse(coarse, fine, {1, 0, 0}, {COARSE_N, 1, COARSE_N}, {0, 0, 0}, {0, 0, 0}, fine_even_iter, coarse_even_iter);
+		launchFineToCoarse(coarse, fine, {1, 1, 0}, {COARSE_N, COARSE_N, 1}, {0, 0, 0}, {0, 0, 0}, fine_even_iter, coarse_even_iter);
+		coarse.copyToHost();
+
+		// two-clamped-axes edge probes: xy edge (0,0,4), xz edge (0,4,0),
+		// yz edge (4,0,0); each ALSO positively guards the clamp on both
+		// edge axes via the sentinel ghost planes
+		const std::vector<idx3d> probes = {{0, 0, 4}, {0, 4, 0}, {4, 0, 0}};
+		checkCoarseTransferExact(
+			coarse,
+			probes,
+			coarse_even_iter,
+			fmt::format(
+				"Test 18 footprint lo-lo edge clamp exactness (fine_even={}): probes (0,0,4) xy / (0,4,0) xz / (4,0,0) yz, two clamped {{0,1,2,3}} windows + one nominal each, sentinel-guarded",
+				fine_even_iter
+			)
+				.c_str()
+		);
+	}
+}
+
 int main()
 {
 	fmt::println("AMR coupling kernel unit tests (streaming pattern: {})", pattern_name);
@@ -1036,6 +2368,27 @@ int main()
 	test_mass_conservation_fine_to_coarse();
 	test_mass_conservation_coarse_to_fine();
 	test_nested_geometry_coupling();
+	test_cubic_reproduction_fine_to_coarse();
+	test_f2c_df_store_map_guard();
+
+	// skin F2C path coverage (production's only F2C channel since the ring
+	// path was removed in D.1): exactness, lo-edge clamp, Defect-2 guard on
+	// skin geography, lo-lo edge clamp probes
+	test_f2c_skin_exactness_interior();
+	test_f2c_skin_edge_clamp_exactness();
+	test_f2c_skin_df_store_map_guard();
+	test_f2c_skin_edge2pair_clamp_exactness();
+
+#ifdef C2F_COMPACT_MOMENT
+	test_cm_exactness_nominal();
+#ifdef C2F_CARVE
+	test_cm_exactness_carve_1axis();
+	test_cm_exactness_carve_3axis_corner();
+	test_cm_exactness_carve_degenerate_storage_edge();
+	test_cm_exactness_carve_degenerate_residual();
+	test_cm_exactness_carve_2axis_edge();
+#endif
+#endif
 
 	if (g_failures == 0) {
 		fmt::println("RESULT: all AMR coupling tests passed");

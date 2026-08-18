@@ -100,7 +100,9 @@
  *   stencil): the five independent second-order non-equilibrium moments
  *   (strain rates) are computed per source cell from f_neq = f - f_eq,
  *   the 8-coefficient density and three 11-coefficient velocity
- *   polynomials are fitted (exact for linear and pure quadratic fields),
+ *   polynomials are fitted (exact for linear fields, and for pure
+ *   quadratic VELOCITY fields; pure quadratic DENSITY is not -- the
+ *   8-coefficient density fit is trilinear (D.5, 2026-08-16)),
  *   the averaged moments are corrected by the fitted gradients, and the
  *   fine DFs are reconstructed from the six second-order cumulants with
  *   the cumulant back-transformation of col_cum.h, with third-order and
@@ -108,6 +110,9 @@
  *   out of the interface instead of interpolating them per direction).
  *   Precedence if several defines are given: explosion > compact moment
  *   > interpolation.
+ * - `C2F_CARVE` (active only with `C2F_COMPACT_MOMENT`): carves the CM
+ *   window one-sided off covered (`GEO_NOTHING`) coarse cells -- see the
+ *   pre-pass in the compact-moment branch below.
  *
  * Ghost cells: the kernel fills EVERY cell in
  * [ghost_begin_fine, ghost_end_fine) -- the caller passes exactly the
@@ -323,7 +328,12 @@ __global__ void cudaAMR_CoarseToFine(
 	// second-order non-equilibrium moments per source cell from
 	// f_neq = f - f_eq (strain-rate information), fits the 8-coefficient
 	// density polynomial and the three 11-coefficient velocity polynomials
-	// (exact for linear and pure quadratic fields), corrects the averaged
+	// (exact for linear fields; pure-quadratic exactness holds for the
+	// k-corrected 11-coefficient VELOCITY fits only -- the 8-coefficient
+	// density fit is the plain trilinear nodal fit, reproducing only
+	// linear/constant densities exactly; D.5, 2026-08-16, per the A.2
+	// symbolic/numeric check validated by Tests 8/9 of
+	// tests/test_amr_coupling.cu), corrects the averaged
 	// moments by the fitted gradients, and reconstructs the fine DFs from
 	// the six second-order cumulants via the cumulant back-transformation
 	// of col_cum.h; third-order and higher central moments are set to
@@ -371,9 +381,151 @@ __global__ void cudaAMR_CoarseToFine(
 		return static_cast<dreal>(t - (static_cast<double>(start) + 0.5));
 	};
 	idx cnx[2], cny[2], cnz[2];
-	const dreal tx = axis_window(x + fine_off.x(), coarse_off.x(), coarse_SD.X(), coarse_SD.indexer.template getOverlap<0>(), cnx);
-	const dreal ty = axis_window(y + fine_off.y(), coarse_off.y(), coarse_SD.Y(), coarse_SD.indexer.template getOverlap<1>(), cny);
-	const dreal tz = axis_window(z + fine_off.z(), coarse_off.z(), coarse_SD.Z(), coarse_SD.indexer.template getOverlap<2>(), cnz);
+	// tx/ty/tz stay mutable only so the C2F_CARVE pre-pass below can re-offset them under the define
+	dreal tx = axis_window(x + fine_off.x(), coarse_off.x(), coarse_SD.X(), coarse_SD.indexer.template getOverlap<0>(), cnx);
+	dreal ty = axis_window(y + fine_off.y(), coarse_off.y(), coarse_SD.Y(), coarse_SD.indexer.template getOverlap<1>(), cny);
+	dreal tz = axis_window(z + fine_off.z(), coarse_off.z(), coarse_SD.Z(), coarse_SD.indexer.template getOverlap<2>(), cnz);
+
+	#ifdef C2F_CARVE
+	// ---- Change-5 carve (amr-interface-redesign-plan.md, Experiment A item
+	// 1 -- the "|t_rel| 0.25 -> 0.75, 0.25-cell extrapolation (Schönherr
+	// offset)" note; docs/AMR-interface-proposed-diagram.md change 5 and the
+	// §2 layout diagram; Schönherr 2015 thesis Eqs. 7.49-7.57): conservative
+	// map-based joint pre-pass over the up-to-8 candidate window cells of
+	// this thread's ghost cell. Per axis, shift the storage-clamped 2-cell
+	// window ONE CELL OUTWARD, away from the covered side, iff a GEO_NOTHING
+	// cell appears in any tensor-window combination at EXACTLY ONE end of the
+	// window ("shift iff it would touch a GEO_NOTHING cell in any tensor
+	// combination along that axis" -- a both-ends-covered window has no valid
+	// outward direction); the evaluation then runs off-center toward the
+	// fine side with |t_rel| = 0.75 via the SAME axis_window machinery above
+	// (t_rel moves with the window center). Both-ends-covered means the taint
+	// enters only through a sibling axis's candidate cells (tangent axes at
+	// faces/edges/corners) and the axis stays put -- the sibling's shift
+	// cleans the full tuple, which the final scan below verifies. Valid
+	// geometries (single rectangular footprint, ghosts >= 2 cells inside the
+	// coarse storage extent) never take the two degenerate paths: (1) a
+	// shift blocked by the storage edge (a face within 1 cell of it) and
+	// (2) a residual covered cell in the carved tuple (footprint < 3 coarse
+	// cells thick, or squeezed/multi-footprint maps); both shorten to the
+	// mirrored home cell with a rate-limited warning -- today's
+	// storability-guard shorten behavior (see axis_window above) plus the
+	// plan-required logged warning, capped so a degenerate map cannot storm
+	// stdout. Without this define none of this block exists and the CM
+	// branch is the original flow.
+	static __device__ int c2f_carve_warn_budget = 16;
+
+	// one map read per candidate window cell (8 reads, nominal tuple)
+	bool cov[2][2][2];
+	for (int ibz = 0; ibz < 2; ibz++)
+		for (int iby = 0; iby < 2; iby++)
+			for (int ibx = 0; ibx < 2; ibx++)
+				cov[ibx][iby][ibz] = coarse_SD.map(cnx[ibx], cny[iby], cnz[ibz]) == BC::GEO_NOTHING;
+
+	// ghost's home coarse cell in the coarse indexer frame (never covered in
+	// valid geometries: it parents a fine ghost cell) -- the degenerate
+	// mirror target
+	const idx hox = fdiv2(x + fine_off.x()) - coarse_off.x();
+	const idx hoy = fdiv2(y + fine_off.y()) - coarse_off.y();
+	const idx hoz = fdiv2(z + fine_off.z()) - coarse_off.z();
+
+	// per-axis joint rule helper: taint_lo/taint_hi mark covered tensor
+	// combinations touching nodes[0]/nodes[1]; lo/hi are the storable
+	// single-cell bounds of the axis
+	const auto carve_warn = [x, y, z](int axis_id, idx n0, idx n1) -> void
+	{
+		const int ticket = atomicAdd(&c2f_carve_warn_budget, -1);
+		if (ticket > 0)
+			printf(
+				"C2F_CARVE: degenerate window, axis %d of fine ghost (%d,%d,%d) shortened to home cell (window [%d,%d])\n",
+				axis_id,
+				static_cast<int>(x),
+				static_cast<int>(y),
+				static_cast<int>(z),
+				static_cast<int>(n0),
+				static_cast<int>(n1)
+			);
+	};
+	const auto carve_window_off_covered_cells =
+		[&carve_warn](idx* nodes, dreal& t_rel, bool taint_lo, bool taint_hi, idx lo, idx hi, idx home, int axis_id) -> void
+	{
+		if (nodes[0] == nodes[1])
+			return;	 // axis already storage-shortened: nothing left to carve
+		if (taint_lo == taint_hi)
+			return;	 // clean window, or taint entering only through a sibling axis (whose shift cleans the tuple)
+		const idx start = taint_hi ? nodes[0] - 1 : nodes[0] + 1;  // shift one cell away from the covered end
+		if (start < lo || start + 1 > hi) {
+			// face within 1 cell of the coarse storage edge: degenerate
+			// shorten to the mirrored home cell (storability-guard behavior)
+			carve_warn(axis_id, nodes[0], nodes[1]);
+			t_rel += static_cast<dreal>(nodes[0] - home);
+			nodes[0] = home;
+			nodes[1] = home;
+			return;
+		}
+		// evaluation point moves off-center with the window center
+		t_rel += static_cast<dreal>(nodes[0] - start);
+		nodes[0] = start;
+		nodes[1] = start + 1;
+	};
+
+	// apply the joint rule per axis
+	const idx ovx = coarse_SD.indexer.template getOverlap<0>();
+	const idx ovy = coarse_SD.indexer.template getOverlap<1>();
+	const idx ovz = coarse_SD.indexer.template getOverlap<2>();
+	carve_window_off_covered_cells(
+		cnx,
+		tx,
+		cov[0][0][0] || cov[0][0][1] || cov[0][1][0] || cov[0][1][1],
+		cov[1][0][0] || cov[1][0][1] || cov[1][1][0] || cov[1][1][1],
+		-ovx,
+		coarse_SD.X() - 1 + ovx,
+		hox,
+		0
+	);
+	carve_window_off_covered_cells(
+		cny,
+		ty,
+		cov[0][0][0] || cov[0][0][1] || cov[1][0][0] || cov[1][0][1],
+		cov[0][1][0] || cov[0][1][1] || cov[1][1][0] || cov[1][1][1],
+		-ovy,
+		coarse_SD.Y() - 1 + ovy,
+		hoy,
+		1
+	);
+	carve_window_off_covered_cells(
+		cnz,
+		tz,
+		cov[0][0][0] || cov[0][1][0] || cov[1][0][0] || cov[1][1][0],
+		cov[0][0][1] || cov[0][1][1] || cov[1][0][1] || cov[1][1][1],
+		-ovz,
+		coarse_SD.Z() - 1 + ovz,
+		hoz,
+		2
+	);
+
+	// final tuple scan: squeezed maps (footprint < 3 coarse cells thick along
+	// a tangent axis, two footprints bracketing the ghost) can leave a
+	// covered cell in the carved tuple -- collapse all axes to the mirrored
+	// home cell (the only cell the caller guarantees uncovered) and warn
+	bool c2f_carve_residual = false;
+	for (int ibz = 0; ibz < 2 && ! c2f_carve_residual; ibz++)
+		for (int iby = 0; iby < 2 && ! c2f_carve_residual; iby++)
+			for (int ibx = 0; ibx < 2 && ! c2f_carve_residual; ibx++)
+				c2f_carve_residual = coarse_SD.map(cnx[ibx], cny[iby], cnz[ibz]) == BC::GEO_NOTHING;
+	if (c2f_carve_residual) {
+		carve_warn(3, hox, hox);  // axis_id 3 = whole-tuple collapse
+		cnx[0] = hox;
+		cnx[1] = hox;
+		cny[0] = hoy;
+		cny[1] = hoy;
+		cnz[0] = hoz;
+		cnz[1] = hoz;
+		tx = 0;
+		ty = 0;
+		tz = 0;
+	}
+	#endif
 
 	// Steps B-D: visit the 8 source cells (local coordinates (xn,yn,zn)
 	// in {+-1/2}^3) and accumulate the polynomial coefficient sums; the
@@ -874,23 +1026,24 @@ __global__ void cudaAMR_CoarseToFine(
  * Storability guard (per cell): all 8 fine subcells of a processed coarse
  * cell must be valid fine STORAGE indices, i.e. within the per-axis
  * overlap-extended range `[-ov_i, fine_local_i + ov_i)`, where `ov` is the
- * overlap depth the caller allocated on the fine block's indexer (2 on
+ * overlap depth the caller allocated on the fine block's indexer (1 on
  * refinement-level blocks, see `LBM_BLOCK::storage_overlap`); cells failing
  * the test are skipped individually. This per-cell guard replaces the
  * former launch-extent clip, which evaluated the storability condition in
  * the wrong (origin-aligned) frame and silently dropped the max-side faces
- * and half of the patch extents of nested geometries. Note the fine overlap
- * storage must actually cover the 2-cell-deep ghost ring of the block's
- * footprint, otherwise every interface cell is skipped and keeps the
- * `preCollision` placeholder (`LBM_BLOCK` allocates it; the mock tests
- * allocate `ov` explicitly). The filter's WIDER stencil (one extra fine
- * cell on each side of the subcell block per axis, see below) is handled
- * by the same shifted-window machinery as the coarse-to-fine kernel: each
- * per-axis window is shifted into the storable extent (shortened if the
- * extent is smaller than the window) and its Lagrange weights are
- * re-evaluated at runtime, so interface cells adjacent to the fine block
- * boundary are still processed (never skipped) as long as their 8
- * subcells are storable.
+ * and half of the patch extents of nested geometries. Production launches
+ * cover the skin rectangles of each fine footprint (the ring launch was
+ * removed, D.1): the min-side skin windows are clamped to the fine
+ * interior (lo = 0, see below), so they never read ghost storage, while
+ * the max-side windows include exactly the one ghost layer the
+ * coarse-to-fine fill maintains. The filter's WIDER stencil (one extra
+ * fine cell on each side of the subcell block per axis, see below) is
+ * handled by the same shifted-window machinery as the coarse-to-fine
+ * kernel: each per-axis window is shifted into the storable extent
+ * (shortened if the extent is smaller than the window) and its Lagrange
+ * weights are re-evaluated at runtime, so coupling cells adjacent to the
+ * fine block boundary are still written (never skipped) as long as
+ * their 8 subcells are storable.
  *
  * Algorithm per coarse cell:
  * 1. Read the post-kernel fine DFs of the filter stencil (orientation
@@ -919,7 +1072,7 @@ __global__ void cudaAMR_CoarseToFine(
  *    contributes to the coarse values with total weight 1/2 per axis
  *    (1/8 in 3D), the same total as the box average. The original 1/8
  *    box average of the 8 subcells remains available as a compile-time
- *    fallback with `-DF2C_FULL_LAGRAVA`.
+ *    fallback with `-DF2C_BOX_AVERAGE`.
  * 3. Compute the coarse macros (rho_c, u_c) as the moments of f_avg and
  *    the equilibrium f_eq[q] at those macros (EQ::eq_* per direction).
  * 4. Rescale the non-equilibrium part by tau_coarse / tau_fine -- the
@@ -962,11 +1115,14 @@ __global__ void cudaAMR_CoarseToFine(
  *   `coarse_even_iter` describes the parity of the NEXT consuming coarse
  *   substep.
  *
- * Macros: for cells tagged `GEO_AMR_INTERFACE` the filtered macros are
- * written to `dmacro` at the end of each coarse step; the main coarse
- * kernel also recomputes macros for these collision-active cells every
- * step, so both writers produce real values -- the transfer's write is the
- * output-relevant one until the next coarse step recomputes it.
+ * Macros: the filtered macros are written to `dmacro` for every coupling
+ * cell the launch covers (GEO_NOTHING frozen cells in production -- the
+ * skin rectangles; the Defect-2 predicate below also admits
+ * GEO_AMR_INTERFACE ring cells, exercised by the mock tests). The
+ * collision-active ring cells' macros are computed by the main coarse
+ * kernel only: since the ring fine-to-coarse launch was removed (gate B
+ * ruling, D.1 hard-delete), no production launch covers ring cells
+ * anymore.
  */
 template <typename CONFIG>
 __global__ void cudaAMR_FineToCoarse(
@@ -1036,8 +1192,10 @@ __global__ void cudaAMR_FineToCoarse(
 #endif
 	};
 
-	// Lagrava spatial filter (see the kernel docstring)
-#ifdef F2C_FULL_LAGRAVA
+	// Lagrava spatial filter (see the kernel docstring) -- the DEFAULT
+	// filter; defining F2C_BOX_AVERAGE selects the original 1/8 box
+	// average of the 8 subcells as a compile-time fallback
+#ifndef F2C_BOX_AVERAGE
 	// tensor-product 4-node-per-axis Lagrange projection onto the coarse
 	// cell center t = fx0 + 0.5 (fine indexer coordinates): the nominal
 	// per-axis window {fx0-1, ..., fx0+2} covers the 2x2x2 subcell block
@@ -1058,7 +1216,18 @@ __global__ void cudaAMR_FineToCoarse(
 		const double t = static_cast<double>(f0) + 0.5;
 		const int extent = static_cast<int>(size_a + 2 * ov_a);
 		const int n = F2C_STENCIL < extent ? F2C_STENCIL : extent;
-		const idx lo = -ov_a;
+		// fine-interior lower bound (changes 2+3 of the redesign,
+		// unconditional since the ring launch was removed in D.1): the only
+		// F2C launches left are the skin launches, and those never read the
+		// C2F-filled ghost — at footprint-edge cells the nominal window
+		// {f0-1, ..., f0+2} shifts to start at 0 and the SAME shifted-window
+		// machinery below re-evaluates the Lagrange weights at the fixed
+		// evaluation point t = f0 + 0.5 (still cubic-exact there; the
+		// shifted-edge conservation caveat of proposal §3 applies). The
+		// upper bound keeps the overlap term, so a max-side edge window can
+		// still include ghost nodes — this clamp is intentionally the LOWER
+		// bound only.
+		const idx lo = 0;
 		const idx hi = size_a - 1 + ov_a - (n - 1);
 		idx start = f0 - 1;
 		start = start < lo ? lo : (start > hi ? hi : start);
@@ -1126,37 +1295,47 @@ __global__ void cudaAMR_FineToCoarse(
 	KS_EQ.vz = KS.vz;
 	COLL::setEquilibrium(KS_EQ);
 
+	// allowed-GEO predicate for the coarse-cell writes of this kernel
+	// (Defect-2 fix): only GEO_AMR_INTERFACE ring cells and GEO_NOTHING
+	// frozen hidden cells are coupling-owned storage; cells tagged with
+	// any other GEO (boundary-condition tags, but also plain GEO_FLUID)
+	// own their DFs and macros and must NOT be overwritten when a coupling
+	// rectangle covers them. The map is read once before the DF-store loop
+	// and the single predicate guards both the DF store and the macro
+	// store below.
+	const auto map_val = coarse_SD.map(x, y, z);
+	const bool is_coupling_cell = (map_val == BC::GEO_AMR_INTERFACE || map_val == BC::GEO_NOTHING);
+
 	// volumetric rescaling, f_coarse[q] = eq_q(rho_c,u_c) + (tau_c/tau_f)*f_neq[q]
 	const dreal neq_scale = tau_coarse / tau_fine;
-	for (int q = 0; q < CONFIG::Q; q++) {
-		const dreal f_coarse = KS_EQ.f[q] + neq_scale * (f_avg[q] - KS_EQ.f[q]);
+	if (is_coupling_cell) {
+		for (int q = 0; q < CONFIG::Q; q++) {
+			const dreal f_coarse = KS_EQ.f[q] + neq_scale * (f_avg[q] - KS_EQ.f[q]);
 
-		// coarse DF write in the orientation the NEXT coarse substep will read
-		// (see the kernel docstring) -- the other pattern-dependent site
+			// coarse DF write in the orientation the NEXT coarse substep will read
+			// (see the kernel docstring) -- the other pattern-dependent site
 #ifdef AB_PATTERN
-		// AB: write to logical df_out, natural orientation -- the next global
-		// updateKernelData() rotates the coarse frames, so this physical
-		// array is the df_cur the next coarse kernel launch pulls from
-		// (coarse_even_iter is AA-only state)
-		static_cast<void>(coarse_even_iter);
-		coarse_SD.df(df_out, q, x, y, z) = f_coarse;
+			// AB: write to logical df_out, natural orientation -- the next global
+			// updateKernelData() rotates the coarse frames, so this physical
+			// array is the df_cur the next coarse kernel launch pulls from
+			// (coarse_even_iter is AA-only state)
+			static_cast<void>(coarse_even_iter);
+			coarse_SD.df(df_out, q, x, y, z) = f_coarse;
 #elif defined(AA_PATTERN)
-		if (coarse_even_iter)
-			// next substep is even ("reflect"): reads the same site, same
-			// direction -- store natural
-			coarse_SD.df(df_cur, q, x, y, z) = f_coarse;
-		else
-			// next substep is odd ("spatial"): the DF streaming out of this
-			// cell in direction q is pulled from the opposite-direction slot
-			// -- store twisted
-			coarse_SD.df(df_cur, opposite_direction(q), x, y, z) = f_coarse;
+			if (coarse_even_iter)
+				// next substep is even ("reflect"): reads the same site, same
+				// direction -- store natural
+				coarse_SD.df(df_cur, q, x, y, z) = f_coarse;
+			else
+				// next substep is odd ("spatial"): the DF streaming out of this
+				// cell in direction q is pulled from the opposite-direction slot
+				// -- store twisted
+				coarse_SD.df(df_cur, opposite_direction(q), x, y, z) = f_coarse;
 #endif
-	}
+		}
 
-	// macros for coupling cells (GEO_AMR_INTERFACE ring or GEO_NOTHING
-	// frozen hidden cells): authoritative coupling value for output
-	const auto map_val = coarse_SD.map(x, y, z);
-	if (map_val == BC::GEO_AMR_INTERFACE || map_val == BC::GEO_NOTHING) {
+		// macros for coupling cells (GEO_AMR_INTERFACE ring or GEO_NOTHING
+		// frozen hidden cells): authoritative coupling value for output
 		coarse_SD.macro(MACRO::e_rho, x, y, z) = KS.rho;
 		coarse_SD.macro(MACRO::e_vx, x, y, z) = KS.vx;
 		coarse_SD.macro(MACRO::e_vy, x, y, z) = KS.vy;
