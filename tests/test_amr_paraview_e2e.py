@@ -36,7 +36,12 @@ EXPECTED_LEVELS = 2
 EXPECTED_BLOCKS_PER_LEVEL = 1
 EXPECTED_CELLS_PER_LEVEL = 64**3  # 262144
 EXPECTED_REFINED_CELLS = 32**3  # coarse footprint [16, 48)^3
-RHO_TOLERANCE = 1e-6
+# rho sanity bound: the sim initializes the analytical Taylor-Green density
+# profile initialized in sim_AMR.cu (on-branch commit 19b88d3), not rho == 1 — rho = 1 + 3*V0^2/16*(cos2kx+cos2ky)*
+# (cos2kz+2), max amplitude 9*V0^2/8 ~= 6.9e-5 at resolution 1; the 5e-4 bound
+# covers the IC envelope plus early-run evolution/interface residual while
+# still catching coupling garbage, NaNs and unit-mixing explosions
+RHO_TOLERANCE = 5e-4
 VX_ABS_MAX = 0.02
 # vtkDataSetAttributes::REFINEDCELL; the reader ORs in EXTERIORCELL (0x8) when
 # it blanks overlapped cells, so the loaded array contains 4|8=12, not plain 4
@@ -104,7 +109,7 @@ def check_values(oamr):
         rho_err = float(np.abs(rho - 1.0).max())
         report(
             rho_err <= RHO_TOLERANCE,
-            f"level {level} rho == 1.0 +/- {RHO_TOLERANCE}",
+            f"level {level} rho within 1.0 +/- {RHO_TOLERANCE} (TG envelope)",
             f"max deviation {rho_err:.3e}",
         )
         ghost = np.asarray(data.CellData["vtkGhostType"])
