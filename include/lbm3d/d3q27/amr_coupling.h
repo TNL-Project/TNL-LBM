@@ -85,8 +85,35 @@
  * the coarse storage extent (the analog of the storability guard; valid
  * geometries never clamp).
  *
- * Compile-time switches (C2F reconstruction strategy; the 3rd-order
- * Lagrange scheme above is the default):
+ * Compile-time switches (C2F reconstruction strategy; DEFAULT since the
+ * 2026-08-18 flip, user ruling, is the compact-moment scheme with the carve
+ * pre-pass active: the interpolation reads NO covered (`GEO_NOTHING`)
+ * coarse cells -- the skin layer is F2C-write / streaming-read only, never
+ * an interpolation source):
+ * - `C2F_COMPACT_MOMENT` [DEFAULT, with carve]: moment-based compact
+ *   interpolation (Schönherr 2015 thesis, Sec. 7.2, Eqs. 7.10-7.48; the
+ *   production scheme of the Musubi code) from the 2x2x2-cell home window
+ *   (the C2F_TRILINEAR stencil): the five independent second-order
+ *   non-equilibrium moments (strain rates) are computed per source cell
+ *   from f_neq = f - f_eq, the 8-coefficient density and three
+ *   11-coefficient velocity polynomials are fitted (exact for linear
+ *   fields, and for pure quadratic VELOCITY fields; pure quadratic
+ *   DENSITY is not -- the 8-coefficient density fit is trilinear (D.5,
+ *   2026-08-16)), the averaged moments are corrected by the fitted
+ *   gradients, and the fine DFs are reconstructed from the six
+ *   second-order cumulants with the cumulant back-transformation of
+ *   col_cum.h, with third-order and higher central moments zeroed
+ *   (projects the non-hydrodynamic modes out of the interface instead of
+ *   interpolating them per direction). The carve pre-pass shifts the
+ *   window one cell outward, away from any covered (`GEO_NOTHING`) coarse
+ *   cell it would touch, and evaluates off-center (|t_rel| up to 0.75);
+ *   carve is default-on, opt-out via `C2F_NO_CARVE`. The define
+ *   `C2F_COMPACT_MOMENT` itself is a no-op kept as an explicit selector
+ *   for readability of old configurations; the retired `C2F_CARVE` opt-in
+ *   is likewise accepted as a no-op.
+ * - `C2F_LAGRANGE`: opts out to the 3rd-order tensor-product Lagrange
+ *   scheme described above (the pre-flip default; its 4-node window can
+ *   read covered coarse cells).
  * - `C2F_TRILINEAR`: reverts the interpolation to the original 2nd-order
  *   trilinear scheme (2-point per-axis stencil {home-1+(fg&1),
  *   home+(fg&1)} with 3/4:1/4 weights, reproduced by the same runtime
@@ -94,25 +121,8 @@
  * - `C2F_LINEAR_EXPLOSION` / `C2F_UNIFORM_EXPLOSION`: the explosion
  *   strategies described above (linear takes precedence if both are
  *   defined).
- * - `C2F_COMPACT_MOMENT`: moment-based compact interpolation (Schönherr
- *   2015 thesis, Sec. 7.2, Eqs. 7.10-7.48; the production scheme of the
- *   Musubi code) from the 2x2x2-cell home window (the C2F_TRILINEAR
- *   stencil): the five independent second-order non-equilibrium moments
- *   (strain rates) are computed per source cell from f_neq = f - f_eq,
- *   the 8-coefficient density and three 11-coefficient velocity
- *   polynomials are fitted (exact for linear fields, and for pure
- *   quadratic VELOCITY fields; pure quadratic DENSITY is not -- the
- *   8-coefficient density fit is trilinear (D.5, 2026-08-16)),
- *   the averaged moments are corrected by the fitted gradients, and the
- *   fine DFs are reconstructed from the six second-order cumulants with
- *   the cumulant back-transformation of col_cum.h, with third-order and
- *   higher central moments zeroed (projects the non-hydrodynamic modes
- *   out of the interface instead of interpolating them per direction).
- *   Precedence if several defines are given: explosion > compact moment
- *   > interpolation.
- * - `C2F_CARVE` (active only with `C2F_COMPACT_MOMENT`): carves the CM
- *   window one-sided off covered (`GEO_NOTHING`) coarse cells -- see the
- *   pre-pass in the compact-moment branch below.
+ *   Precedence if several defines are given: explosion > Lagrange-family
+ *   opt-outs (`C2F_LAGRANGE`, `C2F_TRILINEAR`) > compact-moment default.
  *
  * Ghost cells: the kernel fills EVERY cell in
  * [ghost_begin_fine, ghost_end_fine) -- the caller passes exactly the
@@ -320,7 +330,9 @@ __global__ void cudaAMR_CoarseToFine(
 		store_fine_df(q, KS_H.f[q]);
 	#endif
 
-#elif defined(C2F_COMPACT_MOMENT)
+#elif ! defined(C2F_LAGRANGE) && ! defined(C2F_TRILINEAR)
+	// (default branch -- C2F_COMPACT_MOMENT is accepted as an explicit selector
+	// of this branch; 2026-08-18 default flip, user ruling)
 	// ---- Compact moment-based interpolation (Schönherr 2015 thesis,
 	// Sec. 7.2, Eqs. 7.10-7.48; see the file docstring for the outline):
 	// the fine ghost cell brackets its home window of 2x2x2 coarse source
@@ -386,8 +398,11 @@ __global__ void cudaAMR_CoarseToFine(
 	dreal ty = axis_window(y + fine_off.y(), coarse_off.y(), coarse_SD.Y(), coarse_SD.indexer.template getOverlap<1>(), cny);
 	dreal tz = axis_window(z + fine_off.z(), coarse_off.z(), coarse_SD.Z(), coarse_SD.indexer.template getOverlap<2>(), cnz);
 
-	#ifdef C2F_CARVE
-	// ---- Change-5 carve (amr-interface-redesign-plan.md, Experiment A item
+	#if ! defined(C2F_NO_CARVE) && ! defined(TNL_TEST_NO_CARVE)
+	// ---- Change-5 carve, now default-on (2026-08-18 default flip, user
+	// ruling; opt-out define: C2F_NO_CARVE; the former C2F_CARVE opt-in is
+	// retired -- defining it is a harmless no-op)
+	// (amr-interface-redesign-plan.md, Experiment A item
 	// 1 -- the "|t_rel| 0.25 -> 0.75, 0.25-cell extrapolation (Schönherr
 	// offset)" note; docs/AMR-interface-proposed-diagram.md change 5 and the
 	// §2 layout diagram; Schönherr 2015 thesis Eqs. 7.49-7.57): conservative
@@ -891,8 +906,9 @@ __global__ void cudaAMR_CoarseToFine(
 	store_fine_df(pzp, (ks_pz0 * (vz_sqr + vz_f) + ks_pz1 * (no2 * vz_f + no1) + ks_pz2) * n1o2);
 	store_fine_df(ppp, (ks_pp0 * (vz_sqr + vz_f) + ks_pp1 * (no2 * vz_f + no1) + ks_pp2) * n1o2);
 
-#else
-	// ---- Interpolation strategies (default: 3rd-order Lagrange) ----
+#else  // (C2F_LAGRANGE || C2F_TRILINEAR)
+	// ---- Interpolation strategies (opt-in since the 2026-08-18 flip:
+	// 3rd-order Lagrange; 2nd-order trilinear under C2F_TRILINEAR) ----
 	// Per-axis interpolation stencils and weights in the GLOBAL frame (see
 	// the file docstring): fine global coordinate fg = coord + fine_off; the
 	// home coarse cell is floor(fg/2) and the fine cell center sits at
