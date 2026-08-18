@@ -155,11 +155,11 @@ void OverlappingAMRWriter<TRAITS>::write_dataset_u8(hid_t loc, const char* name,
 }
 
 template <typename TRAITS>
-template <typename LBM>
-void OverlappingAMRWriter<TRAITS>::write(const std::string& filename, const LBM& lbm, [[maybe_unused]] real time)
+template <typename CONFIG>
+void OverlappingAMRWriter<TRAITS>::write(const std::string& filename, const LBM<CONFIG>& lbm, [[maybe_unused]] real time, bool write_dfs)
 {
-	using BLOCK = typename LBM::BLOCK;
-	using MACRO = typename LBM::MACRO;
+	using BLOCK = typename LBM<CONFIG>::BLOCK;
+	using MACRO = typename LBM<CONFIG>::MACRO;
 
 	// v1: single-rank output only (the blocks of all ranks would have to be
 	// gathered otherwise)
@@ -179,6 +179,17 @@ void OverlappingAMRWriter<TRAITS>::write(const std::string& filename, const LBM&
 	// MACRO::compute_in_each_iteration == false they may be stale
 	for (const BLOCK& block : lbm.blocks)
 		const_cast<BLOCK&>(block).copyMacroToHost();
+
+	// refresh the host mirror of the geometry map (tiny, always written as
+	// the "map" field for masking in ParaView)
+	for (const BLOCK& block : lbm.blocks)
+		const_cast<BLOCK&>(block).copyMapToHost();
+
+	// refresh the host mirrors of the distribution functions only when the
+	// raw-DF debug fields are requested (27 fields per frame per level)
+	if (write_dfs)
+		for (const BLOCK& block : lbm.blocks)
+			const_cast<BLOCK&>(block).copyDFsToHost();
 
 	hid_t file = H5Fcreate(filename.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
 	if (file < 0)
@@ -264,6 +275,37 @@ void OverlappingAMRWriter<TRAITS>::write(const std::string& filename, const LBM&
 							);
 			write_dataset_f64(cell_data, name, buffer.data(), buffer.size());
 		}
+
+		// geometry map (int tags -- the "wall field" for masking in
+		// ParaView; values are the BC::GEO_* enum) -- always written
+		std::vector<std::int32_t> map_buffer;
+		map_buffer.reserve(total_cells);
+		for (const BLOCK* block : blocks)
+			for (idx z = 0; z < block->local.z(); z++)
+				for (idx y = 0; y < block->local.y(); y++)
+					for (idx x = 0; x < block->local.x(); x++)
+						map_buffer.push_back(
+							static_cast<std::int32_t>(block->hmap(block->offset.x() + x, block->offset.y() + y, block->offset.z() + z))
+						);
+		write_dataset_i32(cell_data, "map", map_buffer.data(), map_buffer.size(), 1);
+
+		// raw distribution functions (only when requested): one f64
+		// dataset per direction, named f00..f{Q-1} after the defs.h
+		// enumeration; values are the df_cur buffer in the current
+		// streaming orientation (AB: natural; AA: parity-twisted)
+		if (write_dfs)
+			for (int q = 0; q < CONFIG::Q; q++) {
+				buffer.clear();
+				for (const BLOCK* block : blocks)
+					for (idx z = 0; z < block->local.z(); z++)
+						for (idx y = 0; y < block->local.y(); y++)
+							for (idx x = 0; x < block->local.x(); x++)
+								buffer.push_back(
+									static_cast<double>(block->hfs[df_cur](q, block->offset.x() + x, block->offset.y() + y, block->offset.z() + z))
+								);
+				const std::string name = fmt::format("f{:02d}", q);
+				write_dataset_f64(cell_data, name.c_str(), buffer.data(), buffer.size());
+			}
 
 		// vtkGhostType: mark coarse cells that are covered by a finer-level
 		// block as REFINEDCELL(4); a finer block's footprint in the parent

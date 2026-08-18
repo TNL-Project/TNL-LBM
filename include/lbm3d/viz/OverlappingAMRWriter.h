@@ -34,6 +34,8 @@
  *     │       ├── vx             (dataset, double[sum of cells])
  *     │       ├── vy             (dataset, double[sum of cells])
  *     │       ├── vz             (dataset, double[sum of cells])
+ *     │       ├── map            (dataset, int32[sum of cells], BC::GEO_* tags)
+ *     │       └── f00..f{Q-1}    (optional datasets, double[sum of cells])
  *     │       └── vtkGhostType   (dataset, uint8[sum of cells])  <- REQUIRED, 0=visible / 4=REFINEDCELL
  *     └── Level1/                       (group, same structure)
  * ```
@@ -88,8 +90,8 @@ public:
 	 * \throws std::runtime_error when called with more than one MPI rank or
 	 *         when any HDF5 operation fails.
 	 */
-	template <typename LBM>
-	static void write(const std::string& filename, const LBM& lbm, real time);
+	template <typename CONFIG>
+	static void write(const std::string& filename, const LBM<CONFIG>& lbm, real time, bool write_dfs = false);
 
 private:
 	// vtkGhostType cell visibility tags (vtkDataSetAttributes::CellGhostTypes)
