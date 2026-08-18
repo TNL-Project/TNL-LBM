@@ -208,7 +208,6 @@ int main(int argc, char** argv)
 		.scan<'f', float>()
 		.default_value(-1.0f)
 		.nargs(1);
-	program.add_argument("--precision").help("floating point precision").choices("float", "double").default_value(std::string("float")).nargs(1);
 	program.add_argument("--phys-final-time").help("physical final time [s]").scan<'f', float>().default_value(0.5f).nargs(1);
 	program.add_argument("--convective-times")
 		.help("run N convective times L/V_0 with the sim_4 output cadence (overrides --phys-final-time; 0 = off)")
@@ -228,7 +227,6 @@ int main(int argc, char** argv)
 	const auto adios_config = program.get<std::string>("--adios-config");
 	const auto resolution = program.get<int>("--resolution");
 	const auto max_level = program.get<int>("--max-level");
-	const auto precision = program.get<std::string>("--precision");
 	const auto lattice_viscosity = program.get<float>("--lattice-viscosity");
 	const auto phys_final_time = program.get<float>("--phys-final-time");
 	const auto convective_times = program.get<float>("--convective-times");
@@ -238,10 +236,9 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
-	if (precision == "double")
-		run<TraitsDP>(adios_config, resolution, max_level, lattice_viscosity, phys_final_time, convective_times);
-	else
-		run<TraitsSP>(adios_config, resolution, max_level, lattice_viscosity, phys_final_time, convective_times);
+	// SP only (2026-08-18): the DP branch doubled the device-code
+	// instantiation cost of this TU (build-time investigation)
+	run<TraitsSP>(adios_config, resolution, max_level, lattice_viscosity, phys_final_time, convective_times);
 
 	return 0;
 }
