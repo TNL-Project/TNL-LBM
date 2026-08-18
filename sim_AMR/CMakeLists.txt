@@ -29,6 +29,12 @@ if(C2F_CARVE)
     message(WARNING "C2F_CARVE was retired on 2026-08-18: the carve is default-on and the define is a no-op; use C2F_NO_CARVE=ON to opt out.")
 endif()
 
+# optional H9 experiment switch (2026-08-18 user directive): the first
+# coarse-to-fine fill of each cycle reads the time-centered midpoint of the
+# coarse pre- and post-step states (the v4 variant of the falsification
+# matrix, retried post-redesign); AB-pattern only
+set(C2F_H9 "" CACHE STRING "H9 experiment define for AMR targets (time-centered first C2F fill; enable with ON, AB pattern only)")
+
 # 2026-08-16 (gate B ruling + D.1): the F2C skin feedback became the ONLY
 # fine-to-coarse channel -- the former F2C_SKIN_ONLY experiment define was
 # retired together with the ring-F2C code it gated, so there is no feedback
@@ -48,6 +54,10 @@ foreach(target IN ITEMS ${TARGETS})
 
     if(C2F_NO_CARVE)
         target_compile_definitions(${target} PRIVATE C2F_NO_CARVE)
+    endif()
+
+    if(C2F_H9)
+        target_compile_definitions(${target} PRIVATE C2F_H9)
     endif()
 
     # force language to HIP
