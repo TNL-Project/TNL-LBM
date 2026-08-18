@@ -193,7 +193,7 @@ struct State_AMR : State<NSE>
 	// fill the ghost layer of every level-`fine_level` block from level
 	// `fine_level - 1` via `cudaAMR_CoarseToFine`, iterating the
 	// `AMR_InterfacePatch` descriptors of \ref couplings
-	void launchCoarseToFineTransfers(int fine_level);
+	void launchCoarseToFineTransfers(int fine_level, bool c2f_time_centered);
 	// project fine-averaged DFs onto the frozen GEO_NOTHING skin cells of
 	// each fine footprint (interior_patches of \ref couplings) -- the ONLY
 	// fine-to-coarse channel since the ring F2C launch was removed (gate B
@@ -683,7 +683,7 @@ typename State_AMR<NSE>::BLOCK_NSE* State_AMR<NSE>::findBlockById(int level, int
  * no-op (SimInit logged a warning).
  */
 template <typename NSE>
-void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level)
+void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level, bool c2f_time_centered)
 {
 	for (const InterLevelCoupling& coupling : couplings) {
 		if (coupling.fine_level != fine_level)
@@ -732,6 +732,7 @@ void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level)
 				tau_fine,
 				tau_coarse,
 				coarse_even_iter,
+				c2f_time_centered,
 				fine->offset,
 				coarse->offset
 			);
@@ -918,6 +919,18 @@ void State_AMR<NSE>::SimUpdate()
 	#endif
 
 	// ---------- Berger-Colella recursion: finer levels ----------
+	// 2026-08-18 H9 retry (user directive): under -DC2F_H9 the FIRST fill
+	// of each cycle reads the time-centered (t_n + t_{n+1})/2 coarse state;
+	// the BVP re-fill stays on the post-step state. AB-pattern only (the
+	// D.4 defect makes AMR+AA unsupported).
+	#ifdef C2F_H9
+		#ifdef AA_PATTERN
+			#error "C2F_H9 is AB-pattern only (AMR under AA carries the D.4 defect)"
+		#endif
+	constexpr bool h9_first_fill = true;
+	#else
+	constexpr bool h9_first_fill = false;
+	#endif
 	for (int L = 1; L <= this->nse.max_level; L++) {
 		// 1. toggle the fine level's even_iter parity / DF rotation to
 		// substep 0 BEFORE the ghost fill (CRITICAL: for the A-B pattern
@@ -929,7 +942,7 @@ void State_AMR<NSE>::SimUpdate()
 
 		// 2. coarse-to-fine: fill the fine ghost layer from level L-1
 		// (patch rectangles of the level coupling built in SimInit)
-		launchCoarseToFineTransfers(L);
+		launchCoarseToFineTransfers(L, h9_first_fill);
 
 		// 3. fine substep 1 of 2
 		launchLBMKernelForLevel(L, compute_macro);
@@ -952,7 +965,7 @@ void State_AMR<NSE>::SimUpdate()
 		// 5. BVP: re-fill the fine ghost layer between the substeps (the
 		// first substep's streaming consumed the ghost DFs and streamed
 		// outward into them)
-		launchCoarseToFineTransfers(L);
+		launchCoarseToFineTransfers(L, false);
 
 		// 6. fine substep 2 of 2
 		launchLBMKernelForLevel(L, compute_macro);
