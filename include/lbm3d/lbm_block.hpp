@@ -283,6 +283,9 @@ dim3 LBM_BLOCK<CONFIG>::getCudaBlockSize(const idx3d& local_size)
 {
 	// find optimal thread block size for the LBM kernel
 	// use 256 threads for SP and 128 threads for DP
+	// NOTE (2026-08-18): each call re-runs the optimizer AND logs -- call
+	// sites must cache the result per launch shape (see the AMR transfer
+	// launchers), not rely on this function being cheap to call
 	constexpr int max_threads = 256 / (sizeof(dreal) / sizeof(float));
 	const idx3d result = get_optimal_block_size<typename TRAITS::xyz_permutation>(local_size, max_threads);
 	return {unsigned(result.x()), unsigned(result.y()), unsigned(result.z())};
