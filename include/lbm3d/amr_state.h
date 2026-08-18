@@ -36,10 +36,13 @@ struct AMRConservationStats
  * 1. ONE coarse (level 0) LBM step on all level-0 blocks
  *    (`updateKernelData()` was already called by `execute()` in `core.h` and
  *    set the level-0 even_iter parity / DF rotation from the global
- *    `iterations` counter). Coarse cells tagged `GEO_AMR_INTERFACE` are
- *    collision-active inside the kernel (they stream and collide like fluid);
- *    the fine-to-coarse transfer additionally overwrites them at the end of
- *    each coarse step (Wave 2).
+ *    `iterations` counter). Coarse cells tagged `GEO_AMR_INTERFACE` (the
+ *    interface ring around each fine footprint) are collision-active inside
+ *    the kernel (they stream and collide like fluid); since the ring
+ *    fine-to-coarse launch was removed (gate B ruling, 2026-08-16) the coarse
+ *    kernel is their only writer -- fine feedback reaches them through
+ *    streaming from the skin cells the interior F2C writes (step 8 of the
+ *    recursion below).
  * 2. For each finer level L = 1..max_level:
  *    a. `updateKernelDataForLevel(L, 0)` toggles the fine level's even_iter
  *       parity / DF rotation to substep 0 (MANDATORY before the ghost fill
@@ -191,12 +194,10 @@ struct State_AMR : State<NSE>
 	// `fine_level - 1` via `cudaAMR_CoarseToFine`, iterating the
 	// `AMR_InterfacePatch` descriptors of \ref couplings
 	void launchCoarseToFineTransfers(int fine_level);
-	// project the filtered fine state of every level-`fine_level` block back
-	// onto level `fine_level - 1` via `cudaAMR_FineToCoarse`, iterating the
-	// `AMR_InterfacePatch` descriptors of \ref couplings
-	void launchFineToCoarseTransfers(int fine_level);
-	// project fine-averaged DFs onto frozen GEO_NOTHING cells under each
-	// fine footprint (interior_patches of \ref couplings)
+	// project fine-averaged DFs onto the frozen GEO_NOTHING skin cells of
+	// each fine footprint (interior_patches of \ref couplings) -- the ONLY
+	// fine-to-coarse channel since the ring F2C launch was removed (gate B
+	// ruling, D.1 hard-delete)
 	void launchFineToCoarseTransfersInterior(int fine_level);
 
 	// build \ref couplings from the `GEO_AMR_INTERFACE` markings (called by
@@ -220,9 +221,10 @@ struct State_AMR : State<NSE>
 		return block.level == 0 ? this->nse.lat.lbmViscosity() : block.lat_local.lbmViscosity();
 	}
 
-private:
 	// host-side reduction over all blocks: volume-weighted global mass and
-	// momentum plus per-level kinetic energy (see AfterSimUpdate)
+	// momentum plus per-level kinetic energy (see AfterSimUpdate); kept
+	// public like the other implementation details above so that unit tests
+	// can drive it directly (test_amr_subcycling)
 	AMRConservationStats computeConservationStats();
 };
 
@@ -381,6 +383,12 @@ void State_AMR<NSE>::write3D_AMR(real time, int cycle)
  * level with the 2:1 ratio, so a level-L cell weights `1/8^L` of a coarse
  * cell. The per-level kinetic energy sums `0.5 * rho * |u|^2` without the
  * volume weight (per-level diagnostic).
+ *
+ * Coarse cells tagged `GEO_NOTHING` (hidden under a fine footprint - the
+ * fine level holds the authoritative solution there) are excluded from all
+ * sums: counting them alongside the fine level would double-count the
+ * refined region. `GEO_AMR_INTERFACE` ring cells and physical-BC cells are
+ * real coarse cells and keep contributing.
  */
 template <typename NSE>
 auto State_AMR<NSE>::computeConservationStats() -> AMRConservationStats
@@ -398,6 +406,14 @@ auto State_AMR<NSE>::computeConservationStats() -> AMRConservationStats
 		block.forLocalLatticeSites(
 			[&](BLOCK_NSE& b, idx x, idx y, idx z)
 			{
+				// hidden cells (frozen GEO_NOTHING under a fine footprint)
+				// are already counted on the fine level - skip them to avoid
+				// double-counting the refined region (see the docstring);
+				// the host map holds the tags (markAMRInterface tags
+				// host-side before uploading to the device)
+				if (b.hmap(x, y, z) == NSE::BC::GEO_NOTHING)
+					return;
+
 				const double rho = b.hmacro(MACRO::e_rho, x, y, z);
 				const double vx = b.hmacro(MACRO::e_vx, x, y, z);
 				const double vy = b.hmacro(MACRO::e_vy, x, y, z);
@@ -439,9 +455,11 @@ auto State_AMR<NSE>::computeConservationStats() -> AMRConservationStats
  *
  * Each patch covers a rectangle of PARENT-level halo cells (1 cell thick
  * in the face normal) and the matching fine-level ghost rectangle (2 fine
- * cells per coarse cell, i.e. 2 cells thick - the outer cell layer feeds
- * only the fine-to-coarse filter, the inner layer is the ghost layer read
- * by the fine-level streaming). Both rectangles are stored in the two
+ * cells per coarse cell). Refinement-level blocks allocate a 1-cell-deep
+ * DF overlap (see `LBM_BLOCK::storage_overlap`), so the coarse-to-fine
+ * launch clips the fill to that single layer: it is the ghost layer read
+ * by the fine-level streaming and by the max-side skin fine-to-coarse
+ * windows. Both rectangles are stored in the two
  * blocks' indexer coordinates: with the 2:1 refinement ratio, fine cell
  * `2c` covers coarse cell `c`, and `fine_origin = 2 * coarse_rect_begin -
  * fine.offset` (per axis). The launches map
@@ -449,6 +467,15 @@ auto State_AMR<NSE>::computeConservationStats() -> AMRConservationStats
  * and `begin = coarse_origin, end = coarse_origin + coarse_size` for
  * fine-to-coarse, subject to the storability guards documented at the
  * launch helpers.
+ *
+ * The INTERIOR (under-footprint) patch list holds the footprint's 6
+ * disjoint inset-face SKIN rectangles (one coarse cell deep inside the
+ * footprint, the same disjoint partition idiom as the halo faces above).
+ * They carry the ONLY fine-to-coarse feedback channel (changes 2+3 of the
+ * AMR interface redesign): the ring fine-to-coarse launch was removed
+ * (gate B ruling, D.1 hard-delete), the deep frozen core is never written,
+ * and the collision-active ring cells are driven by the coarse kernel only
+ * (see `launchFineToCoarseTransfersInterior`).
  *
  * The whole function is host-side (hmap reads); it runs once per
  * simulation.
@@ -532,33 +559,78 @@ void State_AMR<NSE>::buildCouplings()
 				}
 			}
 
-			// interior patches: under-footprint cells (frozen GEO_NOTHING,
-			// F2C-injected with fine-averaged DFs each cycle — two-way feedback)
-			const idx3d int_begin = go;
-			const idx3d int_end{go.x() + gs.x(), go.y() + gs.y(), go.z() + gs.z()};
-			for (auto* coarse : this->nse.getBlocksAtLevel(coarse_level)) {
-				const idx3d cbegin{
-					std::max(int_begin.x(), coarse->offset.x()),
-					std::max(int_begin.y(), coarse->offset.y()),
-					std::max(int_begin.z(), coarse->offset.z())
-				};
-				const idx3d cend{
-					std::min(int_end.x(), coarse->offset.x() + coarse->local.x()),
-					std::min(int_end.y(), coarse->offset.y() + coarse->local.y()),
-					std::min(int_end.z(), coarse->offset.z() + coarse->local.z())
-				};
-				if (cbegin.x() >= cend.x() || cbegin.y() >= cend.y() || cbegin.z() >= cend.z())
-					continue;
+			// interior patches (changes 2+3 of the AMR interface redesign,
+			// docs/AMR-interface-proposed-diagram.md §3/§7 — unconditional
+			// since the ring F2C path was removed, gate B ruling + D.1
+			// hard-delete): the
+			// one-coarse-cell-deep SKIN of the fine footprint (frozen
+			// GEO_NOTHING cells, F2C-injected with fine-filtered DFs each
+			// cycle) as a DISJOINT partition of 6 inset-face rectangles —
+			// the same disjoint face-partition idiom as the halo ring above,
+			// inset one coarse cell INTO the footprint: the x-normal faces
+			// own the full footprint y/z range, the y-normal faces the
+			// interior x-range, the z-normal faces the interior x/y range.
+			// The deep frozen core is never F2C-written (the coarse C2F
+			// stencil reaches only 1 cell into the footprint, so the core
+			// is never read either) — e.g. a 32^3 footprint emits its
+			// 32^3-30^3 = 5,768 skin cells in 6 rectangles.
+			// Degenerate thin footprints clamp to EMPTY rectangles (skipped
+			// by the clip below, never pushed): with gs.a < 3 the tangent
+			// interior ranges [go.a+1, go.a+gs.a-1) of the other axes'
+			// faces are empty, and the max(..., go.a+1) clamp on the
+			// max-side slab origin keeps a 1-cell-thin footprint from
+			// emitting the same axis-plane twice (the min-side face wins)
+			// — no rectangle therefore carries a negative extent and no
+			// coarse cell is written twice.
+			const idx xi0 = go.x() + 1, xi1 = go.x() + gs.x() - 1;
+			const idx yi0 = go.y() + 1, yi1 = go.y() + gs.y() - 1;
+			const idx zi0 = go.z() + 1, zi1 = go.z() + gs.z() - 1;
+			const idx xr0 = std::max(go.x() + gs.x() - 1, go.x() + 1);
+			const idx yr0 = std::max(go.y() + gs.y() - 1, go.y() + 1);
+			const idx zr0 = std::max(go.z() + gs.z() - 1, go.z() + 1);
+			const struct SKIN
+			{
+				idx3d begin, end;
+			} skins[6] = {
+				{{go.x(), go.y(), go.z()}, {go.x() + 1, go.y() + gs.y(), go.z() + gs.z()}},	   // x-min face (full y/z)
+				{{xr0, go.y(), go.z()}, {go.x() + gs.x(), go.y() + gs.y(), go.z() + gs.z()}},  // x-max face (full y/z)
+				{{xi0, go.y(), go.z()}, {xi1, go.y() + 1, go.z() + gs.z()}},				   // y-min face (interior x)
+				{{xi0, yr0, go.z()}, {xi1, go.y() + gs.y(), go.z() + gs.z()}},				   // y-max face (interior x)
+				{{xi0, yi0, go.z()}, {xi1, yi1, go.z() + 1}},								   // z-min face (interior x/y)
+				{{xi0, yi0, zr0}, {xi1, yi1, go.z() + gs.z()}},								   // z-max face (interior x/y)
+			};
+			for (const SKIN& skin : skins) {
+				for (auto* coarse : this->nse.getBlocksAtLevel(coarse_level)) {
+					// clip the skin rectangle to this coarse block's range
+					// (global parent-level coordinates — same overlap test
+					// as the ring faces and the full-footprint interior)
+					const idx3d cbegin{
+						std::max(skin.begin.x(), coarse->offset.x()),
+						std::max(skin.begin.y(), coarse->offset.y()),
+						std::max(skin.begin.z(), coarse->offset.z())
+					};
+					const idx3d cend{
+						std::min(skin.end.x(), coarse->offset.x() + coarse->local.x()),
+						std::min(skin.end.y(), coarse->offset.y() + coarse->local.y()),
+						std::min(skin.end.z(), coarse->offset.z() + coarse->local.z())
+					};
+					if (cbegin.x() >= cend.x() || cbegin.y() >= cend.y() || cbegin.z() >= cend.z())
+						continue;
 
-				AMR_InterfacePatch<NSE> patch;
-				patch.coarse_origin = {cbegin.x() - coarse->offset.x(), cbegin.y() - coarse->offset.y(), cbegin.z() - coarse->offset.z()};
-				patch.coarse_size = {cend.x() - cbegin.x(), cend.y() - cbegin.y(), cend.z() - cbegin.z()};
-				patch.fine_origin = {2 * cbegin.x() - fine->offset.x(), 2 * cbegin.y() - fine->offset.y(), 2 * cbegin.z() - fine->offset.z()};
-				patch.fine_size = {2 * patch.coarse_size.x(), 2 * patch.coarse_size.y(), 2 * patch.coarse_size.z()};
-				patch.face = SyncDirection::None;
-				coupling.interior_patches.push_back(patch);
-				coupling.interior_coarse_block_ids.push_back(coarse->id);
-				coupling.interior_fine_block_ids.push_back(fine->id);
+					AMR_InterfacePatch<NSE> patch;
+					// indexer-coordinates rectangles of the two blocks; the
+					// fine rectangle covers 2 fine cells per coarse cell on
+					// each axis (bookkeeping — the F2C launch derives the
+					// fine window from the coarse coordinates and offsets)
+					patch.coarse_origin = {cbegin.x() - coarse->offset.x(), cbegin.y() - coarse->offset.y(), cbegin.z() - coarse->offset.z()};
+					patch.coarse_size = {cend.x() - cbegin.x(), cend.y() - cbegin.y(), cend.z() - cbegin.z()};
+					patch.fine_origin = {2 * cbegin.x() - fine->offset.x(), 2 * cbegin.y() - fine->offset.y(), 2 * cbegin.z() - fine->offset.z()};
+					patch.fine_size = {2 * patch.coarse_size.x(), 2 * patch.coarse_size.y(), 2 * patch.coarse_size.z()};
+					patch.face = SyncDirection::None;
+					coupling.interior_patches.push_back(patch);
+					coupling.interior_coarse_block_ids.push_back(coarse->id);
+					coupling.interior_fine_block_ids.push_back(fine->id);
+				}
 			}
 		}
 
@@ -601,13 +673,14 @@ typename State_AMR<NSE>::BLOCK_NSE* State_AMR<NSE>::findBlockById(int level, int
  *
  * Storability guard: the patch's fine rectangle is clipped per axis to the
  * fine block's ALLOCATED ghost STORAGE (the overlap depth of the block's
- * indexer, 2 cells deep on refinement-level blocks -- see
- * `LBM_BLOCK::storage_overlap` -- so the full 2-cell-deep ring is filled:
- * the outer layer feeds the fine-to-coarse filter, the inner layer the
- * fine-level streaming). Axes where the block spans its global extent have
- * no overlap allocated there and get no fill (streaming then consumes
- * exterior-boundary data instead). When \ref couplings is empty (no marked
- * interface cells), this is a silent no-op (SimInit logged a warning).
+ * indexer, 1 cell deep on refinement-level blocks -- see
+ * `LBM_BLOCK::storage_overlap`; the inner layer feeds the fine-level
+ * streaming directly, and it is also exactly the single ghost layer the
+ * max-side skin fine-to-coarse windows read). Axes where the block spans
+ * its global extent have no overlap allocated there and get no fill
+ * (streaming then consumes exterior-boundary data instead). When
+ * \ref couplings is empty (no marked interface cells), this is a silent
+ * no-op (SimInit logged a warning).
  */
 template <typename NSE>
 void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level)
@@ -669,106 +742,30 @@ void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level)
 	TNL::Backend::streamSynchronize(0);
 }
 
+// D.1 hard-delete (gate-B ruling, 2026-08-16): the ring fine-to-coarse
+// launch (`launchFineToCoarseTransfers` over the halo `patches`) was
+// removed -- the skin F2C of \ref launchFineToCoarseTransfersInterior is
+// now the ONLY fine-to-coarse channel. The halo `patches` of \ref couplings
+// remain: they are the coarse-to-fine ghost-fill geometry of
+// \ref launchCoarseToFineTransfers.
 /**
- * \brief Fine-to-coarse transfer for one level (step 2g of the subcycling
- * schedule).
+ * \brief Skin (under-footprint) fine-to-coarse transfer -- the ONLY
+ * fine-to-coarse channel (gate B ruling, ring path removed in D.1).
  *
- * Iterates the `AMR_InterfacePatch` descriptors of \ref couplings matching
- * `fine_level` and launches one `cudaAMR_FineToCoarse` per patch with
- * `begin = coarse_origin, end = coarse_origin + coarse_size` (coarse
- * indexer coordinates) - the patch rectangles ARE the interface cells
- * tagged by `markAMRInterface` (one patch per (fine block, parent block,
- * halo face) triple).
- *
- * Storability guard: the kernel clips itself per coarse cell - coarse cells
- * whose 2x2x2 fine subcell block is not fully storable in the fine block's
- * overlap-extended storage are skipped inside the kernel (the fine overlap
- * must be at least 2 cells deep to cover the ghost ring of the footprint,
- * which `LBM_BLOCK::storage_overlap` arranges for refinement-level blocks;
- * cells on axes where the block spans its global extent remain skipped -
- * they are exterior-boundary cells owned by another boundary condition).
- * The launch therefore covers the FULL patch extents; when \ref couplings
- * is empty (no marked interface cells), this is a silent no-op (SimInit
- * logged a warning).
- */
-template <typename NSE>
-void State_AMR<NSE>::launchFineToCoarseTransfers(int fine_level)
-{
-	const int coarse_level = fine_level - 1;
-
-	for (const InterLevelCoupling& coupling : couplings) {
-		if (coupling.fine_level != fine_level)
-			continue;
-
-		for (std::size_t i = 0; i < coupling.patches.size(); i++) {
-			const AMR_InterfacePatch<NSE>& patch = coupling.patches[i];
-			BLOCK_NSE* fine = findBlockById(coupling.fine_level, coupling.fine_block_ids[i]);
-			BLOCK_NSE* coarse = findBlockById(coupling.coarse_level, coupling.coarse_block_ids[i]);
-			if (fine == nullptr || coarse == nullptr)
-				continue;
-
-			const dreal tau_fine = static_cast<dreal>(3 * blockLbmViscosity(*fine) + 0.5);
-			const dreal tau_coarse = static_cast<dreal>(3 * blockLbmViscosity(*coarse) + 0.5);
-			// parity of the stored fine data produced by fine substep 2
-			// (AA-pattern state; ignored by the kernel for AB)
-			const bool fine_even_iter = fine->data.even_iter;
-			// parity of the NEXT consuming coarse substep: for level 0 the
-			// next launch is the next global iteration's coarse step (the
-			// counter was already incremented above); finer source levels
-			// start their next subcycling cycle with substep 0
-			// (even_iter == false)
-			const bool next_coarse_even_iter = (coarse_level == 0) ? ((this->nse.iterations % 2) == 1) : false;
-
-			// launch extent in the coarse block's indexer coordinates: the
-			// FULL patch rectangle -- non-storable cells are skipped per
-			// cell inside the kernel (see the docstring)
-			const idx3d ov{fine->df_overlap_X(), fine->df_overlap_Y(), fine->df_overlap_Z()};
-			const idx3d begin = patch.coarse_origin;
-			const idx3d end{
-				patch.coarse_origin.x() + patch.coarse_size.x(),
-				patch.coarse_origin.y() + patch.coarse_size.y(),
-				patch.coarse_origin.z() + patch.coarse_size.z()
-			};
-			if (begin.x() >= end.x() || begin.y() >= end.y() || begin.z() >= end.z())
-				continue;
-
-			const idx3d size{end.x() - begin.x(), end.y() - begin.y(), end.z() - begin.z()};
-
-			TNL::Backend::LaunchConfiguration launch_config;
-			launch_config.blockSize = coarse->getCudaBlockSize(size);
-			launch_config.gridSize = coarse->getCudaGridSize(size, launch_config.blockSize);
-			TNL::Backend::launchKernelAsync(
-				cudaAMR_FineToCoarse<NSE>,
-				launch_config,
-				coarse->data,
-				fine->data,
-				begin,
-				end,
-				tau_coarse,
-				tau_fine,
-				fine_even_iter,
-				next_coarse_even_iter,
-				fine->offset,
-				coarse->offset,
-				fine->local,
-				ov
-			);
-		}
-	}
-	// synchronize the null-stream after all grids (same as the base driver)
-	TNL::Backend::streamSynchronize(0);
-}
-
-/**
- * \brief Interior (under-footprint) fine-to-coarse transfer.
- *
- * Iterates the interior_patches of \ref couplings and launches
- * `cudaAMR_FineToCoarse` over the full footprint. The under-footprint
- * coarse cells are frozen as GEO_NOTHING (no stream/collide); their DFs
- * are set exclusively by this transfer — Lagrava-filtered fine-averaged
- * DFs, full overwrite. This is the two-way feedback channel: fine-interior
- * information reaches the coarse lattice through the frozen cells, which
- * the ring cell streams from at the next coarse step.
+ * Iterates the interior_patches of \ref couplings (the 6 disjoint inset-face
+ * SKIN rectangles built in `buildCouplings`, one coarse cell deep inside
+ * the footprint) and launches `cudaAMR_FineToCoarse` over each rectangle.
+ * The under-footprint coarse cells are frozen as GEO_NOTHING (no
+ * stream/collide); the written cells' DFs are set exclusively by this
+ * transfer — Lagrava-filtered fine-averaged DFs, full overwrite. The deep
+ * frozen core is never written (and never read: the coarse C2F stencil
+ * reaches at most 1 cell into the footprint). This is the two-way feedback
+ * channel: fine-interior information reaches the coarse lattice through
+ * the written skin cells, which the collision-active ring cells stream
+ * from at the next coarse step. Every written skin cell reads its own
+ * fine subcells plus the window clamp of the kernel (lo = 0, fine
+ * interior only). When \ref couplings is empty (no marked interface
+ * cells), this is a silent no-op (SimInit logged a warning).
  */
 template <typename NSE>
 void State_AMR<NSE>::launchFineToCoarseTransfersInterior(int fine_level)
@@ -904,8 +901,8 @@ void State_AMR<NSE>::SimUpdate()
 	// execute() (core.h) already called updateKernelData(), which set the
 	// level-0 even_iter parity / DF rotation from the global `iterations`.
 	// GEO_AMR_INTERFACE cells are collision-active inside the kernel
-	// (BC::doCollision == true); the fine-to-coarse transfer also overwrites
-	// them at the end of each coarse step.
+	// (BC::doCollision == true); the coarse kernel is their only writer
+	// since the ring fine-to-coarse launch was removed (D.1)
 	launchLBMKernelForLevel(0, compute_macro);
 
 	#ifdef HAVE_MPI
@@ -970,12 +967,13 @@ void State_AMR<NSE>::SimUpdate()
 		}
 	#endif
 
-		// 7. fine-to-coarse: project the (Lagrava-filtered) fine state back
-		// onto the level L-1 interface ring cells of the coupling patches
-		launchFineToCoarseTransfers(L);
-
-		// 8. interior F2C: inject fine-averaged DFs into frozen
-		// GEO_NOTHING cells under the footprint (two-way feedback)
+		// 7. fine-to-coarse: inject the (Lagrava-filtered) fine state into
+		// the frozen GEO_NOTHING cells of the 6 skin rectangles of each
+		// fine footprint (two-way feedback). Ring cells stream+collide
+		// only -- the ring F2C launch was removed (gate B ruling, D.1
+		// hard-delete) and the fine feedback reaches them through
+		// streaming from the freshly F2C-written skin on the next coarse
+		// step (df_out -> next df_cur convention, no kernel change)
 		launchFineToCoarseTransfersInterior(L);
 	}
 
