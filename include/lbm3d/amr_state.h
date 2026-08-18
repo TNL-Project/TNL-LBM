@@ -124,6 +124,10 @@ struct State_AMR : State<NSE>
 	using idx3d = typename TRAITS::idx3d;
 	using lat_t = typename Base::lat_t;
 
+	// output switches (CLI-set): write the raw df_cur fields f00..f{Q-1}
+	// into the VTKHDF frames alongside macros and the map (2026-08-18)
+	bool amr_write_dfs = false;
+
 	/**
 	 * \brief Host-side descriptor of all coarse-fine interfaces between one
 	 * pair of consecutive levels.
@@ -372,7 +376,7 @@ void State_AMR<NSE>::write3D_AMR(real time, int cycle)
 	for (auto& block : this->nse.blocks)
 		block.copyMacroToHost();
 
-	OverlappingAMRWriter<TRAITS>::write(fname, this->nse, time);
+	OverlappingAMRWriter<TRAITS>::write(fname, this->nse, time, this->amr_write_dfs);
 }
 
 /**

@@ -176,7 +176,7 @@ struct StateLocal_AMR_Channel : State_AMR<NSE>
 };
 
 template <typename NSE>
-void sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 1, int max_level = 1, float lattice_viscosity_override = -1.0f)
+void sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 1, int max_level = 1, float lattice_viscosity_override = -1.0f, bool write_dfs = false)
 {
 	using idx = typename NSE::TRAITS::idx;
 	using real = typename NSE::TRAITS::real;
@@ -209,6 +209,7 @@ void sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 1, int
 
 	const std::string state_id = fmt::format("sim_AMR_channel_res{:02d}_np{:03d}", RESOLUTION, TNL::MPI::GetSize(MPI_COMM_WORLD));
 	StateLocal_AMR_Channel<NSE> state(state_id, MPI_COMM_WORLD, lat, adios_config, max_level);
+	state.amr_write_dfs = write_dfs;
 
 	if (! state.canCompute())
 		return;
@@ -238,7 +239,7 @@ void sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 1, int
 }
 
 template <typename TRAITS = TraitsSP>
-void run(const std::string& adios_config, int resolution, int max_level = 1, float lattice_viscosity = -1.0f)
+void run(const std::string& adios_config, int resolution, int max_level = 1, float lattice_viscosity = -1.0f, bool write_dfs = false)
 {
 	using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
 
@@ -252,7 +253,7 @@ void run(const std::string& adios_config, int resolution, int max_level = 1, flo
 		D3Q27_BC_All,
 		D3Q27_MACRO_Default<TRAITS>>;
 
-	sim<NSE_CONFIG>(adios_config, resolution, max_level, lattice_viscosity);
+	sim<NSE_CONFIG>(adios_config, resolution, max_level, lattice_viscosity, write_dfs);
 }
 
 int main(int argc, char** argv)
@@ -269,6 +270,7 @@ int main(int argc, char** argv)
 		.scan<'f', float>()
 		.default_value(-1.0f)
 		.nargs(1);
+	program.add_argument("--write-dfs").help("write raw df_cur fields f00..f{Q-1} into the VTKHDF frames (debug)").default_value(false).implicit_value(true);
 
 	try {
 		program.parse_args(argc, argv);
@@ -283,6 +285,7 @@ int main(int argc, char** argv)
 	const auto resolution = program.get<int>("--resolution");
 	const auto max_level = program.get<int>("--max-level");
 	const auto lattice_viscosity = program.get<float>("--lattice-viscosity");
+	const auto write_dfs = program.get<bool>("--write-dfs");
 
 	if (resolution < 1) {
 		fmt::println(stderr, "CLI error: resolution must be at least 1");
@@ -291,7 +294,7 @@ int main(int argc, char** argv)
 
 	// SP only (2026-08-18): the DP branch doubled the device-code
 	// instantiation cost of this TU (build-time investigation)
-	run<TraitsSP>(adios_config, resolution, max_level, lattice_viscosity);
+	run<TraitsSP>(adios_config, resolution, max_level, lattice_viscosity, write_dfs);
 
 	return 0;
 }
