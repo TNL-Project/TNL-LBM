@@ -194,6 +194,13 @@ struct AMR_InterfacePatch
 	idx3d fine_origin;					  // origin of the fine ghost extent (fine coords)
 	idx3d fine_size;					  // extent in fine cells
 	TNL::Containers::SyncDirection face;  // interface normal direction
+
+	// launch-configuration cache (2026-08-18): each transfer launcher
+	// computes the block/grid sizes through the logging optimizer ONCE on
+	// first use; the sentinel zero marks "not computed" (the optimizer
+	// logs per call -- see LBM_BLOCK::getCudaBlockSize)
+	mutable dim3 cached_block_size{0, 0, 0};
+	mutable dim3 cached_grid_size{0, 0, 0};
 };
 
 /**
