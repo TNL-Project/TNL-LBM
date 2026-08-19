@@ -4,6 +4,7 @@ set(unit_test_sources
     test_outflowcover.cu
     test_decomposition.cu
     test_bc_symmetry.cu
+    test_amr_schonherr_registration.cu
     doctest_main.cu
 )
 

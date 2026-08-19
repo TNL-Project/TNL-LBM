@@ -161,10 +161,42 @@ for _suite in _suites:
 BATCHES: list[Batch] = _batches
 BATCH_IDS = [label for label, _, _, _ in BATCHES]
 
+# TDD lock suites of the Schönherr ch7 AMR conversion (plan row 3, commit 3
+# of .omo/plans/schonherr-ch7-conversion.md): the registration/parity/
+# conservation census and geometry fingerprint cases in
+# tests/unit/test_amr_schonherr_registration.cu assert the POST-conversion
+# band geometry from the ruling formulas and are RED by design against the
+# current code. The wrapper runs a whole doctest suite per subprocess batch,
+# so single doctest cases cannot be marked independently -- the locks live in
+# their own suite and the mark covers that suite's batch as a unit. The marks
+# are removed at the commit-7 stage-1 gate; strict xfail hard-errors if a
+# lock starts passing before then (e.g. at commit 6's retag).
+XFAIL_SUITE_REASONS: dict[str, str] = {
+    "amr_schonherr_registration_locks": (
+        "Schönherr ch7 conversion TDD locks (plan row 3): census/conservation "
+        "and geometry fingerprint cases expect the post-conversion band "
+        "geometry per the ruling formulas; RED by design until the commit-7 "
+        "geometry lands."
+    ),
+}
 
-@pytest.mark.parametrize("batch", enumerate(BATCHES), ids=BATCH_IDS)
+BATCH_PARAMS = [
+    pytest.param(
+        batch,
+        id=batch[0],
+        marks=(
+            [pytest.mark.xfail(reason=XFAIL_SUITE_REASONS[batch[0]], strict=True)]
+            if batch[0] in XFAIL_SUITE_REASONS
+            else []
+        ),
+    )
+    for batch in BATCHES
+]
+
+
+@pytest.mark.parametrize("batch", BATCH_PARAMS)
 def test_cpp_units(
-    batch: tuple[int, Batch],
+    batch: Batch,
     test_dir: pathlib.Path,
 ) -> None:
     """Run a batch of doctest cases in one subprocess.
@@ -174,7 +206,7 @@ def test_cpp_units(
     names).  The expected case count is pre-verified via ``--count`` so that
     a stale filter silently selecting zero cases is always a hard failure.
     """
-    _idx, (label, np_ranks, extra_args, expected) = batch
+    label, np_ranks, extra_args, expected = batch
     if not _binary_available:
         pytest.fail(
             f"cannot run {TEST_BINARY} — build the target first: "
