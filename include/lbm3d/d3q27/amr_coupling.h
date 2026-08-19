@@ -640,6 +640,15 @@ __global__ void cudaAMR_CoarseToFine(
 				Pi_xz = 0;
 				Pi_yz = 0;
 	#endif
+	#ifdef C2F_SHEAR_ONLY
+				// shear-only experiment (seam investigation): keep only the
+				// off-diagonal shear part, zero the diagonals; NORM + SHEAR
+				// partition the full tensor's deviatoric content (trace is
+				// zero at the TGV fill sites, see C2F_DEV_ONLY)
+				Pi_xx = 0;
+				Pi_yy = 0;
+				Pi_zz = 0;
+	#endif
 
 				// second-order moments from f_neq (Eqs. 7.5-7.9): the
 				// off-diagonals carry -3*omega_s, the diagonal

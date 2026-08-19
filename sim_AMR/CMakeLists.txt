@@ -50,6 +50,11 @@ set(C2F_DEV_ONLY "" CACHE STRING "C2F deviatoric-only strain fill debug define f
 # off-diagonal shear; probe for the interface density-bias investigation)
 set(C2F_NORM_ONLY "" CACHE STRING "C2F normal-stress-only strain fill debug define for AMR targets (enable with ON)")
 
+# optional C2F_SHEAR_ONLY debug switch: keep only the off-diagonal shear part
+# of the non-equilibrium pressure tensor in the CM branch fill (zero the
+# diagonals; closes the NORM/SHEAR partition of the bias attribution)
+set(C2F_SHEAR_ONLY "" CACHE STRING "C2F shear-only strain fill debug define for AMR targets (enable with ON)")
+
 # 2026-08-16 (gate B ruling + D.1): the F2C skin feedback became the ONLY
 # fine-to-coarse channel -- the former F2C_SKIN_ONLY experiment define was
 # retired together with the ring-F2C code it gated, so there is no feedback
@@ -85,6 +90,10 @@ foreach(target IN ITEMS ${TARGETS})
 
     if(C2F_NORM_ONLY)
         target_compile_definitions(${target} PRIVATE C2F_NORM_ONLY)
+    endif()
+
+    if(C2F_SHEAR_ONLY)
+        target_compile_definitions(${target} PRIVATE C2F_SHEAR_ONLY)
     endif()
 
     # force language to HIP
