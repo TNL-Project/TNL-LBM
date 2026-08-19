@@ -599,6 +599,10 @@ __global__ void cudaAMR_CoarseToFine(
 				KS_E.vz = w;
 				COLL::setEquilibrium(KS_E);
 				dreal Pi_xx = 0, Pi_yy = 0, Pi_zz = 0, Pi_xy = 0, Pi_xz = 0, Pi_yz = 0;
+	#ifndef C2F_EQ_ONLY
+				// (skipped under the C2F_EQ_ONLY debug experiment: zero
+				// strain-rate content makes the reconstructed cumulants pure
+				// equilibrium -- the fill writes eq(rho,u) only)
 				for (int q = 0; q < CONFIG::Q; q++) {
 					const dreal f_neq = KS_C.f[q] - KS_E.f[q];
 					const dreal cqx = static_cast<dreal>(vel_cx[q]);
@@ -611,6 +615,31 @@ __global__ void cudaAMR_CoarseToFine(
 					Pi_xz += cqx * cqz * f_neq;
 					Pi_yz += cqy * cqz * f_neq;
 				}
+	#endif
+	#ifdef C2F_DEV_ONLY
+				// trace-off experiment (seam investigation, 2026-08-19):
+				// subtract the trace of the non-equilibrium pressure tensor
+				// from the diagonals before the omega scaling -- deviatoric
+				// only, since the tau-rescaled compressional part is the
+				// suspected density-pump term
+				const dreal Pi_tr = (Pi_xx + Pi_yy + Pi_zz) / 3;
+				Pi_xx -= Pi_tr;
+				Pi_yy -= Pi_tr;
+				Pi_zz -= Pi_tr;
+	#endif
+	#ifdef C2F_NORM_ONLY
+				// norm-only experiment (seam investigation): keep only the
+				// diagonal deviatoric part and zero the off-diagonal shear,
+				// so that FULL = NORM + SHEAR + trace partitions bit-exactly
+				// (the trace itself is zero-tested by C2F_DEV_ONLY)
+				const dreal Pi_tr2 = (Pi_xx + Pi_yy + Pi_zz) / 3;
+				Pi_xx -= Pi_tr2;
+				Pi_yy -= Pi_tr2;
+				Pi_zz -= Pi_tr2;
+				Pi_xy = 0;
+				Pi_xz = 0;
+				Pi_yz = 0;
+	#endif
 
 				// second-order moments from f_neq (Eqs. 7.5-7.9): the
 				// off-diagonals carry -3*omega_s, the diagonal
@@ -1029,10 +1058,18 @@ __global__ void cudaAMR_CoarseToFine(
 	KS_F.vz = vz_f;
 	COLL::setEquilibrium(KS_F);
 
+	#ifdef C2F_EQ_ONLY
+	// debug experiment: equilibrium-only fill (no non-equilibrium content)
+	static_cast<void>(tau_fine);
+	static_cast<void>(tau_coarse);
+	for (int q = 0; q < CONFIG::Q; q++)
+		store_fine_df(q, KS_F.f[q]);
+	#else
 	// volumetric rescaling, f_fine[q] = eq_q(rho_f,u_f) + (tau_f/tau_c)*f_neq[q]
 	const dreal neq_scale = tau_fine / tau_coarse;
 	for (int q = 0; q < CONFIG::Q; q++)
 		store_fine_df(q, KS_F.f[q] + neq_scale * f_neq[q]);
+	#endif
 #endif
 
 	// macros for GEO_AMR_INTERFACE cells (no-op in v1, see the file docstring)
