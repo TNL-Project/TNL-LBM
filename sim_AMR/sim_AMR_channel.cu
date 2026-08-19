@@ -176,7 +176,7 @@ struct StateLocal_AMR_Channel : State_AMR<NSE>
 };
 
 template <typename NSE>
-void sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 1, int max_level = 1, float lattice_viscosity_override = -1.0f, bool write_dfs = false)
+void sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 1, int max_level = 1, float lattice_viscosity_override = -1.0f, bool write_dfs = false, int out3d_iter_period = 0)
 {
 	using idx = typename NSE::TRAITS::idx;
 	using real = typename NSE::TRAITS::real;
@@ -223,6 +223,16 @@ void sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 1, int
 	state.cnt[PRINT].period = 0.01;
 	state.cnt[OUT3D].period = 0.05;
 
+	// per-iteration frame cadence (--out3d-iter-period N): write the OUT3D
+	// macroscopic frame every N fine iterations, independent of the
+	// time-based cadence above; mirrors sim_AMR.cu and replaces the
+	// uncommitted "cnt[OUT3D].period = PHYS_DT" probe hack. The fine
+	// (level-1) timestep is PHYS_DT / 2 (2:1 subcycling) and the OUT3D
+	// hook in State_AMR::AfterSimUpdate fires at most once per coarse
+	// step, so N = 1 and N = 2 both write every coarse step
+	if (out3d_iter_period > 0)
+		state.cnt[OUT3D].period = out3d_iter_period * PHYS_DT / 2;
+
 	// AMR setup before execute: allocate, set the coarse boundary map, create
 	// the fine block, tag the interface cells, initialize all levels;
 	// State_AMR::SimInit re-applies the map/interface setup internally
@@ -239,7 +249,7 @@ void sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 1, int
 }
 
 template <typename TRAITS = TraitsSP>
-void run(const std::string& adios_config, int resolution, int max_level = 1, float lattice_viscosity = -1.0f, bool write_dfs = false)
+void run(const std::string& adios_config, int resolution, int max_level = 1, float lattice_viscosity = -1.0f, bool write_dfs = false, int out3d_iter_period = 0)
 {
 	using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
 
@@ -253,7 +263,7 @@ void run(const std::string& adios_config, int resolution, int max_level = 1, flo
 		D3Q27_BC_All,
 		D3Q27_MACRO_Default<TRAITS>>;
 
-	sim<NSE_CONFIG>(adios_config, resolution, max_level, lattice_viscosity, write_dfs);
+	sim<NSE_CONFIG>(adios_config, resolution, max_level, lattice_viscosity, write_dfs, out3d_iter_period);
 }
 
 int main(int argc, char** argv)
@@ -271,6 +281,15 @@ int main(int argc, char** argv)
 		.default_value(-1.0f)
 		.nargs(1);
 	program.add_argument("--write-dfs").help("write raw df_cur fields f00..f{Q-1} into the VTKHDF frames (debug)").default_value(false).implicit_value(true);
+	program.add_argument("--out3d-iter-period")
+		.help(
+			"write the OUT3D macroscopic frame every N fine iterations, independent of the time-based cadence "
+			"(fine dt = coarse dt/2; the write hook fires at most once per coarse step, so N = 1 and N = 2 "
+			"both write every coarse step; 0 = off)"
+		)
+		.scan<'i', int>()
+		.default_value(0)
+		.nargs(1);
 
 	try {
 		program.parse_args(argc, argv);
@@ -286,15 +305,20 @@ int main(int argc, char** argv)
 	const auto max_level = program.get<int>("--max-level");
 	const auto lattice_viscosity = program.get<float>("--lattice-viscosity");
 	const auto write_dfs = program.get<bool>("--write-dfs");
+	const auto out3d_iter_period = program.get<int>("--out3d-iter-period");
 
 	if (resolution < 1) {
 		fmt::println(stderr, "CLI error: resolution must be at least 1");
 		return 1;
 	}
+	if (out3d_iter_period < 0) {
+		fmt::println(stderr, "CLI error: out3d-iter-period must be non-negative");
+		return 1;
+	}
 
 	// SP only (2026-08-18): the DP branch doubled the device-code
 	// instantiation cost of this TU (build-time investigation)
-	run<TraitsSP>(adios_config, resolution, max_level, lattice_viscosity, write_dfs);
+	run<TraitsSP>(adios_config, resolution, max_level, lattice_viscosity, write_dfs, out3d_iter_period);
 
 	return 0;
 }
