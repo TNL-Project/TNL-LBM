@@ -82,13 +82,15 @@ struct StateLocal : State<NSE>
 
 	void setupBoundaries() override
 	{
-		nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT);								 // left
-		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT_INTERP);	 // right
-
+		// symmetry planes first, so inflow/outflow overwrite them at edges/corners
 		nse.setBoundaryY(1, BC::GEO_SYMMETRY);						 // front
 		nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_SYMMETRY);	 // back
 		nse.setBoundaryZ(1, BC::GEO_SYMMETRY);						 // bottom
 		nse.setBoundaryZ(nse.lat.global.z() - 2, BC::GEO_SYMMETRY);	 // top
+
+		// inflow/outflow next, so they win over symmetry at edges/corners
+		nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT);								 // left
+		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT_INTERP);	 // right
 
 		// extra layer needed due to A-A pattern
 		nse.setBoundaryX(0, BC::GEO_NOTHING);						// left

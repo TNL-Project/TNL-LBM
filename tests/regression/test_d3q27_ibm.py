@@ -11,7 +11,8 @@ files are compared against baselines in ``baseline_ibm_matrices/``:
 
 Flow-field regression: ``sim_IBM2`` default single-sphere channel at Re=100,
 run for 5 physical time units, validated on the mid-plane cuts — finite
-velocity/density/IBM-force fields, mass conservation, a recirculating wake
+velocity/density/IBM-force fields, mass conservation, full-face inflow/outflow
+coverage over the surrounding symmetry planes, a recirculating wake
 behind the sphere, and the drag coefficient converged to the expected value.
 """
 
@@ -96,7 +97,13 @@ FLOW_VAR_NAMES = [
     "force_x",
     "force_y",
     "force_z",
+    "wall",
 ]
+
+# D3Q27 GEO enum (must match include/lbm3d/d3q27/bc.h)
+GEO_INFLOW_LEFT = 3
+GEO_OUTFLOW_RIGHT_INTERP = 8
+GEO_NOTHING = 9
 
 # C_D=1.006 at t>=2s in the steady Re=100 single-sphere channel flow; the
 # matrix runs use nas=0.5 so the flow run (default 0.25) gets its own state id.
@@ -150,6 +157,33 @@ class TestIbmFlow:
     def test_mass_conservation(self, ibm_flow: IbmFlowResult) -> None:
         for plane in ("cut_y", "cut_z"):
             assert_mass_conserved(ibm_flow[plane]["lbm_density"], tolerance=5e-3)
+
+    def test_boundary_map_coverage(self, ibm_flow: IbmFlowResult) -> None:
+        # The four symmetry channel planes surround the inflow/outflow faces; on
+        # the y/z mid-plane cuts the face columns must be tagged INFLOW/OUTFLOW
+        # on every interior cell — the symmetry planes must not overwrite them.
+        for plane, get_col in {
+            "cut_y": (lambda w: w[:, 0, 1]),
+            "cut_z": (lambda w: w[0, :, 1]),
+        }.items():
+            inflow_col = get_col(ibm_flow[plane]["wall"])
+            assert inflow_col[0] == GEO_NOTHING
+            assert inflow_col[-1] == GEO_NOTHING
+            assert np.all(inflow_col[1:-1] == GEO_INFLOW_LEFT), (
+                f"{plane}: inflow edges overwritten by symmetry "
+                f"(tags: {np.unique(inflow_col[1:-1])})"
+            )
+        for plane, get_col in {
+            "cut_y": (lambda w: w[:, 0, -2]),
+            "cut_z": (lambda w: w[0, :, -2]),
+        }.items():
+            outflow_col = get_col(ibm_flow[plane]["wall"])
+            assert outflow_col[0] == GEO_NOTHING
+            assert outflow_col[-1] == GEO_NOTHING
+            assert np.all(outflow_col[1:-1] == GEO_OUTFLOW_RIGHT_INTERP), (
+                f"{plane}: outflow edges overwritten by symmetry "
+                f"(tags: {np.unique(outflow_col[1:-1])})"
+            )
 
     def test_wake_recirculation(self, ibm_flow: IbmFlowResult) -> None:
         # Axial velocity on the cut_Y plane (z, 1, x) along the row through

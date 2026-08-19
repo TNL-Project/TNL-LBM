@@ -10,7 +10,8 @@ checked properties are known to hold for the correct implementation
 - ``sim2d_2`` (Hagen-Poiseuille): analytical accuracy, mass conservation,
   wall no-slip.
 - ``sim2d_hills``: SYM_TOP smoothness (no frozen-population spike), mass
-  conservation, inflow uniformity.
+  conservation, inflow uniformity, boundary-map corner tags (inflow/outflow
+  take the top corner at the faces), SYM_TOP slip continuity.
 - ``sim2d_Taylor_Green``: analytical decay accuracy, mass conservation,
   velocity symmetry.
 
@@ -40,6 +41,7 @@ if TYPE_CHECKING:
 # GEO enum values (must match include/lbm3d/d2q9/bc.h)
 GEO_WALL = 1
 GEO_INFLOW_LEFT = 3
+GEO_OUTFLOW_RIGHT_INTERP = 6
 GEO_NOTHING = 7
 GEO_SYMMETRY = 8
 
@@ -218,7 +220,7 @@ class TestSim2dHills:
         peak = float(np.max(np.abs(vx)))
         assert peak > 0
         rel = row_diff / peak * 100
-        assert row_diff / peak < 0.05, (
+        assert row_diff / peak < 0.02, (
             f"max|vx(SYM_TOP)-vx(fluid)|={row_diff:.2e} ({rel:.2f}% of peak)"
         )
 
@@ -235,6 +237,31 @@ class TestSim2dHills:
     def test_wall_no_slip(self, data: FieldData) -> None:
         max_v = wall_velocity_max(data["velocity_x"], data["velocity_y"], data["wall"])
         assert max_v < 1e-10, f"max|v| in wall/nothing cells={max_v:.2e}"
+
+    def test_boundary_map_coverage(self, data: FieldData) -> None:
+        # Corner tags depend on the setup order (SYM_TOP first, then
+        # inflow/outflow, wall last): inflow/outflow take the top corner,
+        # the wall takes the bottom corners, ghost rows stay GEO_NOTHING.
+        wall = data["wall"]
+        ny, nx = wall.shape
+
+        inflow_col = wall[:, 1]
+        assert inflow_col[0] == GEO_NOTHING
+        assert inflow_col[1] == GEO_WALL, "bottom wall must win at the inflow corner"
+        assert np.all(inflow_col[2 : ny - 1] == GEO_INFLOW_LEFT), (
+            "inflow must cover the full face including the top row "
+            f"(tags: {np.unique(inflow_col[2 : ny - 1])})"
+        )
+        assert inflow_col[ny - 1] == GEO_NOTHING
+
+        outflow_col = wall[:, nx - 2]
+        assert outflow_col[0] == GEO_NOTHING
+        assert outflow_col[1] == GEO_WALL, "bottom wall must win at the outflow corner"
+        assert np.all(outflow_col[2 : ny - 1] == GEO_OUTFLOW_RIGHT_INTERP), (
+            "outflow must cover the full face including the top row "
+            f"(tags: {np.unique(outflow_col[2 : ny - 1])})"
+        )
+        assert outflow_col[ny - 1] == GEO_NOTHING
 
 
 @pytest.fixture(scope="module")

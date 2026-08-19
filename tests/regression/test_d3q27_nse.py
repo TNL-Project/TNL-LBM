@@ -9,7 +9,8 @@ workspace and its outputs are validated property by property:
 - ``sim_2`` (square duct, analytical series reference): L1/L2 errors of the
   final cornered-residual state printed to stdout stay within tolerance.
 - ``sim_3`` (Eulerian ball in a 3D channel, Re=100): wall and in-sphere
-  no-slip, mass conservation, axial wake velocity deficit.
+  no-slip, mass conservation, axial wake velocity deficit, inflow/outflow
+  full-face coverage over the symmetry planes, inflow edge uniformity.
 - ``sim_4`` (3D Taylor-Green vortex, Re=1600): finite 3D fields, mass
   conservation, and a kinetic-energy probe series with monotone decay well
   beyond the laminar rate.
@@ -39,6 +40,7 @@ if TYPE_CHECKING:
 # D3Q27 GEO enum (must match include/lbm3d/d3q27/bc.h)
 GEO_WALL = 1
 GEO_INFLOW_LEFT = 3
+GEO_OUTFLOW_RIGHT_INTERP = 8
 GEO_NOTHING = 9
 
 SIMS: dict[str, list[str]] = {
@@ -283,6 +285,46 @@ class TestSim3:
                 )
         assert walls_found > 0, "no GEO_WALL cells found on any cut plane"
         assert max_v < 1e-10, f"max|v| in wall/sphere cells={max_v:.2e}"
+
+    INFLOW_COL: ClassVar[dict] = {
+        "Y": (lambda w: w[:, 0, 1]),
+        "Z": (lambda w: w[0, :, 1]),
+    }
+    OUTFLOW_COL: ClassVar[dict] = {
+        "Y": (lambda w: w[:, 0, -2]),
+        "Z": (lambda w: w[0, :, -2]),
+    }
+
+    def test_boundary_map_coverage(self, cuts: dict[str, FieldData]) -> None:
+        # The four symmetry channel planes surround the inflow/outflow faces, so on
+        # the y/z mid-plane cuts the inflow column (x=1) and outflow column
+        # (x=X-2) must be tagged INFLOW/OUTFLOW on every interior cell — the
+        # The symmetry planes must not overwrite the face edges.
+        for axis, get_col in self.INFLOW_COL.items():
+            inflow_col = get_col(cuts[axis]["wall"])
+            assert inflow_col[0] == GEO_NOTHING
+            assert inflow_col[-1] == GEO_NOTHING
+            assert np.all(inflow_col[1:-1] == GEO_INFLOW_LEFT), (
+                f"cut_{axis}: inflow edges overwritten by symmetry "
+                f"(tags: {np.unique(inflow_col[1:-1])})"
+            )
+        for axis, get_col in self.OUTFLOW_COL.items():
+            outflow_col = get_col(cuts[axis]["wall"])
+            assert outflow_col[0] == GEO_NOTHING
+            assert outflow_col[-1] == GEO_NOTHING
+            assert np.all(outflow_col[1:-1] == GEO_OUTFLOW_RIGHT_INTERP), (
+                f"cut_{axis}: outflow edges overwritten by symmetry "
+                f"(tags: {np.unique(outflow_col[1:-1])})"
+            )
+
+    def test_inflow_edges_uniform(self, cuts: dict[str, FieldData]) -> None:
+        # With the inflow BC applied on the face edges, the enforced velocity
+        # is uniform across the whole inflow plane, including the cells adjacent
+        # to the symmetry planes (checked on the y/z mid-plane cuts).
+        for axis, get_col in self.INFLOW_COL.items():
+            col = get_col(cuts[axis]["velocity_x"])[1:-1]
+            spread = float(np.max(col) - np.min(col))
+            assert spread < 1e-6, f"cut_{axis}: inflow edge spread={spread:.2e}"
 
     def test_wake_deficit(self, cuts: dict[str, FieldData]) -> None:
         # Axial velocity along the wake center line (row through the sphere
