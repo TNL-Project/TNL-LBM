@@ -12,6 +12,7 @@ set(unit_test_sources
     test_streaming_mpi_bc2d.cu
     test_streaming_mpi_bc3d.cu
     test_output_buffer_sync.cu
+    test_amr_schonherr_registration.cu
     doctest_main.cu
 )
 
