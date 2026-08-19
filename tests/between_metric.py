@@ -218,9 +218,13 @@ def main():
     physDl_f = physDl_c / 2
     cell_volume_f = physDl_f**3  # fine cell volume (the common resolution)
 
-    # Fine footprint origin/size in fine coords
-    footprint_origin = (32, 32, 32)
-    footprint_size = (64, 64, 64)
+    # Fine footprint origin/size in fine coords, re-anchored (Schönherr-ch7
+    # band registration): offset' = 2*origin_coarse + 1 = 33, interior
+    # local' = 2*K - 2 = 62 -- the composite splices the fine-authoritative
+    # interior only (the coarse-authoritative ring rows and the covered F2C
+    # destination rows come from the coarse level)
+    footprint_origin = (33, 33, 33)
+    footprint_size = (62, 62, 62)
 
     # Domain volume for normalization
     domain_volume = PHYS_HEIGHT**3
