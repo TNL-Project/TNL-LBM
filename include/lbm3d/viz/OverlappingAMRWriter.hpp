@@ -309,7 +309,9 @@ void OverlappingAMRWriter<TRAITS>::write(const std::string& filename, const LBM<
 
 		// vtkGhostType: mark coarse cells that are covered by a finer-level
 		// block as REFINEDCELL(4); a finer block's footprint in the parent
-		// (this level's) lattice is [global_offset, global_offset + local/2)
+		// (this level's) lattice is [global_offset, global_offset + (local + 2)/2)
+		// -- the re-anchored interior local = 2*size - 2 is inset one fine
+		// cell per face, so the +2 restores the full requested footprint
 		std::vector<std::uint8_t> ghost;
 		ghost.reserve(total_cells);
 		for (const BLOCK* block : blocks) {
@@ -322,7 +324,7 @@ void OverlappingAMRWriter<TRAITS>::write(const std::string& filename, const LBM<
 							if (fine.level != level + 1)
 								continue;
 							const idx3d fp_lo = fine.global_offset;
-							const idx3d fp_size{fine.local.x() / 2, fine.local.y() / 2, fine.local.z() / 2};
+							const idx3d fp_size{(fine.local.x() + 2) / 2, (fine.local.y() + 2) / 2, (fine.local.z() + 2) / 2};
 							if (cell.x() >= fp_lo.x() && cell.x() < fp_lo.x() + fp_size.x() && cell.y() >= fp_lo.y()
 								&& cell.y() < fp_lo.y() + fp_size.y() && cell.z() >= fp_lo.z() && cell.z() < fp_lo.z() + fp_size.z())
 							{

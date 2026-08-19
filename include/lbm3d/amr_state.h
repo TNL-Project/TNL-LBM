@@ -501,9 +501,11 @@ void State_AMR<NSE>::buildCouplings()
 		for (auto* fine : this->nse.getBlocksAtLevel(fine_level)) {
 			// footprint of the fine block in parent-level global coordinates
 			// (createAMRBlocks stores the parent-level origin in global_offset;
-			// the footprint size is fine.local / 2 with the 2:1 ratio)
+			// the footprint size is (fine.local + 2) / 2 with the 2:1 ratio --
+			// the re-anchored interior local = 2*gs - 2 is inset one fine
+			// cell per face)
 			const idx3d& go = fine->global_offset;
-			const idx3d gs{fine->local.x() / 2, fine->local.y() / 2, fine->local.z() / 2};
+			const idx3d gs{(fine->local.x() + 2) / 2, (fine->local.y() + 2) / 2, (fine->local.z() + 2) / 2};
 
 			// the six faces of the footprint's 1-cell halo box in parent-level
 			// global coordinates (disjoint partition, see the docstring)
@@ -649,8 +651,10 @@ bool State_AMR<NSE>::isShadowedBySameLevelBlock(idx x, idx y, idx z, int fine_le
 		if (other == owner)
 			continue;
 		// footprint of the other fine block in parent-level global coordinates
+		// ((local + 2) / 2 -- the re-anchored interior is inset one fine cell
+		// per face, see buildCouplings)
 		const idx3d& oo = other->global_offset;
-		const idx3d os{other->local.x() / 2, other->local.y() / 2, other->local.z() / 2};
+		const idx3d os{(other->local.x() + 2) / 2, (other->local.y() + 2) / 2, (other->local.z() + 2) / 2};
 		if (x >= oo.x() && x < oo.x() + os.x() && y >= oo.y() && y < oo.y() + os.y() && z >= oo.z() && z < oo.z() + os.z())
 			return true;
 	}
