@@ -35,6 +35,21 @@ endif()
 # matrix, retried post-redesign); AB-pattern only
 set(C2F_H9 "" CACHE STRING "H9 experiment define for AMR targets (time-centered first C2F fill; enable with ON, AB pattern only)")
 
+# optional C2F_EQ_ONLY debug switch: the fills write pure equilibrium
+# (CM strain-rate moments and Lagrange non-equilibrium rescale are zeroed);
+# experiment for the interface density-bias investigation
+set(C2F_EQ_ONLY "" CACHE STRING "C2F equilibrium-only fill debug define for AMR targets (enable with ON)")
+
+# optional C2F_DEV_ONLY trace-off debug switch: deviatoric-only strain-rate
+# moments in the CM branch fill (trace of Pi subtracted; probe for the
+# interface density-bias investigation)
+set(C2F_DEV_ONLY "" CACHE STRING "C2F deviatoric-only strain fill debug define for AMR targets (enable with ON)")
+
+# optional C2F_NORM_ONLY debug switch: keep only the diagonal deviatoric part
+# of the non-equilibrium pressure tensor in the CM branch fill (zero the
+# off-diagonal shear; probe for the interface density-bias investigation)
+set(C2F_NORM_ONLY "" CACHE STRING "C2F normal-stress-only strain fill debug define for AMR targets (enable with ON)")
+
 # 2026-08-16 (gate B ruling + D.1): the F2C skin feedback became the ONLY
 # fine-to-coarse channel -- the former F2C_SKIN_ONLY experiment define was
 # retired together with the ring-F2C code it gated, so there is no feedback
@@ -58,6 +73,18 @@ foreach(target IN ITEMS ${TARGETS})
 
     if(C2F_H9)
         target_compile_definitions(${target} PRIVATE C2F_H9)
+    endif()
+
+    if(C2F_EQ_ONLY)
+        target_compile_definitions(${target} PRIVATE C2F_EQ_ONLY)
+    endif()
+
+    if(C2F_DEV_ONLY)
+        target_compile_definitions(${target} PRIVATE C2F_DEV_ONLY)
+    endif()
+
+    if(C2F_NORM_ONLY)
+        target_compile_definitions(${target} PRIVATE C2F_NORM_ONLY)
     endif()
 
     # force language to HIP
