@@ -20,8 +20,14 @@
  *
  * An \ref AMR_Region is a rectangular fine-lattice region specified in
  * coarsest-level (level-0) cell coordinates. With the standard 2:1
- * refinement ratio, each coarse cell of the region becomes 2x2x2 fine cells,
- * so the created fine block has `2 * size_coarse` local cells per axis.
+ * refinement ratio, each coarse cell of the region becomes 2x2x2 fine cells.
+ * The fine block's interior does NOT span the whole requested footprint:
+ * under the re-anchored band registration (Schönherr-ch7 ruling) the
+ * outermost requested-footprint row becomes a coarse-authoritative ring row
+ * (simulated), the covered, F2C-refilled destination row starts one coarse
+ * row inside, and the fine-authoritative full coverage is the footprint
+ * inset by 1 coarse row per face -- `offset_fine = 2 * origin_coarse + 1`,
+ * `local_fine = 2 * size_coarse - 2` per axis.
  *
  * The region format parsed by \ref parseAMRConfig is one region per line:
  *
@@ -113,6 +119,17 @@ std::vector<AMR_Region<CONFIG>> parseAMRConfig(const std::string& config)
  * `GEO_FLUID`, and its DFs are initialized to equilibrium with zero
  * macroscopic fields (the caller overwrites this with its own initial
  * condition on all levels before the first step).
+ *
+ * Band registration (Schönherr-ch7 ruling): the outermost requested-footprint
+ * row becomes a coarse-authoritative ring row (simulated); the covered,
+ * F2C-refilled destination row starts one coarse row inside; fine-authoritative
+ * full coverage = footprint inset 1 coarse row per face. Concretely
+ * `offset_fine = ratio * origin_coarse + 1` and
+ * `local_fine = ratio * size_coarse - 2` per axis, so physical cell positions
+ * (a fine-global-coordinate property) and every band row's (home, t) storage
+ * parity are invariant under the shift -- the old local index equals the new
+ * one plus one. The total extent requested from the allocator is restored to
+ * `ratio * size + 2` per axis once the ghost overlap is 2 deep.
  */
 template <typename CONFIG>
 void createAMRBlocks(LBM<CONFIG>& lbm, const std::vector<AMR_Region<CONFIG>>& regions)
@@ -165,28 +182,34 @@ void createAMRBlocks(LBM<CONFIG>& lbm, const std::vector<AMR_Region<CONFIG>>& re
 		if (region.size_coarse.x() <= 0 || region.size_coarse.y() <= 0 || region.size_coarse.z() <= 0)
 			reject("region size must be positive in all axes");
 
-		// the F2C filter (cudaAMR_FineToCoarse) evaluates a 4-node window
-		// along every axis of the fine interior; a 1-cell-thin axis (fine
-		// interior size 2 with a 1-cell storage overlap) leaves the min-side
-		// skin cell's clamped window reading past the storable fine-DF range
-		if (region.size_coarse.x() < 2)
+		// footprint minimum gs >= 3 per axis under the re-anchored band
+		// registration: with the interior inset one fine cell per face, a
+		// 2-coarse-cell-thin axis would give the outermost (c=0) ring row of
+		// one face and the depth-1 (c=1) F2C destination row of the opposite
+		// face to the same cell -- a dual-role row the band structure does
+		// not admit -- and the fine interior (local 2 for gs = 2) would also
+		// underflow the F2C filter's 4-node window
+		if (region.size_coarse.x() < 3)
 			reject(
 				fmt::format(
-					"AMR footprint size below the 2-coarse-cell minimum required by the F2C 4-node filter window on axis X (got {})",
+					"AMR footprint size below the 3-coarse-cell minimum required by the interface band structure (distinct c=0 ring and c=1 "
+					"destination rows) on axis X (got {})",
 					region.size_coarse.x()
 				)
 			);
-		if (region.size_coarse.y() < 2)
+		if (region.size_coarse.y() < 3)
 			reject(
 				fmt::format(
-					"AMR footprint size below the 2-coarse-cell minimum required by the F2C 4-node filter window on axis Y (got {})",
+					"AMR footprint size below the 3-coarse-cell minimum required by the interface band structure (distinct c=0 ring and c=1 "
+					"destination rows) on axis Y (got {})",
 					region.size_coarse.y()
 				)
 			);
-		if (region.size_coarse.z() < 2)
+		if (region.size_coarse.z() < 3)
 			reject(
 				fmt::format(
-					"AMR footprint size below the 2-coarse-cell minimum required by the F2C 4-node filter window on axis Z (got {})",
+					"AMR footprint size below the 3-coarse-cell minimum required by the interface band structure (distinct c=0 ring and c=1 "
+					"destination rows) on axis Z (got {})",
 					region.size_coarse.z()
 				)
 			);
@@ -232,9 +255,16 @@ void createAMRBlocks(LBM<CONFIG>& lbm, const std::vector<AMR_Region<CONFIG>>& re
 	for (const AMR_Region<CONFIG>& region : regions) {
 		// 2^level refinement ratio: with 2:1 refinement the fine block doubles the region in every axis
 		const idx ratio = idx(1) << region.level;
-		// fine-level extent and origin in fine-level global coordinates
-		const idx3d local_fine{ratio * region.size_coarse.x(), ratio * region.size_coarse.y(), ratio * region.size_coarse.z()};
-		const idx3d offset_fine{ratio * region.origin_coarse.x(), ratio * region.origin_coarse.y(), ratio * region.origin_coarse.z()};
+		// fine-level extent and origin in fine-level global coordinates,
+		// re-anchored one fine cell inward per footprint face (Schönherr-ch7
+		// band registration ruling): the outermost row of each face is a
+		// coarse-authoritative simulated ring row and the F2C-refilled
+		// destination rows shift one coarse row inside. Physical cell
+		// positions are a fine-global-coordinate property (invariant under
+		// the anchor shift: old local index = new local index + 1), and every
+		// band row keeps its storage parity.
+		const idx3d local_fine{ratio * region.size_coarse.x() - 2, ratio * region.size_coarse.y() - 2, ratio * region.size_coarse.z() - 2};
+		const idx3d offset_fine{ratio * region.origin_coarse.x() + 1, ratio * region.origin_coarse.y() + 1, ratio * region.origin_coarse.z() + 1};
 		// the block lives on the refined lattice, so its `global` is the refined coarsest-level size;
 		// block arrays are sized by `global` and must cover [offset, offset + local) in fine coordinates
 		const idx3d global_fine{ratio * lbm.lat.global.x(), ratio * lbm.lat.global.y(), ratio * lbm.lat.global.z()};
@@ -360,10 +390,11 @@ void allocateInterfaceDirArray(LBM_BLOCK<CONFIG>& block)
  * fill their interface-direction bitmasks.
  *
  * Every fine block's footprint is projected onto its parent level as the
- * rectangle [global_offset, global_offset + local/2) in parent-level
+ * rectangle [global_offset, global_offset + (local + 2)/2) in parent-level
  * coordinates (global_offset is the parent-level origin set by
- * createAMRBlocks, consecutive levels always have a 2:1 ratio). Two
- * populations are tagged:
+ * createAMRBlocks, consecutive levels always have a 2:1 ratio; the +2
+ * recovers the inset interior under the re-anchored indexer, local =
+ * 2*size - 2). Two populations are tagged:
  *
  * - **Interface ring**: every parent-level cell within Chebyshev distance 1
  *   of the rectangle, but outside it, is tagged GEO_AMR_INTERFACE and its
@@ -406,9 +437,10 @@ void markAMRInterface(LBM<CONFIG>& lbm)
 		if (fine.level <= 0)
 			continue;
 		const idx3d origin = fine.global_offset;
-		// fine footprint extent in parent-level cells (2:1 ratio); guaranteed
-		// exact by createAMRBlocks
-		const idx3d size{fine.local.x() / 2, fine.local.y() / 2, fine.local.z() / 2};
+		// fine footprint extent in parent-level cells (2:1 ratio): under the
+		// re-anchored indexer the interior is local = 2*size - 2 (inset one
+		// fine cell per face), so the footprint is (local + 2)/2, exact
+		const idx3d size{(fine.local.x() + 2) / 2, (fine.local.y() + 2) / 2, (fine.local.z() + 2) / 2};
 		const int parent_level = fine.level - 1;
 		int marked_fine = 0;
 		int frozen_fine = 0;
