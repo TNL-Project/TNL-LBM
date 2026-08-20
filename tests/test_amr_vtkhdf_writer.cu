@@ -2,8 +2,9 @@
 // (include/lbm3d/viz/OverlappingAMRWriter.h).
 //
 // The test builds a minimal two-level AMR setup on a 16^3 coarse lattice
-// with one centered level-1 region (coarse footprint [4, 12)^3, i.e. a 16^3
-// fine block at fine offset (8, 8, 8)), initializes a uniform equilibrium
+// with one centered level-1 region (coarse footprint [4, 12)^3, i.e. a 14^3
+// fine block at fine offset (9, 9, 9) under the re-anchored indexer),
+// initializes a uniform equilibrium
 // state (rho = 1, v = 0) on both levels, writes the VTKHDF file with
 // OverlappingAMRWriter and verifies the HDF5 structure against the writer's
 // documented layout:
@@ -13,7 +14,8 @@
 // - per-level groups Level0/Level1 with attribute Spacing = physDl / 2^level,
 //   an AMRBox dataset with one inclusive [lo, hi] row per block in the
 //   level's own lattice coordinates, and a CellData group with
-//   rho/vx/vy/vz (double) and vtkGhostType (uint8) datasets of 16^3 cells,
+//   rho/vx/vy/vz (double) and vtkGhostType (uint8) datasets of the level's
+//   block extent (16^3 cells coarse, 14^3 cells fine),
 // - rho == 1 and v == 0 (the initialized uniform state) at both levels,
 // - vtkGhostType == 4 (REFINEDCELL) exactly on the fine block's coarse
 //   footprint at level 0 and == 0 everywhere at level 1.
@@ -305,8 +307,8 @@ void test_vtkhdf_structure()
 	lbm.allocateHostData();
 	lbm.allocateDeviceData();
 
-	// one centered level-1 region: coarse footprint [4, 12)^3, i.e. a 16^3
-	// fine block at fine offset (8, 8, 8)
+	// one centered level-1 region: coarse footprint [4, 12)^3, i.e. a 14^3
+	// fine block at fine offset (9, 9, 9) under the re-anchored indexer
 	createAMRBlocks(lbm, parseAMRConfig<NSE_CONFIG>("1 4 4 4 8 8 8"));
 
 	report(
@@ -383,11 +385,12 @@ void test_vtkhdf_structure()
 	H5Gclose(root);
 
 	// per-level groups: the coarse block spans the whole 16^3 lattice, the
-	// fine block spans [8, 23]^3 in the refined (32^3) lattice coordinates
+	// fine block spans [9, 22]^3 in the refined (32^3) lattice coordinates
+	// (re-anchored indexer: offset 2*origin+1 = 9, local 2*8-2 = 14)
 	const std::int32_t box0[6] = {0, 15, 0, 15, 0, 15};
-	const std::int32_t box1[6] = {8, 23, 8, 23, 8, 23};
+	const std::int32_t box1[6] = {9, 22, 9, 22, 9, 22};
 	verifyLevel(file, 0, 16, lat.physDl, box0, /*finest=*/false);
-	verifyLevel(file, 1, 16, lat.physDl / 2, box1, /*finest=*/true);
+	verifyLevel(file, 1, 14, lat.physDl / 2, box1, /*finest=*/true);
 
 	H5Fclose(file);
 	std::remove(filename);

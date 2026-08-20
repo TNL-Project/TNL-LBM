@@ -557,7 +557,8 @@ void test_interface_ring_freshness()
 		}
 
 		// one centered level-1 region with the coarse footprint [4, 12)^3: the
-		// GEO_AMR_INTERFACE ring is the 10^3 - 8^3 = 488 shell cells around it
+		// GEO_AMR_INTERFACE ring is the 10^3 - 6^3 = 784 cells around it
+		// (halo 488 + reactivated c=0 shell 296, contract sec. 2.4)
 		createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>("1 4 4 4 8 8 8"));
 
 		state.SimInit();
@@ -634,15 +635,17 @@ void test_interface_ring_freshness()
 	}
 
 	// assertions
-	// the ring layout is fixed by markAMRInterface: 488 shell cells around
-	// the 8^3 footprint (same geometry in all three scans)
+	// the ring layout is fixed by markAMRInterface: the 784-cell ring of
+	// the 8^3 K = 8 footprint (halo (K+2)^3 - K^3 = 488 plus the
+	// reactivated c=0 surface shell K^3 - (K-2)^3 = 296, contract sec.
+	// 2.4; same geometry in all three scans)
 	idx ring_cells = 0;
 	for (const int tag : subject.map)
 		if (tag == NSE_CONFIG::BC::GEO_AMR_INTERFACE)
 			ring_cells++;
 	report(
-		ring_cells == 10 * 10 * 10 - 8 * 8 * 8,
-		fmt::format("Test 4 setup: GEO_AMR_INTERFACE shell has 488 cells around the 8^3 footprint (got {})", ring_cells)
+		ring_cells == 10 * 10 * 10 - 6 * 6 * 6,
+		fmt::format("Test 4 setup: GEO_AMR_INTERFACE ring has 784 cells around the 8^3 footprint (got {})", ring_cells)
 	);
 
 	// LOCK 1 (the plan's B.5 replacement assertion): every ring cell's
@@ -747,7 +750,7 @@ RefStats computeReferenceStats(const STATE& state)
 
 // relative-or-absolute closeness: the metric accumulates via OpenMP atomics
 // (summation order varies between calls), so exact equality is not expected;
-// the double-count signal (512 hidden cells with sentinel rho) exceeds 9e4
+// the double-count signal (216 hidden cells with sentinel rho ~= 3.8e4) exceeds 9e3
 // and dwarfs both this tolerance and any reassociation noise
 bool closeRel(double a, double b)
 {
@@ -800,7 +803,10 @@ void test_conservation_hidden_cell_exclusion()
 				for (idx x = 0; x < coarse->local.x(); x++)
 					if (coarse->hmap(x, y, z) == NSE_CONFIG::BC::GEO_NOTHING)
 						hidden++;
-		report(hidden == 8 * 8 * 8, fmt::format("Test 5 setup: GEO_NOTHING footprint has exactly 512 coarse cells (got {})", hidden));
+		report(
+			hidden == 6 * 6 * 6,
+			fmt::format("Test 5 setup: GEO_NOTHING footprint has exactly 216 coarse cells (skin 152 + deep 64; got {})", hidden)
+		);
 		if (hidden == 0)
 			return;
 
@@ -825,7 +831,10 @@ void test_conservation_hidden_cell_exclusion()
 		// again - the reference below reads the same mirrors)
 		const AMRConservationStats s1 = state.computeConservationStats();
 		const RefStats ref = computeReferenceStats(state);
-		report(ref.hidden == 8 * 8 * 8, fmt::format("Test 5 reference: exactly 512 hidden cells excluded from the reference sums (got {})", ref.hidden));
+		report(
+			ref.hidden == 6 * 6 * 6,
+			fmt::format("Test 5 reference: exactly 216 hidden cells excluded from the reference sums (got {})", ref.hidden)
+		);
 
 		// the sentinel injection must be invisible to the metric on every
 		// accumulated quantity (pre-fix the shift is ~9e4 on the mass)
@@ -907,8 +916,9 @@ void test_conservation_hidden_cell_exclusion()
 }
 
 // Test 6 (F3 F-2 lock): the interior_patches built by buildCouplings must
-// be a DISJOINT partition of the 1-coarse-cell-deep face shell INSIDE the
-// fine footprint (volume = prod(gs) - prod(max(gs - 2, 0)) coarse cells),
+// be a DISJOINT partition of the depth-1 face shell INSIDE the fine
+// footprint (the F2C skin one coarse row inside the reactivated c=0 ring;
+// volume = prod(max(gs - 2, 0)) - prod(max(gs - 4, 0)) coarse cells),
 // for on-cube and thin-axis footprints alike. Every pushed rectangle must
 // bounds-check against the footprint and be non-empty (the clip must DROP
 // zero-extent degenerate rectangles - a thin axis yields neither empty nor
@@ -976,21 +986,29 @@ void check_skin_partition(const char* config, const idx3d& go, const idx3d& gs, 
 		fmt::format("Test 6 {}: skin rectangles are pairwise disjoint ({} cells pushed, {} distinct)", label, pushed_cells, covered.size())
 	);
 
-	// (ii) the union equals exactly the 1-cell-deep face shell INSIDE the
-	// footprint: footprint volume minus the (gs - 2) interior volume
+	// (ii) the union equals exactly the depth-1 face shell INSIDE the
+	// footprint: the inset box [go+1, go+gs-1) minus its own inset
+	// [go+2, go+gs-2) (thin-axis insets clamp empty; gs >= 3 by the
+	// createAMRBlocks validation, so the +1 bound never underflows)
 	std::set<std::tuple<idx, idx, idx>> shell;
-	for (idx x = go.x(); x < go.x() + gs.x(); x++)
-		for (idx y = go.y(); y < go.y() + gs.y(); y++)
-			for (idx z = go.z(); z < go.z() + gs.z(); z++)
-				if (x == go.x() || x == go.x() + gs.x() - 1 || y == go.y() || y == go.y() + gs.y() - 1 || z == go.z() || z == go.z() + gs.z() - 1)
+	for (idx x = go.x() + 1; x < go.x() + gs.x() - 1; x++)
+		for (idx y = go.y() + 1; y < go.y() + gs.y() - 1; y++)
+			for (idx z = go.z() + 1; z < go.z() + gs.z() - 1; z++)
+				if (x == go.x() + 1 || x == go.x() + gs.x() - 2 || y == go.y() + 1 || y == go.y() + gs.y() - 2 || z == go.z() + 1
+					|| z == go.z() + gs.z() - 2)
 					shell.insert({x, y, z});
-	const idx3d inner{std::max(gs.x() - 2, idx(0)), std::max(gs.y() - 2, idx(0)), std::max(gs.z() - 2, idx(0))};
-	const long analytic = static_cast<long>(gs.x()) * gs.y() * gs.z() - static_cast<long>(inner.x()) * inner.y() * inner.z();
-	report(shell.size() == static_cast<std::size_t>(analytic), fmt::format("Test 6 {} sanity: analytic shell size {} matches the enumerated shell", label, analytic));
+	const idx3d inset1{std::max(gs.x() - 2, idx(0)), std::max(gs.y() - 2, idx(0)), std::max(gs.z() - 2, idx(0))};
+	const idx3d inset2{std::max(gs.x() - 4, idx(0)), std::max(gs.y() - 4, idx(0)), std::max(gs.z() - 4, idx(0))};
+	const long analytic =
+		static_cast<long>(inset1.x()) * inset1.y() * inset1.z() - static_cast<long>(inset2.x()) * inset2.y() * inset2.z();
+	report(
+		shell.size() == static_cast<std::size_t>(analytic),
+		fmt::format("Test 6 {} sanity: analytic depth-1 shell size {} matches the enumerated shell", label, analytic)
+	);
 	report(
 		covered == shell,
 		fmt::format(
-			"Test 6 {}: skin-rectangle union equals exactly the 1-cell-deep face shell of the footprint ({} of {} cells)",
+			"Test 6 {}: skin-rectangle union equals exactly the depth-1 face shell of the footprint ({} of {} cells)",
 			label,
 			covered.size(),
 			shell.size()
@@ -1001,17 +1019,24 @@ void check_skin_partition(const char* config, const idx3d& go, const idx3d& gs, 
 void test_skin_partition_geometry()
 {
 	check_skin_partition("1 4 4 4 8 8 8", {4, 4, 4}, {8, 8, 8}, 6, "8x8x8");
-	check_skin_partition("1 4 4 4 3 3 3", {4, 4, 4}, {3, 3, 3}, 6, "3x3x3");
-	// thin x-axis (2 coarse cells = the F2C-window minimum): only the two
-	// x-normal faces survive the clip (the y/z interior ranges are empty)
-	check_skin_partition("1 4 4 4 2 8 8", {4, 4, 4}, {2, 8, 8}, 2, "2x8x8");
+	// gs = 3 cube: the depth-1 shell is a single cell, owned by the x-min
+	// face alone -- the other 5 rectangles dedupe-clamp empty (commit-6
+	// runtime evidence: "1 cells pushed, 1 distinct")
+	check_skin_partition("1 4 4 4 3 3 3", {4, 4, 4}, {3, 3, 3}, 1, "3x3x3");
+	// thin x-axis (gs = 3, the new minimum): the 1x6x6 depth-1 slab is
+	// again owned by the x-min face alone; [2,8,8] is no longer a valid
+	// fixture (dual-role row) and is pinned in Test 7's rejection set
+	check_skin_partition("1 4 4 4 3 8 8", {4, 4, 4}, {3, 8, 8}, 1, "3x8x8");
 }
 
-// Test 7 (F3 F-1 lock): a refinement region below the 2-coarse-cell minimum
-// on ANY axis is rejected by createAMRBlocks' validation (the F2C 4-node
-// filter window would otherwise read out of the storable fine-DF range);
+// Test 7 (F3 F-1 lock): a refinement region below the 3-coarse-cell minimum
+// on ANY axis is rejected by createAMRBlocks' validation (with the interior
+// inset one fine cell per face a 2-thin axis would give one cell both the
+// c=0 ring and c=1 skin destination roles -- a dual-role row the band
+// structure does not admit; the F2C 4-node filter window would additionally
+// read out of the storable fine-DF range);
 // the rejection must happen in the read-only phase (no partial block
-// creation) and the minimum valid [2,...] footprint must still pass.
+// creation) and the minimum valid [3,...] footprint must still pass.
 void test_footprint_min_size_validation()
 {
 	lat_t lat = makeLattice();
@@ -1023,10 +1048,14 @@ void test_footprint_min_size_validation()
 	}
 
 	const std::size_t level0_blocks = state.nse.blocks.size();
-	for (const auto& [config, axis] : {
-			 std::pair{"1 4 4 4 1 8 8", "X"},
-			 std::pair{"1 4 4 4 8 1 8", "Y"},
-			 std::pair{"1 4 4 4 8 8 1", "Z"},
+	for (const auto& [config, axis, size] : {
+			 std::tuple{"1 4 4 4 1 8 8", "X", 1},
+			 std::tuple{"1 4 4 4 8 1 8", "Y", 1},
+			 std::tuple{"1 4 4 4 8 8 1", "Z", 1},
+			 // the retired 2-coarse-cell fixture is rejected too: with the
+			 // interior inset one fine cell per face, a 2-thin axis would
+			 // give one cell both the c=0 ring and the c=1 skin roles
+			 std::tuple{"1 4 4 4 2 8 8", "X", 2},
 		 }) {
 		std::string message;
 		try {
@@ -1036,31 +1065,36 @@ void test_footprint_min_size_validation()
 			message = e.what();
 		}
 		const std::string expected = fmt::format(
-			"AMR footprint size below the 2-coarse-cell minimum required by the F2C 4-node filter window on axis {} (got 1)", axis
+			"AMR footprint size below the 3-coarse-cell minimum required by the interface band structure (distinct c=0 ring and c=1 "
+			"destination rows) on axis {} (got {})",
+			axis,
+			size
 		);
 		report(
 			message.find(expected) != std::string::npos && state.nse.blocks.size() == level0_blocks,
 			fmt::format(
-				"Test 7: a 1-coarse-cell-thin footprint on axis {} is rejected in the read-only validation phase ({})",
+				"Test 7: a {}-coarse-cell-thin footprint on axis {} is rejected in the read-only validation phase ({})",
+				size,
 				axis,
 				message.empty() ? "no exception thrown" : fmt::format("threw: {}", message)
 			)
 		);
 	}
 
-	// the minimum valid footprint ([2, 8, 8] coarse cells) must be accepted
+	// the minimum valid footprint ([3, 8, 8] coarse cells) must be accepted
 	std::string message;
 	try {
-		createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>("1 4 4 4 2 8 8"));
+		createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>("1 4 4 4 3 8 8"));
 	}
 	catch (const std::runtime_error& e) {
 		message = e.what();
 	}
-	report(message.empty(), fmt::format("Test 7: the minimum [2, 8, 8] footprint is accepted ({})", message.empty() ? "no exception" : message));
+	report(message.empty(), fmt::format("Test 7: the minimum [3, 8, 8] footprint is accepted ({})", message.empty() ? "no exception" : message));
 	const std::vector<BLOCK*> level1 = state.nse.getBlocksAtLevel(1);
+	// re-anchored indexer (ruling): local' = 2*gs - 2 per axis
 	report(
-		level1.size() == 1 && level1.front()->local == idx3d{4, 16, 16},
-		fmt::format("Test 7: the accepted [2, 8, 8] footprint created one level-1 block of 4x16x16 fine cells (got {} blocks)", level1.size())
+		level1.size() == 1 && level1.front()->local == idx3d{4, 14, 14},
+		fmt::format("Test 7: the accepted [3, 8, 8] footprint created one level-1 block of 4x14x14 fine cells (got {} blocks)", level1.size())
 	);
 }
 

@@ -1906,32 +1906,30 @@ void test_cm_exactness_carve_2axis_edge()
 // block interior [0,8)^3 exactly covered by the fine block, and the
 // production fine block covering a footprint at go = (0,0,0) has fine
 // offset 2*go = (0,0,0), so the zero-offset mock reproduces the production
-// skin window positions EXACTLY (fx0 = 2x per axis; min-face cells sit at
-// fx0 = 0).
+// skin window positions EXACTLY (fx0 = 2x per axis; depth-1 face cells sit
+// at fx0 = 2).
 //
-// [commit-6 tag normalization (schonherr-ch7 conversion, plan T4): the
-// production skin launch moved to the depth-1 shell (still GEO_NOTHING);
-// these fixtures keep their launch rectangles at the footprint-SURFACE
-// coordinate row (the position re-anchor to depth-1 is commit-7 scope
-// per the fixture-ownership worksheet), whose production class after the
-// ring reactivation is GEO_AMR_INTERFACE -- the launch faces are tagged
-// as ring cells instead of frozen cells. The flip is window/weight/DF
-// value-neutral: the F2C kernel touches the coarse map only through the
-// allowed-GEO store guard, which admits BOTH coupling classes.]
+// [commit-7 position re-anchor (schonherr-ch7 conversion, plan T5): the
+// launch rectangles moved from the footprint-SURFACE row (x = 0) to the
+// depth-1 skin row (x = 1) to mirror the production skin of
+// amr_state.h buildCouplings, and the destination rows are tagged
+// GEO_NOTHING (their production band class at depth 1; the F2C
+// allowed-GEO store guard admits both coupling classes). The normal-axis
+// window at depth 1 is NOMINAL (fx0 = 2 -> {1,2,3,4}, no clamp possible
+// in production): the lo = 0 clamp's coverage now lives exclusively on
+// the tangent edges of the launch rectangles (the Tests 15/18 probes
+// rewrite, below). All value-bitwise expectations are unchanged-cell
+// analytic (any consistent 4-node window projects the cubic exactly at
+// the fixed evaluation point).]
 //
-// WINDOW/WEIGHT TABLE (x-min skin face launch {0}x{0..8}x{0..8}, the
-// production x-min rectangle of this footprint):
-//   every cell: x-window nominal {-1,0,1,2} -- the axis_window LOWER bound
-//     is 0 (unconditional since D.1; the pre-skin default was -ov), so the
-//     window clamps to
-//     {0,1,2,3} and the SHARED weight machinery re-evaluates the Lagrange
-//     weights at the FIXED evaluation point t = fx0 + 0.5 = 0.5 (the
-//     centered {-1,9,9,-1}/16 become the shifted window's {5,15,-5,1}/16
-//     at runtime, never special-cased -- the plan's "do not reuse the ring
-//     path's shifted-face weights" warning is honored by construction;
-//     cubic content is still projected exactly);
-//   tangent cells with y,z in {1..6}: y/z windows nominal, start >= 1 -- a
-//     LOWER-bound-only clamp cannot engage ("the clamp changes nothing
+// WINDOW/WEIGHT TABLE (x-min skin face launch {1}x{0..8}x{0..8}, the
+// production x-min depth-1 rectangle of this footprint):
+//   every cell: x-window nominal {1,2,3,4} (fx0 = 2) at the FIXED
+//     evaluation point t = fx0 + 0.5 = 2.5 -- the skin sits one coarse
+//     row inside the reactivated c=0 ring, so the face-normal lower-
+//     bound clamp can no longer engage in production;
+//   tangent cells with y,z in {1..6}: y/z windows nominal, start >= 1 --
+//     a LOWER-bound-only clamp cannot engage ("the clamp changes nothing
 //     away from edges"; the nominal code path, sharing Test 6's interior
 //     fp class 1.192e-07);
 //   tangent cells with y or z == 0: that axis's window clamps to {0,1,2,3};
@@ -2035,19 +2033,19 @@ bool checkCoarseTransferExact(const MockBlock& coarse, const std::vector<idx3d>&
 }
 
 // Test 14: skin-launch exactness, interior -- the x-min launch rectangle
-// {0}x{0..8}x{0..8} over the footprint-surface row tagged
-// GEO_AMR_INTERFACE (the reactivated ring class of that production row,
-// see the Tests 14-16/18 block comment for the tag normalization and the
-// window table). Asserts cubic exactness on all 64 face cells:
-// tangent-interior axes share the nominal window semantics (a
-// lower-bound clamp cannot engage away from edges -- mock-matrix.md's
-// coupling case-1 class made a POSITIVE skin test), and the lo-/hi-edge
-// tangent cells stay exact on their shifted windows. The
-// GEO_AMR_INTERFACE tagging keeps the mock's destination row in the
-// production class of its band position (the GEO_NOTHING-receives-writes
-// lock lives in the Tests 7/16 class cells) -- the coarse block is
-// pre-filled with the (rho = 1, v = 0) placeholder, so a skipped write
-// fails the gate.
+// {1}x{0..8}x{0..8} over the depth-1 skin destination row tagged
+// GEO_NOTHING (its production band class after the commit-7 position
+// re-anchor, see the Tests 14-16/18 block comment for the window table).
+// Asserts cubic exactness on all 64 face cells: the normal window is
+// nominal {1,2,3,4} at depth 1, tangent-interior axes share the nominal
+// window semantics (a lower-bound clamp cannot engage away from edges --
+// mock-matrix.md's coupling case-1 class made a POSITIVE skin test), and
+// the lo-/hi-edge tangent cells stay exact on their shifted windows. The
+// GEO_NOTHING tagging keeps the mock's destination row in the production
+// class of its band position (the allowed-GEO guard admits it; the
+// protected-class corners live in the Tests 7/16 class cells) -- the
+// coarse block is pre-filled with the (rho = 1, v = 0) placeholder, so a
+// skipped write fails the gate.
 void test_f2c_skin_exactness_interior()
 {
 	const std::array<bool, 2> parities = {true, false};
@@ -2061,20 +2059,21 @@ void test_f2c_skin_exactness_interior()
 			fine.copyToDevice();
 			fillUniform(coarse, true, 1.0, 0.0, 0.0, 0.0);
 
-			// the footprint-surface x-min row, tagged with its production
-			// class after the commit-6 ring reactivation: GEO_AMR_INTERFACE
-			// (markAMRInterface tags footprint-surface c=0 cells ring +
-			// freezes only depth >= 1 to GEO_NOTHING; the mock's launch
-			// coordinate row stays surface-fixed, commit-7 scope)
+			// the depth-1 skin destination row of the production x-min
+			// face (commit-7 position re-anchor): GEO_NOTHING at
+			// surface-depth 1 -- the F2C allowed-GEO store guard admits
+			// frozen coupling cells to receive the skin writes
 			std::vector<idx3d> face;
 			for (idx z = 0; z < COARSE_N; z++)
-				for (idx y = 0; y < COARSE_N; y++)
-					face.push_back({0, y, z});
-			tagCouplingCells(coarse, {0, 0, 0}, {1, COARSE_N, COARSE_N});
+				for (idx y = 0; y < COARSE_N; y++) {
+					face.push_back({1, y, z});
+					coarse.hmap(1, y, z) = NSE_CONFIG::BC::GEO_NOTHING;
+				}
+			coarse.dmap = coarse.hmap;
 			coarse.copyToDevice();
 
 			launchFineToCoarse(
-				coarse, fine, {0, 0, 0}, {1, COARSE_N, COARSE_N}, {0, 0, 0}, {0, 0, 0}, fine_even_iter, coarse_even_iter
+				coarse, fine, {1, 0, 0}, {2, COARSE_N, COARSE_N}, {0, 0, 0}, {0, 0, 0}, fine_even_iter, coarse_even_iter
 			);
 			coarse.copyToHost();
 
@@ -2083,7 +2082,7 @@ void test_f2c_skin_exactness_interior()
 				face,
 				coarse_even_iter,
 				fmt::format(
-					"Test 14 skin x-min face F2C exactness (fine_even={}, coarse_even={}): all 64 GEO_AMR_INTERFACE cells received the transfer",
+					"Test 14 skin x-min face F2C exactness (fine_even={}, coarse_even={}): all 64 GEO_NOTHING depth-1 cells received the transfer",
 					fine_even_iter,
 					coarse_even_iter
 				)
@@ -2094,12 +2093,12 @@ void test_f2c_skin_exactness_interior()
 }
 
 // Test 15: footprint-lo-EDGE clamp exactness with a POSITIVE ghost-read
-// detector -- the three min-face launch rectangles of the footprint-
-// surface row (x-min over the full y/z range, y-min over interior x,
-// z-min over interior x/y -- overlap-free; production's corner ownership
-// by the x-faces is immaterial here since a re-write would be
-// idempotent), tagged GEO_AMR_INTERFACE after the commit-6 ring
-// reactivation (see the Tests 14-16/18 block comment), are launched
+// detector -- the three min-face launch rectangles of the depth-1 skin
+// row (commit-7 position re-anchor: x-min {1} over the full y/z range,
+// y-min {1} over the launch x extent, z-min {1} over the launch x/y
+// extent, tagged GEO_NOTHING -- their production band class at depth 1;
+// production's corner ownership by the x-faces is immaterial here since a
+// re-write would be idempotent), are launched
 // while the negative fine ghost planes x = y = z = -1 carry the +1000
 // sentinel on every DF array/slot. Under the lo = 0 clamp every nominal
 // window
@@ -2109,7 +2108,11 @@ void test_f2c_skin_exactness_interior()
 // the probes therefore proves the clamp CHOSE the shifted window with the
 // shared weight machinery (cubic-exact at the fixed evaluation point --
 // same machinery class as Test 6), not a degenerate shorten and not the
-// box average.
+// box average. At depth 1 the face-normal window is nominal (fx0 = 2)
+// everywhere, so the clamp's coverage lives on the TANGENT edges of the
+// launch rectangles (probes rewritten accordingly); the surface era's
+// three-clamped corner class is extinct (one of the four old probes is
+// replaced by the two-clamped maximum now possible).
 void test_f2c_skin_edge_clamp_exactness()
 {
 	const bool coarse_even_iter = false;
@@ -2125,29 +2128,38 @@ void test_f2c_skin_edge_clamp_exactness()
 		fine.copyToDevice();
 		fillUniform(coarse, true, 1.0, 0.0, 0.0, 0.0);
 
-		// the three min-face surface rows tagged with their production
-		// class after the commit-6 ring reactivation (GEO_AMR_INTERFACE);
-		// the launch coordinate rows stay surface-fixed (commit-7 scope)
-		tagCouplingCells(coarse, {0, 0, 0}, {1, COARSE_N, COARSE_N});						  // x-min face (full y/z)
-		tagCouplingCells(coarse, {1, 0, 0}, {COARSE_N, 1, COARSE_N});						  // y-min face (interior x)
-		tagCouplingCells(coarse, {1, 1, 0}, {COARSE_N, COARSE_N, 1});						  // z-min face (interior x/y)
+		// the three min-face depth-1 skin destination rows (commit-7
+		// position re-anchor), tagged GEO_NOTHING (the F2C allowed-GEO
+		// store guard admits frozen coupling cells to receive the writes)
+		for (idx z = 0; z < COARSE_N; z++)
+			for (idx y = 0; y < COARSE_N; y++)
+				coarse.hmap(1, y, z) = NSE_CONFIG::BC::GEO_NOTHING;  // x-min face (full y/z)
+		for (idx z = 0; z < COARSE_N; z++)
+			for (idx x = 1; x < COARSE_N; x++)
+				coarse.hmap(x, 1, z) = NSE_CONFIG::BC::GEO_NOTHING;  // y-min face (launch x extent)
+		for (idx y = 1; y < COARSE_N; y++)
+			for (idx x = 1; x < COARSE_N; x++)
+				coarse.hmap(x, y, 1) = NSE_CONFIG::BC::GEO_NOTHING;  // z-min face (launch x/y extent)
+		coarse.dmap = coarse.hmap;
 		coarse.copyToDevice();
 
-		launchFineToCoarse(coarse, fine, {0, 0, 0}, {1, COARSE_N, COARSE_N}, {0, 0, 0}, {0, 0, 0}, fine_even_iter, coarse_even_iter);
-		launchFineToCoarse(coarse, fine, {1, 0, 0}, {COARSE_N, 1, COARSE_N}, {0, 0, 0}, {0, 0, 0}, fine_even_iter, coarse_even_iter);
-		launchFineToCoarse(coarse, fine, {1, 1, 0}, {COARSE_N, COARSE_N, 1}, {0, 0, 0}, {0, 0, 0}, fine_even_iter, coarse_even_iter);
+		launchFineToCoarse(coarse, fine, {1, 0, 0}, {2, COARSE_N, COARSE_N}, {0, 0, 0}, {0, 0, 0}, fine_even_iter, coarse_even_iter);
+		launchFineToCoarse(coarse, fine, {1, 1, 0}, {COARSE_N, 2, COARSE_N}, {0, 0, 0}, {0, 0, 0}, fine_even_iter, coarse_even_iter);
+		launchFineToCoarse(coarse, fine, {1, 1, 1}, {COARSE_N, COARSE_N, 2}, {0, 0, 0}, {0, 0, 0}, fine_even_iter, coarse_even_iter);
 		coarse.copyToHost();
 
-		// per-axis single-clamp probes plus the triple-clamped corner: each
-		// probes one shifted {0,1,2,3} window on tangent-interior axes
-		// (windows that would read the sentinel planes on a clamp failure)
-		const std::vector<idx3d> probes = {{0, 4, 4}, {4, 0, 4}, {4, 4, 0}, {0, 0, 0}};
+		// per-rectangle single-clamp probes plus the doubly-clamped corner:
+		// each probe carries at least one clamped {0,1,2,3} tangent window
+		// (the lo edges of the launch rectangles) that would read a
+		// sentinel ghost plane on a clamp regression; (1,0,0)'s two clamps
+		// are the depth-1 maximum (the normal axis is nominal everywhere)
+		const std::vector<idx3d> probes = {{1, 0, 4}, {1, 4, 0}, {4, 1, 0}, {1, 0, 0}};
 		checkCoarseTransferExact(
 			coarse,
 			probes,
 			coarse_even_iter,
 			fmt::format(
-				"Test 15 footprint lo-edge clamp exactness (fine_even={}): probes (0,4,4) x / (4,0,4) y / (4,4,0) z / (0,0,0) corner on windows {{0,1,2,3}}, sentinel-guarded",
+				"Test 15 depth-1 lo-edge clamp exactness (fine_even={}): probes (1,0,4) / (1,4,0) / (4,1,0) single-clamped tangent windows, (1,0,0) doubly clamped, sentinel-guarded",
 				fine_even_iter
 			)
 				.c_str()
@@ -2157,15 +2169,15 @@ void test_f2c_skin_edge_clamp_exactness()
 
 // Test 16: skin-launch Defect-2 DF/macro-store map guard (the Test 7
 // 4-class lock, skin variant) -- the x-min launch rectangle
-// {0}x{0..8}x{0..8} tagged GEO_AMR_INTERFACE throughout (the reactivated
-// ring class of the footprint-surface row production-wise, see the block
-// comment) with one cell per map class inside it: GEO_WALL and GEO_FLUID
-// are PROTECTED (their DFs and macros were NaN-poisoned before the launch,
-// so ANY forbidden write trips the isnan assertion), GEO_NOTHING (the
-// depth-1 skin destination class) and GEO_AMR_INTERFACE RECEIVE the
-// transfer. The allowed-GEO predicate itself (Phase 0.4, amr_coupling.h)
-// is unaffected by the ring-path removal -- this test pins it on the
-// launch-row geography.
+// {1}x{0..8}x{0..8} tagged GEO_NOTHING throughout (the depth-1 skin
+// destination row's production band class after the commit-7 position
+// re-anchor, see the block comment) with one cell per map class inside
+// it: GEO_WALL and GEO_FLUID are PROTECTED (their DFs and macros were
+// NaN-poisoned before the launch, so ANY forbidden write trips the isnan
+// assertion), GEO_NOTHING (the depth-1 skin destination class itself) and
+// GEO_AMR_INTERFACE RECEIVE the transfer. The allowed-GEO predicate
+// itself (Phase 0.4, amr_coupling.h) is unaffected by the ring-path
+// removal -- this test pins it on the launch-row geography.
 void test_f2c_skin_df_store_map_guard()
 {
 	// post-stream natural orientation on the fine level, spatial (twisted)
@@ -2186,30 +2198,33 @@ void test_f2c_skin_df_store_map_guard()
 	fillUniform(coarse, true, 1.0, 0.0, 0.0, 0.0);
 
 	// launch rectangle tagged with its band-position class after the
-	// commit-6 ring reactivation (GEO_AMR_INTERFACE); the four class cells
-	// overwrite their map tags, including the explicit GEO_NOTHING row
-	// that keeps the frozen-class corner of the guard matrix
-	tagCouplingCells(coarse, {0, 0, 0}, {1, COARSE_N, COARSE_N});
-	coarse.hmap(0, Y_WALL, CZ) = NSE_CONFIG::BC::GEO_WALL;
-	coarse.hmap(0, Y_FLUID, CZ) = NSE_CONFIG::BC::GEO_FLUID;
-	coarse.hmap(0, Y_NOTHING, CZ) = NSE_CONFIG::BC::GEO_NOTHING;
-	coarse.hmap(0, Y_INTERFACE, CZ) = NSE_CONFIG::BC::GEO_AMR_INTERFACE;
+	// commit-7 position re-anchor (GEO_NOTHING, the depth-1 skin
+	// destination class); the four class cells overwrite their map tags,
+	// including the explicit GEO_AMR_INTERFACE row that keeps the
+	// ring-class corner of the guard matrix
+	for (idx z = 0; z < COARSE_N; z++)
+		for (idx y = 0; y < COARSE_N; y++)
+			coarse.hmap(1, y, z) = NSE_CONFIG::BC::GEO_NOTHING;
+	coarse.hmap(1, Y_WALL, CZ) = NSE_CONFIG::BC::GEO_WALL;
+	coarse.hmap(1, Y_FLUID, CZ) = NSE_CONFIG::BC::GEO_FLUID;
+	coarse.hmap(1, Y_NOTHING, CZ) = NSE_CONFIG::BC::GEO_NOTHING;
+	coarse.hmap(1, Y_INTERFACE, CZ) = NSE_CONFIG::BC::GEO_AMR_INTERFACE;
 	coarse.dmap = coarse.hmap;
 
 	// NaN-poison the protected cells' DFs (every array/slot) and macros:
 	// the guard keeps them NaN; any forbidden write lands a finite value
 	// (the kernel's inputs are finite) and trips the finiteness check
 	const dreal nan = std::numeric_limits<dreal>::quiet_NaN();
-	poisonCellDFs(coarse, 0, Y_WALL, CZ);
-	poisonCellDFs(coarse, 0, Y_FLUID, CZ);
+	poisonCellDFs(coarse, 1, Y_WALL, CZ);
+	poisonCellDFs(coarse, 1, Y_FLUID, CZ);
 	for (int m = 0; m < NSE_CONFIG::MACRO::N; m++) {
-		coarse.hmacro(m, 0, Y_WALL, CZ) = nan;
-		coarse.hmacro(m, 0, Y_FLUID, CZ) = nan;
+		coarse.hmacro(m, 1, Y_WALL, CZ) = nan;
+		coarse.hmacro(m, 1, Y_FLUID, CZ) = nan;
 	}
 	coarse.dmacro = coarse.hmacro;
 	coarse.copyToDevice();
 
-	launchFineToCoarse(coarse, fine, {0, 0, 0}, {1, COARSE_N, COARSE_N}, {0, 0, 0}, {0, 0, 0}, fine_even_iter, next_coarse_even_iter);
+	launchFineToCoarse(coarse, fine, {1, 0, 0}, {2, COARSE_N, COARSE_N}, {0, 0, 0}, {0, 0, 0}, fine_even_iter, next_coarse_even_iter);
 
 	coarse.copyToHost();
 	coarse.hmacro = coarse.dmacro;
@@ -2224,7 +2239,7 @@ void test_f2c_skin_df_store_map_guard()
 		const idx y = case_ys[cse];
 		const bool expect_write = case_write[cse];
 		const std::array<dreal, 27> eq_transfer = equilibriumOnHost(
-			static_cast<dreal>(SkinCubicField::rhoAt(0.5, 2 * y + 0.5, 2 * CZ + 0.5)),
+			static_cast<dreal>(SkinCubicField::rhoAt(2.5, 2 * y + 0.5, 2 * CZ + 0.5)),
 			SkinCubicField::U0,
 			SkinCubicField::V0,
 			SkinCubicField::W0
@@ -2234,13 +2249,13 @@ void test_f2c_skin_df_store_map_guard()
 		bool first_mismatch = true;
 		for (int q = 0; q < 27; q++) {
 			const int slot = coarseWriteSlot(q, next_coarse_even_iter);
-			const dreal actual = coarse.hfs[f2cWriteArray()](slot, 0, y, CZ);
+			const dreal actual = coarse.hfs[f2cWriteArray()](slot, 1, y, CZ);
 			const bool ok = expect_write ? (std::isfinite(actual) && closeEnough(actual, eq_transfer[q], 1e-4, 1e-5))
 										 : static_cast<bool>(std::isnan(actual));
 			if (! ok) {
 				if (first_mismatch) {
 					fmt::println(
-						"  first mismatch: cell=(0, {}, {}), q={}, actual={:.9e} (expected {})",
+						"  first mismatch: cell=(1, {}, {}), q={}, actual={:.9e} (expected {})",
 						y,
 						CZ,
 						q,
@@ -2272,7 +2287,7 @@ void test_f2c_skin_df_store_map_guard()
 		const idx y = case_ys[cse];
 		const bool expect_write = case_write[cse];
 		const std::array<dreal, 4> expected = {
-			static_cast<dreal>(SkinCubicField::rhoAt(0.5, 2 * y + 0.5, 2 * CZ + 0.5)),
+			static_cast<dreal>(SkinCubicField::rhoAt(2.5, 2 * y + 0.5, 2 * CZ + 0.5)),
 			SkinCubicField::U0,
 			SkinCubicField::V0,
 			SkinCubicField::W0
@@ -2281,13 +2296,13 @@ void test_f2c_skin_df_store_map_guard()
 		idx bad = 0;
 		bool first_mismatch = true;
 		for (int m = 0; m < 4; m++) {
-			const dreal actual = coarse.hmacro(macro_ids[m], 0, y, CZ);
+			const dreal actual = coarse.hmacro(macro_ids[m], 1, y, CZ);
 			const bool ok = expect_write ? (std::isfinite(actual) && closeEnough(actual, expected[m], 1e-4, 1e-5))
 										 : static_cast<bool>(std::isnan(actual));
 			if (! ok) {
 				if (first_mismatch) {
 					fmt::println(
-						"  first macro mismatch: cell=(0, {}, {}), id={}, actual={:.9e} (expected {})",
+						"  first macro mismatch: cell=(1, {}, {}), id={}, actual={:.9e} (expected {})",
 						y,
 						CZ,
 						macro_ids[m],
@@ -2313,19 +2328,20 @@ void test_f2c_skin_df_store_map_guard()
 	}
 }
 
-// Test 18: footprint lo-lo EDGE clamp exactness (2-face-adjacent probes),
-// sentinel-guarded -- Test 15's machinery (same launches, same +1000
-// sentinel planes, same gates) with the probe set swapped to the footprint
-// lo-lo edges: (0,0,4) and (0,4,0) land in the x-min launch, (4,0,0) in
-// the y-min launch. Each probe has exactly TWO windows clamped to
-// {0,1,2,3} (the two edge axes with f0 == 0) and the third window nominal
-// -- a clamp-multiplicity class no sibling positively locks: Test 14
-// asserts these same cells but is clamp-blind there (the unclamped
-// {-1,0,1,2} window reproduces the analytically filled additive-separable
-// cubic exactly as well as the clamped {0,1,2,3} one), while Test 15's
-// probes clamp ONE axis (face probes) or all THREE (the (0,0,0) corner).
-// A lower-bound regression on either clamped axis reads a sentinel node
-// and shifts the transfer by O(10..100), decades above the gates.
+// Test 18: footprint lo-lo EDGE clamp exactness (2-edge-adjacent probes),
+// sentinel-guarded -- Test 15's machinery (same +1000 sentinel planes,
+// same gates) with the probe set swapped to the depth-1 lo-lo tangent
+// edges: (1,0,0) lands in the x-min launch (y,z windows clamped), (0,1,0)
+// in the y-min launch (x,z windows clamped), (0,0,1) in the z-min launch
+// (x,y windows clamped). Each probe has exactly TWO windows clamped to
+// {0,1,2,3} and the third window nominal -- a clamp-multiplicity class no
+// sibling positively locks: at depth 1 the face-normal window is nominal
+// (fx0 = 2) everywhere, so TWO clamps per cell is the maximum possible
+// multiplicity (the surface era's three-clamped corner class is extinct;
+// the launch tangent extents are the full rows so the edges reach the
+// f0 == 0 clamp on both tangent axes). A lower-bound regression on either
+// clamped axis reads a sentinel node and shifts the transfer by
+// O(10..100), decades above the gates.
 void test_f2c_skin_edge2pair_clamp_exactness()
 {
 	const bool coarse_even_iter = false;
@@ -2341,29 +2357,40 @@ void test_f2c_skin_edge2pair_clamp_exactness()
 		fine.copyToDevice();
 		fillUniform(coarse, true, 1.0, 0.0, 0.0, 0.0);
 
-		// the three min-face surface rows tagged with their production
-		// class after the commit-6 ring reactivation (GEO_AMR_INTERFACE);
-		// the launch coordinate rows stay surface-fixed (commit-7 scope)
-		tagCouplingCells(coarse, {0, 0, 0}, {1, COARSE_N, COARSE_N});						  // x-min face (full y/z)
-		tagCouplingCells(coarse, {1, 0, 0}, {COARSE_N, 1, COARSE_N});						  // y-min face (interior x)
-		tagCouplingCells(coarse, {1, 1, 0}, {COARSE_N, COARSE_N, 1});						  // z-min face (interior x/y)
+		// the three min-face depth-1 skin destination rows (commit-7
+		// position re-anchor), tagged GEO_NOTHING (their production band
+		// class at depth 1; the F2C allowed-GEO store guard admits frozen
+		// coupling cells). The tangent extents are the FULL rows here (the
+		// probes need the lo tangent edges of the y-/z-min launches; any
+		// corner re-write is idempotent)
+		for (idx z = 0; z < COARSE_N; z++)
+			for (idx y = 0; y < COARSE_N; y++)
+				coarse.hmap(1, y, z) = NSE_CONFIG::BC::GEO_NOTHING;  // x-min face (full y/z)
+		for (idx z = 0; z < COARSE_N; z++)
+			for (idx x = 0; x < COARSE_N; x++)
+				coarse.hmap(x, 1, z) = NSE_CONFIG::BC::GEO_NOTHING;  // y-min face (full x/z)
+		for (idx y = 0; y < COARSE_N; y++)
+			for (idx x = 0; x < COARSE_N; x++)
+				coarse.hmap(x, y, 1) = NSE_CONFIG::BC::GEO_NOTHING;  // z-min face (full x/y)
+		coarse.dmap = coarse.hmap;
 		coarse.copyToDevice();
 
-		launchFineToCoarse(coarse, fine, {0, 0, 0}, {1, COARSE_N, COARSE_N}, {0, 0, 0}, {0, 0, 0}, fine_even_iter, coarse_even_iter);
-		launchFineToCoarse(coarse, fine, {1, 0, 0}, {COARSE_N, 1, COARSE_N}, {0, 0, 0}, {0, 0, 0}, fine_even_iter, coarse_even_iter);
-		launchFineToCoarse(coarse, fine, {1, 1, 0}, {COARSE_N, COARSE_N, 1}, {0, 0, 0}, {0, 0, 0}, fine_even_iter, coarse_even_iter);
+		launchFineToCoarse(coarse, fine, {1, 0, 0}, {2, COARSE_N, COARSE_N}, {0, 0, 0}, {0, 0, 0}, fine_even_iter, coarse_even_iter);
+		launchFineToCoarse(coarse, fine, {0, 1, 0}, {COARSE_N, 2, COARSE_N}, {0, 0, 0}, {0, 0, 0}, fine_even_iter, coarse_even_iter);
+		launchFineToCoarse(coarse, fine, {0, 0, 1}, {COARSE_N, COARSE_N, 2}, {0, 0, 0}, {0, 0, 0}, fine_even_iter, coarse_even_iter);
 		coarse.copyToHost();
 
-		// two-clamped-axes edge probes: xy edge (0,0,4), xz edge (0,4,0),
-		// yz edge (4,0,0); each ALSO positively guards the clamp on both
-		// edge axes via the sentinel ghost planes
-		const std::vector<idx3d> probes = {{0, 0, 4}, {0, 4, 0}, {4, 0, 0}};
+		// two-clamped-axes probes (the depth-1 maximum multiplicity):
+		// (1,0,0) x-min [y,z clamped], (0,1,0) y-min [x,z clamped],
+		// (0,0,1) z-min [x,y clamped]; each ALSO positively guards the
+		// clamp on both edges via the sentinel ghost planes
+		const std::vector<idx3d> probes = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
 		checkCoarseTransferExact(
 			coarse,
 			probes,
 			coarse_even_iter,
 			fmt::format(
-				"Test 18 footprint lo-lo edge clamp exactness (fine_even={}): probes (0,0,4) xy / (0,4,0) xz / (4,0,0) yz, two clamped {{0,1,2,3}} windows + one nominal each, sentinel-guarded",
+				"Test 18 depth-1 lo-lo edge clamp exactness (fine_even={}): probes (1,0,0) x-min / (0,1,0) y-min / (0,0,1) z-min, two clamped {{0,1,2,3}} windows + one nominal each, sentinel-guarded",
 				fine_even_iter
 			)
 				.c_str()

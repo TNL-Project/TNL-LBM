@@ -208,6 +208,14 @@ struct State_AMR : State<NSE>
 	// SimInit AFTER `markAMRInterface` ran); see the implementation for the
 	// face partition and the validity test
 	void buildCouplings();
+
+#ifndef NDEBUG
+	// registration map-pattern guard (Schönherr-ch7 conversion, plan
+	// T6/Oracle F2, debug builds only): static structural check that the
+	// \ref buildCouplings patch geometry agrees with the map tags; returns
+	// false on the first violation (SimInit sets the terminate flag then)
+	bool checkCouplingMapPattern();
+#endif
 	// coarse cell (x,y,z) (parent-level global coordinates) is a valid
 	// PARENT-level interface cell only if no other fine block at
 	// `fine_level` covers it (same-level abutment: the cell is shadowed by
@@ -299,6 +307,19 @@ void State_AMR<NSE>::SimInit()
 	// build the inter-level coupling descriptors consumed by the transfer
 	// launches in SimUpdate()
 	buildCouplings();
+
+#ifndef NDEBUG
+	// registration map-pattern guard (Schönherr-ch7 conversion, plan T6 /
+	// Oracle F2): static structural check that the patch geometry agrees
+	// with the map tags -- a host-side abort cannot be xfail-marked, so it
+	// lands with the commit-7 band geometry whose nominal source pairs and
+	// skin destinations satisfy the asserted pattern by construction
+	if (! checkCouplingMapPattern()) {
+		spdlog::error("State_AMR: registration map-pattern assertion FAILED (coupling patch geometry disagrees with the map tags); terminating");
+		this->nse.terminate = true;
+		return;
+	}
+#endif
 
 	std::size_t total_patches = 0;
 	std::size_t total_interior_patches = 0;
@@ -457,16 +478,22 @@ auto State_AMR<NSE>::computeConservationStats() -> AMRConservationStats
  *   cells inside another fine block's footprint are marked by
  *   `markAMRInterface` but must not couple to the PARENT level's data).
  *
- * Each patch covers a rectangle of PARENT-level halo cells (1 cell thick
- * in the face normal) and the matching fine-level ghost rectangle (2 fine
- * cells per coarse cell). Refinement-level blocks allocate a 1-cell-deep
- * DF overlap (see `LBM_BLOCK::storage_overlap`), so the coarse-to-fine
- * launch clips the fill to that single layer: it is the ghost layer read
+ * Each patch covers a rectangle of PARENT-level ring cells (TWO cells
+ * thick in the face normal, spanning the nominal coarse-to-fine source
+ * pair {c=-1, c=0} of the Schönherr ch.7 band map on the min faces,
+ * mirrored at {c=gs-1, c=gs} on the max faces) and the matching
+ * fine-level destination rectangle of the face (the face's disjoint
+ * partition of the overlap complement: refinement-level blocks allocate
+ * a 2-deep DF overlap (see `LBM_BLOCK::storage_overlap`), so the
+ * destination spans the face's own ghost rows [-ov, 0) / [local,
+ * local+ov) with the tangential ownership cascading x -> y -> z as for
+ * the coarse ring faces). The coarse-to-fine launch clips each such
+ * rectangle face-aware to the block's allocated ghost STORAGE (see
+ * `launchCoarseToFineTransfers`): the filled destination rows are read
  * by the fine-level streaming and by the max-side skin fine-to-coarse
  * windows. Both rectangles are stored in the two
  * blocks' indexer coordinates: with the 2:1 refinement ratio, fine cell
- * `2c` covers coarse cell `c`, and `fine_origin = 2 * coarse_rect_begin -
- * fine.offset` (per axis). The launches map
+ * `2c` covers coarse cell `c`. The launches map
  * `begin = fine_origin, end = fine_origin + fine_size` for coarse-to-fine
  * and `begin = coarse_origin, end = coarse_origin + coarse_size` for
  * fine-to-coarse, subject to the storability guards documented at the
@@ -508,19 +535,33 @@ void State_AMR<NSE>::buildCouplings()
 			const idx3d& go = fine->global_offset;
 			const idx3d gs{(fine->local.x() + 2) / 2, (fine->local.y() + 2) / 2, (fine->local.z() + 2) / 2};
 
-			// the six faces of the footprint's 1-cell halo box in parent-level
-			// global coordinates (disjoint partition, see the docstring)
+			// the six faces of the footprint's RING in parent-level global
+			// coordinates (the disjoint ring partition of the Schönherr
+			// ch.7 band map, docs/AMR-schonherr-ch7-target-contract.md
+			// sec. 2.1: ring = (K+2)^3 - (K-2)^3 = halo + reactivated c=0
+			// shell): each rectangle is TWO cells thick in the face normal
+			// and spans the C2F nominal source pair {c=-1, c=0} (min faces)
+			// / {c=gs-1, c=gs} (max faces); the x-normal faces own the full
+			// y/z halo tangent [go-1, go+gs+1), the y-normal faces the
+			// once-inset x range [go+1, go+gs-1), the z-normal faces the
+			// twice-inset x/y ranges, so the six faces partition the ring
+			// disjointly (e.g. a K = 8 footprint: 200+200+120+120+72+72 =
+			// 784 cells)
 			const struct FACE
 			{
 				SyncDirection face;
 				idx3d begin, end;
 			} faces[6] = {
-				{SyncDirection::Left, {go.x() - 1, go.y() - 1, go.z() - 1}, {go.x(), go.y() + gs.y() + 1, go.z() + gs.z() + 1}},
-				{SyncDirection::Right, {go.x() + gs.x(), go.y() - 1, go.z() - 1}, {go.x() + gs.x() + 1, go.y() + gs.y() + 1, go.z() + gs.z() + 1}},
-				{SyncDirection::Bottom, {go.x(), go.y() - 1, go.z() - 1}, {go.x() + gs.x(), go.y(), go.z() + gs.z() + 1}},
-				{SyncDirection::Top, {go.x(), go.y() + gs.y(), go.z() - 1}, {go.x() + gs.x(), go.y() + gs.y() + 1, go.z() + gs.z() + 1}},
-				{SyncDirection::Back, {go.x(), go.y(), go.z() - 1}, {go.x() + gs.x(), go.y() + gs.y(), go.z()}},
-				{SyncDirection::Front, {go.x(), go.y(), go.z() + gs.z()}, {go.x() + gs.x(), go.y() + gs.y(), go.z() + gs.z() + 1}},
+				{SyncDirection::Left, {go.x() - 1, go.y() - 1, go.z() - 1}, {go.x() + 1, go.y() + gs.y() + 1, go.z() + gs.z() + 1}},
+				{SyncDirection::Right,
+				 {go.x() + gs.x() - 1, go.y() - 1, go.z() - 1},
+				 {go.x() + gs.x() + 1, go.y() + gs.y() + 1, go.z() + gs.z() + 1}},
+				{SyncDirection::Bottom, {go.x() + 1, go.y() - 1, go.z() - 1}, {go.x() + gs.x() - 1, go.y() + 1, go.z() + gs.z() + 1}},
+				{SyncDirection::Top, {go.x() + 1, go.y() + gs.y() - 1, go.z() - 1}, {go.x() + gs.x() - 1, go.y() + gs.y() + 1, go.z() + gs.z() + 1}},
+				{SyncDirection::Back, {go.x() + 1, go.y() + 1, go.z() - 1}, {go.x() + gs.x() - 1, go.y() + gs.y() - 1, go.z() + 1}},
+				{SyncDirection::Front,
+				 {go.x() + 1, go.y() + 1, go.z() + gs.z() - 1},
+				 {go.x() + gs.x() - 1, go.y() + gs.y() - 1, go.z() + gs.z() + 1}},
 			};
 
 			for (const FACE& f : faces) {
@@ -553,12 +594,56 @@ void State_AMR<NSE>::buildCouplings()
 
 					AMR_InterfacePatch<NSE> patch;
 					// indexer-coordinates rectangles of the two blocks (see
-					// the docstring); the fine rectangle covers 2 fine cells
-					// per coarse cell on each axis
+					// the docstring); the COARSE rectangle spans the face's
+					// nominal C2F source pair (2 cells thick in the normal)
 					patch.coarse_origin = {begin.x() - coarse->offset.x(), begin.y() - coarse->offset.y(), begin.z() - coarse->offset.z()};
 					patch.coarse_size = {end.x() - begin.x(), end.y() - begin.y(), end.z() - begin.z()};
-					patch.fine_origin = {2 * begin.x() - fine->offset.x(), 2 * begin.y() - fine->offset.y(), 2 * begin.z() - fine->offset.z()};
-					patch.fine_size = {2 * patch.coarse_size.x(), 2 * patch.coarse_size.y(), 2 * patch.coarse_size.z()};
+					// the FINE rectangle is the face's C2F destination
+					// partition of the overlap complement (contract
+					// sec. 2.4: stored (local + 2*ov) rows per axis minus
+					// the simulated interior; the x-normal faces own the
+					// full stored tangent, the y-normal faces the interior
+					// x range, the z-normal faces the interior x/y ranges,
+					// and the face-normal direction spans this face's ov
+					// ghost rows only -- e.g. a K = 8 footprint emits
+					// 18^3 - 14^3 = 3,088 cells {648, 648, 504, 504, 392,
+					// 392}, written once each). Unlike the coarse
+					// rectangle, the destination rectangle belongs to the
+					// face and not to the clipped coarse block: with the
+					// v1 single-block scope (nproc == 1 only) exactly one
+					// coarse block intersects each face, so every
+					// destination cell is still written exactly once.
+					const idx3d fov{fine->df_overlap_X(), fine->df_overlap_Y(), fine->df_overlap_Z()};
+					switch (f.face) {
+						case SyncDirection::Left:
+							patch.fine_origin = {-fov.x(), -fov.y(), -fov.z()};
+							patch.fine_size = {fov.x(), fine->local.y() + 2 * fov.y(), fine->local.z() + 2 * fov.z()};
+							break;
+						case SyncDirection::Right:
+							patch.fine_origin = {fine->local.x(), -fov.y(), -fov.z()};
+							patch.fine_size = {fov.x(), fine->local.y() + 2 * fov.y(), fine->local.z() + 2 * fov.z()};
+							break;
+						case SyncDirection::Bottom:
+							patch.fine_origin = {0, -fov.y(), -fov.z()};
+							patch.fine_size = {fine->local.x(), fov.y(), fine->local.z() + 2 * fov.z()};
+							break;
+						case SyncDirection::Top:
+							patch.fine_origin = {0, fine->local.y(), -fov.z()};
+							patch.fine_size = {fine->local.x(), fov.y(), fine->local.z() + 2 * fov.z()};
+							break;
+						case SyncDirection::Back:
+							patch.fine_origin = {0, 0, -fov.z()};
+							patch.fine_size = {fine->local.x(), fine->local.y(), fov.z()};
+							break;
+						case SyncDirection::Front:
+							patch.fine_origin = {0, 0, fine->local.z()};
+							patch.fine_size = {fine->local.x(), fine->local.y(), fov.z()};
+							break;
+						default:  // unreachable: the halo faces carry the 6 axis normals
+							patch.fine_origin = {0, 0, 0};
+							patch.fine_size = {0, 0, 0};
+							break;
+					}
 					patch.face = f.face;
 					coupling.patches.push_back(patch);
 					coupling.coarse_block_ids.push_back(coarse->id);
@@ -652,6 +737,126 @@ void State_AMR<NSE>::buildCouplings()
 	}
 }
 
+#ifndef NDEBUG
+/**
+ * \brief Registration map-pattern guard (Schönherr-ch7 conversion, plan
+ * T6/Oracle F2) -- debug builds only.
+ *
+ * Static structural check that the coupling patch geometry built by
+ * \ref buildCouplings agrees with the map tags: a one-cell registration
+ * error is invisible to the kernel-window mocks but breaks every nominal
+ * source window, so it is asserted here on the host before the first
+ * SimUpdate. Two rails:
+ * - (a) for every coarse-to-fine (halo patch) destination cell, the
+ *   nominal FACE-NORMAL source pair of the kernel window (the same fdiv2
+ *   arithmetic as the kernel's `axis_window`, resolved at the home
+ *   coarse cell's tangent) is a subset of the coarse map's
+ *   `GEO_AMR_INTERFACE` cells;
+ * - (b) every fine-to-coarse (interior patch) destination cell is
+ *   `GEO_NOTHING` at EXACTLY footprint surface-depth 1 (c = 1 / c =
+ *   gs-2).
+ *
+ * Returns false on the first violation (the offending cell is logged);
+ * the caller (SimInit) sets the terminate flag on false.
+ */
+template <typename NSE>
+bool State_AMR<NSE>::checkCouplingMapPattern()
+{
+	using SyncDirection = TNL::Containers::SyncDirection;
+	// kernel fdiv2 (valid for negative fine-global coordinates, unlike the
+	// truncating integer division of C++)
+	const auto fdiv2 = [](idx v) -> idx
+	{
+		return v >= 0 ? v / 2 : -((-v + 1) / 2);
+	};
+
+	for (const InterLevelCoupling& coupling : couplings) {
+		// (a) C2F halo patches: the destination cells' nominal face-normal
+		// source pair must be a subset of the ring (GEO_AMR_INTERFACE)
+		for (std::size_t i = 0; i < coupling.patches.size(); i++) {
+			const AMR_InterfacePatch<NSE>& patch = coupling.patches[i];
+			BLOCK_NSE* fine = findBlockById(coupling.fine_level, coupling.fine_block_ids[i]);
+			BLOCK_NSE* coarse = findBlockById(coupling.coarse_level, coupling.coarse_block_ids[i]);
+			if (fine == nullptr || coarse == nullptr)
+				return false;
+			const int axis = (patch.face == SyncDirection::Left || patch.face == SyncDirection::Right) ? 0
+						   : (patch.face == SyncDirection::Bottom || patch.face == SyncDirection::Top) ? 1
+																									   : 2;
+			for (idx x = patch.fine_origin.x(); x < patch.fine_origin.x() + patch.fine_size.x(); x++)
+				for (idx y = patch.fine_origin.y(); y < patch.fine_origin.y() + patch.fine_size.y(); y++)
+					for (idx z = patch.fine_origin.z(); z < patch.fine_origin.z() + patch.fine_size.z(); z++) {
+						const idx fg[3] = {fine->offset.x() + x, fine->offset.y() + y, fine->offset.z() + z};
+						const idx home[3] = {fdiv2(fg[0]), fdiv2(fg[1]), fdiv2(fg[2])};
+						// nominal window pair along the face normal at the
+						// home tangent: even rows cover {m-1, m}, odd {m, m+1}
+						const idx n0 = home[axis] - 1 + static_cast<idx>(fg[axis] & 1);
+						idx cell0[3] = {home[0], home[1], home[2]};
+						idx cell1[3] = {home[0], home[1], home[2]};
+						cell0[axis] = n0;
+						cell1[axis] = n0 + 1;
+						if (coarse->hmap(cell0[0], cell0[1], cell0[2]) != NSE::BC::GEO_AMR_INTERFACE
+							|| coarse->hmap(cell1[0], cell1[1], cell1[2]) != NSE::BC::GEO_AMR_INTERFACE)
+						{
+							spdlog::error(
+								"checkCouplingMapPattern: C2F destination ({},{},{}) of face {} has a nominal source cell outside the ring "
+								"(coarse cells ({},{},{}) + ({},{},{}): tags {}/{})",
+								x,
+								y,
+								z,
+								static_cast<int>(patch.face),
+								cell0[0],
+								cell0[1],
+								cell0[2],
+								cell1[0],
+								cell1[1],
+								cell1[2],
+								static_cast<int>(coarse->hmap(cell0[0], cell0[1], cell0[2])),
+								static_cast<int>(coarse->hmap(cell1[0], cell1[1], cell1[2]))
+							);
+							return false;
+						}
+					}
+		}
+
+		// (b) F2C interior patches: every destination cell must be frozen
+		// GEO_NOTHING at exactly footprint surface-depth 1 (c=1 / c=gs-2)
+		for (std::size_t i = 0; i < coupling.interior_patches.size(); i++) {
+			const AMR_InterfacePatch<NSE>& patch = coupling.interior_patches[i];
+			BLOCK_NSE* fine = findBlockById(coupling.fine_level, coupling.interior_fine_block_ids[i]);
+			BLOCK_NSE* coarse = findBlockById(coupling.coarse_level, coupling.interior_coarse_block_ids[i]);
+			if (fine == nullptr || coarse == nullptr)
+				return false;
+			const idx3d& go = fine->global_offset;
+			const idx3d gs{(fine->local.x() + 2) / 2, (fine->local.y() + 2) / 2, (fine->local.z() + 2) / 2};
+			for (idx x = patch.coarse_origin.x(); x < patch.coarse_origin.x() + patch.coarse_size.x(); x++)
+				for (idx y = patch.coarse_origin.y(); y < patch.coarse_origin.y() + patch.coarse_size.y(); y++)
+					for (idx z = patch.coarse_origin.z(); z < patch.coarse_origin.z() + patch.coarse_size.z(); z++) {
+						const idx gx = coarse->offset.x() + x;
+						const idx gy = coarse->offset.y() + y;
+						const idx gz = coarse->offset.z() + z;
+						const idx depth = std::min(
+							std::min(std::min(gx - go.x(), go.x() + gs.x() - 1 - gx), std::min(gy - go.y(), go.y() + gs.y() - 1 - gy)),
+							std::min(gz - go.z(), go.z() + gs.z() - 1 - gz)
+						);
+						if (coarse->hmap(gx, gy, gz) != NSE::BC::GEO_NOTHING || depth != 1) {
+							spdlog::error(
+								"checkCouplingMapPattern: F2C destination ({},{},{}) of an interior patch is not a depth-1 frozen cell "
+								"(tag {}, depth {})",
+								gx,
+								gy,
+								gz,
+								static_cast<int>(coarse->hmap(gx, gy, gz)),
+								depth
+							);
+							return false;
+						}
+					}
+		}
+	}
+	return true;
+}
+#endif
+
 template <typename NSE>
 bool State_AMR<NSE>::isShadowedBySameLevelBlock(idx x, idx y, idx z, int fine_level, const BLOCK_NSE* owner)
 {
@@ -687,12 +892,15 @@ typename State_AMR<NSE>::BLOCK_NSE* State_AMR<NSE>::findBlockById(int level, int
  * `begin = fine_origin, end = fine_origin + fine_size` (fine indexer
  * coordinates).
  *
- * Storability guard: the patch's fine rectangle is clipped per axis to the
- * fine block's ALLOCATED ghost STORAGE (the overlap depth of the block's
- * indexer, 1 cell deep on refinement-level blocks -- see
- * `LBM_BLOCK::storage_overlap`; the inner layer feeds the fine-level
- * streaming directly, and it is also exactly the single ghost layer the
- * max-side skin fine-to-coarse windows read). Axes where the block spans
+ * Storability guard: the patch's fine rectangle is clipped FACE-AWARE to
+ * the fine block's ALLOCATED ghost STORAGE (the overlap depth of the
+ * block's indexer, 2 cells deep on refinement-level blocks -- see
+ * `LBM_BLOCK::storage_overlap`): tangential axes admit the full stored
+ * window `[-ov, local+ov)`, the face-normal axis clips to the face's own
+ * destination band (`[-ov, 0)` on the min face / `[local, local+ov)` on
+ * the max face). The filled rows feed the fine-level streaming directly,
+ * and the inner ghost layer is also the layer the max-side skin
+ * fine-to-coarse windows read. Axes where the block spans
  * its global extent have no overlap allocated there and get no fill
  * (streaming then consumes exterior-boundary data instead). When
  * \ref couplings is empty (no marked interface cells), this is a silent
@@ -701,6 +909,8 @@ typename State_AMR<NSE>::BLOCK_NSE* State_AMR<NSE>::findBlockById(int level, int
 template <typename NSE>
 void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level, bool c2f_time_centered)
 {
+	using SyncDirection = TNL::Containers::SyncDirection;
+
 	for (InterLevelCoupling& coupling : couplings) {
 		if (coupling.fine_level != fine_level)
 			continue;
@@ -720,15 +930,35 @@ void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level, bool c2f_time_c
 			const bool coarse_even_iter = coarse->data.even_iter;
 
 			// launch extent in the fine block's indexer coordinates, clipped
-			// to the fine block's overlap storage (see the docstring)
+			// FACE-AWARE to the fine block's overlap storage (the band
+			// registration of the contract): tangential axes admit the full
+			// stored overlap window [-ov, local+ov); the face-normal axis is
+			// clipped to the face's OWN destination band -- [-ov, 0) on the
+			// min face / [local, local+ov) on the max face (the patch's fine
+			// rectangle already lies inside these windows on valid
+			// geometries; the clip is the storability guard for axes where
+			// the block spans its global extent and carries no overlap)
 			const idx3d ov{fine->df_overlap_X(), fine->df_overlap_Y(), fine->df_overlap_Z()};
-			const idx3d begin{
-				std::max(patch.fine_origin.x(), -ov.x()), std::max(patch.fine_origin.y(), -ov.y()), std::max(patch.fine_origin.z(), -ov.z())
-			};
+			idx cx_lo = -ov.x(), cx_hi = fine->local.x() + ov.x();
+			idx cy_lo = -ov.y(), cy_hi = fine->local.y() + ov.y();
+			idx cz_lo = -ov.z(), cz_hi = fine->local.z() + ov.z();
+			if (patch.face == SyncDirection::Left)
+				cx_hi = 0;
+			else if (patch.face == SyncDirection::Right)
+				cx_lo = fine->local.x();
+			if (patch.face == SyncDirection::Bottom)
+				cy_hi = 0;
+			else if (patch.face == SyncDirection::Top)
+				cy_lo = fine->local.y();
+			if (patch.face == SyncDirection::Back)
+				cz_hi = 0;
+			else if (patch.face == SyncDirection::Front)
+				cz_lo = fine->local.z();
+			const idx3d begin{std::max(patch.fine_origin.x(), cx_lo), std::max(patch.fine_origin.y(), cy_lo), std::max(patch.fine_origin.z(), cz_lo)};
 			const idx3d end{
-				std::min(patch.fine_origin.x() + patch.fine_size.x(), fine->local.x() + ov.x()),
-				std::min(patch.fine_origin.y() + patch.fine_size.y(), fine->local.y() + ov.y()),
-				std::min(patch.fine_origin.z() + patch.fine_size.z(), fine->local.z() + ov.z())
+				std::min(patch.fine_origin.x() + patch.fine_size.x(), cx_hi),
+				std::min(patch.fine_origin.y() + patch.fine_size.y(), cy_hi),
+				std::min(patch.fine_origin.z() + patch.fine_size.z(), cz_hi)
 			};
 			if (begin.x() >= end.x() || begin.y() >= end.y() || begin.z() >= end.z())
 				continue;
