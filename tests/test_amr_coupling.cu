@@ -1521,8 +1521,9 @@ bool checkFineMacrosExact(const MockBlock& fine, idx3d begin, idx3d end, const F
 
 // tag a coarse-cell list as GEO_NOTHING and upload the map (MockBlock maps
 // default to GEO_FLUID, see tagCouplingCells): the C2F carve pre-pass
-// queries the coarse map through coarse_SD.map, and the F2C allowed-GEO
-// store guard lets GEO_NOTHING cells RECEIVE skin writes (Tests 14-16)
+// queries the coarse map through coarse_SD.map (Tests 8-13/17), and the
+// F2C allowed-GEO store guard lets GEO_NOTHING cells RECEIVE skin writes
+// (the Tests 7/16 guard-matrix class cells)
 void tagNothingCells(MockBlock& block, const std::vector<idx3d>& cells)
 {
 	for (const idx3d& c : cells)
@@ -1895,8 +1896,9 @@ void test_cm_exactness_carve_2axis_edge()
 // interface redesign, unconditional since D.1 retired the ring path) --
 // Experiment B item 5 (B.5, D.2). Production launches
 // cudaAMR_FineToCoarse over the 6 disjoint inset-face SKIN rectangles of
-// each fine footprint (one coarse cell deep INSIDE the frozen GEO_NOTHING
-// region, amr_state.h buildCouplings); the pre-B.5 mock suite had NO
+// each fine footprint (the depth-1 shell of the frozen GEO_NOTHING
+// region one coarse row inside the reactivated c=0 ring row,
+// amr_state.h buildCouplings); the pre-B.5 mock suite had NO
 // interior-F2C geography coverage at all (the NEST cases cover C2F ghost
 // faces and the former ring-F2C halo faces only). These tests hand-emulate
 // production skin launches with the basic mock fixture (coarse 8^3, fine
@@ -1906,6 +1908,16 @@ void test_cm_exactness_carve_2axis_edge()
 // offset 2*go = (0,0,0), so the zero-offset mock reproduces the production
 // skin window positions EXACTLY (fx0 = 2x per axis; min-face cells sit at
 // fx0 = 0).
+//
+// [commit-6 tag normalization (schonherr-ch7 conversion, plan T4): the
+// production skin launch moved to the depth-1 shell (still GEO_NOTHING);
+// these fixtures keep their launch rectangles at the footprint-SURFACE
+// coordinate row (the position re-anchor to depth-1 is commit-7 scope
+// per the fixture-ownership worksheet), whose production class after the
+// ring reactivation is GEO_AMR_INTERFACE -- the launch faces are tagged
+// as ring cells instead of frozen cells. The flip is window/weight/DF
+// value-neutral: the F2C kernel touches the coarse map only through the
+// allowed-GEO store guard, which admits BOTH coupling classes.]
 //
 // WINDOW/WEIGHT TABLE (x-min skin face launch {0}x{0..8}x{0..8}, the
 // production x-min rectangle of this footprint):
@@ -2022,17 +2034,20 @@ bool checkCoarseTransferExact(const MockBlock& coarse, const std::vector<idx3d>&
 	return bad == 0;
 }
 
-// Test 14: skin-launch exactness, interior -- the production x-min skin
-// rectangle {0}x{0..8}x{0..8} launched into GEO_NOTHING-tagged coarse
-// cells (see the block comment for the window table). Asserts cubic
-// exactness on all 64 face cells: tangent-interior axes share the
-// nominal window semantics (a lower-bound clamp cannot engage away from
-// edges -- mock-matrix.md's coupling case-1 class made a POSITIVE skin
-// test), and the lo-/hi-edge tangent cells stay exact on their shifted
-// windows. The GEO_NOTHING tagging proves the Defect-2 allowed class
-// RECEIVES the writes (Tests 2/4a/6 tag GEO_AMR_INTERFACE instead; Test 7
-// has one GEO_NOTHING cell) -- the coarse block is pre-filled with the
-// (rho = 1, v = 0) placeholder, so a skipped write fails the gate.
+// Test 14: skin-launch exactness, interior -- the x-min launch rectangle
+// {0}x{0..8}x{0..8} over the footprint-surface row tagged
+// GEO_AMR_INTERFACE (the reactivated ring class of that production row,
+// see the Tests 14-16/18 block comment for the tag normalization and the
+// window table). Asserts cubic exactness on all 64 face cells:
+// tangent-interior axes share the nominal window semantics (a
+// lower-bound clamp cannot engage away from edges -- mock-matrix.md's
+// coupling case-1 class made a POSITIVE skin test), and the lo-/hi-edge
+// tangent cells stay exact on their shifted windows. The
+// GEO_AMR_INTERFACE tagging keeps the mock's destination row in the
+// production class of its band position (the GEO_NOTHING-receives-writes
+// lock lives in the Tests 7/16 class cells) -- the coarse block is
+// pre-filled with the (rho = 1, v = 0) placeholder, so a skipped write
+// fails the gate.
 void test_f2c_skin_exactness_interior()
 {
 	const std::array<bool, 2> parities = {true, false};
@@ -2046,15 +2061,16 @@ void test_f2c_skin_exactness_interior()
 			fine.copyToDevice();
 			fillUniform(coarse, true, 1.0, 0.0, 0.0, 0.0);
 
-			// the production x-min skin rectangle of the footprint: frozen
-			// GEO_NOTHING cells (markAMRInterface tags the under-footprint
-			// region GEO_NOTHING; the skin rectangles partition it one cell
-			// deep)
+			// the footprint-surface x-min row, tagged with its production
+			// class after the commit-6 ring reactivation: GEO_AMR_INTERFACE
+			// (markAMRInterface tags footprint-surface c=0 cells ring +
+			// freezes only depth >= 1 to GEO_NOTHING; the mock's launch
+			// coordinate row stays surface-fixed, commit-7 scope)
 			std::vector<idx3d> face;
 			for (idx z = 0; z < COARSE_N; z++)
 				for (idx y = 0; y < COARSE_N; y++)
 					face.push_back({0, y, z});
-			tagNothingCells(coarse, face);
+			tagCouplingCells(coarse, {0, 0, 0}, {1, COARSE_N, COARSE_N});
 			coarse.copyToDevice();
 
 			launchFineToCoarse(
@@ -2067,7 +2083,7 @@ void test_f2c_skin_exactness_interior()
 				face,
 				coarse_even_iter,
 				fmt::format(
-					"Test 14 skin x-min face F2C exactness (fine_even={}, coarse_even={}): all 64 GEO_NOTHING cells received the transfer",
+					"Test 14 skin x-min face F2C exactness (fine_even={}, coarse_even={}): all 64 GEO_AMR_INTERFACE cells received the transfer",
 					fine_even_iter,
 					coarse_even_iter
 				)
@@ -2078,12 +2094,15 @@ void test_f2c_skin_exactness_interior()
 }
 
 // Test 15: footprint-lo-EDGE clamp exactness with a POSITIVE ghost-read
-// detector -- the three production min-face skin rectangles (x-min over
-// the full y/z range, y-min over interior x, z-min over interior x/y --
-// overlap-free; production's corner ownership by the x-faces is immaterial
-// here since a re-write would be idempotent) are launched while the
-// negative fine ghost planes x = y = z = -1 carry the +1000 sentinel on
-// every DF array/slot. Under the lo = 0 clamp every nominal window
+// detector -- the three min-face launch rectangles of the footprint-
+// surface row (x-min over the full y/z range, y-min over interior x,
+// z-min over interior x/y -- overlap-free; production's corner ownership
+// by the x-faces is immaterial here since a re-write would be
+// idempotent), tagged GEO_AMR_INTERFACE after the commit-6 ring
+// reactivation (see the Tests 14-16/18 block comment), are launched
+// while the negative fine ghost planes x = y = z = -1 carry the +1000
+// sentinel on every DF array/slot. Under the lo = 0 clamp every nominal
+// window
 // {f0-1,...,f0+2} with f0 == 0 becomes {0,1,2,3} and never touches the
 // sentinel planes; a lower-bound REGRESSION reads a sentinel node and
 // shifts the transfer by O(10..100), decades above the gates. Exactness at
@@ -2106,17 +2125,12 @@ void test_f2c_skin_edge_clamp_exactness()
 		fine.copyToDevice();
 		fillUniform(coarse, true, 1.0, 0.0, 0.0, 0.0);
 
-		std::vector<idx3d> rect;
-		for (idx z = 0; z < COARSE_N; z++)
-			for (idx y = 0; y < COARSE_N; y++)
-				rect.push_back({0, y, z});	// x-min face (full y/z)
-		for (idx z = 0; z < COARSE_N; z++)
-			for (idx x = 1; x < COARSE_N; x++)
-				rect.push_back({x, 0, z});	// y-min face (interior x)
-		for (idx y = 1; y < COARSE_N; y++)
-			for (idx x = 1; x < COARSE_N; x++)
-				rect.push_back({x, y, 0});	// z-min face (interior x/y)
-		tagNothingCells(coarse, rect);
+		// the three min-face surface rows tagged with their production
+		// class after the commit-6 ring reactivation (GEO_AMR_INTERFACE);
+		// the launch coordinate rows stay surface-fixed (commit-7 scope)
+		tagCouplingCells(coarse, {0, 0, 0}, {1, COARSE_N, COARSE_N});						  // x-min face (full y/z)
+		tagCouplingCells(coarse, {1, 0, 0}, {COARSE_N, 1, COARSE_N});						  // y-min face (interior x)
+		tagCouplingCells(coarse, {1, 1, 0}, {COARSE_N, COARSE_N, 1});						  // z-min face (interior x/y)
 		coarse.copyToDevice();
 
 		launchFineToCoarse(coarse, fine, {0, 0, 0}, {1, COARSE_N, COARSE_N}, {0, 0, 0}, {0, 0, 0}, fine_even_iter, coarse_even_iter);
@@ -2142,14 +2156,16 @@ void test_f2c_skin_edge_clamp_exactness()
 }
 
 // Test 16: skin-launch Defect-2 DF/macro-store map guard (the Test 7
-// 4-class lock, skin variant) -- a skin-like x-min rectangle
-// {0}x{0..8}x{0..8} tagged GEO_NOTHING throughout (the production skin
-// geography) with one cell per map class inside it: GEO_WALL and GEO_FLUID
+// 4-class lock, skin variant) -- the x-min launch rectangle
+// {0}x{0..8}x{0..8} tagged GEO_AMR_INTERFACE throughout (the reactivated
+// ring class of the footprint-surface row production-wise, see the block
+// comment) with one cell per map class inside it: GEO_WALL and GEO_FLUID
 // are PROTECTED (their DFs and macros were NaN-poisoned before the launch,
-// so ANY forbidden write trips the isnan assertion), GEO_NOTHING and
-// GEO_AMR_INTERFACE RECEIVE the transfer. The allowed-GEO predicate itself
-// (Phase 0.4, amr_coupling.h) is unaffected by the ring-path removal -- this
-// test pins it on the skin geography production actually launches over.
+// so ANY forbidden write trips the isnan assertion), GEO_NOTHING (the
+// depth-1 skin destination class) and GEO_AMR_INTERFACE RECEIVE the
+// transfer. The allowed-GEO predicate itself (Phase 0.4, amr_coupling.h)
+// is unaffected by the ring-path removal -- this test pins it on the
+// launch-row geography.
 void test_f2c_skin_df_store_map_guard()
 {
 	// post-stream natural orientation on the fine level, spatial (twisted)
@@ -2169,15 +2185,14 @@ void test_f2c_skin_df_store_map_guard()
 	fine.copyToDevice();
 	fillUniform(coarse, true, 1.0, 0.0, 0.0, 0.0);
 
-	// production skin rectangle tagged GEO_NOTHING, with the four class
-	// cells overwriting their map tags
-	std::vector<idx3d> face;
-	for (idx z = 0; z < COARSE_N; z++)
-		for (idx y = 0; y < COARSE_N; y++)
-			face.push_back({0, y, z});
-	tagNothingCells(coarse, face);
+	// launch rectangle tagged with its band-position class after the
+	// commit-6 ring reactivation (GEO_AMR_INTERFACE); the four class cells
+	// overwrite their map tags, including the explicit GEO_NOTHING row
+	// that keeps the frozen-class corner of the guard matrix
+	tagCouplingCells(coarse, {0, 0, 0}, {1, COARSE_N, COARSE_N});
 	coarse.hmap(0, Y_WALL, CZ) = NSE_CONFIG::BC::GEO_WALL;
 	coarse.hmap(0, Y_FLUID, CZ) = NSE_CONFIG::BC::GEO_FLUID;
+	coarse.hmap(0, Y_NOTHING, CZ) = NSE_CONFIG::BC::GEO_NOTHING;
 	coarse.hmap(0, Y_INTERFACE, CZ) = NSE_CONFIG::BC::GEO_AMR_INTERFACE;
 	coarse.dmap = coarse.hmap;
 
@@ -2326,17 +2341,12 @@ void test_f2c_skin_edge2pair_clamp_exactness()
 		fine.copyToDevice();
 		fillUniform(coarse, true, 1.0, 0.0, 0.0, 0.0);
 
-		std::vector<idx3d> rect;
-		for (idx z = 0; z < COARSE_N; z++)
-			for (idx y = 0; y < COARSE_N; y++)
-				rect.push_back({0, y, z});	// x-min face (full y/z)
-		for (idx z = 0; z < COARSE_N; z++)
-			for (idx x = 1; x < COARSE_N; x++)
-				rect.push_back({x, 0, z});	// y-min face (interior x)
-		for (idx y = 1; y < COARSE_N; y++)
-			for (idx x = 1; x < COARSE_N; x++)
-				rect.push_back({x, y, 0});	// z-min face (interior x/y)
-		tagNothingCells(coarse, rect);
+		// the three min-face surface rows tagged with their production
+		// class after the commit-6 ring reactivation (GEO_AMR_INTERFACE);
+		// the launch coordinate rows stay surface-fixed (commit-7 scope)
+		tagCouplingCells(coarse, {0, 0, 0}, {1, COARSE_N, COARSE_N});						  // x-min face (full y/z)
+		tagCouplingCells(coarse, {1, 0, 0}, {COARSE_N, 1, COARSE_N});						  // y-min face (interior x)
+		tagCouplingCells(coarse, {1, 1, 0}, {COARSE_N, COARSE_N, 1});						  // z-min face (interior x/y)
 		coarse.copyToDevice();
 
 		launchFineToCoarse(coarse, fine, {0, 0, 0}, {1, COARSE_N, COARSE_N}, {0, 0, 0}, {0, 0, 0}, fine_even_iter, coarse_even_iter);

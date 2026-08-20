@@ -397,19 +397,27 @@ void allocateInterfaceDirArray(LBM_BLOCK<CONFIG>& block)
  * 2*size - 2). Two populations are tagged:
  *
  * - **Interface ring**: every parent-level cell within Chebyshev distance 1
- *   of the rectangle, but outside it, is tagged GEO_AMR_INTERFACE and its
- *   bitmask records the D3Q27 directions (bit q matching the direction
- *   enum in defs.h) whose neighbor cell lies inside the rectangle - the
- *   directions pointing INTO the fine region.
+ *   of the rectangle but outside it (the halo row c=-1), PLUS the
+ *   rectangle's own surface shell (the reactivated ring row c=0), is tagged
+ *   GEO_AMR_INTERFACE and its bitmask records the D3Q27 directions (bit q
+ *   matching the direction enum in defs.h) whose neighbor cell lies inside
+ *   the rectangle - the directions pointing INTO the fine region. Both
+ *   rows are collision-active (driven by the coarse collide-and-stream
+ *   kernel) and serve as the coarse-to-fine source pair {c=-1, c=0} of
+ *   the contract band map (docs/AMR-schonherr-ch7-target-contract.md
+ *   sec. 2.1); they are never fine-to-coarse written.
  *
  * - **Hidden (frozen) cells**: every parent-level cell INSIDE the rectangle
- *   is tagged GEO_NOTHING. These cells are "hidden" under the fine
- *   footprint — the fine lattice is the authoritative solution there. They
- *   do not stream or collide (GEO_NOTHING: preCollision/postCollision early
- *   return, doCollision returns false). Their DFs are set exclusively by the
- *   interior fine-to-coarse transfer at the end of each coarse cycle, which
- *   injects Lagrava-filtered fine-averaged DFs. This eliminates the "shadow
- *   solve" (a diverging coarse-evolved state under the footprint that would
+ *   at depth >= 1 (c >= 1: the c=1 skin destination row and the c>=2
+ *   never-read deep core) is tagged GEO_NOTHING. These cells are "hidden"
+ *   under the fine footprint — the fine lattice is the authoritative
+ *   solution there. They do not stream or collide (GEO_NOTHING:
+ *   preCollision/postCollision early return, doCollision returns false).
+ *   The skin row's DFs are set exclusively by the interior fine-to-coarse
+ *   transfer at the end of each coarse cycle, which injects
+ *   Lagrava-filtered fine-averaged DFs into exactly this depth-1 shell
+ *   (the deep core is never written). This eliminates the "shadow solve"
+ *   (a diverging coarse-evolved state under the footprint that would
  *   corrupt the fine boundary via C2F interpolation — see
  *   docs/AMR-for-LBM-implementation.md §9.2.1).
  *
@@ -465,17 +473,30 @@ void markAMRInterface(LBM<CONFIG>& lbm)
 			for (idx x = x_begin; x < x_end; x++) {
 				for (idx y = y_begin; y < y_end; y++) {
 					for (idx z = z_begin; z < z_end; z++) {
-						// freeze hidden cells under the footprint: GEO_NOTHING
-						// (no stream/collide) prevents the diverging shadow solve;
-						// interior F2C injects fine-averaged DFs each cycle
+						// distance-band tag rule of the contract band map
+						// (docs/AMR-schonherr-ch7-target-contract.md sec. 2.1):
+						// the footprint surface shell c=0 (inside the rectangle
+						// but not inside its 1-cell inset) is the REACTIVATED
+						// second ring row, tagged GEO_AMR_INTERFACE like the
+						// halo below -- it falls through to the bitmask + guard
+						// path, so it stays collision-active and serves as the
+						// C2F source line 2; deeper covered cells (c >= 1: the
+						// c=1 skin destination row plus the never-read deep
+						// core) freeze to GEO_NOTHING (no stream/collide,
+						// preventing the diverging shadow solve) and the c=1
+						// skin is F2C-injected with fine-averaged DFs each cycle
 						const bool inside = x >= origin.x() && x < origin.x() + size.x() && y >= origin.y() && y < origin.y() + size.y()
 										 && z >= origin.z() && z < origin.z() + size.z();
 						if (inside) {
-							if (coarse.hmap(x, y, z) == BC::GEO_FLUID) {
-								coarse.setMap(x, y, z, BC::GEO_NOTHING);
-								frozen++;
+							const bool surface = x == origin.x() || x == origin.x() + size.x() - 1 || y == origin.y()
+											  || y == origin.y() + size.y() - 1 || z == origin.z() || z == origin.z() + size.z() - 1;
+							if (! surface) {
+								if (coarse.hmap(x, y, z) == BC::GEO_FLUID) {
+									coarse.setMap(x, y, z, BC::GEO_NOTHING);
+									frozen++;
+								}
+								continue;
 							}
-							continue;
 						}
 
 						// directions whose neighbor cell is inside the footprint
