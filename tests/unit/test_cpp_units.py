@@ -165,33 +165,12 @@ BATCH_IDS = [label for label, _, _, _ in BATCHES]
 # of .omo/plans/schonherr-ch7-conversion.md): the registration/parity/
 # conservation census and geometry fingerprint cases in
 # tests/unit/test_amr_schonherr_registration.cu assert the POST-conversion
-# band geometry from the ruling formulas and are RED by design against the
-# current code. The wrapper runs a whole doctest suite per subprocess batch,
-# so single doctest cases cannot be marked independently -- the locks live in
-# their own suite and the mark covers that suite's batch as a unit. The marks
-# are removed at the commit-7 stage-1 gate; strict xfail hard-errors if a
-# lock starts passing before then (e.g. at commit 6's retag).
-XFAIL_SUITE_REASONS: dict[str, str] = {
-    "amr_schonherr_registration_locks": (
-        "Schönherr ch7 conversion TDD locks (plan row 3): census/conservation "
-        "and geometry fingerprint cases expect the post-conversion band "
-        "geometry per the ruling formulas; RED by design until the commit-7 "
-        "geometry lands."
-    ),
-}
+# band geometry from the ruling formulas. They were carried xfail(strict)
+# through the declared red window (commits 4--6) via an XFAIL_SUITE_REASONS
+# marks table on this wrapper; the marks were REMOVED at the commit-7
+# stage-1 gate where the geometry landed and the suite passes outright.
 
-BATCH_PARAMS = [
-    pytest.param(
-        batch,
-        id=batch[0],
-        marks=(
-            [pytest.mark.xfail(reason=XFAIL_SUITE_REASONS[batch[0]], strict=True)]
-            if batch[0] in XFAIL_SUITE_REASONS
-            else []
-        ),
-    )
-    for batch in BATCHES
-]
+BATCH_PARAMS = [pytest.param(batch, id=batch[0]) for batch in BATCHES]
 
 
 @pytest.mark.parametrize("batch", BATCH_PARAMS)
