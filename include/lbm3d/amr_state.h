@@ -31,35 +31,54 @@ struct AMRConservationStats
  *
  * \ref State_AMR inherits \ref State and overrides \ref SimUpdate to advance
  * a multi-level block hierarchy in time with the classic Berger & Colella
- * (1989) subcycling schedule. One global iteration performs
+ * (1989) subcycling schedule, ordered into the Schönherr six-step cycle
+ * (Schönherr 2015 thesis ch.7; the cycle contract of
+ * docs/AMR-schonherr-ch7-target-contract.md / plan
+ * .omo/plans/schonherr-ch7-conversion.md sec. 1.3). One global iteration
+ * performs, per cycle and per level pair (L-1, L):
  *
- * 1. ONE coarse (level 0) LBM step on all level-0 blocks
- *    (`updateKernelData()` was already called by `execute()` in `core.h` and
- *    set the level-0 even_iter parity / DF rotation from the global
+ * 1. fine substep 1 of 2 at level L: `updateKernelDataForLevel(L, 0)`
+ *    selects the fine level's substep-0 parity / DF rotation (MANDATORY
+ *    before the kernel - for the A-B pattern the rotation selects the
+ *    physical array `df_cur` refers to; the global `updateKernelData()` is
+ *    driven by the coarse clock and must not drive the fine substeps),
+ *    then `cudaLBMKernel`. The substep reads the fine ghost rows filled
+ *    at the END of the previous cycle (steps 5-6 below; cycle 0 reads the
+ *    initial fill \ref SimInit performed),
+ * 2. fine substep 2 of 2: `updateKernelDataForLevel(L, 1)` +
+ *    `cudaLBMKernel` (same rotation requirement; the substep reads the
+ *    OTHER AB frame's ghost rows - hence the both-frames fill),
+ * 3. ONE coarse (level 0) LBM step on all level-0 blocks
+ *    (`updateKernelData()` was already called by `execute()` in `core.h`
+ *    and set the level-0 even_iter parity / DF rotation from the global
  *    `iterations` counter). Coarse cells tagged `GEO_AMR_INTERFACE` (the
- *    interface ring around each fine footprint) are collision-active inside
- *    the kernel (they stream and collide like fluid); since the ring
- *    fine-to-coarse launch was removed (gate B ruling, 2026-08-16) the coarse
- *    kernel is their only writer -- fine feedback reaches them through
- *    streaming from the skin cells the interior F2C writes (step 8 of the
- *    recursion below).
- * 2. For each finer level L = 1..max_level:
- *    a. `updateKernelDataForLevel(L, 0)` toggles the fine level's even_iter
- *       parity / DF rotation to substep 0 (MANDATORY before the ghost fill
- *       - for the A-B pattern the rotation selects the physical array
- *       `df_cur` refers to, so the fill must land in the array the
- *       upcoming substep reads; the global `updateKernelData()` is driven
- *       by the coarse clock and must not drive the fine substeps),
- *    b. coarse-to-fine transfer: `cudaAMR_CoarseToFine` fills the fine
- *       ghost layer from level L-1 (see `d3q27/amr_coupling.h`),
- *    c. fine substep 1 of 2: `cudaLBMKernel` on all blocks at level L,
- *    d. `updateKernelDataForLevel(L, 1)` toggles the parity again (BEFORE
- *       the BVP fill, same reason),
- *    e. BVP: the coarse-to-fine transfer re-fills the fine ghost layer
- *       (substep 1 consumed the ghost DFs and streamed outward into them),
- *    f. fine substep 2 of 2,
- *    g. fine-to-coarse transfer: `cudaAMR_FineToCoarse` projects the
- *       Lagrava-filtered fine state back onto level L-1.
+ *    interface ring around each fine footprint) are collision-active
+ *    inside the kernel (they stream and collide like fluid); since the
+ *    ring fine-to-coarse launch was removed (gate B ruling, 2026-08-16)
+ *    the coarse kernel is their only writer -- fine feedback reaches them
+ *    through streaming from the skin cells the interior F2C wrote at the
+ *    end of the previous cycle (step 4 below),
+ * 4. fine-to-coarse transfer: `cudaAMR_FineToCoarse` projects the
+ *    Lagrava-filtered fine state back onto the frozen GEO_NOTHING skin
+ *    cells of level L-1, reading the fine level's rotation-1 frame (the
+ *    post-substep-2 array; see `launchFineToCoarseTransfersInterior`),
+ * 5. coarse-to-fine transfer of frame 0: `updateKernelDataForLevel(L, 0)`
+ *    + `cudaAMR_CoarseToFine` fills the fine ghost rows in the physical
+ *    frame the next cycle's substep 1 consumes,
+ * 6. coarse-to-fine transfer of frame 1: `updateKernelDataForLevel(L, 1)`
+ *    + `cudaAMR_CoarseToFine` fills the fine ghost rows in the physical
+ *    frame the next cycle's substep 2 consumes (identical content to
+ *    step 5 - both AB frames must carry valid destinations at the cycle
+ *    boundary).
+ *
+ * The relative order of step 4 (F2C) against steps 5-6 (C2F) is
+ * irrelevant: their touched sets are disjoint (F2C writes coarse skin
+ * cells of the coarse post-step array, C2F writes fine ghost rows) -
+ * declared per the cycle contract. \ref SimInit performs the same
+ * both-frames fill (steps 5-6) after building \ref couplings, so cycle 0
+ * starts with valid destinations in both frames (the fine substep 1 of
+ * cycle 0 therefore reads a t_0 fill - the startup transient of the
+ * contract sec. 1.3).
  *
  * `nse.iterations` counts COARSE steps only; fine substeps advance the
  * level clocks, not the global counter. With the 2:1 refinement ratio the
@@ -100,11 +119,13 @@ struct AMRConservationStats
  *   neighbors) and is only invoked for `nproc > 1` (the base driver needs
  *   no overlap copying for `nproc == 1` either);
  * - the transfer extents are additionally clipped at launch time by a
- *   storability guard derived from `LBM_BLOCK::overlap_width` (see the
- *   launch helpers): coarse-to-fine fills at most the 1-cell-deep fine
- *   ghost storage and fine-to-coarse is clipped to coarse cells whose full
- *   2x2x2 fine subcell block is a valid storage index of the fine block
- *   (the kernels' documented preconditions);
+ *   storability guard derived from the block's overlap storage (see the
+ *   launch helpers): coarse-to-fine fills at most the 2-cell-deep fine
+ *   ghost storage (`LBM_BLOCK::storage_overlap` on refinement-level
+ *   blocks; the face-aware clip of `launchCoarseToFineTransfers`) and
+ *   fine-to-coarse is clipped to coarse cells whose full 2x2x2 fine
+ *   subcell block is a valid storage index of the fine block (the
+ *   kernels' documented preconditions);
  * - `computeBeforeLBMKernel()` is called once per coarse step before the
  *   level-0 kernel, exactly as in the base driver; `computeAfterLBMKernel()`
  *   remains in the inherited `AfterSimUpdate()`. The subclass contract
@@ -188,21 +209,24 @@ struct State_AMR : State<NSE>
 	// No-op when nse.max_level == 0 (no AMR).
 	void write3D_AMR(real time, int cycle);
 
-	// implementation details of the subcycling stages (kept public for
-	// future subclass overrides, same as the base State members)
+	// implementation details of the subcycling stages. They are public
+	// and virtual: schedule-observation test subclasses override them to
+	// record the launch sequence and AB parity at each call site, then
+	// delegate to these implementations (the schedule census of
+	// tests/test_amr_subcycling.cu).
 
 	// launch `cudaLBMKernel` on the full extent of every block at `level`
 	// (null-stream, interior launch configuration) and synchronize
-	void launchLBMKernelForLevel(int level, bool compute_macro);
+	virtual void launchLBMKernelForLevel(int level, bool compute_macro);
 	// fill the ghost layer of every level-`fine_level` block from level
 	// `fine_level - 1` via `cudaAMR_CoarseToFine`, iterating the
 	// `AMR_InterfacePatch` descriptors of \ref couplings
-	void launchCoarseToFineTransfers(int fine_level, bool c2f_time_centered);
+	virtual void launchCoarseToFineTransfers(int fine_level);
 	// project fine-averaged DFs onto the frozen GEO_NOTHING skin cells of
 	// each fine footprint (interior_patches of \ref couplings) -- the ONLY
 	// fine-to-coarse channel since the ring F2C launch was removed (gate B
 	// ruling, D.1 hard-delete)
-	void launchFineToCoarseTransfersInterior(int fine_level);
+	virtual void launchFineToCoarseTransfersInterior(int fine_level);
 
 	// build \ref couplings from the `GEO_AMR_INTERFACE` markings (called by
 	// SimInit AFTER `markAMRInterface` ran); see the implementation for the
@@ -338,6 +362,23 @@ void State_AMR<NSE>::SimInit()
 		spdlog::warn(
 			"State_AMR: no AMR coupling patches found for max_level = {} - inter-level coupling kernels will not launch", this->nse.max_level
 		);
+
+#ifdef USE_CUDA
+	// Schönherr six-step cycle (the cycle contract of
+	// docs/AMR-schonherr-ch7-target-contract.md sec. 1.3): initial
+	// both-frames coarse-to-fine fill, identical to steps 5-6 of
+	// SimUpdate - cycle 0's fine substeps read the destinations filled
+	// here (substep 1 the substep-0 rotation frame, substep 2 the
+	// substep-1 rotation frame). The fill reads the initial coarse state
+	// (the t_0 fill; the startup transient of the contract). Without it
+	// cycle 0 would read uninitialized ghost frames.
+	for (int L = 1; L <= this->nse.max_level; L++) {
+		this->nse.updateKernelDataForLevel(L, 0);
+		launchCoarseToFineTransfers(L);
+		this->nse.updateKernelDataForLevel(L, 1);
+		launchCoarseToFineTransfers(L);
+	}
+#endif
 }
 
 /**
@@ -884,8 +925,9 @@ typename State_AMR<NSE>::BLOCK_NSE* State_AMR<NSE>::findBlockById(int level, int
 }
 
 /**
- * \brief Coarse-to-fine ghost-layer fill for one level (step 2a/2d of the
- * subcycling schedule).
+ * \brief Coarse-to-fine ghost-layer fill for one level (steps 5-6 of the
+ * Schönherr six-step cycle - and the identical initial fill of
+ * \ref SimInit).
  *
  * Iterates the `AMR_InterfacePatch` descriptors of \ref couplings matching
  * `fine_level` and launches one `cudaAMR_CoarseToFine` per patch with
@@ -907,7 +949,7 @@ typename State_AMR<NSE>::BLOCK_NSE* State_AMR<NSE>::findBlockById(int level, int
  * no-op (SimInit logged a warning).
  */
 template <typename NSE>
-void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level, bool c2f_time_centered)
+void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level)
 {
 	using SyncDirection = TNL::Containers::SyncDirection;
 
@@ -987,7 +1029,6 @@ void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level, bool c2f_time_c
 				tau_fine,
 				tau_coarse,
 				coarse_even_iter,
-				c2f_time_centered,
 				fine->offset,
 				coarse->offset
 			);
@@ -1160,12 +1201,59 @@ void State_AMR<NSE>::SimUpdate()
 
 	this->timer_compute.start();
 
-	// ---------- Berger-Colella step 1: one coarse (level 0) LBM step ----------
+	// ---------- Schönherr cycle steps 1-2: fine levels advance first ----------
+	// (the six-step cycle contract of docs/AMR-schonherr-ch7-target-contract.md
+	// sec. 1.3): each fine substep reads the ghost rows of its own AB frame,
+	// filled once at the END of the previous cycle (steps 5-6 below; cycle 0
+	// reads the initial both-frames fill of SimInit)
+	for (int L = 1; L <= this->nse.max_level; L++) {
+		// toggle the fine level's even_iter parity / DF rotation to substep 0
+		// BEFORE the kernel (CRITICAL: for the A-B pattern the rotation
+		// selects the physical array df_cur refers to, and the kernel must
+		// read the frame carrying this substep's destinations; the global
+		// updateKernelData() is driven by the coarse clock and must not
+		// drive the fine substeps)
+		this->nse.updateKernelDataForLevel(L, 0);
+
+		// step 1: fine substep 1 of 2
+		launchLBMKernelForLevel(L, compute_macro);
+
+	#ifdef HAVE_MPI
+		// exchange the latest DFs and dmacro on overlaps between the
+		// level-L blocks (no-op for fine blocks in the v1 single-rank setup)
+		if (this->nse.nproc > 1) {
+			this->timer_wait_communication.start();
+			this->nse.synchronizeDFsAndMacroDeviceForLevel(L, output_df, sync_macro);
+			this->timer_wait_communication.stop();
+		}
+	#endif
+
+		// toggle the parity for substep 1 (same reason: the kernel must
+		// read the OTHER frame's destinations)
+		this->nse.updateKernelDataForLevel(L, 1);
+
+		// step 2: fine substep 2 of 2
+		launchLBMKernelForLevel(L, compute_macro);
+
+	#ifdef HAVE_MPI
+		// exchange the latest DFs and dmacro on overlaps between the
+		// level-L blocks (no-op for fine blocks in the v1 single-rank setup)
+		if (this->nse.nproc > 1) {
+			this->timer_wait_communication.start();
+			this->nse.synchronizeDFsAndMacroDeviceForLevel(L, output_df, sync_macro);
+			this->timer_wait_communication.stop();
+		}
+	#endif
+	}
+
+	// ---------- Schönherr cycle step 3: one coarse (level 0) LBM step ----------
 	// execute() (core.h) already called updateKernelData(), which set the
 	// level-0 even_iter parity / DF rotation from the global `iterations`.
 	// GEO_AMR_INTERFACE cells are collision-active inside the kernel
 	// (BC::doCollision == true); the coarse kernel is their only writer
-	// since the ring fine-to-coarse launch was removed (D.1)
+	// since the ring fine-to-coarse launch was removed (D.1) - fine
+	// feedback reaches them through streaming from the skin cells the
+	// interior F2C wrote at the end of the previous cycle (step 4 below)
 	launchLBMKernelForLevel(0, compute_macro);
 
 	#ifdef HAVE_MPI
@@ -1180,76 +1268,34 @@ void State_AMR<NSE>::SimUpdate()
 	}
 	#endif
 
-	// ---------- Berger-Colella recursion: finer levels ----------
-	// 2026-08-18 H9 retry (user directive): under -DC2F_H9 the FIRST fill
-	// of each cycle reads the time-centered (t_n + t_{n+1})/2 coarse state;
-	// the BVP re-fill stays on the post-step state. AB-pattern only (the
-	// D.4 defect makes AMR+AA unsupported).
-	#ifdef C2F_H9
-		#ifdef AA_PATTERN
-			#error "C2F_H9 is AB-pattern only (AMR under AA carries the D.4 defect)"
-		#endif
-	constexpr bool h9_first_fill = true;
-	#else
-	constexpr bool h9_first_fill = false;
-	#endif
+	// ---------- Schönherr cycle steps 4-6: transfers at the cycle end ----------
+	// The relative order of step 4 (F2C) against steps 5-6 (C2F) is
+	// IRRELEVANT: the touched sets are disjoint (F2C writes coarse skin
+	// cells in the coarse post-step array, C2F writes fine ghost rows) -
+	// declared per the cycle contract.
 	for (int L = 1; L <= this->nse.max_level; L++) {
-		// 1. toggle the fine level's even_iter parity / DF rotation to
-		// substep 0 BEFORE the ghost fill (CRITICAL: for the A-B pattern
-		// the rotation selects the physical array df_cur refers to, and
-		// the ghost fill must land in the array the upcoming substep
-		// reads; the global updateKernelData() is driven by the coarse
-		// clock and must not drive the fine substeps)
-		this->nse.updateKernelDataForLevel(L, 0);
-
-		// 2. coarse-to-fine: fill the fine ghost layer from level L-1
-		// (patch rectangles of the level coupling built in SimInit)
-		launchCoarseToFineTransfers(L, h9_first_fill);
-
-		// 3. fine substep 1 of 2
-		launchLBMKernelForLevel(L, compute_macro);
-
-	#ifdef HAVE_MPI
-		// exchange the latest DFs and dmacro on overlaps between the
-		// level-L blocks (no-op for fine blocks in the v1 single-rank setup)
-		if (this->nse.nproc > 1) {
-			this->timer_wait_communication.start();
-			this->nse.synchronizeDFsAndMacroDeviceForLevel(L, output_df, sync_macro);
-			this->timer_wait_communication.stop();
-		}
-	#endif
-
-		// 4. toggle the parity for substep 1 BEFORE the BVP re-fill (same
-		// reason as above: the fill must target the df_cur frame the
-		// upcoming substep reads)
-		this->nse.updateKernelDataForLevel(L, 1);
-
-		// 5. BVP: re-fill the fine ghost layer between the substeps (the
-		// first substep's streaming consumed the ghost DFs and streamed
-		// outward into them)
-		launchCoarseToFineTransfers(L, false);
-
-		// 6. fine substep 2 of 2
-		launchLBMKernelForLevel(L, compute_macro);
-
-	#ifdef HAVE_MPI
-		// exchange the latest DFs and dmacro on overlaps between the
-		// level-L blocks (no-op for fine blocks in the v1 single-rank setup)
-		if (this->nse.nproc > 1) {
-			this->timer_wait_communication.start();
-			this->nse.synchronizeDFsAndMacroDeviceForLevel(L, output_df, sync_macro);
-			this->timer_wait_communication.stop();
-		}
-	#endif
-
-		// 7. fine-to-coarse: inject the (Lagrava-filtered) fine state into
-		// the frozen GEO_NOTHING cells of the 6 skin rectangles of each
-		// fine footprint (two-way feedback). Ring cells stream+collide
-		// only -- the ring F2C launch was removed (gate B ruling, D.1
-		// hard-delete) and the fine feedback reaches them through
-		// streaming from the freshly F2C-written skin on the next coarse
-		// step (df_out -> next df_cur convention, no kernel change)
+		// step 4: fine-to-coarse, reading the rotation-1 frame (the
+		// post-substep-2 array): inject the (Lagrava-filtered) fine state
+		// into the frozen GEO_NOTHING cells of the 6 skin rectangles of
+		// each fine footprint (two-way feedback). Ring cells
+		// stream+collide only -- the ring F2C launch was removed (gate B
+		// ruling, D.1 hard-delete) and the fine feedback reaches them
+		// through streaming from the freshly F2C-written skin on the next
+		// coarse step (df_out -> next df_cur convention, no kernel change)
 		launchFineToCoarseTransfersInterior(L);
+
+		// step 5: coarse-to-fine frame 0 - fill the ghost rows of the
+		// substep-0 rotation frame (the next cycle's substep 1 consumes
+		// this frame)
+		this->nse.updateKernelDataForLevel(L, 0);
+		launchCoarseToFineTransfers(L);
+
+		// step 6: coarse-to-fine frame 1 - fill the ghost rows of the
+		// substep-1 rotation frame (identical content to step 5: both AB
+		// frames must carry valid destinations at the cycle boundary so
+		// the next cycle's substep 2 reads fresh data)
+		this->nse.updateKernelDataForLevel(L, 1);
+		launchCoarseToFineTransfers(L);
 	}
 
 	this->timer_compute.stop();
