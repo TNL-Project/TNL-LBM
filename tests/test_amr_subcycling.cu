@@ -963,6 +963,269 @@ void test_interface_ring_freshness()
 	);
 }
 
+// Test 8 (T8 generative fill-freshness model, N cycles): the fine block's
+// C2F destination complement is fill-owned (kernels never write ghost rows
+// -- a model premise locked by the census and the both-frames assertions),
+// so the six-step schedule forces an exact generative law for its content:
+// after every cycle the destination rows carry THE fill of the coarse ring
+// state that the coarse kernel produced during that cycle, i.e. of the
+// kernel's own evolution from the initial (SimInit) fill's source state.
+// Over N = 3 coupled cycles on this fixture:
+//
+// (M1) fresh-fill cadence, never a stale re-write: cycle k's fill differs
+//      from EVERY earlier fill's content. An aliased/wedged cycle-end fill
+//      would re-emit an older fill's content bitwise; the evolving sine IC
+//      guarantees a genuinely different source state each cycle (the same
+//      fixture property Test 3 uses to prove kernel activity), so the lock
+//      is structural and carries no numeric expectation;
+// (M2) one logical write to both AB frames per cycle end, bitwise
+//      detectable: frame0 == frame1 entry-for-entry at cycle 0 (the SimInit
+//      both-frames anchor) and at every cycle end (AB only; under AA the
+//      two fill events map onto one physical frame and the parity evidence
+//      is Tests 1/9's even_iter census).
+//
+// Dedupe note vs Test 4: extending the kernels-only ring comparison past
+// cycle 1 would be physically WRONG -- from cycle 2 on, ring cells
+// legitimately stream from the F2C-refreshed GEO_NOTHING skin (see the
+// d3q27/bc.h preCollision comment), so the coupled subject's ring is
+// kernel-only in WRITE REACH but not kernels-only in content. The bitwise
+// kernels-only reference comparison therefore stays the 1-cycle canary in
+// Test 4; this test pins the fill side's generative cadence instead.
+void test_interface_ring_freshness_model()
+{
+	lat_t lat = makeLattice();
+	const std::string id = fmt::format("test_amr_subcycling_{}_ringmodel", pattern_name);
+	StateLocal_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/1);
+	if (! state.canCompute()) {
+		report(false, "Test 8 setup: state.canCompute()");
+		return;
+	}
+	createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>("1 4 4 4 8 8 8"));
+	state.SimInit();
+	if (state.nse.terminate) {
+		report(false, "Test 8 setup: SimInit triggered the terminate flag");
+		return;
+	}
+
+	// scan the destination complement once per fill epoch: index 0 = the
+	// SimInit both-frames fill (the cycle-0 anchor of the six-step cycle),
+	// index k = the cycle-k cycle-end fill
+	constexpr int cycles = 3;
+	BLOCK* fine = state.nse.getBlocksAtLevel(1).front();
+	std::vector<FineGhostScan> fills;
+	fills.reserve(cycles + 1);
+	fine->copyDFsToHost();
+	fills.push_back(captureFineGhost(*fine));
+	for (int k = 1; k <= cycles && ! state.nse.terminate; k++) {
+		state.updateKernelData();
+		state.SimUpdate();
+		fine->copyDFsToHost();
+		fills.push_back(captureFineGhost(*fine));
+	}
+	report(
+		static_cast<int>(fills.size()) == cycles + 1 && ! state.nse.terminate,
+		"Test 8 setup: the SimInit anchor fill plus 3 coupled six-step cycle-end fills were scanned without termination"
+	);
+	if (static_cast<int>(fills.size()) != cycles + 1)
+		return;
+
+	// every scan must cover the same 3,088-cell destination complement (the
+	// fill ownership does not change across cycles)
+	bool census_ok = true;
+	for (const auto& scan : fills)
+		census_ok = census_ok && scan.frame0.size() == 27 * 3088;
+	report(census_ok, "Test 8 census: all 4 fill scans cover exactly the 3,088-cell C2F destination complement (27 x 3,088 entries each)");
+
+	// M1: cycle k's fill is a fresh fill of the kernel-evolved coarse state,
+	// never a stale re-write of an earlier cycle's fill
+	for (int k = 1; k <= cycles; k++) {
+		long min_diff = -1;
+		for (int m = 0; m < k; m++) {
+			long diff = 0;
+			for (std::size_t i = 0; i < fills[k].frame0.size(); i++)
+				if (fills[k].frame0[i] != fills[m].frame0[i])
+					diff++;
+			if (min_diff < 0 || diff < min_diff)
+				min_diff = diff;
+		}
+		report(
+			min_diff > 0,
+			fmt::format(
+				"Test 8 fill freshness, cycle {}: the cycle-end fill differs from every earlier fill ({} differing entries vs the "
+				"nearest earlier fill, of {} entries)",
+				k,
+				min_diff,
+				fills[k].frame0.size()
+			)
+		);
+	}
+
+#ifdef AB_PATTERN
+	// M2: the cycle-end double write to both AB frames is bitwise-detectable
+	// as ONE write, at the SimInit anchor and at every cycle end
+	double max_frame_diff = 0;
+	int equal_frames = 0;
+	for (int k = 0; k <= cycles; k++) {
+		if (fills[k].frame0.size() != fills[k].frame1.size())
+			continue;
+		equal_frames++;
+		for (std::size_t i = 0; i < fills[k].frame0.size(); i++)
+			max_frame_diff = std::max(max_frame_diff, std::abs(fills[k].frame0[i] - fills[k].frame1[i]));
+	}
+	report(
+		equal_frames == cycles + 1 && max_frame_diff == 0,
+		fmt::format(
+			"Test 8 one-write-per-cycle: the cycle-end double write to both AB frames is bitwise one write at the SimInit anchor and "
+			"at all {} cycle ends (max |diff| = {:.3e} over the destination complement)",
+			cycles,
+			max_frame_diff
+		)
+	);
+#endif
+}
+
+// Test 9 (T8 parity-structure lock): the re-paired 10-iter seam metric
+// alternates even/odd cycles (approx. -3e-05 even vs -1.6e-05 odd after the
+// six-step reorder; row-8 verification, artifact cited in the commit body).
+// A sim belongs to the gate artifacts, not to a unit test, so this lock pins
+// the schedule structure from which that alternation FOLLOWS, derived from
+// the recorded launch stream of 4 cycles (even->odd and odd->even
+// transitions both covered) on the same schedule spy as Test 1:
+//
+// (P1) cycle-invariant fine-frame parity per call-site slot: the ghost
+//      frame consumed by substep 1 (substep 2) and targeted by fill #1
+//      (#2) is the SAME frame in every cycle (the absolute identities P/Q
+//      are pinned by Test 1);
+// (P2) strictly alternating fill-SOURCE parity: the coarse rotation
+//      recorded at every coarse-touching slot (coarse kernel, F2C, both
+//      C2F fills) flips with cycle parity and repeats at same-parity
+//      cycles -- the global updateKernelData() toggles the coarse rotation
+//      once per cycle and nothing inside SimUpdate re-toggles it (the
+//      within-cycle equality across the four slots is Test 1's assertion);
+// (P3) cross-cycle consumption chain: cycle k's substeps consume exactly
+//      the frames that cycle k-1's fill pair was recorded writing
+//      (substep 1 == fill #1's target, substep 2 == fill #2's target) --
+//      the fill written once at the cycle end is what the next cycle runs
+//      on.
+//
+// Derivation (the point of the lock): the seam metric samples the fine
+// interior face row, whose evolution each cycle runs on the fill ghost
+// frames. P1+P3 say those are always the same-paired frames written once
+// at the previous cycle's end, while P2 says the fill's source frame
+// alternates with cycle parity -- hence the fill imprint carried into the
+// seam MUST alternate with cycle parity. The observed even/odd seam
+// oscillation is the schedule's frame-parity signature, not a drift
+// signal; the locks above detect any structural break of the chain
+// (mid-cycle rotation re-toggle, fill-target drift, cadence loss). AA
+// mapping: frame identities are the even_iter states recorded at each
+// call site (the F2C slot reads the twisted post-substep-2 state).
+void test_schedule_parity_structure()
+{
+	lat_t lat = makeLattice();
+	const std::string id = fmt::format("test_amr_subcycling_{}_parity", pattern_name);
+	StateSchedule_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/1);
+	if (! state.canCompute()) {
+		report(false, "Test 9 setup: state.canCompute()");
+		return;
+	}
+	createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>("1 4 4 4 8 8 8"));
+	state.SimInit();
+	if (state.nse.terminate) {
+		report(false, "Test 9 setup: SimInit triggered the terminate flag");
+		return;
+	}
+	// consume SimInit's two C2F events (the cycle-0 anchor, asserted in Test 1)
+	state.events.clear();
+
+	constexpr int cycles = 4;
+	for (int k = 0; k < cycles && ! state.nse.terminate; k++) {
+		state.updateKernelData();
+		state.SimUpdate();
+	}
+
+	using Evt = typename StateSchedule_AMR<NSE_CONFIG>::Event;
+	using Stage = typename StateSchedule_AMR<NSE_CONFIG>::Stage;
+	bool premise = ! state.nse.terminate && state.events.size() == static_cast<std::size_t>(6 * cycles);
+	if (premise)
+		for (int k = 0; k < cycles; k++) {
+			const Evt* ev = state.events.data() + 6 * k;
+			premise = premise && ev[0].stage == Stage::kernel && ev[0].level == 1 && ev[1].stage == Stage::kernel && ev[1].level == 1
+				   && ev[2].stage == Stage::kernel && ev[2].level == 0 && ev[3].stage == Stage::f2c && ev[3].level == 1 && ev[4].stage == Stage::c2f
+				   && ev[4].level == 1 && ev[5].stage == Stage::c2f && ev[5].level == 1;
+		}
+	report(
+		premise,
+		"Test 9 premise: 4 cycles recorded exactly the six-step stage sequence each (24 events: kernel L1 x2, kernel L0, F2C, C2F x2 "
+		"per cycle; the indexing premise for the parity derivation)"
+	);
+	if (! premise)
+		return;
+
+	// P1: cycle-invariant fine-frame parity at every call-site slot
+	bool invariant_ok = true;
+	for (int slot = 0; slot < 6; slot++)
+		for (int k = 1; k < cycles; k++) {
+			const Evt& ref = state.events[slot];
+			const Evt& cur = state.events[6 * k + slot];
+#ifdef AB_PATTERN
+			invariant_ok = invariant_ok && ref.fine_cur == cur.fine_cur && ref.fine_out == cur.fine_out;
+#elif defined(AA_PATTERN)
+			invariant_ok = invariant_ok && ref.fine_even == cur.fine_even;
+#endif
+		}
+	report(
+		invariant_ok,
+		"Test 9 cycle-invariant fine parity: the fine ghost frame consumed at each substep slot and targeted at each fill slot is "
+		"the same frame in every one of the 4 cycles (absolute frame identities are pinned by Test 1)"
+	);
+
+	// P2: strictly alternating coarse (fill-source) parity at every
+	// coarse-touching slot; repeats at same-parity cycles
+	bool alternation_ok = true;
+	for (int slot = 2; slot < 6; slot++)
+		for (int k = 0; k + 1 < cycles; k++) {
+#ifdef AB_PATTERN
+			alternation_ok = alternation_ok && state.events[6 * k + slot].coarse_cur != state.events[6 * (k + 1) + slot].coarse_cur;
+#elif defined(AA_PATTERN)
+			alternation_ok = alternation_ok && state.events[6 * k + slot].coarse_even != state.events[6 * (k + 1) + slot].coarse_even;
+#endif
+		}
+	for (int slot = 2; slot < 6; slot++)
+		for (int k = 0; k + 2 < cycles; k++) {
+#ifdef AB_PATTERN
+			alternation_ok = alternation_ok && state.events[6 * k + slot].coarse_cur == state.events[6 * (k + 2) + slot].coarse_cur;
+#elif defined(AA_PATTERN)
+			alternation_ok = alternation_ok && state.events[6 * k + slot].coarse_even == state.events[6 * (k + 2) + slot].coarse_even;
+#endif
+		}
+	report(
+		alternation_ok,
+		"Test 9 alternating fill-source parity: the coarse rotation at every coarse-touching slot (kernel, F2C, both C2F fills) "
+		"flips with cycle parity across all 3 transitions and repeats at same-parity cycles (one toggle per cycle, none inside)"
+	);
+
+	// P3: cross-cycle consumption chain -- cycle k's substeps consume
+	// exactly the frames that cycle k-1's fill pair was recorded writing
+	bool consumption_ok = true;
+	for (int k = 1; k < cycles; k++) {
+		const Evt& substep1 = state.events[6 * k];
+		const Evt& substep2 = state.events[6 * k + 1];
+		const Evt& fill1 = state.events[6 * (k - 1) + 4];
+		const Evt& fill2 = state.events[6 * (k - 1) + 5];
+#ifdef AB_PATTERN
+		consumption_ok = consumption_ok && substep1.fine_cur == fill1.fine_cur && substep2.fine_cur == fill2.fine_cur;
+#elif defined(AA_PATTERN)
+		consumption_ok = consumption_ok && substep1.fine_even == fill1.fine_even && substep2.fine_even == fill2.fine_even;
+#endif
+	}
+	report(
+		consumption_ok,
+		"Test 9 consumption chain: every cycle's substep 1 (substep 2) consumes exactly the frame that the previous cycle end's "
+		"fill #1 (#2) was recorded writing -- the once-per-cycle fill is what the next cycle runs on, so the fill imprint carried "
+		"to the seam must alternate with the source parity locked above"
+	);
+}
+
 // Test 5: State_AMR::computeConservationStats must EXCLUDE the coarse cells
 // hidden under the fine footprint (tagged GEO_NOTHING) from the mass,
 // momentum, and per-level kinetic-energy sums - the same physical region is
@@ -1359,6 +1622,29 @@ void test_footprint_min_size_validation()
 				message.empty() ? "no exception thrown" : fmt::format("threw: {}", message)
 			)
 		);
+
+		// T8 exact-wording lock: the FULL rejection message (createAMRBlocks'
+		// reject()-envelope with the region index/level/origin/size fields plus
+		// the reason text) must match verbatim -- the substring check above
+		// cannot see envelope edits, and the wording is user-facing (the
+		// dual-role row is documented through this message)
+		const std::string axis_str{axis};
+		const int sx = axis_str == "X" ? size : 8;
+		const int sy = axis_str == "Y" ? size : 8;
+		const int sz = axis_str == "Z" ? size : 8;
+		const std::string expected_full = fmt::format(
+			"createAMRBlocks: invalid region #0 (level 1, origin [4,4,4], size [{},{},{}]): AMR footprint size below the 3-coarse-cell "
+			"minimum required by the interface band structure (distinct c=0 ring and c=1 destination rows) on axis {} (got {})",
+			sx,
+			sy,
+			sz,
+			axis,
+			size
+		);
+		report(
+			message == expected_full,
+			fmt::format("Test 7 wording lock: the {}-thin rejection message matches the gs>=3 minimum-footprint wording verbatim", axis)
+		);
 	}
 
 	// the minimum valid footprint ([3, 8, 8] coarse cells) must be accepted
@@ -1390,8 +1676,10 @@ int main(int argc, char** argv)
 	fmt::println("AMR subcycling unit tests (streaming pattern: {})", pattern_name);
 
 	test_subcycling_schedule();
+	test_schedule_parity_structure();
 	test_max_level_zero_fallthrough();
 	test_interface_ring_freshness();
+	test_interface_ring_freshness_model();
 	test_conservation_hidden_cell_exclusion();
 	test_skin_partition_geometry();
 	test_footprint_min_size_validation();
