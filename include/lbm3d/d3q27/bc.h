@@ -329,18 +329,6 @@ struct D3Q27_BC_All
 				COLL::computeDensityAndVelocity(KS);
 				break;
 			case GEO_SYM_BACK:
-				KS.f[mpm] = KS.f[mmm];
-				KS.f[mpz] = KS.f[mmz];
-				KS.f[mpp] = KS.f[mmp];
-				KS.f[zpm] = KS.f[zmm];
-				KS.f[zpz] = KS.f[zmz];
-				KS.f[zpp] = KS.f[zmp];
-				KS.f[ppm] = KS.f[pmm];
-				KS.f[ppz] = KS.f[pmz];
-				KS.f[ppp] = KS.f[pmp];
-				COLL::computeDensityAndVelocity(KS);
-				break;
-			case GEO_SYM_FRONT:
 				KS.f[mmm] = KS.f[mpm];
 				KS.f[mmz] = KS.f[mpz];
 				KS.f[mmp] = KS.f[mpp];
@@ -350,6 +338,18 @@ struct D3Q27_BC_All
 				KS.f[pmm] = KS.f[ppm];
 				KS.f[pmz] = KS.f[ppz];
 				KS.f[pmp] = KS.f[ppp];
+				COLL::computeDensityAndVelocity(KS);
+				break;
+			case GEO_SYM_FRONT:
+				KS.f[mpm] = KS.f[mmm];
+				KS.f[mpz] = KS.f[mmz];
+				KS.f[mpp] = KS.f[mmp];
+				KS.f[zpm] = KS.f[zmm];
+				KS.f[zpz] = KS.f[zmz];
+				KS.f[zpp] = KS.f[zmp];
+				KS.f[ppm] = KS.f[pmm];
+				KS.f[ppz] = KS.f[pmz];
+				KS.f[ppp] = KS.f[pmp];
 				COLL::computeDensityAndVelocity(KS);
 				break;
 

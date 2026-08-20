@@ -128,11 +128,11 @@ struct D3Q7_BC_All
 				COLL::computeDensityAndVelocity(KS);
 				break;
 			case GEO_SYM_BACK:
-				KS.f[zpz] = KS.f[zmz];
+				KS.f[zmz] = KS.f[zpz];
 				COLL::computeDensityAndVelocity(KS);
 				break;
 			case GEO_SYM_FRONT:
-				KS.f[zmz] = KS.f[zpz];
+				KS.f[zpz] = KS.f[zmz];
 				COLL::computeDensityAndVelocity(KS);
 				break;
 
