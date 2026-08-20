@@ -358,7 +358,7 @@ void launchCoarseToFine(MockBlock& fine, MockBlock& coarse, idx3d begin, idx3d e
 		static_cast<unsigned>((size.x() + 3) / 4), static_cast<unsigned>((size.y() + 3) / 4), static_cast<unsigned>((size.z() + 3) / 4)
 	);
 	TNL::Backend::launchKernelAsync(
-		cudaAMR_CoarseToFine<NSE_CONFIG>, launch_config, fine.data, coarse.data, begin, end, TAU_FINE, TAU_COARSE, coarse_even_iter, false, fine_off, coarse_off
+		cudaAMR_CoarseToFine<NSE_CONFIG>, launch_config, fine.data, coarse.data, begin, end, TAU_FINE, TAU_COARSE, coarse_even_iter, fine_off, coarse_off
 	);
 	TNL::Backend::streamSynchronize(0);
 }
