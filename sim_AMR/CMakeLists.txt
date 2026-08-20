@@ -29,11 +29,14 @@ if(C2F_CARVE)
     message(WARNING "C2F_CARVE was retired on 2026-08-18: the carve is default-on and the define is a no-op; use C2F_NO_CARVE=ON to opt out.")
 endif()
 
-# optional H9 experiment switch (2026-08-18 user directive): the first
-# coarse-to-fine fill of each cycle reads the time-centered midpoint of the
-# coarse pre- and post-step states (the v4 variant of the falsification
-# matrix, retried post-redesign); AB-pattern only
-set(C2F_H9 "" CACHE STRING "H9 experiment define for AMR targets (time-centered first C2F fill; enable with ON, AB pattern only)")
+# 2026-08-20 (Schönherr six-step cycle, plan ruling (d)): the H9
+# time-centered first-fill experiment was HARD-REMOVED together with the
+# legacy per-substep BVP refill -- the cycle now fills both AB frames once
+# per cycle end with identical content, so there is no code left for the
+# knob to gate. Configuring with C2F_H9 set warns loudly here.
+if(C2F_H9)
+    message(WARNING "C2F_H9 was retired on 2026-08-20 (Schönherr six-step cycle): the time-centered first fill and the per-substep BVP refill are hard-removed -- the cycle fills both frames once per cycle end with identical content. Remove -DC2F_H9 from your configure line.")
+endif()
 
 # optional C2F_EQ_ONLY debug switch: the fills write pure equilibrium
 # (CM strain-rate moments and Lagrange non-equilibrium rescale are zeroed);
@@ -74,10 +77,6 @@ foreach(target IN ITEMS ${TARGETS})
 
     if(C2F_NO_CARVE)
         target_compile_definitions(${target} PRIVATE C2F_NO_CARVE)
-    endif()
-
-    if(C2F_H9)
-        target_compile_definitions(${target} PRIVATE C2F_H9)
     endif()
 
     if(C2F_EQ_ONLY)
