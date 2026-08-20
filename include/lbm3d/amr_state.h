@@ -473,8 +473,9 @@ auto State_AMR<NSE>::computeConservationStats() -> AMRConservationStats
  * launch helpers.
  *
  * The INTERIOR (under-footprint) patch list holds the footprint's 6
- * disjoint inset-face SKIN rectangles (one coarse cell deep inside the
- * footprint, the same disjoint partition idiom as the halo faces above).
+ * disjoint inset-face SKIN rectangles (the depth-1 shell one coarse row
+ * inside the reactivated c=0 ring row, the same disjoint partition idiom
+ * as the halo faces above).
  * They carry the ONLY fine-to-coarse feedback channel (changes 2+3 of the
  * AMR interface redesign): the ring fine-to-coarse launch was removed
  * (gate B ruling, D.1 hard-delete), the deep frozen core is never written,
@@ -568,42 +569,49 @@ void State_AMR<NSE>::buildCouplings()
 			// interior patches (changes 2+3 of the AMR interface redesign,
 			// docs/AMR-interface-proposed-diagram.md §3/§7 — unconditional
 			// since the ring F2C path was removed, gate B ruling + D.1
-			// hard-delete): the
-			// one-coarse-cell-deep SKIN of the fine footprint (frozen
-			// GEO_NOTHING cells, F2C-injected with fine-filtered DFs each
-			// cycle) as a DISJOINT partition of 6 inset-face rectangles —
-			// the same disjoint face-partition idiom as the halo ring above,
-			// inset one coarse cell INTO the footprint: the x-normal faces
-			// own the full footprint y/z range, the y-normal faces the
-			// interior x-range, the z-normal faces the interior x/y range.
-			// The deep frozen core is never F2C-written (the coarse C2F
-			// stencil reaches only 1 cell into the footprint, so the core
-			// is never read either) — e.g. a 32^3 footprint emits its
-			// 32^3-30^3 = 5,768 skin cells in 6 rectangles.
+			// hard-delete): the one-coarse-cell-deep SKIN of the fine
+			// footprint AT DEPTH 1 (frozen GEO_NOTHING cells one coarse row
+			// INSIDE the reactivated c=0 ring row of
+			// docs/AMR-schonherr-ch7-target-contract.md sec. 2.1,
+			// F2C-injected with fine-filtered DFs each cycle) as a DISJOINT
+			// partition of 6 inset-face rectangles — the same disjoint
+			// face-partition idiom as the halo ring above, inset one more
+			// coarse cell INTO the footprint: the x-normal faces own the
+			// full depth-1 tangent range [go+1, go+gs-1), the y-normal
+			// faces the twice-inset interior x-range [go+2, go+gs-2), the
+			// z-normal faces the twice-inset interior x/y ranges. The
+			// reactivated c=0 surface shell in between is collision-active
+			// (coarse-kernel-driven GEO_AMR_INTERFACE) and never
+			// F2C-written; the c>=2 deep frozen core is never F2C-written
+			// and never read either — e.g. a K=8 footprint emits its
+			// (K-2)^3-(K-4)^3 = 6^3-4^3 = 152 skin cells in 6 rectangles
+			// (K=32: 5,048).
 			// Degenerate thin footprints clamp to EMPTY rectangles (skipped
-			// by the clip below, never pushed): with gs.a < 3 the tangent
-			// interior ranges [go.a+1, go.a+gs.a-1) of the other axes'
-			// faces are empty, and the max(..., go.a+1) clamp on the
-			// max-side slab origin keeps a 1-cell-thin footprint from
-			// emitting the same axis-plane twice (the min-side face wins)
-			// — no rectangle therefore carries a negative extent and no
-			// coarse cell is written twice.
+			// by the clip below, never pushed): with gs.a < 5 the
+			// twice-inset tangent ranges [go.a+2, go.a+gs.a-2) of the other
+			// axes' faces are empty, and the max(..., go.a+2) clamp on the
+			// max-side slab origin keeps a gs.a == 3 footprint from
+			// emitting the same axis-plane twice (the min-side face then
+			// owns the whole depth-1 slab) — no rectangle therefore carries
+			// a negative extent and no coarse cell is written twice.
 			const idx xi0 = go.x() + 1, xi1 = go.x() + gs.x() - 1;
 			const idx yi0 = go.y() + 1, yi1 = go.y() + gs.y() - 1;
 			const idx zi0 = go.z() + 1, zi1 = go.z() + gs.z() - 1;
-			const idx xr0 = std::max(go.x() + gs.x() - 1, go.x() + 1);
-			const idx yr0 = std::max(go.y() + gs.y() - 1, go.y() + 1);
-			const idx zr0 = std::max(go.z() + gs.z() - 1, go.z() + 1);
+			const idx xi2 = go.x() + 2, xi2e = go.x() + gs.x() - 2;
+			const idx yi2 = go.y() + 2, yi2e = go.y() + gs.y() - 2;
+			const idx xr0 = std::max(go.x() + gs.x() - 2, go.x() + 2);
+			const idx yr0 = std::max(go.y() + gs.y() - 2, go.y() + 2);
+			const idx zr0 = std::max(go.z() + gs.z() - 2, go.z() + 2);
 			const struct SKIN
 			{
 				idx3d begin, end;
 			} skins[6] = {
-				{{go.x(), go.y(), go.z()}, {go.x() + 1, go.y() + gs.y(), go.z() + gs.z()}},	   // x-min face (full y/z)
-				{{xr0, go.y(), go.z()}, {go.x() + gs.x(), go.y() + gs.y(), go.z() + gs.z()}},  // x-max face (full y/z)
-				{{xi0, go.y(), go.z()}, {xi1, go.y() + 1, go.z() + gs.z()}},				   // y-min face (interior x)
-				{{xi0, yr0, go.z()}, {xi1, go.y() + gs.y(), go.z() + gs.z()}},				   // y-max face (interior x)
-				{{xi0, yi0, go.z()}, {xi1, yi1, go.z() + 1}},								   // z-min face (interior x/y)
-				{{xi0, yi0, zr0}, {xi1, yi1, go.z() + gs.z()}},								   // z-max face (interior x/y)
+				{{xi0, yi0, zi0}, {go.x() + 2, yi1, zi1}},	  // x-min face (full depth-1 tangent)
+				{{xr0, yi0, zi0}, {xi1, yi1, zi1}},			  // x-max face (full depth-1 tangent)
+				{{xi2, yi0, zi0}, {xi2e, go.y() + 2, zi1}},	  // y-min face (twice-inset x)
+				{{xi2, yr0, zi0}, {xi2e, yi1, zi1}},		  // y-max face (twice-inset x)
+				{{xi2, yi2, zi0}, {xi2e, yi2e, go.z() + 2}},  // z-min face (twice-inset x/y)
+				{{xi2, yi2, zr0}, {xi2e, yi2e, zi1}},		  // z-max face (twice-inset x/y)
 			};
 			for (const SKIN& skin : skins) {
 				for (auto* coarse : this->nse.getBlocksAtLevel(coarse_level)) {
