@@ -537,22 +537,30 @@ TEST_CASE("conservation recount: excluded census + sentinel positive inclusion")
 	CHECK(excluded == 216);	 // (K-2)^3 = skin 152 + deep 64
 
 	// positive-inclusion sentinel: the mass shift equals exactly the ring
-	// shell sum (the metric's OpenMP atomic summation reassociates, so the
+	// shell sum of (sentinel - rho0): the fixture's initial state is uniform
+	// rho0 = 1.0 everywhere and the injection REPLACES the cell values (it
+	// does not add), so the shift is 296 * (177 - 1) = 52096 (measured
+	// exactly; the metric's OpenMP atomic summation reassociates, so the
 	// comparison carries the house 1e-6 relative tolerance)
 	const AMRConservationStats s1 = state.computeConservationStats();
 	const double shift = s1.total_mass - s0.total_mass;
-	const double expected_shift = sentinel * 296;  // (K^3 - (K-2)^3) * sentinel
+	const double expected_shift = (sentinel - 1.0) * 296;  // (K^3 - (K-2)^3) * (sentinel - rho0)
 	CHECK(std::abs(shift - expected_shift) <= 1e-6 * std::max(1.0, std::abs(expected_shift)));
 
 	// permanence rail (green under both geometries): the metric equals the
 	// direct tag-keyed reference sum that excludes exactly the GEO_NOTHING
-	// cells of every block (the code path itself is unchanged by the ruling)
+	// cells of every block (the code path itself is unchanged by the
+	// ruling). The host mirrors of the distributed arrays are addressed in
+	// LOCAL-BEGINS coordinates (global offset + local index -- the same
+	// idiom as test_amr_subcycling.cu's computeReferenceStats); plain local
+	// indices throw on the level-1 block whose mirror carries a nonzero
+	// begin with a 2-cell overlap.
 	double ref_mass = 0;
 	for (const auto& block : state.nse.blocks) {
 		const double volume_factor = std::pow(0.5, 3.0 * block.level);
-		for (idx x = 0; x < block.local.x(); x++)
-			for (idx z = 0; z < block.local.z(); z++)
-				for (idx y = 0; y < block.local.y(); y++) {
+		for (idx x = block.offset.x(); x < block.offset.x() + block.local.x(); x++)
+			for (idx z = block.offset.z(); z < block.offset.z() + block.local.z(); z++)
+				for (idx y = block.offset.y(); y < block.offset.y() + block.local.y(); y++) {
 					if (block.hmap(x, y, z) == NSE_CONFIG::BC::GEO_NOTHING)
 						continue;
 					ref_mass += static_cast<double>(block.hmacro(NSE_CONFIG::MACRO::e_rho, x, y, z)) * volume_factor;
@@ -662,6 +670,50 @@ TEST_CASE("skin rectangle fingerprint (buildCouplings)")
 		FAIL_CHECK(fmt::format("skin fingerprint mismatch:{}", got));
 	}
 	CHECK(actual == want);
+}
+
+// Registration map-pattern assertion (plan T6/Oracle F2; debug builds
+// only): SimInit runs the SimInit-internal guard on every fixture of this
+// suite -- its non-firing is therefore already pinned by every case above
+// -- and the guard must FIRE on a deliberately 1-cell-misregistered map.
+// Two independent one-cell perturbations are verified: (a) one halo ring
+// source cell retagged GEO_NOTHING (a C2F destination's nominal
+// face-normal source pair is then no longer a subset of the ring), (b)
+// one depth-1 skin destination retagged GEO_AMR_INTERFACE (an F2C
+// destination is then not a frozen cell).
+TEST_CASE("map-pattern assertion fires on a 1-cell misregistration")
+{
+#ifndef NDEBUG
+	StateLock_AMR<NSE_CONFIG> state = makeState("schonherr_locks_map_pattern");
+	initFixture(state);
+
+	BLOCK* coarse = state.nse.getBlocksAtLevel(0).front();
+	coarse->copyMapToHost();
+
+	// sanity: the production fixture map passes the guard outright (the
+	// same check SimInit ran internally for every case of this suite)
+	CHECK(state.checkCouplingMapPattern());
+
+	// rail (a): retag one x-min halo ring cell (c = -1 at home tangent
+	// (GO, GO)) -- a nominal source of the x-min destination rows
+	const auto ring_tag = coarse->hmap(GO - 1, GO, GO);
+	CHECK(ring_tag == NSE_CONFIG::BC::GEO_AMR_INTERFACE);
+	coarse->hmap(GO - 1, GO, GO) = NSE_CONFIG::BC::GEO_NOTHING;
+	CHECK(! state.checkCouplingMapPattern());
+	coarse->hmap(GO - 1, GO, GO) = ring_tag;
+	CHECK(state.checkCouplingMapPattern());
+
+	// rail (b): retag one depth-1 skin destination cell (c = 1 at tangent
+	// (GO + 1, GO + 1)) -- an F2C destination of the x-min interior rectangle
+	const auto skin_tag = coarse->hmap(GO + 1, GO + 1, GO + 1);
+	CHECK(skin_tag == NSE_CONFIG::BC::GEO_NOTHING);
+	coarse->hmap(GO + 1, GO + 1, GO + 1) = NSE_CONFIG::BC::GEO_AMR_INTERFACE;
+	CHECK(! state.checkCouplingMapPattern());
+	coarse->hmap(GO + 1, GO + 1, GO + 1) = skin_tag;
+	CHECK(state.checkCouplingMapPattern());
+#else
+	SUCCEED("registration map-pattern assertion is compiled out under NDEBUG (release build)");
+#endif
 }
 
 TEST_SUITE_END();
