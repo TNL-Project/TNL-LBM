@@ -1,26 +1,27 @@
 // Unit tests for the Berger-Colella time-subcycling orchestration in
-// State_AMR (include/lbm3d/amr_state.h).
+// State_AMR (include/lbm3d/amr_state.h), scheduled as the Schönherr
+// six-step cycle (docs/AMR-schonherr-ch7-target-contract.md sec. 1.3).
 //
 // Different from test_amr_coupling.cu (which exercises the coupling kernels
 // directly), these tests drive SMALL two-level State_AMR instances through
 // the real SimInit/SimUpdate machinery and verify the subcycling schedule
 // from host-observable per-level state:
 //
-// - Test 1 (substep counting per level): State_AMR calls the non-virtual
-//   launch helpers internally, so kernel launches cannot be intercepted from
-//   a subclass. Instead, the test counts the per-level DATA updates that
-//   each kernel launch requires: for the A-B pattern every kernel-launch
-//   preparation applies one DF-pointer rotation (updateKernelData for level
-//   0 driven by the global iteration clock, updateKernelDataForLevel for
-//   level 1 driven by the substep clock), for the A-A pattern it toggles
-//   data.even_iter. After one Berger-Colella step (1 coarse + 2 fine
-//   substeps) the coarse and fine rotation/parity states must therefore
-//   differ by exactly one preparation step - this is the host-visible
-//   encoding of "1 coarse kernel call vs 2 fine kernel calls".
+// - Test 1 (six-step launch census): State_AMR declares its per-stage
+//   launch helpers virtual, so the test subclass StateSchedule_AMR
+//   overrides them to record one event per stage launch (kind, level, and
+//   the parity state at the call site) and delegates to the production
+//   implementations. Per cycle and level pair the census is exactly 2 fine
+//   substeps + 1 coarse step + 3 fill launches (1 F2C + 2 identical C2F),
+//   with the AB-frame pairing asserted at every call site (the parity
+//   table in test_subcycling_schedule); for the A-A pattern the frame
+//   identities map to data.even_iter states. SimInit's initial
+//   both-frames fill is asserted the same way (2 C2F events, frame 0
+//   then frame 1).
 // - Test 2 (time synchronization): with the 2:1 refinement the fine level
-//   performs exactly 2 substeps per coarse step (proven by Test 1) and
-//   lat_local.physDt is exactly physDt/2, hence the physical time advanced
-//   on both levels is identical after every coarse step.
+//   performs exactly 2 substeps per coarse step (proven by Test 1's
+//   census) and lat_local.physDt is exactly physDt/2, hence the physical
+//   time advanced on both levels is identical after every coarse step.
 // - Test 3 (max_level == 0 fallthrough): State_AMR with max_level == 0 must
 //   behave identically to the base State driver - verified against a plain
 //   State sibling on the same lattice run through the same sequence
@@ -217,19 +218,122 @@ std::string levelStateString(const STATE& state, const BLOCK& block, int level)
 	return s;
 }
 
-// Tests 1 and 2: Berger-Colella subcycling count and time synchronization
+// Schedule-observing State_AMR subclass for Test 1: the virtual launch
+// helpers of State_AMR are overridden to record one event per stage launch
+// (kind, level, and the parity state at the call site) and then delegate to
+// the production implementation, so the SIX-STEP cycle's launch census and
+// AB-frame pairing are asserted from the real call graph (not from baked
+// counts). Under AB the parity evidence is the DF-pointer rotation of each
+// block (df_cur/df_out = data.dfs[0]/[1] compared against the physical
+// arrays dfs[0]/dfs[1]); under AA (single array, DFMAX == 1) it is
+// data.even_iter.
+template <typename NSE>
+struct StateSchedule_AMR : StateLocal_AMR<NSE>
+{
+	using Base = State_AMR<NSE>;
+	using BLOCK_NSE = typename Base::BLOCK_NSE;
+
+	// pass-through constructor (forwards periodic/max_level to LBM)
+	template <typename... ARGS>
+	StateSchedule_AMR(ARGS&&... args)
+	: StateLocal_AMR<NSE>(std::forward<ARGS>(args)...)
+	{}
+
+	enum class Stage
+	{
+		kernel,	 // launchLBMKernelForLevel (fine substep or coarse step)
+		c2f,	 // launchCoarseToFineTransfers (ghost fill of one frame)
+		f2c,	 // launchFineToCoarseTransfersInterior (skin feedback)
+	};
+	struct Event
+	{
+		Stage stage;
+		int level = -1;
+#ifdef AB_PATTERN
+		const void* fine_cur = nullptr;	   // fine block's data.dfs[0] (df_cur) at the call site
+		const void* fine_out = nullptr;	   // fine block's data.dfs[1] (df_out) at the call site
+		const void* coarse_cur = nullptr;  // level-0 block's data.dfs[0] (df_cur) at the call site
+#elif defined(AA_PATTERN)
+		bool fine_even = false;
+		bool coarse_even = false;
+#endif
+	};
+	std::vector<Event> events;
+
+	void record(Stage stage, int level)
+	{
+		Event e;
+		e.stage = stage;
+		e.level = level;
+		// the fixture has exactly one block per level and max_level == 1,
+		// so the coarse side of every transfer is the level-0 block
+		BLOCK_NSE* fine = level > 0 ? this->nse.getBlocksAtLevel(level).front() : nullptr;
+		BLOCK_NSE* coarse = this->nse.getBlocksAtLevel(0).front();
+#ifdef AB_PATTERN
+		if (fine != nullptr) {
+			e.fine_cur = fine->data.dfs[0];
+			e.fine_out = fine->data.dfs[1];
+		}
+		e.coarse_cur = coarse->data.dfs[0];
+#elif defined(AA_PATTERN)
+		if (fine != nullptr)
+			e.fine_even = fine->data.even_iter;
+		e.coarse_even = coarse->data.even_iter;
+#endif
+		events.push_back(e);
+	}
+
+	void launchLBMKernelForLevel(int level, bool compute_macro) override
+	{
+		record(Stage::kernel, level);
+		Base::launchLBMKernelForLevel(level, compute_macro);
+	}
+	void launchCoarseToFineTransfers(int fine_level) override
+	{
+		record(Stage::c2f, fine_level);
+		Base::launchCoarseToFineTransfers(fine_level);
+	}
+	void launchFineToCoarseTransfersInterior(int fine_level) override
+	{
+		record(Stage::f2c, fine_level);
+		Base::launchFineToCoarseTransfersInterior(fine_level);
+	}
+};
+
+// Tests 1 and 2: six-step cycle launch census with parity-at-call-site
+// locks, and time synchronization. Per SimUpdate call the schedule must
+// record exactly this ordered census per level pair (plan contract sec.
+// 1.3, cycle steps named in State_AMR's file docstring):
+//
+//   #   stage        AB frame pairing at the call site (P = dfs[0], Q = dfs[1])
+//   1   kernel L1    fine df_cur == P (substep 1 consumes P, produces Q)
+//   2   kernel L1    fine df_cur == Q (substep 2 consumes Q, produces P)
+//   3   kernel L0    coarse step (rotation from the global iterations clock)
+//   4   f2c L1       fine df_out == P (reads the post-substep-2 array; the
+//                    rotation is still substep-1's, so df_cur == Q)
+//   5   c2f L1       fine df_cur == P (fills frame 0 for the next cycle's
+//                    substep 1; prepared by updateKernelDataForLevel(L, 0))
+//   6   c2f L1       fine df_cur == Q (fills frame 1 for substep 2;
+//                    identical content to fill #1)
+//
+// i.e. 2 fine substeps + 1 coarse step + 3 fill launches (1 F2C + 2
+// identical C2F) per cycle per level. The coarse rotation is set once per
+// cycle by the global updateKernelData() and must not change across
+// events 3-6 (no fine-level preparation touches level 0). Under AA the
+// frame identities map to the even_iter values false, true, -, true (f2c
+// reads the twisted post-collision state), false, true.
 void test_subcycling_schedule()
 {
 	lat_t lat = makeLattice();
 	const std::string id = fmt::format("test_amr_subcycling_{}_sched", pattern_name);
-	StateLocal_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/1);
+	StateSchedule_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/1);
 	if (! state.canCompute()) {
 		report(false, "Test 1/2 setup: state.canCompute()");
 		return;
 	}
 
-	// one centered level-1 region: coarse footprint [4, 12)^3, i.e. a 16^3
-	// fine block at fine offset (8, 8, 8)
+	// one centered level-1 region: coarse footprint [4, 12)^3, i.e. a 14^3
+	// fine interior (local = 2*8 - 2) at fine-global offset (9, 9, 9)
 	createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>("1 4 4 4 8 8 8"));
 
 	const std::vector<BLOCK*> level0 = state.nse.getBlocksAtLevel(0);
@@ -241,7 +345,7 @@ void test_subcycling_schedule()
 	BLOCK* fine = level1.front();
 
 	// full initialization (allocation, boundary setup, interface tagging,
-	// coupling patches, initial condition)
+	// coupling patches, initial condition, initial both-frames fill)
 	state.SimInit();
 	if (state.nse.terminate) {
 		report(false, "Test 1/2 setup: SimInit triggered the terminate flag");
@@ -257,37 +361,90 @@ void test_subcycling_schedule()
 		fmt::format("Test 1 setup: fine lattice viscosity is doubled (nu_fine = {:.6e}, nu_coarse = {:.6e})", nu_lb_fine, nu_lb_coarse)
 	);
 
+	// SimInit's initial both-frames fill (the cycle-0 anchor of the six-step
+	// cycle): two C2F launches filling the substep-0 and substep-1 frame
+	// rotations in this order, before any SimUpdate
+	if (state.events.size() != 2 || state.events[0].stage != StateSchedule_AMR<NSE_CONFIG>::Stage::c2f
+		|| state.events[1].stage != StateSchedule_AMR<NSE_CONFIG>::Stage::c2f)
+	{
+		report(false, fmt::format("Test 1 setup: SimInit launched {} events, expected exactly 2 (C2F frame 0, C2F frame 1)", state.events.size()));
+		return;
+	}
+#ifdef AB_PATTERN
+	{
+		const void* const P = fine->dfs[0].getData();
+		const void* const Q = fine->dfs[1].getData();
+		report(
+			state.events[0].fine_cur == P && state.events[1].fine_cur == Q,
+			"Test 1 setup: SimInit's initial both-frames fill targeted frame P (substep-0 rotation) then frame Q (substep-1 rotation)"
+		);
+	}
+#elif defined(AA_PATTERN)
+	report(
+		state.events[0].fine_even == false && state.events[1].fine_even == true,
+		"Test 1 setup: SimInit's initial both-frames fill ran at even_iter false (substep-0 parity) then true (substep-1 parity)"
+	);
+#endif
+	// consume the SimInit events so the cycle census starts empty
+	state.events.clear();
+
 	// execute()-style iteration: updateKernelData before each SimUpdate
-	bool counts_ok = true;
+	bool census_ok = true;
 	bool visc_ok = true;
 	bool sync_ok = true;
 	for (int call = 1; call <= 3 && ! state.nse.terminate; call++) {
+		const std::size_t base = state.events.size();
 		state.updateKernelData();
 		state.SimUpdate();
 
 		// one call of SimUpdate = exactly one coarse iteration
 		const bool iter_ok = (state.nse.iterations == call);
 
-		// launch-preparation state per level (Tests 1's kernel-call counts):
-		// level 0 was prepared exactly ONCE for this call (the pre-SimUpdate
-		// updateKernelData driven by the global clock), level 1 was prepared
-		// TWICE inside SimUpdate (substeps 0 and 1 driven by the substep
-		// clock, the final state being the substep-1 preparation)
+		// the six-step census and the parity-at-call-site table (see the
+		// header comment); every failing event is dumped for the log
+		using Evt = typename StateSchedule_AMR<NSE_CONFIG>::Event;
+		using Stage = typename StateSchedule_AMR<NSE_CONFIG>::Stage;
+		const Evt* ev = state.events.size() >= base + 6 ? state.events.data() + base : nullptr;
+		bool call_ok = iter_ok && ev != nullptr;
 #ifdef AB_PATTERN
-		const bool coarse_at_substep0 = ! dfsSwapped(*coarse);
-		const bool expected_coarse_substep0 = ((call - 1) % 2 == 0);
-		const bool level_ok = (coarse_at_substep0 == expected_coarse_substep0) && dfsSwapped(*fine);
+		const void* const P = fine->dfs[0].getData();
+		const void* const Q = fine->dfs[1].getData();
+		const void* const expected_coarse = ((call - 1) % 2 == 0) ? coarse->dfs[0].getData() : coarse->dfs[1].getData();
+		if (call_ok) {
+			call_ok = ev[0].stage == Stage::kernel && ev[0].level == 1 && ev[0].fine_cur == P && ev[0].fine_out == Q;
+			call_ok = call_ok && ev[1].stage == Stage::kernel && ev[1].level == 1 && ev[1].fine_cur == Q && ev[1].fine_out == P;
+			call_ok = call_ok && ev[2].stage == Stage::kernel && ev[2].level == 0 && ev[2].coarse_cur == expected_coarse;
+			call_ok = call_ok && ev[3].stage == Stage::f2c && ev[3].level == 1 && ev[3].fine_cur == Q && ev[3].fine_out == P;
+			call_ok = call_ok && ev[4].stage == Stage::c2f && ev[4].level == 1 && ev[4].fine_cur == P;
+			call_ok = call_ok && ev[5].stage == Stage::c2f && ev[5].level == 1 && ev[5].fine_cur == Q;
+			// the coarse rotation must not change across events 3-6 (no
+			// fine-level preparation may touch level 0)
+			call_ok = call_ok && ev[3].coarse_cur == expected_coarse && ev[4].coarse_cur == expected_coarse && ev[5].coarse_cur == expected_coarse;
+		}
 #elif defined(AA_PATTERN)
 		const bool expected_coarse_even = ((call - 1) % 2 == 1);
-		const bool level_ok = (coarse->data.even_iter == expected_coarse_even) && fine->data.even_iter;
+		if (call_ok) {
+			call_ok = ev[0].stage == Stage::kernel && ev[0].level == 1 && ev[0].fine_even == false;
+			call_ok = call_ok && ev[1].stage == Stage::kernel && ev[1].level == 1 && ev[1].fine_even == true;
+			call_ok = call_ok && ev[2].stage == Stage::kernel && ev[2].level == 0 && ev[2].coarse_even == expected_coarse_even;
+			call_ok = call_ok && ev[3].stage == Stage::f2c && ev[3].level == 1 && ev[3].fine_even == true;
+			call_ok = call_ok && ev[4].stage == Stage::c2f && ev[4].level == 1 && ev[4].fine_even == false;
+			call_ok = call_ok && ev[5].stage == Stage::c2f && ev[5].level == 1 && ev[5].fine_even == true;
+			call_ok = call_ok && ev[3].coarse_even == expected_coarse_even && ev[4].coarse_even == expected_coarse_even
+				   && ev[5].coarse_even == expected_coarse_even;
+		}
 #endif
-		if (! (iter_ok && level_ok)) {
-			counts_ok = false;
+		if (! call_ok) {
+			census_ok = false;
 			report(
 				false,
 				fmt::format(
-					"Test 1 substep counting after call {}: iterations = {} -- {} | {}",
-					call, state.nse.iterations, levelStateString(state, *coarse, 0), levelStateString(state, *fine, 1)
+					"Test 1 six-step census after call {}: iterations = {}, {} events recorded -- {} | {}",
+					call,
+					state.nse.iterations,
+					state.events.size() - base,
+					levelStateString(state, *coarse, 0),
+					levelStateString(state, *fine, 1)
 				)
 			);
 		}
@@ -303,9 +460,9 @@ void test_subcycling_schedule()
 		}
 
 		// Test 2: time synchronization -- the fine level performs exactly 2
-		// substeps per coarse step (the data-state evidence above) and its
+		// substeps per coarse step (steps 1-2 of the census above) and its
 		// time step is exactly physDt/2, so both level clocks agree after
-		// every Berger-Colella step
+		// every cycle
 		const double t_coarse = state.nse.iterations * static_cast<double>(state.nse.lat.physDt);
 		const long fine_substeps = 2L * state.nse.iterations;
 		const double t_fine = fine_substeps * static_cast<double>(fine->lat_local.physDt);
@@ -317,8 +474,14 @@ void test_subcycling_schedule()
 		}
 	}
 
-	report(state.nse.iterations == 3 && counts_ok && visc_ok, "Test 1 substep counting: 3 coarse iterations, each driving 1 coarse + 2 fine kernel-launch preparations (with per-level viscosities restored)");
-	report(sync_ok, "Test 2 time synchronization: fine clock (2 substeps of dt/2) equals coarse clock (1 step of dt) after every Berger-Colella step");
+	report(
+		state.nse.iterations == 3 && state.events.size() == 3 * 6 && census_ok && visc_ok,
+		"Test 1 six-step census: 3 coarse iterations, each recording 2 fine substeps + 1 coarse step + 3 fill launches (1 F2C + 2 identical "
+		"C2F) with the parity-at-call-site table asserted (per-level viscosities restored)"
+	);
+	report(
+		sync_ok, "Test 2 time synchronization: fine clock (2 substeps of dt/2) equals coarse clock (1 step of dt) after every Berger-Colella step"
+	);
 	report(! state.nse.terminate, "Test 1/2: no termination or kernel failure during 3 subcycled iterations");
 }
 
@@ -412,6 +575,46 @@ CoarseMacroScan captureCoarseMacros(const BLOCK& block)
 	return scan;
 }
 
+// scan-order capture of the fine block's C2F destination cells (the stored
+// overlap complement outside the simulated interior) from the AB frames --
+// the cross-state carrier of Test 4's both-frames fill lock (the fresh
+// expected-state model of the once-per-cycle fill). Host mirrors take
+// (offset + local) coordinates with the +-overlap margin (the
+// computeReferenceStats idiom), so the destination window is
+// [offset - ov, offset + local + ov)^3 minus the interior.
+struct FineGhostScan
+{
+	idx3d offset{0, 0, 0};
+	idx3d local{0, 0, 0};
+	idx3d overlap{0, 0, 0};
+	std::vector<double> frame0;	 // per-destination-cell values of dfs[0]
+	std::vector<double> frame1;	 // per-destination-cell values of dfs[1] (AB only)
+};
+
+FineGhostScan captureFineGhost(BLOCK& block)
+{
+	FineGhostScan scan;
+	scan.offset = block.offset;
+	scan.local = block.local;
+	scan.overlap = {block.df_overlap_X(), block.df_overlap_Y(), block.df_overlap_Z()};
+	for (int q = 0; q < NSE_CONFIG::Q; q++)
+		for (idx z = scan.offset.z() - scan.overlap.z(); z < scan.offset.z() + scan.local.z() + scan.overlap.z(); z++)
+			for (idx y = scan.offset.y() - scan.overlap.y(); y < scan.offset.y() + scan.local.y() + scan.overlap.y(); y++)
+				for (idx x = scan.offset.x() - scan.overlap.x(); x < scan.offset.x() + scan.local.x() + scan.overlap.x(); x++) {
+					// destination complement: skip the simulated interior
+					// cells (they are kernel-owned, not fill-owned)
+					const bool interior = x >= scan.offset.x() && x < scan.offset.x() + scan.local.x() && y >= scan.offset.y()
+									   && y < scan.offset.y() + scan.local.y() && z >= scan.offset.z() && z < scan.offset.z() + scan.local.z();
+					if (interior)
+						continue;
+					scan.frame0.push_back(block.hfs[0](q, x, y, z));
+#ifdef AB_PATTERN
+					scan.frame1.push_back(block.hfs[1](q, x, y, z));
+#endif
+				}
+	return scan;
+}
+
 // Test 3: max_level == 0 fallthrough must be identical to the base driver.
 // The AMR state and the plain base State run SEQUENTIALLY (one instance at
 // a time) and the AMR snapshots are compared against the sibling's live
@@ -502,22 +705,30 @@ void test_max_level_zero_fallthrough()
 	}
 }
 
-// Test 4 (B.5 lock, sole variant since D.1): after one Berger-Colella
-// cycle every ring cell's macros must equal the KERNEL-PRODUCED values.
+// Test 4 (B.5 lock, sole variant since D.1): after one six-step cycle
+// every ring cell's macros must equal the KERNEL-PRODUCED values, and the
+// fine-level C2F destination cells must carry the once-per-cycle
+// both-frames fill of the Schönherr cycle contract (sec. 1.3: one
+// identical-content fill per AB frame at the cycle end - the per-substep
+// BVP refill is retired and SimInit performs the same fill for cycle 0).
 // Ring cells are collision-active, and no coupling channel writes them
 // (the skin F2C rectangles lie inside the footprint = GEO_NOTHING region,
 // disjoint from the ring; C2F writes fine ghost cells only), so the kernel
-// is their only writer. Detection: compare against a DETERMINISTIC
-// kernels-only reference -- the same initialization advanced by the SAME
-// SimUpdate with ALL coupling launches disabled (couplings.clear() after
-// SimInit; every transfer helper is then a silent no-op with empty
-// couplings, while the parity, counter, and kernel flow of SimUpdate stay
-// identical). Bitwise equality is the fp-tightest form of "fp-level": in
-// both runs the only writer of ring cells is the coarse kernel on
-// identical input, so the expected maximum difference is exactly 0
-// (assert == 0 and print the max). NOTE: the reference's FOOTPRINT cells
-// intentionally diverge (frozen init state, never skin-written), so every
-// cross-state comparison below is map-selected on GEO_AMR_INTERFACE.
+// is their only writer. Detection for the ring: compare against a
+// DETERMINISTIC kernels-only reference -- the same initialization advanced
+// by the SAME SimUpdate with ALL coupling launches disabled
+// (couplings.clear() after SimInit; every transfer helper is then a silent
+// no-op with empty couplings, while the parity, counter, and kernel flow
+// of SimUpdate stay identical). The reference stays valid under the
+// six-step cycle: SimInit's initial both-frames fill ran BEFORE the
+// clear() and touches fine ghost cells only, and in both runs the only
+// writer of ring cells is the coarse kernel on identical input, so the
+// expected maximum difference is exactly 0 (assert == 0 and print the
+// max). NOTE: the reference's FOOTPRINT cells intentionally diverge
+// (frozen init state, never skin-written), so every cross-state ring
+// comparison below is map-selected on GEO_AMR_INTERFACE; the FINE ghost
+// cells are compared separately below against the fill locks (the
+// subject's cycle-end fill vs the reference's SimInit-era fill).
 //
 // Why not the placeholder probe alone: the (rho = 1, v = 0) freshness the
 // historical test asserts does NOT detect a coupling channel's absence on
@@ -545,8 +756,9 @@ void test_interface_ring_freshness()
 {
 	lat_t lat = makeLattice();
 
-	// subject: one full coupled Berger-Colella cycle
+	// subject: one full coupled six-step cycle
 	CoarseMacroScan subject;
+	FineGhostScan subject_ghost;
 	HostSnapshot subject_init;
 	{
 		const std::string id = fmt::format("test_amr_subcycling_{}_ring", pattern_name);
@@ -574,9 +786,10 @@ void test_interface_ring_freshness()
 		// default variant) so the kernel-produced ring macros land in dmacro
 		state.cnt[OUT3DCUT].period = 1e-30;
 
-		// one coupled Berger-Colella cycle (1 coarse step + 2 fine substeps;
-		// ring F2C removed in D.1, the skin F2C transfer runs unconditionally
-		// as the only fine-to-coarse channel)
+		// one coupled six-step cycle (2 fine substeps + coarse step + F2C +
+		// the cycle-end both-frames C2F fills; ring F2C removed in D.1, the
+		// skin F2C transfer runs unconditionally as the only fine-to-coarse
+		// channel)
 		state.updateKernelData();
 		state.SimUpdate();
 		if (state.nse.terminate) {
@@ -587,12 +800,21 @@ void test_interface_ring_freshness()
 		coarse->copyMapToHost();
 		coarse->copyMacroToHost();
 		subject = captureCoarseMacros(*coarse);
+
+		// the fill locks' subject carrier: the fine block's C2F destination
+		// cells of BOTH AB frames after the cycle (the cycle-end fills
+		// wrote them; the kernels never write ghost rows, so what remains
+		// is exactly the fill output)
+		BLOCK* fine = state.nse.getBlocksAtLevel(1).front();
+		fine->copyDFsToHost();
+		subject_ghost = captureFineGhost(*fine);
 	}
 
 	// deterministic kernels-only reference (the plan's construction):
 	// same initialization, advanced by the SAME SimUpdate with ALL coupling
 	// launches disabled
 	CoarseMacroScan reference;
+	FineGhostScan reference_ghost;
 	{
 		const std::string id = fmt::format("test_amr_subcycling_{}_ringref", pattern_name);
 		StateLocal_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/1);
@@ -613,12 +835,16 @@ void test_interface_ring_freshness()
 		const double init_diff = maxAbsDiffSnapshots(subject_init, reference_init);
 		report(
 			init_diff == 0,
-			fmt::format("Test 4 reference init: kernels-only reference is bitwise identical to the subject after SimInit (max |diff| = {:.3e})", init_diff)
+			fmt::format(
+				"Test 4 reference init: kernels-only reference is bitwise identical to the subject after SimInit (max |diff| = {:.3e})", init_diff
+			)
 		);
 
 		// disable ALL coupling launches (C2F, ring F2C, interior/skin F2C):
 		// clear() after SimInit leaves the SimUpdate parity/counter/kernel
-		// flow untouched and makes every transfer launch a no-op
+		// flow untouched and makes every transfer launch a no-op (the
+		// reference's fine ghost cells therefore keep the SimInit-era
+		// initial fill forever)
 		state.couplings.clear();
 		state.cnt[OUT3DCUT].period = 1e-30;
 		state.updateKernelData();
@@ -632,6 +858,10 @@ void test_interface_ring_freshness()
 		coarse->copyMapToHost();
 		coarse->copyMacroToHost();
 		reference = captureCoarseMacros(*coarse);
+
+		BLOCK* fine = state.nse.getBlocksAtLevel(1).front();
+		fine->copyDFsToHost();
+		reference_ghost = captureFineGhost(*fine);
 	}
 
 	// assertions
@@ -667,7 +897,8 @@ void test_interface_ring_freshness()
 	report(
 		max_ring_diff == 0,
 		fmt::format(
-			"Test 4 ring macros kernel-produced (ring F2C removed, D.1): all {} GEO_AMR_INTERFACE cells' macros are bitwise identical to the kernels-only reference (max |diff| = {:.3e})",
+			"Test 4 ring macros kernel-produced (ring F2C removed, D.1): all {} GEO_AMR_INTERFACE cells' macros are bitwise identical to the "
+			"kernels-only reference (max |diff| = {:.3e})",
 			ring_cells,
 			max_ring_diff
 		)
@@ -681,6 +912,55 @@ void test_interface_ring_freshness()
 		)
 	);
 
+	// fill-destination census: the fine block's C2F destination complement
+	// is (local + 2*ov)^3 - local^3 cells (K = 8 fixture: 18^3 - 14^3 =
+	// 3,088 cells, 27 DF entries each)
+	const long ghost_cells = static_cast<long>(subject_ghost.frame0.size()) / NSE_CONFIG::Q;
+	report(
+		subject_ghost.frame0.size() == 27 * 3088 && subject_ghost.frame0.size() == reference_ghost.frame0.size(),
+		fmt::format("Test 4 fill census: the fine block has 3,088 fill-owned destination cells (got {})", ghost_cells)
+	);
+
+#ifdef AB_PATTERN
+	// LOCK 3 (AB only; under AA the both-frames parity degenerates to one
+	// physical frame and the parity-side evidence lives in Test 1's
+	// census): the cycle-end C2F fill writes the destination complement of
+	// BOTH AB frames with IDENTICAL content - the plan's cycle contract
+	// sec. 1.3 (fill #2 is content-identical to fill #1: both read the
+	// same coarse post-step state, and their source sets are disjoint from
+	// the skin cells F2C writes in between), so the subject's two frames
+	// must be bitwise equal at every destination cell
+	double max_frame_diff = 0;
+	for (std::size_t i = 0; i < subject_ghost.frame0.size(); i++)
+		max_frame_diff = std::max(max_frame_diff, std::abs(subject_ghost.frame0[i] - subject_ghost.frame1[i]));
+	report(
+		subject_ghost.frame0.size() == subject_ghost.frame1.size() && max_frame_diff == 0,
+		fmt::format(
+			"Test 4 both-frames fill: the subject's two AB frames carry bitwise-identical fills at all {} destination cells (max |diff| = {:.3e})",
+			ghost_cells,
+			max_frame_diff
+		)
+	);
+#endif
+
+	// LOCK 4: a fill RAN at the cycle end - the subject's cycle-end fill
+	// (from the coarse post-step state) must differ from the reference's
+	// SimInit-era fill (from the coarse initial state) somewhere in the
+	// destination complement (the sine IC evolves, so the kernel step
+	// changes the ring sources; couplings.clear() made the reference keep
+	// its initial fill)
+	idx refilled_cells = 0;
+	for (std::size_t i = 0; i < subject_ghost.frame0.size(); i++)
+		if (subject_ghost.frame0[i] != reference_ghost.frame0[i])
+			refilled_cells++;
+	report(
+		refilled_cells > 0,
+		fmt::format(
+			"Test 4 fill freshness: the subject's cycle-end fill re-wrote {} of {} destination entries vs the reference's SimInit-era fill",
+			refilled_cells,
+			subject_ghost.frame0.size()
+		)
+	);
 }
 
 // Test 5: State_AMR::computeConservationStats must EXCLUDE the coarse cells

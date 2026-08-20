@@ -216,7 +216,6 @@ __global__ void cudaAMR_CoarseToFine(
 	typename CONFIG::TRAITS::dreal tau_fine,
 	typename CONFIG::TRAITS::dreal tau_coarse,
 	bool coarse_even_iter,
-	bool c2f_time_centered,
 	typename CONFIG::TRAITS::idx3d fine_off,
 	typename CONFIG::TRAITS::idx3d coarse_off
 )
@@ -239,27 +238,14 @@ __global__ void cudaAMR_CoarseToFine(
 
 	// coarse-side DF read in the orientation produced by the last coarse
 	// kernel launch -- the ONLY streaming-pattern-dependent code in the kernel
-	const auto read_coarse_df = [&coarse_SD, coarse_even_iter, c2f_time_centered](int q, idx cx, idx cy, idx cz) -> dreal
+	const auto read_coarse_df = [&coarse_SD, coarse_even_iter](int q, idx cx, idx cy, idx cz) -> dreal
 	{
 #ifdef AB_PATTERN
 		// AB: post-collision DF of direction q at the same site, natural
 		// orientation, is stored in df_out (coarse_even_iter is AA-only state)
 		static_cast<void>(coarse_even_iter);
-		if (c2f_time_centered)
-			// H9 retry (2026-08-18): time-centered first fill -- the last
-			// coarse kernel READ df_cur (t_n) and WROTE df_out (t_{n+1}),
-			// so their midpoint is the t_{n+1/2} state the first fine
-			// substep's boundary data should carry (the v4 variant of the
-			// falsification matrix, re-tested post-redesign under the carve,
-			// which keeps every stencil source in the ring/fluid set where
-			// the two-array midpoint semantics is exact)
-			return 0.5 * (coarse_SD.df(df_cur, q, cx, cy, cz) + coarse_SD.df(df_out, q, cx, cy, cz));
 		return coarse_SD.df(df_out, q, cx, cy, cz);
 #elif defined(AA_PATTERN)
-		// c2f_time_centered (H9) is unsupported under AA (AMR+AA carries the
-		// D.4 defect; the launcher raises #error for that combination), so
-		// production AA never sets the flag
-		static_cast<void>(c2f_time_centered);
 		if (coarse_even_iter)
 			// AA post-collision state (twisted): the post-collision DF of
 			// direction q at (cx,cy,cz) sits in the opposite-direction slot
