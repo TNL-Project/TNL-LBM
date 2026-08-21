@@ -435,6 +435,22 @@ __global__ void cudaAMR_CoarseToFine(
 	// plan-required logged warning, capped so a degenerate map cannot storm
 	// stdout. Without this define none of this block exists and the CM
 	// branch is the original flow.
+	// Schönherr ch7 conversion, 2026-08-21 (T11 demotion record, audit
+	// A.4-R2): the one-cell window shift + off-center evaluation above
+	// implements exactly the |offset| <= 1 per-axis case of the thesis
+	// sec. 7.3 hat extrapolation (Eqs. 7.49-7.57): the hat-polynomial
+	// Taylor shift of the fitted coefficients evaluated at the
+	// destination equals the refit on the shifted window evaluated at
+	// the destination's source-frame position (verified equivalent,
+	// including multi-axis corner shifts; arbitrary/multi-cell offsets
+	// are unsupported and take the mirrored-home-cell collapse paths
+	// above). Under the conversion band map
+	// (docs/AMR-schonherr-ch7-target-contract.md sec. 2), every nominal
+	// face-normal source window of a valid face straddles the shared
+	// vertex with both sources on GEO_AMR_INTERFACE rows {c = -1, c =
+	// 0}, so this pre-pass is UNREACHABLE at valid faces; it is kept for
+	// wall-adjacent and degenerate geometries only. `C2F_NO_CARVE` /
+	// `TNL_TEST_NO_CARVE` semantics are unchanged.
 	static __device__ int c2f_carve_warn_budget = 16;
 
 	// one map read per candidate window cell (8 reads, nominal tuple)
@@ -567,6 +583,11 @@ __global__ void cudaAMR_CoarseToFine(
 				const dreal xn = static_cast<dreal>(ibx) - n1o2;
 
 				// Step B: the source cell's DF state and its macros
+				// (the coupling velocity uses the force-free first moment
+				// -- KS_C carries zero force terms -- consistently with
+				// thesis sec. 7.2, which defines no forcing; if volume
+				// forcing ever reaches the band, revisit the Guo
+				// half-offset here -- audit A.4-R3)
 				LBM_KS KS_C;
 				for (int q = 0; q < CONFIG::Q; q++)
 					KS_C.f[q] = read_coarse_df(q, cnx[ibx], cy, cz);
@@ -651,6 +672,33 @@ __global__ void cudaAMR_CoarseToFine(
 				const dreal K_a = k_xx_yy + k_xx_zz;
 				const dreal K_b = k_xx_zz - no2 * k_xx_yy;
 				const dreal K_c = k_xx_yy - no2 * k_xx_zz;
+
+				// Schönherr ch7 conversion, 2026-08-21 (T11 errata record):
+				// the velocity-coefficient fits below carry the closed,
+				// cyclically complete family of Eqs. 7.18/7.23/7.24 (and of
+				// their unprinted cyclic b/c analogs): a_0 subtracts the full
+				// k-sum -x*(k_xx-yy + k_xx-zz), and the a_yy/a_zz rows carry
+				// doubled inner terms (1/8) sum [2y k_xy - 8xy v] etc. The
+				// thesis print deviates from this family: print-7.18 carries
+				// the singleton term -x*k_xx-yy in a_0 (while its a_xx,
+				// print-7.22, correctly carries the full k-sum, making the
+				// singleton internally asymmetric in the print), and
+				// print-7.23/7.24 carry half of the inner prefactors shown
+				// here. The printed singleton set is internally inconsistent
+				// under the nodal-consistency identity
+				//   a_0 = (1/8) sum(u) - (a_xx + a_yy + a_zz) / 4,
+				// which it satisfies for no strain carrier, while the
+				// implemented family satisfies it for any (quadratic exactness
+				// follows). Suspected thesis-print errata -- the print carries
+				// verified typos of the same class (7.54 missing the
+				// y-subscript on d_y; 7.56/7.57 printing dhat_x on the LHS for
+				// dhat_y, dhat_z; 7.49/7.50 dual tags on one formula) -- the
+				// implemented family is the nodal-consistent one (derivation:
+				// docs/AMR-schonherr-ch7-target-contract.md, appendix
+				// "Sec. 7.2 equation audit", A.3.3-note; external check
+				// record: appendix A.5-U1. Executable lock:
+				// tests/unit/test_amr_schonherr_exactness.cu case T10c
+				// discriminates the two families, code family green).
 
 				// density coefficient sums (Eqs. 7.10-7.17)
 				sd0 += rho_n;
