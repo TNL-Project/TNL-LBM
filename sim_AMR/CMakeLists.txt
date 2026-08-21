@@ -12,12 +12,16 @@ set(TARGETS
 # Lagrange interpolation (now the C2F_LAGRANGE opt-out).
 set(TNL_LBM_C2F_STRATEGY "" CACHE STRING "C2F strategy define for AMR targets (C2F_LAGRANGE, C2F_TRILINEAR, C2F_LINEAR_EXPLOSION, C2F_UNIFORM_EXPLOSION; C2F_COMPACT_MOMENT is the default, accepted as a no-op)")
 
-# optional F2C filter strategy switch for AMR experiments (see
+# optional F2C transfer strategy switch for AMR experiments (see
 # include/lbm3d/d3q27/amr_coupling.h); e.g. configure with
 #   cmake -B build -DTNL_LBM_F2C_STRATEGY=F2C_BOX_AVERAGE
 # The default (empty) builds the 4x4x4 Lagrange filter; F2C_BOX_AVERAGE
-# opts out to the original 1/8 box average of the 8 subcells.
-set(TNL_LBM_F2C_STRATEGY "" CACHE STRING "F2C filter strategy define for AMR targets (F2C_BOX_AVERAGE)")
+# opts out to the original 1/8 box average of the 8 subcells;
+# F2C_SCHONHERR (2026-08-21, commit 13 of the Schönherr ch7 conversion)
+# opts in to the thesis sec. 7.2 sigma-form compact-moment transfer
+# (sigma = 2; no tau-rescale, no f_avg, no lo = 0 clamp, no 4x4x4 window)
+# -- default remains the Lagrava filter until the T17 default flip.
+set(TNL_LBM_F2C_STRATEGY "" CACHE STRING "F2C transfer strategy define for AMR targets (F2C_BOX_AVERAGE, F2C_SCHONHERR)")
 
 # optional C2F carve opt-out switch (change 5 of the AMR interface
 # redesign -- the 2-cell CM window shifts one cell outward wherever it
