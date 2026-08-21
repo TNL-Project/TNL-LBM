@@ -204,3 +204,410 @@ The re-anchor changes the fine-row index mapping (§2 indexer column: a fine row
 ## Open questions
 
 None. Every item required for implementation was normatively specified in the plan doc; anything not covered there is intentionally left to the stage commits and their gates rather than guessed here.
+
+---
+
+## Appendix: §7.2 equation audit
+
+**Provenance:** plan row 10 (T9) worksheet — the §7.2 equation-by-equation audit of 2026-08-19, extended (A.5-U1) and integrated into this contract doc at commit 11 (T11, 2026-08-21). Session draft: `.omo/evidence/schonherr_conversion/eq-audit-draft.md`.
+**Audit target:** `include/lbm3d/d3q27/amr_coupling.h` — CM branch of `cudaAMR_CoarseToFine` (:340–1000) plus the named τ/σ sites and the carve (:408–565), the legacy Lagrange opt-out (:1002–1116), and the F2C kernel (`cudaAMR_FineToCoarse`, :1245–1461).
+**Thesis source:** `docs/references/AMR/47_Schonherr_2015_Thesis.txt`, §7.2 (printed pp. 57–61) and §7.3 (printed pp. 61–63).
+**Cross-check:** `47_Schonherr_2015_Thesis.pdf` rendered at 150 dpi (physical pp. 70–75; physical = printed + 13) — used to verify every quoted equation where the `.txt` linearization is ambiguous (all of §7.2's numbered equations, and decisively Eqs. 7.18, 7.22–7.24, 7.29–7.33, 7.38–7.57).
+**Anchor policy:** symbols first; `:line` numbers are an advisory snapshot of `amr_coupling.h` as of commit 11 and are not re-maintained per commit (anchor-rot policy of §7).
+
+### A.0 Method and reading conventions
+
+- Per equation: thesis quote (as printed, PDF-verified) + code quote + verdict ∈ {match, convention-difference, bug} + one-line justification.
+- The `.txt` flattens math; ambiguous lines were resolved against the PDF renders, not against expectation. Two print artifacts matter for the row numbering and the "print typo" findings:
+  1. **Eqs. 7.49+7.50 are ONE formula** (â₀ split over two printed lines, both right-margin-tagged) → 57 tags, 56 formulas.
+  2. The thesis print itself carries typos: 7.54 prints "+ _off·d_y" (dropped y-subscript), 7.56/7.57 misprint the LHS as d̂_x (intended d̂_y, d̂_z).
+- Eqs. 7.5–7.9 print the ω_s factor in front of a bracketed fraction; the bracket placement is unambiguous only with the equilibrium-vanishing requirement (k ≡ 0 when Π^neq = 0). Read as −3ω_s·[Σijf/ρ − uv] etc., which is also the only dimensionally/equilibrium-consistent reading and the Musubi semantics; flagged in §A.5 (U2).
+- All numbered-code fragments quoted verbatim from `include/lbm3d/d3q27/amr_coupling.h` at this readonly session; constants (`ciselnik.h`): `n1o2=1/2`, `n1o3=1/3`, `n1o4=1/4`, `n1o8=1/8`, `n1o32=1/32` (code :777 computes it as `n1o8*n1o4`), `n3o2=3/2`, `no1..no16` integers.
+- The b/c velocity-coefficient families are **not printed** in the thesis ("only the formulas of the a coefficients are shown", txt :3221–3224); the code's b/c rows are audited as the cyclic closure of the a-family rows.
+- F2C side: `cudaAMR_FineToCoarse` implements **no** §7.2 content today (Lagrava filter + FH τ-rescale; replacement is T14/commit 13). F2C-impact notes are recorded per row where relevant.
+
+### A.1 Notation glossary (thesis ↔ code) — input for T13 helper extraction
+
+| thesis symbol | code identifier + site | role |
+|---|---|---|
+| source-node local coords (±½)³ | `xn,yn,zn = static_cast<dreal>(ib*) - n1o2`, :577/:580/:583 | fit stencil positions |
+| destination evaluation point (±¼)³ | `tx,ty,tz` from `axis_window`, :383–401, set :404–406 (carve may re-offset to \|t_rel\| = 0.75, :504–505) | C2F destination in window frame |
+| ρ at source node | `rho_n` via `COLL::computeDensityAndVelocity(KS_C)`, :594 (+ `common.h:17–50`) | Eq. 7.1 |
+| u,v,w at source node | `u,v,w` = `KS_C.vx/vy/vz`, :596–598 | Eqs. 7.2–7.4 |
+| ω_s (source = coarse) | `omega_s = no1 / tau_coarse`, :385 | Eqs. 7.5–7.9 prefactor |
+| ω_d (destination = fine) | `omega_d = no1 / tau_fine`, :386 | Eqs. 7.38–7.43 prefactor |
+| Π_ab = Σq c_a c_b (f−f^eq) | `Pi_xx..Pi_yz`, :608–624 (vel tables `vel_cx/cy/cz`, :364–366; `COLL::setEquilibrium(KS_E)`, :607) | algebraic form of the Eq. 7.5–7.9 raw-moment differences |
+| k_xy, k_yz, k_xz | `k_xy, k_yz, k_xz`, :665–667 (`-no3*om_rho*Pi_*`) | Eqs. 7.5–7.7 |
+| k_xx−yy, k_xx−zz | `k_xx_yy, k_xx_zz`, :668–669 (`-n3o2*om_rho*(Pi_xx−Pi_yy/zz)`), `om_rho = omega_s/rho_n` :664 | Eqs. 7.8–7.9 |
+| (k_yy−xx+k_yy−zz) etc. cyclic combos | `K_a = k_xx_yy + k_xx_zz`, `K_b = k_xx_zz − no2*k_xx_yy`, `K_c = k_xx_yy − no2*k_xx_zz`, :672–674 | diagonal-moment families of a₀/b₀/c₀ + a_xx/… (developed in Eq. 7.22 explicitly; K_b = k_yy−zz+k_yy−xx, K_c = k_zz−xx+k_zz−yy by trace identities) |
+| d₀,d_x,d_y,d_z,d_xy,d_yz,d_xz,d_xyz | sums `sd0..sdxyz` :571, accumulated :704–711; coefficients `d_0..d_xyz` :764–771 | Eqs. 7.10–7.17 |
+| a₀,a_x,…,a_xyz | sums `sa0..saxyz` :572, accumulated :714–724; coefficients `a_0..a_xyz` :778–788 (b: `sb*` :573/:727–737/:789–799; c: `sc*` :574/:740–750/:800–810) | Eqs. 7.18–7.28 (+ cyclic, unprinted) |
+| 8-node k-sums (for avk) | `sk_xy, sk_yz, sk_xz, sk_xx_yy, sk_xx_zz` :575, accumulated :753–757 | numerators of Eqs. 7.29–7.33 |
+| avk_xy … avk_xx−zz | `avg_k_xy … avg_k_xx_zz`, :820–824 | Eqs. 7.29–7.33 |
+| destination macros ρ,u,v,w | `rho_f` :772; `vx_f/vy_f/vz_f` :811–816 | Eqs. 7.34–7.37 |
+| σ (c→f) | `sigma = n1o2`, :828 | Eqs. 7.38–7.43 scaling |
+| A_011, A_101, A_110 | `A011, A101, A110`, :831–833 | Eqs. 7.44–7.46 |
+| B, C | `corr_B, corr_C`, :829–830 | Eqs. 7.47–7.48 |
+| σρ/(3ω_d), 2σρ/(9ω_d) | `off_factor` :834, `diag_factor` :842 | cumulant prefactors |
+| C_011…C_002 | `C011, C101, C110` :835–837; `C200, C020, C002` :844–846 via `X,Y` :840–841 and `diag_eq = rho_f*n1o3` :843 | Eqs. 7.38–7.43 |
+| κ_000 = ρ, κ_100 = 0, κ_≥3 = 0 | `ks_000..ks_111` :854–870 | Step G (prose :3406–3412) |
+| back-transformation (as §2.2.5) | Step H :877–1000 (copied from `col_cum.h` non-`USE_GEIER_CUM_2017` path, Geier 2015 Eqs. 81–96: `col_cum.h:344–366` sibling) | prose :3486–3488 |
+| hat coefficients â/d̂ (offset) | **no literal hat coefficients**; analog = carve pre-pass `carve_window_off_covered_cells` :487–508 + degenerate collapse :545–565 | Eqs. 7.49–7.57 |
+| FH τ-rescale (Filippova–Hänel) | `neq_scale` at :329 (explosion opt-in), :1112 (Lagrange opt-out), :1427 (F2C kernel) | NOT §7.2 — the pre-conversion scheme |
+
+### A.2 Explicit confirmations (plan T9 items i–iii)
+
+#### A.2.1 (i) σ = n1o2 already implemented at the C2F CM branch — CONFIRMED
+
+The σ-form of Eqs. 7.38–7.43 with σ_c→f = 1/2 and ω_d = ω₁(destination) is the
+code's compact-moment **default** branch, verbatim:
+
+- :385–386 `const dreal omega_s = no1 / tau_coarse;` / `const dreal omega_d = no1 / tau_fine;`
+- :828 `const dreal sigma = n1o2;`
+- :834 `const dreal off_factor = sigma * rho_f / (no3 * omega_d);`
+- :842 `const dreal diag_factor = no2 * sigma * rho_f / (no9 * omega_d);`
+- docstring :826–827 "[…] (Eqs. 7.38-7.48); sigma_{c->f} = 1/2, omega_d is
+  the destination (fine) grid rate".
+
+Thesis anchor (txt :3456–3458, PDF-verified): "[…] For the coarse to fine
+interpolation it is σ_c→f = 1/2, for the fine to coarse interpolation it is
+σ_f→c = 2." — i.e. plan §0/contract §1 item "C2F already σ-form (F1)" holds;
+not re-litigated here, per charter.
+
+#### A.2.2 (ii) FH τ-rescale confined to the F2C kernel and the legacy Lagrange branch — CONFIRMED (3 sites; one more than plan §0 lists)
+
+1. **F2C kernel** (:1426–1430): `// volumetric rescaling, f_coarse[q] = eq_q(rho_c,u_c) + (tau_c/tau_f)*f_neq[q]`
+   `const dreal neq_scale = tau_coarse / tau_fine;` → `const dreal f_coarse = KS_EQ.f[q] + neq_scale * (f_avg[q] - KS_EQ.f[q]);`
+   (kernel docstring :1195–1199 step 4).
+2. **Legacy Lagrange C2F opt-out** (:1111–1114): `// volumetric rescaling, f_fine[q] = eq_q(rho_f,u_f) + (tau_f/tau_c)*f_neq[q]`
+   `const dreal neq_scale = tau_fine / tau_coarse;` → `store_fine_df(q, KS_F.f[q] + neq_scale * f_neq[q]);`
+3. **`C2F_LINEAR_EXPLOSION` debug/opt-in branch** (:329–331):
+   `const dreal neq_scale = tau_fine / tau_coarse;` → `store_fine_df(q, KS_EQ.f[q] + neq_scale * (KS_H.f[q] - KS_EQ.f[q]));`
+   (not in plan §0's two-site list; opt-in only, default-off — noted for
+   completeness since commit 13's "no τ-rescale" scope statement should name
+   all three).
+A repo-wide grep shows **no other** τ-ratio/neq-injection sites (`include/`,
+`sim_AMR/`).
+
+#### A.2.3 (iii) F2C evaluation point t = (0,0,0): vanishing-coefficient census (input to T14's F2C_SCHONHERR minimal-macro set)
+
+Thesis anchors: F2C destination "is at (0, 0, 0) in the local coordinate
+system" (txt :3391–3394); "only the coefficients d₀, a₀, b₀ and c₀ are
+required to set the density and the three velocities at the coarse destination
+node" (txt :3406–3408). Evaluating the code's own CM definitions at
+tx = ty = tz = 0:
+
+**Vanish identically (every term carries ≥1 coordinate factor):**
+
+- d_x,d_y,d_z,d_xy,d_yz,d_xz,d_xyz in `rho_f` (:772) → `rho_f = d_0`.
+- a_x..a_xyz, b_*, c_* in `vx_f/vy_f/vz_f` (:811–816) → `vx_f = a_0`,
+  `vy_f = b_0`, `vz_f = c_0`.
+- All five aggregates `corr_B, corr_C, A011, A101, A110` (:829–833) ≡ 0.
+  → T14's pinned "A/B/C ≡ 0" **verified**.
+
+**Cancel algebraically (not zero individually, but drop out of the cumulants):**
+
+- avk gradient terms (:820–824) vs the Step-F summands (:835–837), e.g.
+  `C110 = -off_factor*(a_y + b_x + avg_k_xy + A110)` with
+  `avg_k_xy = n1o8*sk_xy - (a_y + b_x)` ⇒ `C110 = -off_factor*(n1o8*sk_xy)`.
+  Same cancellation in `C011`, `C101`; and in the diagonals:
+  `X = n1o8*sk_xx_yy`, `Y = n1o8*sk_xx_zz` (:840–841 with corr_B=corr_C=0).
+  T14 "avk corrections retained" is honored either literally (compute as
+  written) or reduced — the two are value-identical at t = 0.
+
+**Reduced F2C cumulants at (0,0,0)** (σ = 2, ω_d = 1/τ_coarse under T14):
+
+- `C011 = −(σρ/3ω_d)·⅛·sk_yz`; `C101 = −(σρ/3ω_d)·⅛·sk_xz`; `C110 = −(σρ/3ω_d)·⅛·sk_xy`
+- `C200 = ρ/3 − (2σρ/9ω_d)·⅛·(sk_xx_yy + sk_xx_zz)`
+- `C020 = ρ/3 − (2σρ/9ω_d)·⅛·(−2·sk_xx_yy + sk_xx_zz)`
+- `C002 = ρ/3 − (2σρ/9ω_d)·⅛·(sk_xx_yy − 2·sk_xx_zz)`
+
+**Minimal live accumulator set for F2C_SCHONHERR (T13/T14):**
+`sd0, sa0, sb0, sc0, sk_xy, sk_yz, sk_xz, sk_xx_yy, sk_xx_zz` (9 sums) —
+note that `sa0/sb0/sc0` (:714/:727/:740) already fold in the
+K_a/K_b/K_c + k_xy/k_xz/k_yz cross terms, so the per-source k-moment pipeline
+(:607–674) stays live in full; the 37 other accumulators
+(sdx..sdxyz; sax..saxyz; sb*; sc*) and the Step-C/D prefactor fits
+(:776–824) are **dead at t = 0** (still live for C2F).
+
+**⚠ T14-critical caveat:** `a_0` itself carries the k-corrected sum
+`sa0 += −xn·K_a − 2·yn·k_xy − 2·zn·k_xz + 4u + 4·xn·yn·v + 4·xn·zn·w`
+(:714) with `K_a = k_xx_yy + k_xx_zz` — the **Eq. 7.18 deviation family**
+(§A.3.3). The F2C destination **velocity** therefore inherits the 7.18
+verdict: print-7.18 would carry `−x·k_xx−yy` instead of `−x·(k_xx−yy +
+k_xx−zz)` (and likewise in the b₀/c₀ analogs). The 7.18/7.23/7.24 decision
+(A.4-R1) was locked at commit 10 and is reused at commit 13.
+
+### A.3 Per-equation worksheet
+
+Code quotes are from `include/lbm3d/d3q27/amr_coupling.h`; thesis quotes from
+the PDF-checked print (txt lines cited for retrieval). Verdict labels:
+**match** · **conv** = convention-difference (convention stated) · **bug**.
+
+#### A.3.1 Moments (Eqs. 7.1–7.9)
+
+| Eq | Thesis (print) | Code site + quote | Verdict — justification |
+|---|---|---|---|
+| 7.1 | ρ = Σ_ijk f_ijk (p.57; txt :3074–3076) | `COLL::computeDensityAndVelocity(KS_C)` :594 → `common.h:19–35` Kahan/grouped sum of `KS.f` | **match** — zeroth raw moment per node, identical definition |
+| 7.2 | u = Σ i f_ijk/ρ (p.57; txt :3082–3088) | `KS_C.vx` via :594 → `common.h:42–45` (Σ c_x f + fx/2)/ρ, `fx=0` in the fresh KS (`defs.h:274`) | **match** — coupling KS has zero force terms, so it reduces to the thesis's force-free first moment (note: volume-forcing half-offset is absent by construction — thesis §7.2 defines no force either; observation not a defect, see §A.4-R3; one-clause note at the macro read :585–590) |
+| 7.3 | v = Σ j f_ijk/ρ (p.57; txt :3089–3091) | `KS_C.vy` :596–597 → `common.h:46–49` | **match** — as 7.2 |
+| 7.4 | w = Σ k f_ijk/ρ (p.57; txt :3092–3094) | `KS_C.vz` :598 → `common.h:38–41` | **match** — as 7.2 |
+| 7.5 | k_xy = −3ω_s[Σijf/ρ − uv] (p.57; txt :3103–3117) | :664–665 `om_rho = omega_s/rho_n; k_xy = -no3 * om_rho * Pi_xy;` with `Pi_xy += cqx*cqy*f_neq` :615/:621 | **match** — `Pi_xy = Σij(f−f^eq)`; Σij f^eq = ρuv exactly for the used D3Q27 equilibrium (2nd-order Hermite constraint) ⇒ algebraically identical to print; ω_s = 1/τ_coarse :385 matches "ω₁ of the source grid" (txt :3151; ν = ⅓(1/ω₁−½) ⇔ τ = 3ν+½) |
+| 7.6 | k_yz = −3ω_s[Σjkf/ρ − vw] (p.57; txt :3106–3121) | :666 `k_yz = -no3 * om_rho * Pi_yz;` | **match** — as 7.5 |
+| 7.7 | k_xz = −3ω_s[Σikf/ρ − uw] (p.57; txt :3110–3123) | :667 `k_xz = -no3 * om_rho * Pi_xz;` | **match** — as 7.5 |
+| 7.8 | k_xx−yy = −(3/2)ω_s[Σ(i²−j²)f/ρ − (u²−v²)] (p.57; txt :3125–3138) | :668 `k_xx_yy = -n3o2 * om_rho * (Pi_xx - Pi_yy);` | **match** — Pi_xx−Pi_yy = Σ(i²−j²)(f−f^eq); Σ(c_x²−c_y²)f^eq = ρ(u²−v²) exactly ⇒ identical; n3o2 = 3/2 ✓ |
+| 7.9 | k_xx−zz = −(3/2)ω_s[Σ(i²−k²)f/ρ − (u²−w²)] (p.57; txt :3141–3149) | :669 `k_xx_zz = -n3o2 * om_rho * (Pi_xx - Pi_zz);` | **match** — as 7.8 |
+
+#### A.3.2 Density coefficients (Eqs. 7.10–7.17)
+
+| Eq | Thesis (print) | Code site + quote | Verdict — justification |
+|---|---|---|---|
+| 7.10 | d₀ = (1/8)Σρ (p.58; txt :3165–3171) | :704 `sd0 += rho_n;` → :764 `d_0 = n1o8 * sd0;` | **match** |
+| 7.11 | d_x = (1/2)Σ xρ (p.58; txt :3173–3179) | :705 `sdx += xn * rho_n;` → :765 `d_x = n1o2 * sdx;` | **match** |
+| 7.12 | d_y = (1/2)Σ yρ (p.58; txt :3181–3187) | :706 → :766 | **match** |
+| 7.13 | d_z = (1/2)Σ zρ (p.58; txt :3189–3195) | :707 → :767 | **match** |
+| 7.14 | d_xy = 2Σ xyρ (p.58; txt :3197–3199) | :708 `sdxy += xn*yn*rho_n;` → :768 `d_xy = no2 * sdxy;` | **match** |
+| 7.15 | d_yz = 2Σ yzρ (p.58; txt :3201–3203) | :709 → :769 | **match** |
+| 7.16 | d_xz = 2Σ xzρ (p.58; txt :3205–3207) | :710 → :770 | **match** |
+| 7.17 | d_xyz = 8Σ xyzρ (p.58; txt :3209–3211) | :711 `sdxyz += xn*yn*zn*rho_n;` → :771 `d_xyz = no8 * sdxyz;` | **match** |
+
+#### A.3.3 Velocity coefficients (Eqs. 7.18–7.28) — **contains the only code↔print deviations in §7.2**
+
+| Eq | Thesis (print, PDF-verified) | Code site + quote | Verdict — justification |
+|---|---|---|---|
+| 7.18 | a₀ = (1/32)Σ[**−x k_xx−yy** − 2y k_xy − 2z k_xz + 4u + 4xy v + 4xz w] (p.59; txt :3230–3236) — PDF: single k_xx−yy, NO k_xx−zz | :714 `sa0 += -xn * K_a - no2*yn*k_xy - no2*zn*k_xz + no4*u + no4*xn*yn*v + no4*xn*zn*w;` with :672 `K_a = k_xx_yy + k_xx_zz;` prefactor :777–778 `n1o32` | **conv** (code implements the closed/consistent family: −x(k_xx−yy+k_xx−zz); print carries −x·k_xx−yy alone). Code family satisfies the nodal-consistency identity a₀ = ⅛Σu − (a_xx+a_yy+a_zz)/4 for **any** strain carrier (proof §A.3.3-note); the printed set satisfies it for none; thesis print carries typos elsewhere (7.54/7.56/7.57). Same pattern in the unprinted b₀/c₀ analogs (code :727/:740 exactly cyclic, K_b = k_yy−zz+k_yy−xx ⇔ k_xx_zz−2k_xx_yy, K_c = k_zz−xx+k_zz−yy ⇔ k_xx_yy−2k_xx_zz). Suspected thesis-print erratum; **do not align code → print** (would break quadratic exactness, §A.4-R1); the errata record is in the code at :676–701 |
+| 7.19 | a_x = (1/2)Σ xu (p.59; txt :3238–3244) | :715 `sax += xn*u;` → :779 `a_x = n1o2*sax;` | **match** |
+| 7.20 | a_y = (1/2)Σ yu (p.59; txt :3246–3252) | :716 → :780 | **match** |
+| 7.21 | a_z = (1/2)Σ zu (p.59; txt :3254–3260) | :717 → :781 | **match** |
+| 7.22 | a_xx = (1/8)Σ[**x(k_xx−yy + k_xx−zz)** + 4xy v + 4xz w] (p.59; txt :3262–3268) — PDF: BOTH diagonal moments, explicitly | :718 `saxx += xn*K_a + no4*xn*yn*v + no4*xn*zn*w;` → :782 `a_xx = n1o8*saxx;` | **match** — print and code both use the k-sum here; makes the 7.18 singleton internally asymmetric in the print (extra evidence for the 7.18 erratum hypothesis) |
+| 7.23 | a_yy = (1/8)Σ[**y k_xy − 4xy v**] (p.59; txt :3270–3276) — PDF: coefficients 1 and 4 | :719 `sayy += no2*yn*k_xy - no8*xn*yn*v;` → :783 `a_yy = n1o8*sayy;` (effective (1/8)Σ[2y k_xy − 8xy v]) | **conv** — code carries exactly 2× the printed inner terms; the doubled form is the one that closes the nodal identity jointly with the code's 7.18/7.22/7.24 (print-consistent reading fails it; §A.3.3-note). Cyclic analogs: code `sbxx` :731, `scxx` :744 |
+| 7.24 | a_zz = (1/8)Σ[**z k_xz − 4xz w**] (p.59; txt :3278–3284) — PDF: coefficients 1 and 4 | :720 `sazz += no2*zn*k_xz - no8*xn*zn*w;` → :784 | **conv** — as 7.23 (cyclic analogs `sbzz` :733, `scyy` :745) |
+| 7.25 | a_xy = 2Σ xy u (p.59; txt :3286–3288) | :721 `saxy += xn*yn*u;` → :785 `a_xy = no2*saxy;` | **match** |
+| 7.26 | a_yz = 2Σ yz u (p.59; txt :3290–3292) | :722 → :786 | **match** |
+| 7.27 | a_xz = 2Σ xz u (p.59; txt :3294–3296) | :723 → :787 | **match** |
+| 7.28 | a_xyz = 8Σ xyz u (p.59; txt :3298–3300) | :724 `saxyz += xn*yn*zn*u;` → :788 `a_xyz = no8*saxyz;` | **match** |
+
+**§A.3.3-note (why the code family is the consistent one — nodal-identity
+proof sketch).** With trilinear parts fixed by Eqs. 7.19–7.21/7.25–7.28, the
+11-coefficient fit has a 3-dim ambiguity (polynomials vanishing at all 8
+corners: {x²−¼, y²−¼, z²−¼}); resolving it so the polynomial still takes the
+nodal values forces **a₀ = ⅛Σu − (a_xx+a_yy+a_zz)/4**.
+Substituting the code's definitions cancels identically (all k and cross-terms
+close: (1/8)·2 vs (1/32)·2 bookkeeping balances). Substituting the printed
+7.18 (single k_xx−yy) + printed 7.23/7.24 (coefficients 1,4) leaves
+mismatched strain terms for **every** choice of the strain↔k proportionality
+— e.g. on the divergence-free quadratic pair (u = qy², v = w = 0) with
+k := strain: print yields a_yy = q/2 (should be q) and a₀ = 0 only via
+cancellation luck; on u = qx² it yields a₀ = q(2−c)/8 with no carrier value c
+making a₀ = 0, while the code gives a₀ = 0, a_xx = cq, a_yy = a_zz = 0 — exact
+for c = 1. Conclusion: the code family is the exactly-consistent, cyclically
+closed variant; the print is internally inconsistent → thesis-print erratum is
+the working explanation (flag U1). Verified: Tests 8/9
+(`tests/test_amr_coupling.cu` `CMLinearField`/`CMQuadraticField`, :1541–1583)
+assert exactly this exactness class against the code as-is, and the T10c lock
+(`tests/unit/test_amr_schonherr_exactness.cu`) discriminates the two families
+(code family green; the print-aligned family would sit ~1e-5 off).
+
+#### A.3.4 Averaged moments avk (Eqs. 7.29–7.33)
+
+| Eq | Thesis (print, PDF-verified on p.59) | Code site + quote | Verdict — justification |
+|---|---|---|---|
+| 7.29 | avk_xy = (1/8)Σk_xy − (a_y + b_x) (p.59–60; txt :3313–3337) | :753 `sk_xy += k_xy;` → :820 `avg_k_xy = n1o8*sk_xy - (a_y + b_x);` | **match** |
+| 7.30 | avk_yz = (1/8)Σk_yz − (b_z + c_y) (txt :3339–3341) | :754 → :821 | **match** |
+| 7.31 | avk_xz = (1/8)Σk_xz − (a_z + c_x) (txt :3343–3345) | :755 → :822 | **match** |
+| 7.32 | avk_xx−yy = (1/8)Σk_xx−yy − (a_x − b_y) (txt :3363–3370) | :756 → :823 | **match** |
+| 7.33 | avk_xx−zz = (1/8)Σk_xx−zz − (a_x − c_z) (txt :3372–3374) | :757 → :824 | **match** — note the subtractions involve only the plain nodal-gradient coefficients a_x,a_y,b_x,b_y,c_y,c_z (Eqs. 7.19–7.21 class), NOT the 7.18/7.23/7.24-deviant ones, so the avk rows are unaffected by R1 |
+
+#### A.3.5 Evaluation polynomials (Eqs. 7.34–7.37)
+
+| Eq | Thesis (print, PDF-verified) | Code site + quote | Verdict — justification |
+|---|---|---|---|
+| 7.34 | u = a₀ + x(a_x + x a_xx + y a_xy + z a_xz + yz a_xyz) + y a_y + z a_z + y²a_yy + z²a_zz + yz a_yz (p.60; txt :3399) | :811–812 `vx_f = a_0 + tx*(a_x + tx*a_xx + ty*a_xy + tz*a_xz + ty*tz*a_xyz) + ty*a_y + tz*a_z + ty*ty*a_yy + tz*tz*a_zz + ty*tz*a_yz;` | **match** — term-for-term, tx/ty/tz = thesis x/y/z at (±¼)³ (:404–406; anchors txt :3391–3394) |
+| 7.35 | v = b₀ + x(b_x + …) + … (txt :3400) | :813–814 | **match** |
+| 7.36 | w = c₀ + x(c_x + …) + … (txt :3401) | :815–816 | **match** |
+| 7.37 | ρ = d₀ + x d_x + y d_y + z d_z + xy d_xy + xz d_xz + yz d_yz + xyz d_xyz (txt :3402–3404) | :772 `rho_f = d_0 + d_x*tx + d_y*ty + d_z*tz + d_xy*tx*ty + d_xz*tx*tz + d_yz*ty*tz + d_xyz*tx*ty*tz;` | **match** |
+
+#### A.3.6 Second-order cumulants (Eqs. 7.38–7.43)
+
+| Eq | Thesis (print, PDF-verified) | Code site + quote | Verdict — justification |
+|---|---|---|---|
+| 7.38 | C_011 = −(σρ/3ω_d)(b_z + c_y + avk_yz + A_011) (p.60–61; txt :3414–3440) | :834–835 `off_factor = sigma*rho_f/(no3*omega_d); C011 = -off_factor*(b_z + c_y + avg_k_yz + A011);` | **match** |
+| 7.39 | C_101 = −(σρ/3ω_d)(a_z + c_x + avk_xz + A_101) (txt :3417–3442) | :836 `C101 = -off_factor*(a_z + c_x + avg_k_xz + A101);` | **match** |
+| 7.40 | C_110 = −(σρ/3ω_d)(a_y + b_x + avk_xy + A_110) (txt :3421–3446) | :837 `C110 = -off_factor*(a_y + b_x + avg_k_xy + A110);` | **match** |
+| 7.41 | C_200 = ρ/3 − (2σρ/9ω_d)[(a_x−b_y+avk_xx−yy+B) + (a_x−c_z+avk_xx−zz+C)] (txt :3425–3447) | :840–844 `X = a_x-b_y+avg_k_xx_yy+corr_B; Y = a_x-c_z+avg_k_xx_zz+corr_C; diag_factor = no2*sigma*rho_f/(no9*omega_d); diag_eq = rho_f*n1o3; C200 = diag_eq - diag_factor*(X+Y);` | **match** |
+| 7.42 | C_020 = ρ/3 − (2σρ/9ω_d)[−2(X) + (Y)] (txt :3429–3448) | :845 `C020 = diag_eq - diag_factor*(-no2*X + Y);` | **match** |
+| 7.43 | C_002 = ρ/3 − (2σρ/9ω_d)[(X) − 2(Y)] (txt :3433–3449) | :846 `C002 = diag_eq - diag_factor*(X - no2*Y);` | **match** |
+
+Also matching (prose anchors): σ_c→f = 1/2 ⇒ `sigma = n1o2` :828; "ω_d is ω₁
+on the destination grid" ⇒ `omega_d = no1/tau_fine` :386; "zeroth cumulant
+replaced by κ_000 = ρ; first-order central moments zero; all ≥3rd-order
+cumulants zero" ⇒ Step G `ks_000 = rho_f`, `ks_100/010/001 = 0`,
+`ks_210..ks_111 = 0` (:854–870) — and the derived 4th-order central moments
+`ks_211..ks_222` (:884–900) come from the 2nd-order cumulants via Geier 2015
+Eqs. 81–84 exactly as in the collision operator (thesis: "transformed to
+distributions as in the collision operator (see Section 2.2.5)", txt
+:3486–3488); the back-transformation Eqs. 88–96 chain :877–1000 is verbatim the
+`col_cum.h:344+` (non-`USE_GEIER_CUM_2017`) path with velocity from Eqs.
+7.34–7.36 (:873–875; thesis txt :3487).
+
+#### A.3.7 Aggregates (Eqs. 7.44–7.48)
+
+| Eq | Thesis (print, PDF-verified) | Code site + quote | Verdict — justification |
+|---|---|---|---|
+| 7.44 | A_011 = b_xz x + c_xy x + b_yz y + 2c_yy y + b_xyz xy + 2b_zz z + c_yz z + c_xyz xz (p.61; txt :3466–3468) | :831 `A011 = b_xz*tx + c_xy*tx + b_yz*ty + no2*c_yy*ty + b_xyz*tx*ty + no2*b_zz*tz + c_yz*tz + c_xyz*tx*tz;` | **match** — 8/8 terms |
+| 7.45 | A_101 = a_xz x + 2c_xx x + a_yz y + c_xy y + a_xyz xy + 2a_zz z + c_xz z + c_xyz yz (txt :3470–3472) | :832 `A101 = a_xz*tx + no2*c_xx*tx + a_yz*ty + c_xy*ty + a_xyz*tx*ty + no2*a_zz*tz + c_xz*tz + c_xyz*ty*tz;` | **match** — 8/8 terms |
+| 7.46 | A_110 = a_xy x + 2b_xx x + 2a_yy y + b_xy y + a_yz z + b_xz z + a_xyz xz + b_xyz yz (txt :3474–3476) | :833 `A110 = a_xy*tx + no2*b_xx*tx + no2*a_yy*ty + b_xy*ty + a_yz*tz + b_xz*tz + a_xyz*tx*tz + b_xyz*ty*tz;` | **match** — 8/8 terms |
+| 7.47 | B = 2a_xx x − b_xy x + a_xy y − 2b_yy y + a_xz z − b_yz z − b_xyz xz + a_xyz yz (txt :3478–3480) | :829 `corr_B = no2*a_xx*tx - b_xy*tx + a_xy*ty - no2*b_yy*ty + a_xz*tz - b_yz*tz - b_xyz*tx*tz + a_xyz*ty*tz;` | **match** — all 8 terms incl. signs |
+| 7.48 | C = 2a_xx x − c_xz x + a_xy y − c_yz y − c_xyz xy + a_xz z − 2c_zz z + a_xyz yz (txt :3482–3484) | :830 `corr_C = no2*a_xx*tx - c_xz*tx + a_xy*ty - c_yz*ty - c_xyz*tx*ty + a_xz*tz - no2*c_zz*tz + a_xyz*ty*tz;` | **match** — all 8 terms incl. signs |
+
+#### A.3.8 Wall offset / hat coefficients (Eqs. 7.49–7.57, §7.3)
+
+Thesis mechanics: for a source cell incomplete at a wall, use the nearest
+complete cell and store offset (x_off,y_off,z_off); re-expand the fitted
+polynomial about the destination cell via the hat coefficients (7.49–7.50:
+â₀, one formula over two tags; 7.51–7.53 â_x/â_y/â_z; 7.54 d̂₀; 7.55 d̂_x;
+7.56/7.57 misprinted d̂_x = intended d̂_y/d̂_z; txt :3505–3543, PDF-verified).
+The hat transform is the Taylor shift of the polynomial ⇒ evaluating the
+source-cell polynomial at destination-frame positions x+offset.
+
+Code mechanics: the **carve** pre-pass (:408–565): detect GEO_NOTHING cells in
+the 8-candidate window (:457–461), shift the window one cell outward per axis
+(:487–508 `carve_window_off_covered_cells`), and evaluate **off-center** at
+the same relative destination position (`t_rel` moves with the window center;
+|t_rel| = 0.75 for a one-cell shift, :504–505; comment :414–415 cites
+"Schönherr 2015 thesis Eqs. 7.49-7.57"). Degenerate cases collapse to the
+mirrored home cell with a rate-limited warning (:545–565). The demotion
+docstring at :438–453 records the scope explicitly (see A.4-R2).
+
+| Eq | Thesis (print) | Code site + quote | Verdict — justification |
+|---|---|---|---|
+| 7.49–7.50 | â₀ = a₀ + x_off a_x + y_off a_y + z_off a_z + x_off²a_xx + y_off²a_yy + z_off²a_zz + x_off y_off a_xy + x_off z_off a_xz + y_off z_off a_yz (p.62; txt :3511–3516) — ONE formula, two tags | :494–508 `start = taint_hi ? nodes[0]-1 : nodes[0]+1; … t_rel += static_cast<dreal>(nodes[0]-start); nodes[0]=start; nodes[1]=start+1;` | **conv** (implementation route) — code refits on the shifted window and evaluates at t_rel = ∓0.75 = the destination's source-frame position; mathematically the same polynomial evaluation as the hat shift for \|offset\| ≤ 1 per axis. Not implemented: multi-cell/arbitrary offsets (thesis: "the principle works with arbitrary offsets", txt :3507); code takes the degenerate home-cell collapse instead (:545–565) |
+| 7.51 | â_x = a_x + 2x_off a_xx + y_off a_xy + z_off a_xz (txt :3518–3520) | as above | **conv** — folded into the same window-shift route (per-axis shift ⇒ derivatives transform identically to the hat rules for 1-cell offsets) |
+| 7.52 | â_y = a_y + 2y_off a_yy + x_off a_xy + z_off a_yz (txt :3522–3524) | as above | **conv** — as 7.51 |
+| 7.53 | â_z = a_z + 2z_off a_zz + x_off a_xz + y_off a_yz (txt :3526/3530) | as above | **conv** — as 7.51 |
+| 7.54 | d̂₀ = d₀ + x_off d_x + **y_off** d_y + z_off d_z + x_off y_off d_xy + x_off z_off d_xz + y_off z_off d_yz (txt :3527; print drops the y-subscript — thesis typo, PDF-verified) | as above | **conv** — as 7.49–7.50 (density polynomial refit on shifted window; d-family has no quadratic terms so the shift is already exact at d̂₀). Print typo recorded for this appendix's errata list |
+| 7.55 | d̂_x = d_x + y_off d_xy + z_off d_xz (txt :3528/3535) | as above | **conv** — as 7.51 |
+| 7.56 | d̂_y = d_y + x_off d_xy + z_off d_yz (txt :3532/3536; LHS misprinted as d̂_x — thesis typo, PDF-verified) | as above | **conv** — as 7.51 |
+| 7.57 | d̂_z = d_z + x_off d_xz + y_off d_yz (txt :3533/3537; LHS misprinted as d̂_x — thesis typo, PDF-verified) | as above | **conv** — as 7.51 |
+
+Carve-vs-thesis scope note: thesis ties the offset to "non-fluid nodes that
+are inappropriate as source nodes" (:3499 — wall nodes); the code gate is
+`GEO_NOTHING` coverage (:461). Both fire only at covered/wall cells; the
+conversion band map demotes carve to wall/degenerate-only
+(contract §2.1), so this entire family is primarily T11-docstring material
+(landed :438–453).
+
+### A.4 Verdict summary and concern ranking
+
+**Counts (57 equation tags = 56 formulas; 7.49+7.50 merged):**
+
+- **match: 45** (7.1–7.9, 7.10–7.17, 7.19–7.22, 7.25–7.28, 7.29–7.33,
+  7.34–7.37, 7.38–7.43, 7.44–7.48)
+- **convention-difference: 12** (7.18, 7.23, 7.24 — corrected-family/print-
+  erratum class; 7.49, 7.50, 7.51–7.57 — 9 hat-tags/8 formulas,
+  implementation-route class)
+- **bug: 0** (no code defect against the printed §7.2/§7.3 in the CM branch)
+
+**Concern ranking (no bugs → ranked by decision consequence), as resolved at commits 10–11:**
+
+- **R1 (RESOLVED):** Eqs. 7.18/7.23/7.24 (+ unprinted cyclic b/c analogs) —
+  code ≠ print. The code implements the closed, nodal-consistent, cyclically
+  complete family (§A.3.3-note proof); the printed set is internally
+  inconsistent under every strain carrier ⇒ suspected thesis-print errata
+  (same class as the verified 7.54/7.56/7.57 typos). **Commit 11 landed as
+  the plan's verified-no-op + errata record arm**: no code change; the
+  errata record documents the code's family in-place
+  (`amr_coupling.h:676–701`); T10 encodes the code family (not the print) as
+  the normative exactness reference (`test_amr_schonherr_exactness.cu`, case
+  T10c discriminates the families — code family green, print-aligned would
+  sit ~1e-5). A literal "align to printed §7.2" would degrade the scheme
+  (would break the Tests-8/9 exactness class and inject O(strain·Δx²)
+  errors at the destination cells). **T14 impact:** `a_0`/`b_0`/`c_0` carry
+  the 7.18 correction into the F2C destination velocity — the same family
+  choice propagates (§A.2.3 caveat); lock reused at commit 13.
+- **R2 (RESOLVED):** Eqs. 7.49–7.57 — the carve implements the 1-cell-shift
+  case of the hat extrapolation by refit+off-center evaluation (verified
+  equivalent for |offset| ≤ 1/axis, incl. multi-axis corner shifts);
+  arbitrary offsets unsupported (degenerate collapse). After the carve
+  demotion (valid faces never carve) this is wall-lane documentation: the
+  demotion record at `amr_coupling.h:438–453` states the |offset| ≤ 1 scope
+  and the under-the-band-map unreachability at valid faces explicitly;
+  `C2F_NO_CARVE`/`TNL_TEST_NO_CARVE` semantics unchanged. Tests 10–13/17
+  already pin the behavior.
+- **R3 (noted, no action beyond the docstring clause):** (a) coupling macros
+  use the force-free moment (`fx=0` fresh KS) — matches thesis §7.2 (no
+  force); if volume forcing ever reaches the band, the coupling velocity
+  excludes the Guo half-offset (thesis-consistent; the one-clause note now
+  sits at the macro read, `amr_coupling.h:585–590`).
+  (b) Thesis-print errata inventory recorded here: 7.54 missing
+  y-subscript; 7.56/7.57 LHS d̂_x for d̂_y/d̂_z; 7.49/7.50 dual tags on one
+  formula; (by verdict of this audit) the 7.18/7.23/7.24 family itself.
+
+### A.5 Flagged uncertainties
+
+- **U1 (investigated and closed at commit 11).** Musubi production-source
+  agreement on the R1 family: **source read — cannot discriminate; the
+  internal-consistency proof (§A.3.3-note) stands alone.** The shipping
+  Musubi source (`apes-suite/musubi-source`, `main` @ `81f8c4f13772f6d4af31f335e1e3f99b02726e25`,
+  read 2026-08-21; lineage of the prose-Qi's 2019 Musubi) implements **no**
+  §7.2 coefficient family anywhere: the default C2F `quadratic`
+  interpolation (`source/intp/mus_interpolate_quadratic_module.fpp`,
+  `fillFinerGhostsFromMe_quad_feq_fneq`) is a generic least-squares
+  quadratic fit over the octree-found source set
+  (`mus_interpolate_quad3D_leastSq` with runtime-assembled
+  `tem_intpMatrixLSF` matrices `((A^T)A)^{-1}A^T`, doc'd sizes (10,QQ) for
+  D3Q19/D3Q27), applied to f_eq/f_neq separately, with the non-equilibrium
+  part rescaled by `getNonEqFac_intp_coarse_to_fine(cω, fω)` — the
+  Dazhi-Yu/FH-style τ-rescale, not the σ-form cumulant transfer of thesis
+  ch.7. Exhaustive token search over `source/intp/` finds none of the
+  §7.2 machinery (`k_xy`/`k_xx`/`saxx`/`cumul`/`avg_k`), and the config
+  docs' advertised `'compact'` method name has **no implementation** in the
+  current shipping source (no `compact` token anywhere in `source/`;
+  `mus_interpolate_header_module.f90` :82–84 enumerates only
+  `weighted_average`/`linear`/`quadratic`). Qi et al. 2019's own
+  formulation (D3Q19, 4-source-element, 30-unknown LSQ) matches this same
+  generic-LSQ machinery and likewise cannot discriminate. The R1
+  singleton-vs-closed question never arises in any public Musubi code;
+  literature absence of complaints also does not discriminate (the
+  deviation sits inside the interpolation-error class). Outcome: U1 is
+  closed as **"source read — no §7.2 implementation exists shipping-side;
+  evidence stands on the nodal-consistency proof alone."**
+- **U2.** Eqs. 7.5–7.9 bracket placement in the print (ω_s multiplying the
+  whole bracket vs only the fraction) is typographically fragile in both
+  the txt and the rendered PDF; the bracketed reading was adopted because
+  any other makes k ≠ 0 at equilibrium. Code implements the bracketed
+  reading. If a reviewer reads the glyph layout otherwise, rows 7.5–7.9
+  would flip to "convention" — the physical content is unchanged.
+- **U3.** Whether the 7.18-family deviation was a deliberate correction by
+  the original implementer or an independent re-derivation of the closed
+  family — git history of `amr_coupling.h` (pre-branch) could attribute
+  it; not consulted in this lane (not needed for the verdict).
+- **U4.** The K_a-route choice matters beyond incompressible/CE-consistent
+  content: under compressible window content the code's a₀/a_xx (k-sum)
+  and the print's (singleton) differ genuinely (even after carrier
+  rescaling) — the code family's exactness is pinned to the
+  divergence-free/CE-consistent class, which is the T10 lock class. Not a
+  defect; a scope note for T10's test-field selection.
+
+### A.6 Top-3 findings for commits 10–13
+
+1. **The C2F CM branch matches the printed §7.2 at 54/56 formulas; the only
+   code↔print deviations are Eqs. 7.18, 7.23, 7.24 (+ cyclic b/c analogs),
+   and there the CODE is the consistent family.** Commit 11 landed as the
+   plan's "(possibly verified-no-op + carve demotion docstring)" arm: no
+   code change, the errata record is anchored in the code
+   (`amr_coupling.h:676–701`) and recorded here; T10 encodes the code
+   family (not the print) as the normative exactness reference. A literal
+   "align to printed §7.2" would degrade the scheme.
+2. **T14's minimal set is now exact and verified:** at t = (0,0,0) all five
+   A/B/C aggregates vanish identically and the avk gradient terms cancel →
+   F2C cumulants reduce to the five sk_* means; required machinery =
+   {sd0, sa0, sb0, sc0, sk_* (5)} + per-source k-moments + cumulants +
+   back-transform. **But** `sa0/sb0/sc0` retain the k-corrected sums, so
+   the F2C destination velocity inherits the R1 (7.18) family choice —
+   R1 was locked before commit 13 (T10c executable lock).
+3. **FH τ-rescale site census: 3 sites, not 2** — F2C kernel :1427 (τc/τf),
+   Lagrange C2F opt-out :1112 (τf/τc), **and** the `C2F_LINEAR_EXPLOSION`
+   opt-in debug branch :329 (τf/τc). The σ-form is the default CM branch
+   only. T14's "no τ-rescale" scope statement and T18 docs should name all
+   three; the explosion branch needs no change (opt-in, default-off).
