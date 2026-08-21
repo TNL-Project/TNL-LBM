@@ -23,15 +23,12 @@ struct D2Q9_BC_All
 		GEO_OUTFLOW_RIGHT,
 		GEO_OUTFLOW_RIGHT_INTERP,
 		GEO_NOTHING,
-		GEO_SYM_TOP,
-		GEO_SYM_BOTTOM,
-		GEO_SYM_LEFT,
-		GEO_SYM_RIGHT
+		GEO_SYMMETRY
 	};
 
 	__cuda_callable__ static bool isSymmetric(map_t mapgi)
 	{
-		return mapgi == GEO_SYM_TOP || mapgi == GEO_SYM_BOTTOM || mapgi == GEO_SYM_LEFT || mapgi == GEO_SYM_RIGHT;
+		return mapgi == GEO_SYMMETRY;
 	}
 
 	__cuda_callable__ static bool isFluid(map_t mapgi)
@@ -75,6 +72,62 @@ struct D2Q9_BC_All
 				COLL::collision(KS);
 				STREAMING::postCollisionStreaming(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				break;
+		}
+	}
+
+	// Bitmask of ghost half-spaces adjacent to a GEO_SYMMETRY cell.
+	// Each bit marks a side where the neighbor cell is GEO_NOTHING (the domain-frame ghost layer).
+	enum SYM_SIDES : std::uint8_t
+	{
+		SYM_XM = 1 << 0,  // ghost at x-1
+		SYM_XP = 1 << 1,  // ghost at x+1
+		SYM_YM = 1 << 2,  // ghost at y-1
+		SYM_YP = 1 << 3,  // ghost at y+1
+	};
+
+	// Closure for GEO_SYMMETRY cells adjacent to two GEO_NOTHING ghost half-spaces
+	// (corners of the domain frame).
+	// A population is unknown exactly when one of its non-zero components points through a ghost side
+	// ('p*' through the x-1 ghost, 'm*' through x+1, '*p' through y-1, and '*m' through y+1);
+	// each unknown gets the value of the within-cell population with every ghost-crossing component flipped
+	// (single reflection per orthogonal directions, double for diagonals).
+	// The fills are pure copies whose sources never cross a ghost side,
+	// so the result does not depend on where in the domain frame the GEO_SYMMETRY planes lie.
+	// direction slot for the letter trits (ex, ey) in {m=0, z=1, p=2} packed as 3*ex + ey
+	__cuda_callable__ static constexpr std::uint8_t sym_dir_slot(int code)
+	{
+		// clang-format off
+		switch (code) {
+			case 0:  return dir9::mm;
+			case 1:  return dir9::mz;
+			case 2:  return dir9::mp;
+			case 3:  return dir9::zm;
+			case 4:  return dir9::zz;
+			case 5:  return dir9::zp;
+			case 6:  return dir9::pm;
+			case 7:  return dir9::pz;
+			case 8:  return dir9::pp;
+			default: return dir9::zz;
+		}
+		// clang-format on
+	}
+
+	template <typename LBM_KS>
+	__cuda_callable__ static void applySymmetry(LBM_KS& KS, std::uint8_t ghosts)
+	{
+		for (int code = 0; code < 9; code++) {
+			if (code == 4)
+				continue;  // rest population never crosses a ghost side
+			const int ex = code / 3;
+			const int ey = code % 3;
+			// cx/cy are set when the direction's component crosses a ghost side
+			// ('p' crosses the minus side, 'm' crosses the plus side, 'z' crosses neither)
+			const bool cx = ex != 1 && (ghosts & (ex == 2 ? SYM_XM : SYM_XP));
+			const bool cy = ey != 1 && (ghosts & (ey == 2 ? SYM_YM : SYM_YP));
+			if (cx || cy) {
+				const int src = 3 * (cx ? 2 - ex : ex) + (cy ? 2 - ey : ey);
+				KS.f[sym_dir_slot(code)] = KS.f[sym_dir_slot(src)];
+			}
 		}
 	}
 
@@ -130,30 +183,24 @@ struct D2Q9_BC_All
 				TNL::swap(KS.f[dir9::mz], KS.f[dir9::pz]);
 				TNL::swap(KS.f[dir9::mp], KS.f[dir9::pm]);
 				break;
-			case GEO_SYM_LEFT:
-				KS.f[dir9::pm] = KS.f[dir9::mm];
-				KS.f[dir9::pz] = KS.f[dir9::mz];
-				KS.f[dir9::pp] = KS.f[dir9::mp];
-				COLL::computeDensityAndVelocity(KS);
-				break;
-			case GEO_SYM_RIGHT:
-				KS.f[dir9::mm] = KS.f[dir9::pm];
-				KS.f[dir9::mz] = KS.f[dir9::pz];
-				KS.f[dir9::mp] = KS.f[dir9::pp];
-				COLL::computeDensityAndVelocity(KS);
-				break;
-			case GEO_SYM_BOTTOM:
-				KS.f[dir9::mp] = KS.f[dir9::mm];
-				KS.f[dir9::zp] = KS.f[dir9::zm];
-				KS.f[dir9::pp] = KS.f[dir9::pm];
-				COLL::computeDensityAndVelocity(KS);
-				break;
-			case GEO_SYM_TOP:
-				KS.f[dir9::mm] = KS.f[dir9::mp];
-				KS.f[dir9::zm] = KS.f[dir9::zp];
-				KS.f[dir9::pm] = KS.f[dir9::pp];
-				COLL::computeDensityAndVelocity(KS);
-				break;
+			case GEO_SYMMETRY:
+				{
+					// Detect ghost half-spaces on all four sides, handling corners.
+					// The symmetry cell acts as a fluid cell
+					// and directions towards GEO_NOTHING determine the normal of the symmetry plane.
+					std::uint8_t ghosts = 0;
+					if (SD.map(xm, y, z) == GEO_NOTHING)
+						ghosts |= SYM_XM;
+					if (SD.map(xp, y, z) == GEO_NOTHING)
+						ghosts |= SYM_XP;
+					if (SD.map(x, ym, z) == GEO_NOTHING)
+						ghosts |= SYM_YM;
+					if (SD.map(x, yp, z) == GEO_NOTHING)
+						ghosts |= SYM_YP;
+					applySymmetry(KS, ghosts);
+					COLL::computeDensityAndVelocity(KS);
+					break;
+				}
 			default:
 				COLL::computeDensityAndVelocity(KS);
 				break;

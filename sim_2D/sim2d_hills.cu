@@ -62,8 +62,8 @@ struct StateLocal : State<NSE>
 		nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT);								 // left: inflow
 		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT_INTERP);	 // right: outflow
 
-		nse.setBoundaryY(1, BC::GEO_WALL);							// bottom: wall
-		nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_SYM_TOP);	// top: symmetry
+		nse.setBoundaryY(1, BC::GEO_WALL);							 // bottom: wall
+		nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_SYMMETRY);	 // top: symmetry
 
 		// extra layer needed due to A-A pattern
 		nse.setBoundaryX(0, BC::GEO_NOTHING);						// left

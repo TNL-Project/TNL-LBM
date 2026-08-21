@@ -27,12 +27,7 @@ struct D3Q7_BC_All
 		GEO_OUTFLOW_RIGHT,
 		GEO_NOTHING,
 		GEO_OUTFLOW_PE,
-		GEO_SYM_TOP,
-		GEO_SYM_BOTTOM,
-		GEO_SYM_LEFT,
-		GEO_SYM_RIGHT,
-		GEO_SYM_BACK,
-		GEO_SYM_FRONT
+		GEO_SYMMETRY
 	};
 
 	__cuda_callable__ static bool isFluid(map_t mapgi)
@@ -111,28 +106,21 @@ struct D3Q7_BC_All
 				// TODO: Kruger's eq (8.54) includes concentration imposed on the wall - does it diffusively propagate into the domain? -- Yes DH2022
 				break;
 
-			case GEO_SYM_TOP:
-				KS.f[zzm] = KS.f[zzp];
-				COLL::computeDensityAndVelocity(KS);
-				break;
-			case GEO_SYM_BOTTOM:
-				KS.f[zzp] = KS.f[zzm];
-				COLL::computeDensityAndVelocity(KS);
-				break;
-			case GEO_SYM_LEFT:
-				KS.f[pzz] = KS.f[mzz];
-				COLL::computeDensityAndVelocity(KS);
-				break;
-			case GEO_SYM_RIGHT:
-				KS.f[mzz] = KS.f[pzz];
-				COLL::computeDensityAndVelocity(KS);
-				break;
-			case GEO_SYM_BACK:
-				KS.f[zmz] = KS.f[zpz];
-				COLL::computeDensityAndVelocity(KS);
-				break;
-			case GEO_SYM_FRONT:
-				KS.f[zpz] = KS.f[zmz];
+			case GEO_SYMMETRY:
+				// Each cardinal direction going through a GEO_NOTHING ghost side
+				// is filled from its mirror partner (no diagonals in D3Q7).
+				if (SD.map(xm, y, z) == GEO_NOTHING)
+					KS.f[pzz] = KS.f[mzz];
+				if (SD.map(xp, y, z) == GEO_NOTHING)
+					KS.f[mzz] = KS.f[pzz];
+				if (SD.map(x, ym, z) == GEO_NOTHING)
+					KS.f[zpz] = KS.f[zmz];
+				if (SD.map(x, yp, z) == GEO_NOTHING)
+					KS.f[zmz] = KS.f[zpz];
+				if (SD.map(x, y, zm) == GEO_NOTHING)
+					KS.f[zzp] = KS.f[zzm];
+				if (SD.map(x, y, zp) == GEO_NOTHING)
+					KS.f[zzm] = KS.f[zzp];
 				COLL::computeDensityAndVelocity(KS);
 				break;
 

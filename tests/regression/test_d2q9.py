@@ -41,7 +41,7 @@ if TYPE_CHECKING:
 GEO_WALL = 1
 GEO_INFLOW_LEFT = 3
 GEO_NOTHING = 7
-GEO_SYM_TOP = 8
+GEO_SYMMETRY = 8
 
 SIMS = ["sim2d_1", "sim2d_2", "sim2d_hills", "sim2d_Taylor_Green"]
 
@@ -191,7 +191,7 @@ class TestSim2dHills:
         # freeze and vx spikes or drops. With the fix, vx at the SYM_TOP row
         # should match the fluid row below it.
         vx, wall = data["velocity_x"], data["wall"]
-        sym_rows = np.where((wall == GEO_SYM_TOP).any(axis=1))[0]
+        sym_rows = np.where((wall == GEO_SYMMETRY).any(axis=1))[0]
         assert sym_rows.size > 0, "no SYM_TOP cells found"
         y_sym, nx = int(sym_rows[0]), vx.shape[1]
         y_fluid = y_sym - 1
@@ -207,7 +207,7 @@ class TestSim2dHills:
 
     def test_sym_top_continuity(self, data: FieldData) -> None:
         vx, wall = data["velocity_x"], data["wall"]
-        y_sym = int(np.where((wall == GEO_SYM_TOP).any(axis=1))[0][0])
+        y_sym = int(np.where((wall == GEO_SYMMETRY).any(axis=1))[0][0])
         # Interior columns only: the bump wake reaches the slip row near the
         # inflow/outflow ends and would dominate the maximum there.
         nx = vx.shape[1]
