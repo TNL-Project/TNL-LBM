@@ -5,6 +5,7 @@ set(unit_test_sources
     test_decomposition.cu
     test_bc_symmetry.cu
     test_amr_schonherr_registration.cu
+    test_amr_schonherr_exactness.cu
     doctest_main.cu
 )
 
