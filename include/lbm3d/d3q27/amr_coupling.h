@@ -1426,10 +1426,125 @@ __global__ void cudaAMR_FineToCoarse(
 #endif
 	};
 
+#ifdef F2C_SCHONHERR
+	// ---- Schönherr compact-moment transfer (Schönherr 2015 thesis, Sec.
+	// 7.2, the sigma-form of the fine-to-coarse coupling; plan T14, opt-in
+	// with TNL_LBM_F2C_STRATEGY=F2C_SCHONHERR since commit 13 -- the DEFAULT
+	// strategy remains the Lagrava filter below until the T17 default
+	// flip) ----
+	// Sources: the destination cell's OWN 8 fine subcells (the cell-centered
+	// mapping of this kernel's docstring; plan registration
+	// F2C_SRC_ROW_OFFSET = 0, contract doc sec. 2 row (h)) -- no 4x4x4
+	// filter window, no lo = 0 window clamp, no box/Lagrava averaging, and
+	// NO Filippova-Hänel tau-rescale anywhere in this branch (the neq_scale
+	// of the default branch below). Per source cell the five independent
+	// second-order non-equilibrium moments are formed at the SOURCE (fine)
+	// grid rate omega_s = 1/tau_fine and donated to the Eqs. 7.10-7.28
+	// coefficient sums; the coarse destination sits at the window center
+	// t = (0,0,0), so only the polynomial constants d_0/a_0/b_0/c_0
+	// survive as the coarse macros (contract doc
+	// docs/AMR-schonherr-ch7-target-contract.md, appendix A.2.3 census). The
+	// velocity constants still inherit the Eq. 7.18/7.23/7.24 k-corrections
+	// through the full code family of the velocity fits (the A.4-R1
+	// decision, locked at commit 10 -- the print-family implementation is
+	// rejected by the T10c lock). The averaged k-moments keep the
+	// velocity-gradient corrections of Eqs. 7.29-7.33 (which cancel the
+	// fitted-gradient summands of the Step-F forms exactly at t = 0 -- the
+	// "avk retained" row), and the six second-order cumulants use the F2C
+	// sigma-form sigma_{f->c} = 2 with the DESTINATION (coarse) grid rate
+	// omega_d = 1/tau_coarse; third and higher central moments are zero
+	// (the CM mode filter, cf. col_cum.h), and the coarse DFs are
+	// reconstructed by the same cumulant back-transformation as the
+	// coarse-to-fine branch.
+
+	// relaxation rates of the source (fine) and destination (coarse) grids
+	const dreal omega_s = no1 / tau_fine;
+	const dreal omega_d = no1 / tau_coarse;
+
+	// Steps B-D (mirroring the coarse-to-fine branch): visit the own 8
+	// subcells and accumulate the polynomial coefficient sums; the 2x2x2
+	// subcell block is centered on the coarse destination, so the source
+	// local coordinates are (xn,yn,zn) in {+-1/2}^3
+	dreal sd0 = 0, sdx = 0, sdy = 0, sdz = 0, sdxy = 0, sdyz = 0, sdxz = 0, sdxyz = 0;
+	dreal sa0 = 0, sax = 0, say = 0, saz = 0, saxx = 0, sayy = 0, sazz = 0, saxy = 0, sayz = 0, saxz = 0, saxyz = 0;
+	dreal sb0 = 0, sbx = 0, sby = 0, sbz = 0, sbxx = 0, sbyy = 0, sbzz = 0, sbxy = 0, sbxz = 0, sbyz = 0, sbxyz = 0;
+	dreal sc0 = 0, scx = 0, scy = 0, scz = 0, scxx = 0, scyy = 0, sczz = 0, scxy = 0, scyz = 0, scxz = 0, scxyz = 0;
+	dreal sk_xy = 0, sk_yz = 0, sk_xz = 0, sk_xx_yy = 0, sk_xx_zz = 0;
+	for (int ibz = 0; ibz < 2; ibz++) {
+		const dreal zn = static_cast<dreal>(ibz) - n1o2;
+		const idx fz = fz0 + ibz;
+		for (int iby = 0; iby < 2; iby++) {
+			const dreal yn = static_cast<dreal>(iby) - n1o2;
+			const idx fy = fy0 + iby;
+			for (int ibx = 0; ibx < 2; ibx++) {
+				const dreal xn = static_cast<dreal>(ibx) - n1o2;
+				const idx fx = fx0 + ibx;
+
+				AMR_CM_MACROS_AND_KMOMENTS(read_fine_df, fx, fy, fz);
+
+				AMR_CM_PI_NEQ;
+
+				AMR_CM_KMOMENTS(omega_s);
+
+				AMR_CM_FIT_ACCUMULATE;
+			}
+		}
+	}
+
+	// Steps C-D: density and velocity polynomial coefficients and the
+	// destination macros at t = (0,0,0) -- rho_f = d_0, vx_f = a_0,
+	// vy_f = b_0, vz_f = c_0 (AMR_CM_FIT_COEFFICIENTS folds rho_f directly;
+	// the tx/ty/tz lvalues exist for the Step E cross terms below, all of
+	// which carry at least one of them and vanish)
+	dreal rho_f = 0, vx_f = 0, vy_f = 0, vz_f = 0;
+	const dreal tx = 0, ty = 0, tz = 0;
+	AMR_CM_FIT_COEFFICIENTS(tx, ty, tz);
+	AMR_CM_EVALUATE(tx, ty, tz);
+
+	// Steps E-F: averaged second-order moments with the velocity-gradient
+	// corrections (Eqs. 7.29-7.33) and the second-order cumulants at the
+	// coarse destination (Eqs. 7.38-7.48); sigma_{f->c} = 2, omega_d is the
+	// destination (coarse) grid rate -- AMR_CM_CORRECTED_CUMULANTS
+	AMR_CM_CORRECTED_CUMULANTS(no2);
+
+	// allowed-GEO predicate for the coarse-cell writes of this kernel
+	// (Defect-2 fix), same semantics as the default branch below
+	const auto map_val = coarse_SD.map(x, y, z);
+	const bool is_coupling_cell = (map_val == BC::GEO_AMR_INTERFACE || map_val == BC::GEO_NOTHING);
+
+	// Steps G-H: cumulant back-transformation into the coarse DFs (Geier
+	// 2015 Eqs. 81-96) with the pattern-dependent store orientation of the
+	// default branch (AB writes logical df_out natural; AA stores natural
+	// for an even next substep, twisted for an odd one) --
+	// AMR_CM_BACKTRANSFORM
+	if (is_coupling_cell) {
+		const auto store_coarse_df = [&coarse_SD, coarse_even_iter, x, y, z](int q, dreal f) -> void
+		{
+	#ifdef AB_PATTERN
+			static_cast<void>(coarse_even_iter);
+			coarse_SD.df(df_out, q, x, y, z) = f;
+	#elif defined(AA_PATTERN)
+			if (coarse_even_iter)
+				coarse_SD.df(df_cur, q, x, y, z) = f;
+			else
+				coarse_SD.df(df_cur, opposite_direction(q), x, y, z) = f;
+	#endif
+		};
+
+		AMR_CM_BACKTRANSFORM(store_coarse_df);
+
+		// macros for coupling cells (GEO_AMR_INTERFACE ring or GEO_NOTHING
+		// frozen hidden cells): authoritative coupling value for output
+		coarse_SD.macro(MACRO::e_rho, x, y, z) = rho_f;
+		coarse_SD.macro(MACRO::e_vx, x, y, z) = vx_f;
+		coarse_SD.macro(MACRO::e_vy, x, y, z) = vy_f;
+		coarse_SD.macro(MACRO::e_vz, x, y, z) = vz_f;
+	}
+#else
 	// Lagrava spatial filter (see the kernel docstring) -- the DEFAULT
 	// filter; defining F2C_BOX_AVERAGE selects the original 1/8 box
 	// average of the 8 subcells as a compile-time fallback
-#ifndef F2C_BOX_AVERAGE
+	#ifndef F2C_BOX_AVERAGE
 	// tensor-product 4-node-per-axis Lagrange projection onto the coarse
 	// cell center t = fx0 + 0.5 (fine indexer coordinates): the nominal
 	// per-axis window {fx0-1, ..., fx0+2} covers the 2x2x2 subcell block
@@ -1498,7 +1613,7 @@ __global__ void cudaAMR_FineToCoarse(
 			}
 		}
 	}
-#else
+	#else
 	// plain per-direction arithmetic average of the 8 fine subcells covered
 	// by this coarse cell. The (1/8) factor IS the volumetric
 	// fine-to-coarse conversion -- no other volume factor.
@@ -1513,7 +1628,7 @@ __global__ void cudaAMR_FineToCoarse(
 	}
 	for (int q = 0; q < CONFIG::Q; q++)
 		f_avg[q] *= dreal(0.125);
-#endif
+	#endif
 
 	// coarse macros from the filtered DFs
 	LBM_KS KS;
@@ -1548,14 +1663,14 @@ __global__ void cudaAMR_FineToCoarse(
 
 			// coarse DF write in the orientation the NEXT coarse substep will read
 			// (see the kernel docstring) -- the other pattern-dependent site
-#ifdef AB_PATTERN
+	#ifdef AB_PATTERN
 			// AB: write to logical df_out, natural orientation -- the next global
 			// updateKernelData() rotates the coarse frames, so this physical
 			// array is the df_cur the next coarse kernel launch pulls from
 			// (coarse_even_iter is AA-only state)
 			static_cast<void>(coarse_even_iter);
 			coarse_SD.df(df_out, q, x, y, z) = f_coarse;
-#elif defined(AA_PATTERN)
+	#elif defined(AA_PATTERN)
 			if (coarse_even_iter)
 				// next substep is even ("reflect"): reads the same site, same
 				// direction -- store natural
@@ -1565,7 +1680,7 @@ __global__ void cudaAMR_FineToCoarse(
 				// cell in direction q is pulled from the opposite-direction slot
 				// -- store twisted
 				coarse_SD.df(df_cur, opposite_direction(q), x, y, z) = f_coarse;
-#endif
+	#endif
 		}
 
 		// macros for coupling cells (GEO_AMR_INTERFACE ring or GEO_NOTHING
@@ -1575,4 +1690,5 @@ __global__ void cudaAMR_FineToCoarse(
 		coarse_SD.macro(MACRO::e_vy, x, y, z) = KS.vy;
 		coarse_SD.macro(MACRO::e_vz, x, y, z) = KS.vz;
 	}
+#endif	// F2C_SCHONHERR
 }
