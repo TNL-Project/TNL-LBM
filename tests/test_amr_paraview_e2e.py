@@ -34,7 +34,14 @@ from vtkmodules.numpy_interface import dataset_adapter as dsa
 EXPECTED_FIELDS = ("rho", "vx", "vy", "vz", "vtkGhostType")
 EXPECTED_LEVELS = 2
 EXPECTED_BLOCKS_PER_LEVEL = 1
-EXPECTED_CELLS_PER_LEVEL = 64**3  # 262144
+# per-level block cell counts: level 0 is the 64^3 global domain; level 1 is
+# block->local = 2*K - 2 = 62 rows/axis for the K = 32 res-1 footprint on the
+# Schönherr-ch7 branch (the T0' fine-interior re-anchor shifted the interior
+# one fine cell inward per face, plan §1.1 band map, commit 4 -- fix-forward
+# of the stale pre-reanchor 64**3-per-level pin, exposed by the refreshed
+# root capture; the OverlappingAMR writer emits block->local only, no
+# overlap rows, cf. tests/interface_seam_metric.py's reader note)
+EXPECTED_CELLS = {0: 64**3, 1: 62**3}  # 262144, 238328
 EXPECTED_REFINED_CELLS = 32**3  # coarse footprint [16, 48)^3
 # rho sanity bound: the sim initializes the analytical Taylor-Green density
 # profile initialized in sim_AMR.cu (on-branch commit 19b88d3), not rho == 1 — rho = 1 + 3*V0^2/16*(cos2kx+cos2ky)*
@@ -101,8 +108,8 @@ def check_values(oamr):
         data = dsa.WrapDataObject(block)
         n_cells = block.GetNumberOfCells()
         report(
-            n_cells == EXPECTED_CELLS_PER_LEVEL,
-            f"level {level} cell count is {EXPECTED_CELLS_PER_LEVEL}",
+            n_cells == EXPECTED_CELLS[level],
+            f"level {level} cell count is {EXPECTED_CELLS[level]}",
             n_cells,
         )
         rho = np.asarray(data.CellData["rho"])
