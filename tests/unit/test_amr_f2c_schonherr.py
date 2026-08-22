@@ -1,19 +1,19 @@
-"""Compile-and-run exactness locks for the F2C_SCHONHERR opt-in (T14).
+"""Compile-and-run exactness locks for the F2C_SCHONHERR branch (T14).
 
 Drives the two ``test_amr_f2c_schonherr_{ab,aa}`` executables — one binary
 per streaming pattern, compiled from ``tests/test_amr_f2c_schonherr.cu``
 with ``F2C_SCHONHERR`` hardcoded (Schönherr ch7 conversion, commit 13 /
-plan row 14).
+plan row 14; the default strategy since commit 15 / T17).
 
 The define is a per-TU compile-time switch selecting the thesis §7.2
 σ-form compact-moment transfer (σ = 2) inside ``cudaAMR_FineToCoarse`` and
-cannot share a binary with the default Lagrava-filter build, so it locks
+cannot share a binary with the F2C_LAGRAVA opt-out build, so it locks
 as standalone per-pattern binaries — the same pytest-side,
 build-variants-in-the-default-build idiom as the ``test_amr_c2f_smoke_*``
-debug-define binaries.  The default build
-(``tests/test_amr_coupling.cu`` + ``tests/run-amr-tests.sh``) pins the
-Lagrava path separately, so the two batteries are green under both
-strategies.
+debug-define binaries.  The strategy builds of
+``tests/test_amr_coupling.cu`` (+ ``tests/run-amr-tests.sh``) pin the
+Lagrava opt-out path separately, so the two batteries are green under
+both strategies.
 
 Each binary runs the F2C transfer on (i) a uniform field, (ii) a
 CE-consistent linear field, and (iii) a CE-consistent quadratic-velocity

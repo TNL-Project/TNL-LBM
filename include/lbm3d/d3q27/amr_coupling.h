@@ -1428,16 +1428,16 @@ __global__ void cudaAMR_FineToCoarse(
 
 #ifdef F2C_SCHONHERR
 	// ---- Schönherr compact-moment transfer (Schönherr 2015 thesis, Sec.
-	// 7.2, the sigma-form of the fine-to-coarse coupling; plan T14, opt-in
-	// with TNL_LBM_F2C_STRATEGY=F2C_SCHONHERR since commit 13 -- the DEFAULT
-	// strategy remains the Lagrava filter below until the T17 default
-	// flip) ----
+	// 7.2, the sigma-form of the fine-to-coarse coupling; plan T14,
+	// introduced as the TNL_LBM_F2C_STRATEGY=F2C_SCHONHERR opt-in at
+	// commit 13 and the DEFAULT strategy since commit 15 / T17 -- the
+	// Lagrava filter below is the F2C_LAGRAVA opt-out) ----
 	// Sources: the destination cell's OWN 8 fine subcells (the cell-centered
 	// mapping of this kernel's docstring; plan registration
 	// F2C_SRC_ROW_OFFSET = 0, contract doc sec. 2 row (h)) -- no 4x4x4
 	// filter window, no lo = 0 window clamp, no box/Lagrava averaging, and
 	// NO Filippova-Hänel tau-rescale anywhere in this branch (the neq_scale
-	// of the default branch below). Per source cell the five independent
+	// of the Lagrava opt-out branch below). Per source cell the five independent
 	// second-order non-equilibrium moments are formed at the SOURCE (fine)
 	// grid rate omega_s = 1/tau_fine and donated to the Eqs. 7.10-7.28
 	// coefficient sums; the coarse destination sits at the window center
@@ -1541,9 +1541,10 @@ __global__ void cudaAMR_FineToCoarse(
 		coarse_SD.macro(MACRO::e_vz, x, y, z) = vz_f;
 	}
 #else
-	// Lagrava spatial filter (see the kernel docstring) -- the DEFAULT
-	// filter; defining F2C_BOX_AVERAGE selects the original 1/8 box
-	// average of the 8 subcells as a compile-time fallback
+	// Lagrava spatial filter (see the kernel docstring) -- the
+	// F2C_LAGRAVA opt-out branch (the default until the commit-15 / T17
+	// flip); defining F2C_BOX_AVERAGE selects the original 1/8 box
+	// average of the 8 subcells inside this branch
 	#ifndef F2C_BOX_AVERAGE
 	// tensor-product 4-node-per-axis Lagrange projection onto the coarse
 	// cell center t = fx0 + 0.5 (fine indexer coordinates): the nominal
