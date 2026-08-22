@@ -14,14 +14,18 @@ set(TNL_LBM_C2F_STRATEGY "" CACHE STRING "C2F strategy define for AMR targets (C
 
 # optional F2C transfer strategy switch for AMR experiments (see
 # include/lbm3d/d3q27/amr_coupling.h); e.g. configure with
-#   cmake -B build -DTNL_LBM_F2C_STRATEGY=F2C_BOX_AVERAGE
-# The default (empty) builds the 4x4x4 Lagrange filter; F2C_BOX_AVERAGE
-# opts out to the original 1/8 box average of the 8 subcells;
-# F2C_SCHONHERR (2026-08-21, commit 13 of the Schönherr ch7 conversion)
-# opts in to the thesis sec. 7.2 sigma-form compact-moment transfer
-# (sigma = 2; no tau-rescale, no f_avg, no lo = 0 clamp, no 4x4x4 window)
-# -- default remains the Lagrava filter until the T17 default flip.
-set(TNL_LBM_F2C_STRATEGY "" CACHE STRING "F2C transfer strategy define for AMR targets (F2C_BOX_AVERAGE, F2C_SCHONHERR)")
+#   cmake -B build -DTNL_LBM_F2C_STRATEGY=F2C_LAGRAVA
+# The default (F2C_SCHONHERR, since 2026-08-22 -- commit 15 / T17 of the
+# Schönherr ch7 conversion) builds the thesis sec. 7.2 sigma-form
+# compact-moment transfer (sigma = 2; no tau-rescale, no f_avg, no
+# lo = 0 clamp, no 4x4x4 window). -DTNL_LBM_F2C_STRATEGY=F2C_LAGRAVA
+# opts out to the 4x4x4 Lagrange filter (the pre-conversion default): it
+# is a named no-op define -- the kernel splits on #ifdef F2C_SCHONHERR
+# only (see the #else branch of cudaAMR_FineToCoarse), so every other
+# value, including the empty string, lands on the same Lagrava branch.
+# F2C_BOX_AVERAGE keeps selecting the original 1/8 box average of the 8
+# subcells inside that else-branch.
+set(TNL_LBM_F2C_STRATEGY "F2C_SCHONHERR" CACHE STRING "F2C transfer strategy define for AMR targets (default F2C_SCHONHERR; F2C_LAGRAVA opts out to the 4x4x4 Lagrange filter, F2C_BOX_AVERAGE to the 1/8 box average)")
 
 # optional C2F carve opt-out switch (change 5 of the AMR interface
 # redesign -- the 2-cell CM window shifts one cell outward wherever it

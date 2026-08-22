@@ -29,15 +29,17 @@ foreach(test_name IN ITEMS ${AMR_TESTS})
         # sim_AMR): since the T15 strategy re-scope (commit 14 of the
         # Schönherr ch7 conversion) test_amr_coupling.cu pins BOTH
         # strategies natively via compile-time strategy-split expectations
-        # -- the default build (empty TNL_LBM_F2C_STRATEGY) asserts the
-        # Lagrava filter as the opt-out authority, a
-        # -DTNL_LBM_F2C_STRATEGY=F2C_SCHONHERR build asserts the Schönherr
-        # mean-density transfer semantics with the Lagrava-only lo=0 clamp
-        # locks explicitly deferred -- so these binaries compile AND run
-        # green under either build; run-amr-tests.sh itself drives only the
-        # default build (it hardcodes ./build), and the Schönherr branch's
-        # dedicated exactness locks live in the test_amr_f2c_schonherr
-        # binaries below
+        # -- since the T17 default flip (commit 15) the default build (the
+        # TNL_LBM_F2C_STRATEGY cache default F2C_SCHONHERR) asserts the
+        # Schönherr mean-density transfer semantics, a
+        # -DTNL_LBM_F2C_STRATEGY=F2C_LAGRAVA build asserts the Lagrava
+        # filter as the opt-out authority (with the Lagrava-only lo=0
+        # clamp locks live there and explicitly deferred on the Schönherr
+        # default) -- so these binaries compile AND run green under either
+        # build; run-amr-tests.sh itself drives only the default build
+        # (it hardcodes ./build), and the Schönherr branch's dedicated
+        # exactness locks live in the test_amr_f2c_schonherr binaries
+        # below
         if(TNL_LBM_F2C_STRATEGY)
             target_compile_definitions(${target} PRIVATE ${TNL_LBM_F2C_STRATEGY})
         endif()
@@ -90,16 +92,16 @@ foreach(smoke_name smoke_define IN ZIP_LISTS C2F_SMOKE_NAMES C2F_SMOKE_DEFINES)
 endforeach()
 
 # Schönherr ch7 conversion (commit 13, plan T14): compile-and-run exactness
-# locks for the F2C_SCHONHERR fine-to-coarse opt-in (the thesis sec. 7.2
+# locks for the F2C_SCHONHERR fine-to-coarse branch (the thesis sec. 7.2
 # sigma-form compact-moment transfer, sigma = 2, sharing the T13 AMR_CM_*
-# helpers). The define is a per-TU compile-time switch inside
-# cudaAMR_FineToCoarse and cannot share a binary with the default Lagrava
-# build (ODR hazard on the kernel template symbol), so the locks smoke as
-# standalone per-pattern binaries with the define HARDCODED per target (no
-# new cache option is wired; the opt-in itself is driven via
-# TNL_LBM_F2C_STRATEGY in sim_AMR/CMakeLists.txt). Driven by
-# tests/unit/test_amr_f2c_schonherr.py, NOT by run-amr-tests.sh (the 7/7
-# suite pins the default Lagrava path and stays untouched).
+# helpers; the DEFAULT branch since the commit-15 T17 flip). The define is
+# a per-TU compile-time switch inside cudaAMR_FineToCoarse and cannot share
+# a binary with the Lagrava opt-out build (ODR hazard on the kernel
+# template symbol), so the locks smoke as standalone per-pattern binaries
+# with the define HARDCODED per target (no new cache option is wired; the
+# strategy selection itself is driven via TNL_LBM_F2C_STRATEGY in
+# sim_AMR/CMakeLists.txt). Driven by tests/unit/test_amr_f2c_schonherr.py,
+# NOT by run-amr-tests.sh (the 7/7 suite stays untouched).
 foreach(pattern IN ITEMS ab aa)
     string(TOUPPER "${pattern}" pattern_upper)
     set(target "test_amr_f2c_schonherr_${pattern}")
