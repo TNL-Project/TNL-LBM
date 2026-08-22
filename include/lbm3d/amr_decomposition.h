@@ -187,8 +187,11 @@ void createAMRBlocks(LBM<CONFIG>& lbm, const std::vector<AMR_Region<CONFIG>>& re
 		// 2-coarse-cell-thin axis would give the outermost (c=0) ring row of
 		// one face and the depth-1 (c=1) F2C destination row of the opposite
 		// face to the same cell -- a dual-role row the band structure does
-		// not admit -- and the fine interior (local 2 for gs = 2) would also
-		// underflow the F2C filter's 4-node window
+		// not admit under either F2C strategy -- and the fine interior
+		// (local 2 for gs = 2) would also put the F2C sources of the
+		// destination cell into the C2F fill rows (the own-8 subcells under
+		// the F2C_SCHONHERR transfer default; the Lagrava opt-out's 4-node
+		// window would additionally underflow the storage extent)
 		if (region.size_coarse.x() < 3)
 			reject(
 				fmt::format(

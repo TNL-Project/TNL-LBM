@@ -58,10 +58,13 @@ struct AMRConservationStats
  *    the coarse kernel is their only writer -- fine feedback reaches them
  *    through streaming from the skin cells the interior F2C wrote at the
  *    end of the previous cycle (step 4 below),
- * 4. fine-to-coarse transfer: `cudaAMR_FineToCoarse` projects the
- *    Lagrava-filtered fine state back onto the frozen GEO_NOTHING skin
- *    cells of level L-1, reading the fine level's rotation-1 frame (the
- *    post-substep-2 array; see `launchFineToCoarseTransfersInterior`),
+ * 4. fine-to-coarse transfer: `cudaAMR_FineToCoarse` transfers the
+ *    strategy-selected fine state (the Schönherr compact-moment
+ *    reconstruction of the F2C_SCHONHERR default; the Lagrava-filtered
+ *    fine state under the F2C_LAGRAVA opt-out) back onto the frozen
+ *    GEO_NOTHING skin cells of level L-1, reading the fine level's
+ *    rotation-1 frame (the post-substep-2 array; see
+ *    `launchFineToCoarseTransfersInterior`),
  * 5. coarse-to-fine transfer of frame 0: `updateKernelDataForLevel(L, 0)`
  *    + `cudaAMR_CoarseToFine` fills the fine ghost rows in the physical
  *    frame the next cycle's substep 1 consumes,
@@ -1054,14 +1057,17 @@ void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level)
  * the footprint) and launches `cudaAMR_FineToCoarse` over each rectangle.
  * The under-footprint coarse cells are frozen as GEO_NOTHING (no
  * stream/collide); the written cells' DFs are set exclusively by this
- * transfer — Lagrava-filtered fine-averaged DFs, full overwrite. The deep
- * frozen core is never written (and never read: the coarse C2F stencil
+ * transfer — the strategy-selected F2C state (F2C_SCHONHERR default;
+ * Lagrava-filtered fine-averaged DFs under the F2C_LAGRAVA opt-out),
+ * full overwrite. The deep frozen
+ * core is never written (and never read: the coarse C2F stencil
  * reaches at most 1 cell into the footprint). This is the two-way feedback
  * channel: fine-interior information reaches the coarse lattice through
  * the written skin cells, which the collision-active ring cells stream
- * from at the next coarse step. Every written skin cell reads its own
- * fine subcells plus the window clamp of the kernel (lo = 0, fine
- * interior only). When \ref couplings is empty (no marked interface
+ * from at the next coarse step. Every written skin cell reads fine state
+ * of the fine interior only (its own 8 subcells under the F2C_SCHONHERR
+ * default; the window with the kernel's lo = 0 interior clamp under the
+ * Lagrava opt-out). When \ref couplings is empty (no marked interface
  * cells), this is a silent no-op (SimInit logged a warning).
  */
 template <typename NSE>
@@ -1275,9 +1281,10 @@ void State_AMR<NSE>::SimUpdate()
 	// declared per the cycle contract.
 	for (int L = 1; L <= this->nse.max_level; L++) {
 		// step 4: fine-to-coarse, reading the rotation-1 frame (the
-		// post-substep-2 array): inject the (Lagrava-filtered) fine state
-		// into the frozen GEO_NOTHING cells of the 6 skin rectangles of
-		// each fine footprint (two-way feedback). Ring cells
+		// post-substep-2 array): inject the strategy-selected fine state
+		// (F2C_SCHONHERR default; Lagrava-filtered under the F2C_LAGRAVA
+		// opt-out) into the frozen GEO_NOTHING cells of the 6 skin
+		// rectangles of each fine footprint (two-way feedback). Ring cells
 		// stream+collide only -- the ring F2C launch was removed (gate B
 		// ruling, D.1 hard-delete) and the fine feedback reaches them
 		// through streaming from the freshly F2C-written skin on the next
