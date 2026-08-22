@@ -222,7 +222,7 @@ FetchContent_MakeAvailable(magic_enum)
 
 FetchContent_Declare(TNL
     GIT_REPOSITORY https://gitlab.com/tnl-project/tnl.git
-    GIT_TAG 0.4.1
+    GIT_TAG 0.4.2
     SYSTEM
     EXCLUDE_FROM_ALL
 )
