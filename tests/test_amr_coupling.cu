@@ -14,6 +14,29 @@
 // orientation (df_cur[opposite(q), site] holds direction q, see
 // streaming_AA.h and the kernel docstrings), so the fill/verify helpers
 // below are parametrized by the storage parity and cover both A-A states.
+//
+// F2C STRATEGY SPLIT (commit 14 / plan T15 of
+// .omo/plans/schonherr-ch7-conversion.md): this suite pins the
+// fine-to-coarse transfer under BOTH compile-time strategies of
+// cudaAMR_FineToCoarse:
+//   - default build (no -D define): the LAGRAVA 4x4x4 tensor-product
+//     filter -- since the T14 strategy split this is the opt-out
+//     authority for the alternative branch (the default until the T17
+//     default flip), so the Lagrava-only locks below carry an explicit
+//     "Lagrava (opt-out) branch" anchor in their comments and report
+//     strings;
+//   - -DF2C_SCHONHERR (the TNL_LBM_F2C_STRATEGY=F2C_SCHONHERR arm): the
+//     Schönherr sec. 7.2 sigma-form compact-moment transfer -- the
+//     strategy-split expectations below assert its MEAN-DENSITY transfer
+//     semantics (destination density == d0 == the mean of the
+//     destination cell's own 8 subcell densities; NO conservation claim,
+//     plan T15/T4a-successor).
+// Tests whose locks only exist under Lagrava machinery semantics (the
+// lo = 0 window-clamp sentinels, Tests 15/18) stay ON the Lagrava branch
+// (#ifndef F2C_SCHONHERR) with an explicit deferral report on the arm;
+// strategy-independent machinery (storability guard, Defect-2 allowed-GEO
+// store guards, frame-orientation stores) is locked once by the shared
+// tests and not duplicated per strategy.
 
 #include <algorithm>
 #include <array>
@@ -43,6 +66,16 @@ using NSE_CONFIG = LBM_CONFIG<
 constexpr const char* pattern_name = "AA";
 #else
 constexpr const char* pattern_name = "AB";
+#endif
+
+// T15 (commit 14, plan row 15): the F2C strategy this TU pins -- the
+// Lagrava filter is the default until the T17 default flip, so on the
+// default build the locks below are the LAGRAVA (OPT-OUT) authority; the
+// F2C_SCHONHERR arm asserts the Schönherr mean-density transfer instead
+#ifdef F2C_SCHONHERR
+constexpr const char* f2c_strategy_name = "F2C_SCHONHERR arm";
+#else
+constexpr const char* f2c_strategy_name = "Lagrava (opt-out) branch";
 #endif
 
 using idx = typename TRAITS::idx;
@@ -461,10 +494,15 @@ void test_uniform_coarse_to_fine()
 	}
 }
 
-// Test 2: uniform field, fine-to-coarse -- the coarse DFs after the Lagrava
-// 1/8 averaging must equal the equilibrium of the same uniform field (all
-// four parity combinations of the stored fine state and the next consuming
-// coarse substep are covered)
+// Test 2: uniform field, fine-to-coarse -- the coarse DFs after the F2C
+// transfer must equal the equilibrium of the same uniform field (all four
+// parity combinations of the stored fine state and the next consuming coarse
+// substep are covered). BRANCH-TOLERANT under the T15 strategy split: the
+// constant field is exact under BOTH the Lagrava (opt-out) filter (any
+// normalized weighted average of a constant is the constant) and the
+// F2C_SCHONHERR arm (the subcell mean d0 of a constant density is that
+// density and all non-equilibrium moments vanish, both reducing to the same
+// equilibrium).
 void test_uniform_fine_to_coarse()
 {
 	const dreal rho0 = 1.0, u0 = 0.04, v0 = 0.01, w0 = -0.02;
@@ -513,13 +551,13 @@ void test_uniform_fine_to_coarse()
 							}
 							max_err = std::max<double>(max_err, std::abs(actual - expected[q]));
 						}
-			report(
-				bad == 0,
-				fmt::format(
-					"Test 2 uniform fine-to-coarse (fine_even={}, coarse_even={}): all 27 DFs match equilibrium (max |err| = {:.3e})",
-					fine_even_iter, coarse_even_iter, max_err
-				)
-			);
+		report(
+			bad == 0,
+			fmt::format(
+				"Test 2 uniform fine-to-coarse (fine_even={}, coarse_even={}) [{}]: all 27 DFs match equilibrium (max |err| = {:.3e})",
+				fine_even_iter, coarse_even_iter, f2c_strategy_name, max_err
+			)
+		);
 		}
 	}
 }
@@ -607,21 +645,36 @@ void test_linear_gradient_coarse_to_fine()
 	);
 }
 
-// Test 4a: quadratic density field, fine-to-coarse -- with the default 4x4x4
-// Lagrava filter the coarse cell DF moment after the transfer equals the
-// fine field value at the coarse cell center (the projection is exact for
-// cubic fields, hence for this quadratic one); the non-equilibrium
-// rescaling preserves the zeroth moment by construction. (Polarity fix
-// P0.1: this test previously asserted the 1/8 box average of the 8
-// subcells, which the field's quadratic content deliberately distinguishes
-// from the projection; the Lagrava projection is the intended default.)
+// Test 4a: quadratic density field, fine-to-coarse -- strategy-split
+// expectations (T15 re-scope, commit 14 / plan row 15):
+//   - Lagrava (opt-out) branch (default build): with the 4x4x4 Lagrava
+//     filter the coarse cell DF moment after the transfer equals the fine
+//     field value at the coarse cell center (the projection is exact for
+//     cubic fields, hence for this quadratic one); the Filippova-Hanel
+//     non-equilibrium rescaling preserves the zeroth moment by
+//     construction. (Polarity fix P0.1: this test previously asserted the
+//     1/8 box average of the 8 subcells, which the field's quadratic
+//     content deliberately distinguishes from the projection; the Lagrava
+//     projection is the intended default.)
+//   - F2C_SCHONHERR arm: MEAN-DENSITY TRANSFER (the T4a successor of plan
+//     T15) -- the destination density equals d0 == the mean of the
+//     destination cell's own 8 subcell densities (here the mean of the two
+//     x-subcell values; the sigma-form cumulant reconstruction preserves
+//     the zeroth moment of d0 exactly, cf. the L5 lock of
+//     tests/test_amr_f2c_schonherr.cu). This pins the subcell-mean reading
+//     of the transfer and states NO conservation claim: for nonlinear
+//     content the subcell mean and the coarse-center field value differ
+//     (by 7.8e-4 for this marker, ~80x above the gate), so exactly one of
+//     the two branch expectations can hold per build.
 void test_mass_conservation_fine_to_coarse()
 {
 	const bool fine_even_iter = false, coarse_even_iter = true;
 
-	// non-uniform (quadratic) density field on the fine level: both filters
-	// are globally conservative for ANY field, but only the Lagrava
-	// projection reproduces the coarse-center value of a quadratic exactly
+	// non-uniform (quadratic) density field on the fine level: both F2C
+	// strategies are globally conservative for ANY field, but only the
+	// Lagrava projection reproduces the coarse-center value of a quadratic
+	// exactly -- the quadratic content is what discriminates the two
+	// strategy-split expectations below
 	const auto rho_fine = [](double x) -> double
 	{
 		const double dx = (x - 7.5) / 4.0;
@@ -659,9 +712,29 @@ void test_mass_conservation_fine_to_coarse()
 	);
 	coarse.copyToHost();
 
-	// exact expectation: the Lagrange projection reproduces the quadratic
-	// field at the coarse cell center t = 2x + 0.5 (fine indexer
-	// coordinates) -- valid on every window, see the kernel docstring
+	// exact expectation: strategy-split per the Test-4a block comment --
+	// [T15, commit 14]
+#ifdef F2C_SCHONHERR
+	// mean-density transfer (the T4a successor; NO conservation claim): the
+	// destination density is d0 == the subcell mean -- for the x-only
+	// quadratic marker, the mean of rho(2x) and rho(2x+1); the L5 lock of
+	// tests/test_amr_f2c_schonherr.cu pins the same identity on the
+	// dedicated-suite geography (dedupe: one machinery class, two
+	// geographies -- this case owns the full-block launch class)
+	const auto rho_expected = [&rho_fine](idx x) -> double
+	{
+		return (rho_fine(2 * x) + rho_fine(2 * x + 1)) / 2;
+	};
+#else
+	// the Lagrava (opt-out) expectation: the Lagrange projection reproduces
+	// the quadratic field at the coarse cell center t = 2x + 0.5 (fine
+	// indexer coordinates) -- valid on every window, see the kernel
+	// docstring
+	const auto rho_expected = [&rho_fine](idx x) -> double
+	{
+		return rho_fine(2 * x + 0.5);
+	};
+#endif
 	// [B.5 re-scope, window-clamp class, mock-matrix.md coupling case 1,
 	// unconditional since D.1 retired the ring-F2C path (gate B ruling):
 	// the axis_window LOWER bound is 0 (the pre-skin default was -ov), so
@@ -673,14 +746,16 @@ void test_mass_conservation_fine_to_coarse()
 	// landed), ~36x below the 1e-5 gate. The x == 7 cells' hi-side window
 	// {13,14,15,16} still INCLUDES the fine ghost node 16 (the upper bound
 	// was never loosened) -- the load-bearing control that the shift sits
-	// exactly at the lo site.]
+	// exactly at the lo site. -- this clamp note is Lagrava-branch
+	// machinery (the F2C_SCHONHERR arm has no window), kept as the opt-out
+	// authority's documentation per T15]
 	double max_rel = 0;
 	idx bad = 0;
 	for (idx z = 0; z < COARSE_N; z++)
 		for (idx y = 0; y < COARSE_N; y++)
 			for (idx x = 0; x < COARSE_N; x++) {
 				const dreal rho_c = f2cWrittenRho(coarse, coarse_even_iter, x, y, z);
-				const double rho_e = rho_fine(2 * x + 0.5);
+				const double rho_e = rho_expected(x);
 				const double rel = std::abs(rho_c - rho_e) / rho_e;
 				max_rel = std::max(max_rel, rel);
 				if (rel > 1e-5)
@@ -689,7 +764,12 @@ void test_mass_conservation_fine_to_coarse()
 	report(
 		bad == 0,
 		fmt::format(
-			"Test 4a quadratic reproduction fine-to-coarse: coarse rho == fine field at the coarse cell center (max rel err = {:.3e})", max_rel
+			"Test 4a quadratic reproduction fine-to-coarse [{}]: {}", f2c_strategy_name,
+#ifdef F2C_SCHONHERR
+			fmt::format("destination density == subcell mean d0 (mean-density transfer; max rel err = {:.3e})", max_rel)
+#else
+			fmt::format("coarse rho == fine field at the coarse cell center (max rel err = {:.3e})", max_rel)
+#endif
 		)
 	);
 }
@@ -812,9 +892,13 @@ dreal correctC2Frho(idx fx, idx fine_off)
 	return w0 * c0 + (1 - w0) * (c0 + 1) + NEST_RHO0;
 }
 
-// host replica of the CORRECT global-frame fine-to-coarse mapping: Lagrava
-// 1/8 average of the marker rho over the 2 x-subcells of coarse cell c
-// (the y/z average preserves the x-only marker)
+// host replica of the CORRECT global-frame fine-to-coarse mapping: the
+// mean subcell density of the marker rho over the 2 x-subcells of coarse
+// cell c (the y/z average preserves the x-only marker). [T15: this mean is
+// the STRATEGY-INDEPENDENT expectation -- identical to the Lagrava
+// (opt-out) projection at the coarse center for a linear marker, and to
+// the F2C_SCHONHERR branch's d0 (subcell mean) by definition, so the Test
+// 5/7 expectations hold under both F2C strategies]
 dreal correctF2Crho(idx c, idx coarse_off, idx fine_off)
 {
 	dreal m = 0;
@@ -992,6 +1076,13 @@ void test_nested_geometry_coupling()
 	// naming the y/z rows as the mechanism). Measured re-shuffles
 	// 2.384e-07 -> 2.861e-06 (c = 3) and 9.537e-07 -> 2.384e-06 (c = 12)
 	// when the clamp landed, ~30x below the 1e-4/1e-5 gates.]
+	// [T15: the window-clamp re-shuffles named here are LAGRAVA-BRANCH
+	// machinery (the F2C_SCHONHERR arm has no window -- own-8 subcells
+	// only); the per-cell storability SKIP path, the A-B wrong-array trap,
+	// and the frame-orientation stores pinned by this launch are
+	// strategy-independent, and the linear-marker transfer values coincide
+	// between branches, so this launch block stays shared under the
+	// strategy split]
 	tagCouplingCells(coarse, {2, 3, 3}, {4, 13, 13});
 	tagCouplingCells(coarse, {12, 3, 3}, {14, 13, 13});
 	launchFineToCoarse(coarse, fine, {2, 3, 3}, {4, 13, 13}, fine_off, coarse_off, fine_even_iter, next_coarse_even_iter);
@@ -1000,8 +1091,13 @@ void test_nested_geometry_coupling()
 	fine.copyToHost();
 	coarse.copyToHost();
 
-	// ----- F2C halo faces: the coarse halo cells must hold the Lagrava
-	// average of the correctly mapped fine subcells -----
+	// ----- F2C halo faces: the coarse halo cells must hold the subcell
+	// average of the correctly mapped fine subcells [T15: BRANCH-TOLERANT
+	// expectation -- correctF2Crho is the 1/8 mean over the own 2
+	// x-subcells of an x-only LINEAR marker, so the Lagrava (opt-out)
+	// projection value and the F2C_SCHONHERR subcell mean d0 coincide
+	// exactly (both reproduce a linear field at the coarse center); the
+	// pinned value is therefore identical under both strategies] -----
 	for (const idx c : {3, 12}) {
 		const dreal rho_e = correctF2Crho(c, 0, NEST_FINE_OFF);
 		const std::array<dreal, 27> eq = equilibriumOnHost(rho_e, NEST_VX, 0, 0);
@@ -1029,9 +1125,9 @@ void test_nested_geometry_coupling()
 		report(
 			bad == 0,
 			fmt::format(
-				"Test 5 nested F2C halo c={}: Lagrava average of the correct fine subcells "
+				"Test 5 nested F2C halo c={} [{}]: subcell average of the correct fine subcells "
 				"(global-frame mapping, per-cell storability; max |err| = {:.3e})",
-				c, max_err
+				c, f2c_strategy_name, max_err
 			)
 		);
 	}
@@ -1084,20 +1180,33 @@ void test_nested_geometry_coupling()
 	);
 }
 
-// Test 6: exact cubic reproduction, fine-to-coarse -- the default F2C filter
-// is the tensor-product 4-node-per-axis Lagrange projection onto the coarse
-// cell center, which reproduces cubic fields exactly (the 1/8 box average is
-// only linear-exact). A fine field carrying exact cubic content must
-// therefore come through the transfer exactly on a nominal interior window
-// (centered {-1,9,9,-1}/16 per-axis weights); on a box-average build this
-// test fails, pinning the filter polarity (Lagrava default,
-// F2C_BOX_AVERAGE opt-out).
+// Test 6: exact cubic reproduction, fine-to-coarse -- strategy-split
+// expectations (T15 re-scope, commit 14 / plan row 15):
+//   - Lagrava (opt-out) branch (default build): the tensor-product
+//     4-node-per-axis Lagrange projection onto the coarse cell center
+//     reproduces cubic fields exactly (the 1/8 box average is only
+//     linear-exact). A fine field carrying exact cubic content must
+//     therefore come through the transfer exactly on a nominal interior
+//     window (centered {-1,9,9,-1}/16 per-axis weights); on a box-average
+//     build this test fails, pinning the filter polarity (Lagrava default,
+//     F2C_BOX_AVERAGE opt-out).
+//   - F2C_SCHONHERR arm: the mean-density transfer of the same cubic
+//     marker -- the destination DFs equal the equilibrium of (d0, u) with
+//     d0 == the mean of the own x-subcell densities (mean of rho(2x) and
+//     rho(2x+1); NO conservation claim -- mean and center value differ for
+//     nonlinear content, so exactly one branch expectation holds per
+//     build). The cubic content keeps the test's fp-class discrimination:
+//     the subcell mean is a window-independent analytic value, and a
+//     hypothetical box-average-OF-THE-DFs regression would fail the 1e-5
+//     gate by the same margin as on the Lagrava branch.
 void test_cubic_reproduction_fine_to_coarse()
 {
 	// rho(x) = rho0 + A*dx^3 with dx = (x - 7.5)/4 in fine indexer
 	// coordinates, constant velocities: the DF equilibrium is linear in
 	// rho, so the projected DFs are exactly the equilibrium of the cubic
-	// field evaluated at the coarse cell center t = 2x + 0.5
+	// field evaluated at the destination density of the strategy split
+	// (Lagrava: the coarse cell center t = 2x + 0.5; F2C_SCHONHERR: the
+	// subcell mean d0)
 	const dreal rho0 = 1.0, A = 0.1;
 	const dreal u0 = 0.01, v0 = -0.02, w0 = 0.03;
 	const std::array<bool, 2> parities = {true, false};
@@ -1142,13 +1251,22 @@ void test_cubic_reproduction_fine_to_coarse()
 			coarse.copyToHost();
 
 			// nominal interior window only: coarse cells [1, COARSE_N-1)
-			// see the centered 4x4x4 stencil
+			// see the centered 4x4x4 stencil -- the Lagrava (opt-out)
+			// window class; the F2C_SCHONHERR arm has no window (own-8
+			// subcells), the same cells are asserted for uniformity
+			// [T15, commit 14]
 			double max_err = 0;
 			idx bad = 0;
 			for (idx z = 1; z < COARSE_N - 1; z++)
 				for (idx y = 1; y < COARSE_N - 1; y++)
 					for (idx x = 1; x < COARSE_N - 1; x++) {
+#ifdef F2C_SCHONHERR
+						// mean-density transfer (the T4a successor; NO
+						// conservation claim): d0 == subcell mean
+						const dreal rho_e = static_cast<dreal>((rho_fine(2 * x) + rho_fine(2 * x + 1)) / 2);
+#else
 						const dreal rho_e = static_cast<dreal>(rho_fine(2 * x + 0.5));
+#endif
 						const std::array<dreal, 27> eq = equilibriumOnHost(rho_e, u0, v0, w0);
 						for (int q = 0; q < 27; q++) {
 							const dreal actual = coarse.hfs[f2cWriteArray()](coarseWriteSlot(q, coarse_even_iter), x, y, z);
@@ -1166,9 +1284,17 @@ void test_cubic_reproduction_fine_to_coarse()
 			report(
 				bad == 0,
 				fmt::format(
-					"Test 6 cubic reproduction fine-to-coarse (fine_even={}, coarse_even={}): "
-					"interior coarse DFs match the exactly-projected cubic field (max |err| = {:.3e})",
-					fine_even_iter, coarse_even_iter, max_err
+					"Test 6 cubic reproduction fine-to-coarse (fine_even={}, coarse_even={}) [{}]: "
+					"interior coarse DFs match {} (max |err| = {:.3e})",
+					fine_even_iter,
+					coarse_even_iter,
+					f2c_strategy_name,
+#ifdef F2C_SCHONHERR
+					"the mean-density transfer of the cubic marker (destination density == subcell mean d0)",
+#else
+					"the exactly-projected cubic field",
+#endif
+					max_err
 				)
 			);
 		}
@@ -1200,6 +1326,12 @@ void test_cubic_reproduction_fine_to_coarse()
 // Test 5 halo-geography note applies: production never F2C-launches halo
 // (ring) cells (the ring path is deleted); the mock pins the kernel
 // directly.]
+// [T15: STRATEGY-INDEPENDENT -- the allowed-GEO store predicate guarded
+// here is verbatim-shared by both F2C branches of cudaAMR_FineToCoarse
+// (amr_coupling.h is_coupling_cell), and the receiving-cell expectations
+// use the branch-tolerant linear-marker value (see correctF2Crho), so
+// this single lock covers both strategies; no duplicated guard case for
+// the F2C_SCHONHERR arm is needed (dedupe audit, commit 14)]
 void test_f2c_df_store_map_guard()
 {
 	// post-stream natural orientation on the fine level, spatial (twisted)
@@ -1942,12 +2074,25 @@ void test_cm_exactness_carve_2axis_edge()
 // TOLERANCE CLASS: additive-separable cubic density (any 4-node window
 // reproduces it exactly at the fixed evaluation point), constant
 // velocities, zero strain (the CE fill reduces to the equilibrium). The
-// expectations are ANALYTIC (the coarse-center field value); gates
-// rtol = 1e-5 / atol = 1e-6 separate the fp-exact class (Test 6 measured
-// 1.192e-07) from the box average (measured 1.7e-03 there) and from any
-// shortened or otherwise mismachined window (~1e-03 for this marker) by
-// ~2 decades. Test 15 additionally makes a lower-bound REGRESSION
-// positively detectable via sentinel-poisoned ghost planes.
+// expectations are ANALYTIC: the strategy-split destination density of
+// skinExpectedRho [T15, commit 14] -- on the Lagrava (opt-out) branch the
+// coarse-center field value, on the F2C_SCHONHERR arm the subcell mean
+// d0 (mean-density transfer, NO conservation claim); the branches' values
+// disagree by O(1e-3) on this marker, so exactly one holds per build.
+// Gates rtol = 1e-5 / atol = 1e-6 separate the fp-exact class (Test 6
+// measured 1.192e-07) from the box average (measured 1.7e-03 there) and
+// from any shortened or otherwise mismachined window (~1e-03 for this
+// marker) by ~2 decades. Test 15 additionally makes a lower-bound
+// REGRESSION positively detectable via sentinel-poisoned ghost planes.
+//
+// [T15 strategy split (commit 14 / plan row 15): the WINDOW/WEIGHT TABLE
+// above is LAGRAVA machinery (the F2C_SCHONHERR arm has no window -- it
+// reads the destination cell's own 8 subcells, so every launch-rectangle
+// cell is treated uniformly and the clamp classes below do not exist
+// there). Tests 14/16 stay live on BOTH branches via the strategy-split
+// expectation; the lo = 0 clamp sentinels (Tests 15/18) are pinned ON
+// the Lagrava (opt-out) branch as its authority -- #ifndef-gated with an
+// explicit deferral report on the arm, retire nothing silently.]
 
 // skin-test field: rho = 1 + 0.1*(dx^3 + dy^3 + dz^3) with dx = (x - 7.5)/4
 // in fine indexer coordinates (Test 6's cubic, extended separably to all
@@ -2000,22 +2145,44 @@ void sentinelFineGhostPlane(MockBlock& fine, int axis)
 				}
 }
 
+// T15 (commit 14, plan row 15): strategy-split expected destination
+// density at a skin-launch cell for the SkinCubicField marker --
+//   - F2C_SCHONHERR arm: MEAN-DENSITY TRANSFER (the T4a successor; NO
+//     conservation claim) -- d0 == the mean of the destination cell's own
+//     8 subcell densities (the t = (0,0,0) evaluation of the sec. 7.2
+//     F2C; the constant velocities carry through exactly as a0/b0/c0 and
+//     the zero-strain fill gives vanishing non-equilibrium moments, so
+//     the destination DF state is the equilibrium of (d0, U0, V0, W0);
+//     the L5 lock of tests/test_amr_f2c_schonherr.cu pins the sum-DF
+//     identity on the dedicated-suite geography -- dedupe: same machinery
+//     class, this helper owns the production skin-launch geography).
+//   - Lagrava (opt-out) branch: the analytically projected coarse-center
+//     value of the cubic marker (window-independent in exact arithmetic).
+dreal skinExpectedRho(const idx3d& c)
+{
+#ifdef F2C_SCHONHERR
+	dreal mean = 0;
+	for (int bz = 0; bz < 2; bz++)
+		for (int by = 0; by < 2; by++)
+			for (int bx = 0; bx < 2; bx++)
+				mean += static_cast<dreal>(SkinCubicField::rhoAt(2 * c.x() + bx, 2 * c.y() + by, 2 * c.z() + bz));
+	return mean / 8;
+#else
+	return static_cast<dreal>(SkinCubicField::rhoAt(2 * c.x() + 0.5, 2 * c.y() + 0.5, 2 * c.z() + 0.5));
+#endif
+}
+
 // Test-6-style per-cell assertion of the DFs the F2C transfer wrote in its
-// parity-dependent write slot against the equilibrium of the analytically
-// projected skin-test field (the coarse-center value of the cubic marker is
-// window-independent in exact arithmetic -- see the block comment)
+// parity-dependent write slot against the equilibrium of the
+// strategy-split expected skin-test field (skinExpectedRho; see the block
+// comment)
 bool checkCoarseTransferExact(const MockBlock& coarse, const std::vector<idx3d>& cells, bool coarse_even_iter, const char* what)
 {
 	double max_err = 0;
 	idx bad = 0;
 	bool first_mismatch = true;
 	for (const idx3d& c : cells) {
-		const std::array<dreal, 27> eq = equilibriumOnHost(
-			static_cast<dreal>(SkinCubicField::rhoAt(2 * c.x() + 0.5, 2 * c.y() + 0.5, 2 * c.z() + 0.5)),
-			SkinCubicField::U0,
-			SkinCubicField::V0,
-			SkinCubicField::W0
-		);
+		const std::array<dreal, 27> eq = equilibriumOnHost(skinExpectedRho(c), SkinCubicField::U0, SkinCubicField::V0, SkinCubicField::W0);
 		for (int q = 0; q < 27; q++) {
 			const dreal actual = coarse.hfs[f2cWriteArray()](coarseWriteSlot(q, coarse_even_iter), c.x(), c.y(), c.z());
 			if (! (std::isfinite(actual) && closeEnough(actual, eq[q], 1e-5, 1e-6))) {
@@ -2036,11 +2203,15 @@ bool checkCoarseTransferExact(const MockBlock& coarse, const std::vector<idx3d>&
 // {1}x{0..8}x{0..8} over the depth-1 skin destination row tagged
 // GEO_NOTHING (its production band class after the commit-7 position
 // re-anchor, see the Tests 14-16/18 block comment for the window table).
-// Asserts cubic exactness on all 64 face cells: the normal window is
-// nominal {1,2,3,4} at depth 1, tangent-interior axes share the nominal
-// window semantics (a lower-bound clamp cannot engage away from edges --
-// mock-matrix.md's coupling case-1 class made a POSITIVE skin test), and
-// the lo-/hi-edge tangent cells stay exact on their shifted windows. The
+// Asserts cubic exactness on all 64 face cells under the T15 strategy
+// split (skinExpectedRho): on the Lagrava (opt-out) branch the normal
+// window is nominal {1,2,3,4} at depth 1, tangent-interior axes share the
+// nominal window semantics (a lower-bound clamp cannot engage away from
+// edges -- mock-matrix.md's coupling case-1 class made a POSITIVE skin
+// test), and the lo-/hi-edge tangent cells stay exact on their shifted
+// windows; on the F2C_SCHONHERR arm every launched cell instead satisfies
+// the mean-density transfer (destination density == the own-8 subcell
+// mean d0; NO conservation claim) with uniform window-free treatment. The
 // GEO_NOTHING tagging keeps the mock's destination row in the production
 // class of its band position (the allowed-GEO guard admits it; the
 // protected-class corners live in the Tests 7/16 class cells) -- the
@@ -2082,9 +2253,10 @@ void test_f2c_skin_exactness_interior()
 				face,
 				coarse_even_iter,
 				fmt::format(
-					"Test 14 skin x-min face F2C exactness (fine_even={}, coarse_even={}): all 64 GEO_NOTHING depth-1 cells received the transfer",
+					"Test 14 skin x-min face F2C exactness (fine_even={}, coarse_even={}) [{}]: all 64 GEO_NOTHING depth-1 cells received the transfer",
 					fine_even_iter,
-					coarse_even_iter
+					coarse_even_iter,
+					f2c_strategy_name
 				)
 					.c_str()
 			);
@@ -2093,12 +2265,20 @@ void test_f2c_skin_exactness_interior()
 }
 
 // Test 15: footprint-lo-EDGE clamp exactness with a POSITIVE ghost-read
-// detector -- the three min-face launch rectangles of the depth-1 skin
-// row (commit-7 position re-anchor: x-min {1} over the full y/z range,
-// y-min {1} over the launch x extent, z-min {1} over the launch x/y
-// extent, tagged GEO_NOTHING -- their production band class at depth 1;
-// production's corner ownership by the x-faces is immaterial here since a
-// re-write would be idempotent), are launched
+// detector [LAGRAVA (OPT-OUT) BRANCH ONLY -- T15, commit 14: the lo = 0
+// clamp is machinery of the Lagrava axis_window and has NO counterpart on
+// the F2C_SCHONHERR arm, which reads only the destination cell's own 8
+// subcells (there is no window to shift, so nothing to clamp). This lock
+// is the opt-out authority for the clamp and stays ON the Lagrava branch
+// -- retire nothing silently; the arm build reports an explicit deferral
+// line below. The storability guard that bounds subcell reads on the arm
+// is strategy-independent and stays locked by Tests 5/14/16.] -- the
+// three min-face launch rectangles of the depth-1 skin row (commit-7
+// position re-anchor: x-min {1} over the full y/z range, y-min {1} over
+// the launch x extent, z-min {1} over the launch x/y extent, tagged
+// GEO_NOTHING -- their production band class at depth 1; production's
+// corner ownership by the x-faces is immaterial here since a re-write
+// would be idempotent), are launched
 // while the negative fine ghost planes x = y = z = -1 carry the +1000
 // sentinel on every DF array/slot. Under the lo = 0 clamp every nominal
 // window
@@ -2115,6 +2295,15 @@ void test_f2c_skin_exactness_interior()
 // replaced by the two-clamped maximum now possible).
 void test_f2c_skin_edge_clamp_exactness()
 {
+#ifdef F2C_SCHONHERR
+	// T15: no clamp machinery on the F2C_SCHONHERR arm -- this lock is the
+	// Lagrava (opt-out) branch's authority and is not duplicated (dedupe
+	// audit); the explicit deferral line keeps the arm's report truthful
+	report(
+		true,
+		"Test 15 depth-1 lo-edge clamp exactness [F2C_SCHONHERR arm]: N/A -- clamp is Lagrava-only window machinery; authority lives on the Lagrava (opt-out) branch (retired nothing)"
+	);
+#else
 	const bool coarse_even_iter = false;
 
 	for (const bool fine_even_iter : {true, false}) {
@@ -2159,12 +2348,13 @@ void test_f2c_skin_edge_clamp_exactness()
 			probes,
 			coarse_even_iter,
 			fmt::format(
-				"Test 15 depth-1 lo-edge clamp exactness (fine_even={}): probes (1,0,4) / (1,4,0) / (4,1,0) single-clamped tangent windows, (1,0,0) doubly clamped, sentinel-guarded",
+				"Test 15 depth-1 lo-edge clamp exactness (fine_even={}) [Lagrava (opt-out) branch]: probes (1,0,4) / (1,4,0) / (4,1,0) single-clamped tangent windows, (1,0,0) doubly clamped, sentinel-guarded",
 				fine_even_iter
 			)
 				.c_str()
 		);
 	}
+#endif	// F2C_SCHONHERR
 }
 
 // Test 16: skin-launch Defect-2 DF/macro-store map guard (the Test 7
@@ -2178,6 +2368,11 @@ void test_f2c_skin_edge_clamp_exactness()
 // GEO_AMR_INTERFACE RECEIVE the transfer. The allowed-GEO predicate
 // itself (Phase 0.4, amr_coupling.h) is unaffected by the ring-path
 // removal -- this test pins it on the launch-row geography.
+// [T15: the guard predicate is verbatim-shared by both F2C branches
+// (strategy-INDEPENDENT machinery, the dedupe-audit reason no second map
+// guard exists for the arm); the RECEIVING cells' transfer values follow
+// the strategy split via skinExpectedRho (Lagrava: coarse-center
+// projection; F2C_SCHONHERR: subcell mean d0, mean-density transfer).]
 void test_f2c_skin_df_store_map_guard()
 {
 	// post-stream natural orientation on the fine level, spatial (twisted)
@@ -2231,19 +2426,17 @@ void test_f2c_skin_df_store_map_guard()
 
 	// DF check per map class: protected cells must still hold the NaN
 	// poison in the kernel's write slot of every direction, coupling cells
-	// must hold the analytic transfer result there (Test 7's structure)
+	// must hold the analytic transfer result there (Test 7's structure) --
+	// the transfer value is the T15 strategy-split expectation
+	// (skinExpectedRho at the receiving cell)
 	const idx case_ys[4] = {Y_WALL, Y_FLUID, Y_NOTHING, Y_INTERFACE};
 	const bool case_write[4] = {false, false, true, true};
 	const char* case_names[4] = {"GEO_WALL", "GEO_FLUID", "GEO_NOTHING", "GEO_AMR_INTERFACE"};
 	for (int cse = 0; cse < 4; cse++) {
 		const idx y = case_ys[cse];
 		const bool expect_write = case_write[cse];
-		const std::array<dreal, 27> eq_transfer = equilibriumOnHost(
-			static_cast<dreal>(SkinCubicField::rhoAt(2.5, 2 * y + 0.5, 2 * CZ + 0.5)),
-			SkinCubicField::U0,
-			SkinCubicField::V0,
-			SkinCubicField::W0
-		);
+		const std::array<dreal, 27> eq_transfer =
+			equilibriumOnHost(skinExpectedRho({1, y, CZ}), SkinCubicField::U0, SkinCubicField::V0, SkinCubicField::W0);
 		double max_err = 0;
 		idx bad = 0;
 		bool first_mismatch = true;
@@ -2272,7 +2465,8 @@ void test_f2c_skin_df_store_map_guard()
 		report(
 			bad == 0,
 			fmt::format(
-				"Test 16 skin F2C DF-store map guard: {} cell {} (max |err| = {:.3e})",
+				"Test 16 skin F2C DF-store map guard [{}]: {} cell {} (max |err| = {:.3e})",
+				f2c_strategy_name,
 				case_names[cse],
 				expect_write ? "received the transfer (finite)" : "kept the NaN poison (not overwritten)",
 				max_err
@@ -2281,17 +2475,13 @@ void test_f2c_skin_df_store_map_guard()
 	}
 
 	// macro store under the same predicate: protected macros stay NaN,
-	// receiving macros hold the transfer macros
+	// receiving macros hold the transfer macros (the strategy-split
+	// expectation of skinExpectedRho -- T15)
 	const int macro_ids[4] = {NSE_CONFIG::MACRO::e_rho, NSE_CONFIG::MACRO::e_vx, NSE_CONFIG::MACRO::e_vy, NSE_CONFIG::MACRO::e_vz};
 	for (int cse = 0; cse < 4; cse++) {
 		const idx y = case_ys[cse];
 		const bool expect_write = case_write[cse];
-		const std::array<dreal, 4> expected = {
-			static_cast<dreal>(SkinCubicField::rhoAt(2.5, 2 * y + 0.5, 2 * CZ + 0.5)),
-			SkinCubicField::U0,
-			SkinCubicField::V0,
-			SkinCubicField::W0
-		};
+		const std::array<dreal, 4> expected = {skinExpectedRho({1, y, CZ}), SkinCubicField::U0, SkinCubicField::V0, SkinCubicField::W0};
 		double max_err = 0;
 		idx bad = 0;
 		bool first_mismatch = true;
@@ -2319,7 +2509,8 @@ void test_f2c_skin_df_store_map_guard()
 		report(
 			bad == 0,
 			fmt::format(
-				"Test 16 skin F2C macro-store map guard: {} macros {} (max |err| = {:.3e})",
+				"Test 16 skin F2C macro-store map guard [{}]: {} macros {} (max |err| = {:.3e})",
+				f2c_strategy_name,
 				case_names[cse],
 				expect_write ? "written by the transfer" : "kept the NaN poison",
 				max_err
@@ -2329,21 +2520,35 @@ void test_f2c_skin_df_store_map_guard()
 }
 
 // Test 18: footprint lo-lo EDGE clamp exactness (2-edge-adjacent probes),
-// sentinel-guarded -- Test 15's machinery (same +1000 sentinel planes,
-// same gates) with the probe set swapped to the depth-1 lo-lo tangent
-// edges: (1,0,0) lands in the x-min launch (y,z windows clamped), (0,1,0)
-// in the y-min launch (x,z windows clamped), (0,0,1) in the z-min launch
-// (x,y windows clamped). Each probe has exactly TWO windows clamped to
-// {0,1,2,3} and the third window nominal -- a clamp-multiplicity class no
-// sibling positively locks: at depth 1 the face-normal window is nominal
-// (fx0 = 2) everywhere, so TWO clamps per cell is the maximum possible
-// multiplicity (the surface era's three-clamped corner class is extinct;
-// the launch tangent extents are the full rows so the edges reach the
-// f0 == 0 clamp on both tangent axes). A lower-bound regression on either
-// clamped axis reads a sentinel node and shifts the transfer by
-// O(10..100), decades above the gates.
+// sentinel-guarded [LAGRAVA (OPT-OUT) BRANCH ONLY -- T15, commit 14: same
+// disposition as Test 15; the two-clamp multiplicity class is Lagrava
+// window machinery with no F2C_SCHONHERR counterpart (no window on the
+// arm). The lock is the opt-out authority and stays ON the Lagrava
+// branch -- retire nothing silently; the arm build reports an explicit
+// deferral line below] -- Test 15's machinery (same +1000 sentinel
+// planes, same gates) with the probe set swapped to the depth-1 lo-lo
+// tangent edges: (1,0,0) lands in the x-min launch (y,z windows clamped),
+// (0,1,0) in the y-min launch (x,z windows clamped), (0,0,1) in the z-min
+// launch (x,y windows clamped). Each probe has exactly TWO windows
+// clamped to {0,1,2,3} and the third window nominal -- a
+// clamp-multiplicity class no sibling positively locks: at depth 1 the
+// face-normal window is nominal (fx0 = 2) everywhere, so TWO clamps per
+// cell is the maximum possible multiplicity (the surface era's
+// three-clamped corner class is extinct; the launch tangent extents are
+// the full rows so the edges reach the f0 == 0 clamp on both tangent
+// axes). A lower-bound regression on either clamped axis reads a sentinel
+// node and shifts the transfer by O(10..100), decades above the gates.
 void test_f2c_skin_edge2pair_clamp_exactness()
 {
+#ifdef F2C_SCHONHERR
+	// T15: no clamp machinery on the F2C_SCHONHERR arm -- this lock is the
+	// Lagrava (opt-out) branch's authority and is not duplicated (dedupe
+	// audit); the explicit deferral line keeps the arm's report truthful
+	report(
+		true,
+		"Test 18 depth-1 lo-lo edge clamp exactness [F2C_SCHONHERR arm]: N/A -- clamp is Lagrava-only window machinery; authority lives on the Lagrava (opt-out) branch (retired nothing)"
+	);
+#else
 	const bool coarse_even_iter = false;
 
 	for (const bool fine_even_iter : {true, false}) {
@@ -2390,12 +2595,13 @@ void test_f2c_skin_edge2pair_clamp_exactness()
 			probes,
 			coarse_even_iter,
 			fmt::format(
-				"Test 18 depth-1 lo-lo edge clamp exactness (fine_even={}): probes (1,0,0) x-min / (0,1,0) y-min / (0,0,1) z-min, two clamped {{0,1,2,3}} windows + one nominal each, sentinel-guarded",
+				"Test 18 depth-1 lo-lo edge clamp exactness (fine_even={}) [Lagrava (opt-out) branch]: probes (1,0,0) x-min / (0,1,0) y-min / (0,0,1) z-min, two clamped {{0,1,2,3}} windows + one nominal each, sentinel-guarded",
 				fine_even_iter
 			)
 				.c_str()
 		);
 	}
+#endif	// F2C_SCHONHERR
 }
 
 int main()
@@ -2413,7 +2619,10 @@ int main()
 
 	// skin F2C path coverage (production's only F2C channel since the ring
 	// path was removed in D.1): exactness, lo-edge clamp, Defect-2 guard on
-	// skin geography, lo-lo edge clamp probes
+	// skin geography, lo-lo edge clamp probes -- strategy-split per T15:
+	// Tests 14/16 assert BOTH branches (strategy-split expectation), the
+	// lo = 0 clamp locks (Tests 15/18) are Lagrava (opt-out) authorities
+	// and defer explicitly on the F2C_SCHONHERR arm
 	test_f2c_skin_exactness_interior();
 	test_f2c_skin_edge_clamp_exactness();
 	test_f2c_skin_df_store_map_guard();
