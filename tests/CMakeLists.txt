@@ -26,11 +26,18 @@ foreach(test_name IN ITEMS ${AMR_TESTS})
         endif()
 
         # optional F2C transfer strategy compile-check (same cache var as
-        # sim_AMR): only for verifying that the opt-out/opt-in compiles in
-        # both patterns -- the tests pin the default filter's semantics, so
-        # they are RUN with the default build (empty TNL_LBM_F2C_STRATEGY);
-        # the F2C_SCHONHERR branch's own locks live in the dedicated
-        # test_amr_f2c_schonherr binaries below
+        # sim_AMR): since the T15 strategy re-scope (commit 14 of the
+        # Schönherr ch7 conversion) test_amr_coupling.cu pins BOTH
+        # strategies natively via compile-time strategy-split expectations
+        # -- the default build (empty TNL_LBM_F2C_STRATEGY) asserts the
+        # Lagrava filter as the opt-out authority, a
+        # -DTNL_LBM_F2C_STRATEGY=F2C_SCHONHERR build asserts the Schönherr
+        # mean-density transfer semantics with the Lagrava-only lo=0 clamp
+        # locks explicitly deferred -- so these binaries compile AND run
+        # green under either build; run-amr-tests.sh itself drives only the
+        # default build (it hardcodes ./build), and the Schönherr branch's
+        # dedicated exactness locks live in the test_amr_f2c_schonherr
+        # binaries below
         if(TNL_LBM_F2C_STRATEGY)
             target_compile_definitions(${target} PRIVATE ${TNL_LBM_F2C_STRATEGY})
         endif()
