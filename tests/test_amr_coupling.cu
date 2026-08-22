@@ -19,18 +19,18 @@
 // .omo/plans/schonherr-ch7-conversion.md): this suite pins the
 // fine-to-coarse transfer under BOTH compile-time strategies of
 // cudaAMR_FineToCoarse:
-//   - default build (no -D define): the LAGRAVA 4x4x4 tensor-product
-//     filter -- since the T14 strategy split this is the opt-out
-//     authority for the alternative branch (the default until the T17
-//     default flip), so the Lagrava-only locks below carry an explicit
-//     "Lagrava (opt-out) branch" anchor in their comments and report
-//     strings;
-//   - -DF2C_SCHONHERR (the TNL_LBM_F2C_STRATEGY=F2C_SCHONHERR arm): the
+//   - default build (the TNL_LBM_F2C_STRATEGY cache default
+//     F2C_SCHONHERR since commit 15 / T17, passed as the -D define): the
 //     Schönherr sec. 7.2 sigma-form compact-moment transfer -- the
 //     strategy-split expectations below assert its MEAN-DENSITY transfer
 //     semantics (destination density == d0 == the mean of the
 //     destination cell's own 8 subcell densities; NO conservation claim,
-//     plan T15/T4a-successor).
+//     plan T15/T4a-successor);
+//   - Lagrava opt-out build (-DTNL_LBM_F2C_STRATEGY=F2C_LAGRAVA): the
+//     LAGRAVA 4x4x4 tensor-product filter -- the opt-out authority for
+//     the alternative branch, so the Lagrava-only locks below carry an
+//     explicit "Lagrava (opt-out) branch" anchor in their comments and
+//     report strings.
 // Tests whose locks only exist under Lagrava machinery semantics (the
 // lo = 0 window-clamp sentinels, Tests 15/18) stay ON the Lagrava branch
 // (#ifndef F2C_SCHONHERR) with an explicit deferral report on the arm;
@@ -69,9 +69,10 @@ constexpr const char* pattern_name = "AB";
 #endif
 
 // T15 (commit 14, plan row 15): the F2C strategy this TU pins -- the
-// Lagrava filter is the default until the T17 default flip, so on the
-// default build the locks below are the LAGRAVA (OPT-OUT) authority; the
-// F2C_SCHONHERR arm asserts the Schönherr mean-density transfer instead
+// Schönherr transfer is the default since the commit-15 / T17 flip (the
+// TNL_LBM_F2C_STRATEGY cache default), so on the default build the locks
+// below are the F2C_SCHONHERR arm's expectations; the F2C_LAGRAVA opt-out
+// build holds the LAGRAVA (OPT-OUT) authority instead
 #ifdef F2C_SCHONHERR
 constexpr const char* f2c_strategy_name = "F2C_SCHONHERR arm";
 #else
