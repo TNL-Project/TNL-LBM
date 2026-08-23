@@ -261,34 +261,21 @@ sim(const std::string& adios_config,
 	using lat_t = Lattice<3, real, idx>;
 
 	int block_size = 32;
-	real BALL_DIAMETER = 0.01;
-	real real_domain_height = BALL_DIAMETER * 11;  // [m]
-	//real real_domain_length= BALL_DIAMETER*11;// [m] // extra 1cm on both sides
-	idx LBM_Y = RES * block_size;  // for 4 cm
+	real ball_diameter = 0.01;
+	real real_domain_height = ball_diameter * 11;  // [m]
+	real real_domain_length = real_domain_height;  // [m]
+	idx LBM_Y = RES * block_size;
 	idx LBM_Z = LBM_Y;
 	real PHYS_DL = real_domain_height / ((real) LBM_Y);
-	idx LBM_X = LBM_Y;	//(int)(real_domain_length/PHYS_DL)+2;//block_size;//16*RESOLUTION;
+	idx LBM_X = (int) (real_domain_length / PHYS_DL);
 	point_t PHYS_ORIGIN = {0., 0., 0.};
 
-	// zvolit Re + LBM VELOCITY + PHYS_VISCOSITY
-	real i_LBM_VELOCITY = 0.07;		  // Geier
-	real i_PHYS_VISCOSITY = 0.00001;  // proc ne?
-	// mam:
-	real i_LBM_VISCOSITY = i_LBM_VELOCITY * BALL_DIAMETER / PHYS_DL / Re;
-	real i_PHYS_VELOCITY = i_PHYS_VISCOSITY * Re / BALL_DIAMETER;
-	fmt::print(
-		"input phys velocity {:f}\ninput lbm velocity {:f}\nRe {:f}\nlbm viscosity{:f}\nphys viscosity {:f}\n",
-		i_PHYS_VELOCITY,
-		i_LBM_VELOCITY,
-		Re,
-		i_LBM_VISCOSITY,
-		i_PHYS_VISCOSITY
-	);
+	real PHYS_VISCOSITY = 1e-5;	 // [m^2/s]
+	real PHYS_VELOCITY = Re * PHYS_VISCOSITY / ball_diameter;
 
-	real LBM_VISCOSITY = i_LBM_VISCOSITY;	 //0.0001*RES;//*SIT;//1.0/6.0; /// GIVEN: optimal is 1/6
-	real PHYS_VISCOSITY = i_PHYS_VISCOSITY;	 //0.00001;// [m^2/s] fluid viscosity of water
+	real LBM_VELOCITY = 0.07;  // Geier
+	real LBM_VISCOSITY = LBM_VELOCITY * ball_diameter / PHYS_DL / Re;
 
-	//real INIT_TIME = 1.0; // [s]
 	real PHYS_DT = LBM_VISCOSITY / PHYS_VISCOSITY * PHYS_DL * PHYS_DL;
 
 	// initialize the lattice
@@ -317,9 +304,9 @@ sim(const std::string& adios_config,
 	if (! state.canCompute())
 		return;
 
-	state.lbm_inflow_vx = i_LBM_VELOCITY;
-	state.nse.physCharLength = BALL_DIAMETER;  // [m]
-	state.ball_diameter = BALL_DIAMETER;	   // [m]
+	state.lbm_inflow_vx = state.nse.lat.phys2lbmVelocity(PHYS_VELOCITY);
+	state.nse.physCharLength = ball_diameter;  // [m]
+	state.ball_diameter = ball_diameter;	   // [m]
 	//state.nse.physFluidDensity = 1000.0; // [kg/m^3]
 
 	state.cnt[PRINT].period = 0.1;
