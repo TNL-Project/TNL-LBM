@@ -24,6 +24,7 @@ with optional Python bindings via nanobind and distributed execution through CUD
 ├── sim_NSE/             # 3D Navier-Stokes example simulations
 ├── sim_NSE_ADE/         # 3D NSE + advection-diffusion examples
 ├── sim_adjoint/         # 3D Adjoint-based sensitivity examples
+├── sim_AMR/             # 2-level AMR example simulations (Taylor-Green + developing channel)
 ├── sim_2D/              # 2D example simulations
 ├── pytnl_lbm/           # Python extension module
 ├── tests/               # pytest unit, regression & integration suites + subproject test
@@ -50,7 +51,7 @@ with optional Python bindings via nanobind and distributed execution through CUD
 | Python binding surface | `pytnl_lbm/pytnl_lbm.cpp` | Exports one concrete `SP_D3Q27_CUM_ConstInflow` instantiation |
 | 3D example simulations | `sim_NSE/*.cu`, `sim_NSE_ADE/*.cu`, `sim_adjoint/*.cu` | Each `int main()` is a standalone CMake executable |
 | 2D example simulations | `sim_2D/*.cu` | sim2d_1 (channel+hole), sim2d_2 (Poiseuille), sim2d_Taylor_Green, sim2d_hills |
-| Unit-test C++ binary | `tests/unit/*.cu` | doctest cases compiled into one binary |
+| Unit-test C++ binary | `tests/unit/*.cu` | doctest cases (runner `doctest_main.cu`): `test_cpp_units` carries `test_outflowcover.cu`, `test_decomposition.cu` and the AMR Schönherr registration/exactness suites; the AMR gate suites live in the per-pattern `test_amr_units_{ab,aa}` (suites `amr_coupling`/`amr_subcycling`/`amr_vtkhdf_writer`/`amr_nesting`), the per-define exactness drivers in `test_amr_f2c_schonherr_{ab,aa}` |
 | Regression tests | `tests/regression/` | pytest suites: IBM matrices vs `baseline_ibm_matrices/` + IBM flow-field checks, D3Q27 NSE (sim_1..sim_4 + forcing variants) checks, D2Q9 verification checks + forcing variant, MPI multi-rank checks (test_mpi.py) |
 | Output-data pipeline test | `tests/integration/` | pytest suite driving `test_outputdata` (BP5, SST, Catalyst inline/plugin engines) |
 | External consumption test | `tests/subproject/` | Verifies TNL-LBM works via CMake `FetchContent` |
@@ -176,6 +177,12 @@ pytest --build-dir build-ab
 
 # Python bindings (after build)
 PYTHONPATH=build/pytnl_lbm python -c "import pytnl_lbm"
+
+# AMR gate: build + run the 7 AMR test targets (needs a CUDA GPU)
+./tests/run-amr-tests.sh
+# 2-level AMR example simulations (Taylor-Green; --convective-times 20 for the long decision-table run)
+./build/sim_AMR/sim_AMR --resolution 1
+./build/sim_AMR/sim_AMR_channel --resolution 1
 
 # Spell-check (CI lint job)
 typos --color always --sort
@@ -303,6 +310,71 @@ one translation unit via the explicit
   sm_120); it no longer reproduces, possibly thanks to the pinned
   `lbm_fma_rn` outflow arithmetic. `test_cpp_units` cannot catch any of
   this (its bitwise identity is in-binary, one compilation context).
+
+## AMR (STATIC 2:1 REFINEMENT — SCHÖNHERR-CH7 BAND)
+
+Static, cell-centered, volumetric AMR — one refinement level, single MPI rank,
+single GPU, D3Q27, CUDA-only coupling kernels. The coupling is the
+Schönherr-2015 ch.7 target-band conversion landed on this branch (16 commits;
+internals doc `docs/AMR-for-LBM-implementation.md`, normative band/cycle
+contract `docs/AMR-schonherr-ch7-target-contract.md`).
+
+- **Simulations**: `sim_AMR/sim_AMR.cu` (Taylor-Green 2-level AMR,
+  `--convective-times N` long runs), `sim_AMR/sim_AMR_channel.cu` (Dirichlet
+  developing-channel diagnostic, the B.7 artifact). Probe CLI on both:
+  `--write-dfs` (raw DF fields in VTKHDF) and `--out3d-iter-period N`
+  (per-iteration frame cadence).
+- **Surfaces**: `include/lbm3d/amr_decomposition.h` (`createAMRBlocks` —
+  footprint re-anchored one fine cell inward per face, gs ≥ 3 minimum;
+  `markAMRInterface` — ring {halo c=−1 + reactivated surface shell c=0} tagged
+  `GEO_AMR_INTERFACE`, footprint-depth ≥ 1 cells frozen `GEO_NOTHING`),
+  `include/lbm3d/amr_state.h` (`State_AMR` driver: `SimUpdate` six-step cycle,
+  `buildCouplings` vertex-straddling patches, SimInit map-pattern assertion),
+  `include/lbm3d/d3q27/amr_coupling.h` (`cudaAMR_CoarseToFine`,
+  `cudaAMR_FineToCoarse`), `include/lbm3d/viz/OverlappingAMRWriter.{h,hpp}`.
+- **Six-step cycle** (per cycle, per level): fine substep 1 → fine substep 2 →
+  coarse step → F2C (depth-1 skin, reads rotation-1 frame) → C2F frame 0 →
+  C2F frame 1 (identical content; SimInit does the same both-frames fill for
+  cycle 0). H9 and the BVP refill are hard-removed; F2C and C2F touch disjoint
+  sets. Checkpoint restart does not carry across the band registration.
+- **Strategy surfaces** (`sim_AMR/CMakeLists.txt`): C2F default is the σ-form
+  compact-moment (σ = 1/2; `TNL_LBM_C2F_STRATEGY=C2F_LAGRANGE` opts back to the
+  3rd-order Lagrange; carve default-on, `C2F_NO_CARVE` disables). F2C default
+  is `TNL_LBM_F2C_STRATEGY=F2C_SCHONHERR` (the §7.2 σ = 2 compact-moment
+  transfer, default since commit 15); `=F2C_LAGRAVA` opts out to the 4×4×4
+  Lagrava filter — a named no-op define: the kernel splits on
+  `#ifdef F2C_SCHONHERR` only, and `F2C_BOX_AVERAGE` selects the 1/8 average
+  inside that else-branch; nested wall sharing hard-errors under F2C_LAGRAVA
+  at SimInit (the R4 pedestal depth 3 covers only the Schönherr own-8 window).
+  Pre-flip build caches keep the
+  old empty strategy — re-default with `cmake -B build -S . -UTNL_LBM_F2C_STRATEGY`.
+- **AMR gate** (fully pytest-native; the shell launchers were retired):
+  `pytest tests/unit/test_amr_units.py tests/integration/test_amr_paraview.py`
+  runs the 10 AMR targets — the 4 gate TEST_SUITEs
+  (`amr_coupling`/`amr_subcycling`/`amr_vtkhdf_writer`/`amr_nesting`) × {ab,aa}
+  of the consolidated `test_amr_units_{ab,aa` binaries via doctest
+  `--test-suite=` + the 2 ParaView e2e arms (skipped when pvpython is absent);
+  all suites were ported to doctest together with the
+  `test_amr_f2c_schonherr_{ab,aa}` drivers.
+  10/10 at HEAD. Bit-identity evidence harness:
+  `tests/regression/test_amr_bitidentity.py` — verify mode compares every
+  `max_level == 1` artifact against the committed
+  `tests/regression/amr_ref/manifest.json` (11/11 at HEAD; re-record ONLY from
+  a trusted pre-change tree; its mock-suite artifacts drive the consolidated
+  binaries per-suite).
+  pytest sides: `tests/unit/test_cpp_units.py` (AMR doctest suites),
+  `tests/unit/test_amr_f2c_schonherr.py`.
+- **Measured verdict (recorded, not repaired)**: the conversion was an
+  experiment (contract §1). On the T16 20-tc decision table the −23 % mass
+  leak is closed ~5 orders on every HEAD arm (era effect of the band
+  registration + six-step cycle, not the F2C branch), the seam bias amplifies
+  ×1.166 within the pre-registered ×1.2 bound, and the vortex does NOT survive
+  at 20 tc on any arm (the control-era survival was interface-pump-fed) —
+  honest negative/null result; the full table is quoted in commit `1bd158c`'s
+  body and at `docs/AMR-for-LBM-implementation.md` ¶ "Interface density bias".
+  Probe tools: `tests/interface_seam_metric.py` (`--fine-row 0 --coarse-row 16`
+  = the re-paired pairing of contract §5), `tests/between_metric.py`
+  (footprint window re-pinned 33/62).
 
 ## NOTES
 
