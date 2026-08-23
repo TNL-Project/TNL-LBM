@@ -27,14 +27,15 @@ set(TNL_LBM_C2F_STRATEGY "" CACHE STRING "C2F strategy define for AMR targets (C
 # subcells inside that else-branch.
 set(TNL_LBM_F2C_STRATEGY "F2C_SCHONHERR" CACHE STRING "F2C transfer strategy define for AMR targets (default F2C_SCHONHERR; F2C_LAGRAVA opts out to the 4x4x4 Lagrange filter, F2C_BOX_AVERAGE to the 1/8 box average)")
 
-# optional C2F carve opt-out switch (change 5 of the AMR interface
-# redesign -- the 2-cell CM window shifts one cell outward wherever it
-# would touch a covered GEO_NOTHING cell). 2026-08-18 (user ruling): carve
-# is default-ON; opt out with -DC2F_NO_CARVE=ON. The former C2F_CARVE
-# opt-in is retired and ignored (defining it is a no-op).
-set(C2F_NO_CARVE "" CACHE STRING "C2F carve opt-out define for AMR targets (carve is default-on; set ON to disable)")
-if(C2F_CARVE)
-    message(WARNING "C2F_CARVE was retired on 2026-08-18: the carve is default-on and the define is a no-op; use C2F_NO_CARVE=ON to opt out.")
+# 2026-08-23 (simulated-band flip): the C2F carve pre-pass was
+# HARD-REMOVED -- under the ch7 band registration every nominal source
+# window of a valid coupling straddles live GEO_AMR_INTERFACE cells only
+# (asserted statically by checkCouplingMapPattern at SimInit), so a covered
+# window is an invalid registration, not a runtime case. The formerly
+# default-on carve and its C2F_CARVE/C2F_NO_CARVE opt knobs have no code
+# left to gate; configuring with either set warns loudly here.
+if(C2F_CARVE OR C2F_NO_CARVE)
+    message(WARNING "C2F_CARVE/C2F_NO_CARVE were retired on 2026-08-23: the carve pre-pass is hard-removed (the ch7 band map-pattern assertion makes covered windows an invalid registration, not a runtime case). Remove the define from your configure line.")
 endif()
 
 # 2026-08-20 (Schönherr six-step cycle, plan ruling (d)): the H9
@@ -81,10 +82,6 @@ foreach(target IN ITEMS ${TARGETS})
 
     if(TNL_LBM_F2C_STRATEGY)
         target_compile_definitions(${target} PRIVATE ${TNL_LBM_F2C_STRATEGY})
-    endif()
-
-    if(C2F_NO_CARVE)
-        target_compile_definitions(${target} PRIVATE C2F_NO_CARVE)
     endif()
 
     if(C2F_EQ_ONLY)

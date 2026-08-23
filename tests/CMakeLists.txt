@@ -44,14 +44,6 @@ foreach(test_name IN ITEMS ${AMR_TESTS})
             target_compile_definitions(${target} PRIVATE ${TNL_LBM_F2C_STRATEGY})
         endif()
 
-        # optional C2F carve opt-out compile-check (same cache var as
-        # sim_AMR): carve is default-on since the 2026-08-18 flip; only for
-        # verifying that the C2F_NO_CARVE opt-out compiles in both patterns
-        # -- the tests pin the default scheme's semantics, so they are RUN
-        # with the default build
-        if(C2F_NO_CARVE)
-            target_compile_definitions(${target} PRIVATE C2F_NO_CARVE)
-        endif()
 
         # 2026-08-16 (gate B ruling + D.1): the F2C skin feedback became
         # the ONLY fine-to-coarse channel -- F2C_SKIN_ONLY was retired with

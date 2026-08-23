@@ -86,11 +86,11 @@
  * geometries never clamp).
  *
  * Compile-time switches (C2F reconstruction strategy; DEFAULT since the
- * 2026-08-18 flip, user ruling, is the compact-moment scheme with the carve
- * pre-pass active: the interpolation reads NO covered (`GEO_NOTHING`)
- * coarse cells -- the skin layer is F2C-write / streaming-read only, never
- * an interpolation source):
- * - `C2F_COMPACT_MOMENT` [DEFAULT, with carve]: moment-based compact
+ * 2026-08-18 flip, user ruling, is the compact-moment scheme: the
+ * interpolation reads NO covered (`GEO_NOTHING`) coarse cells at a valid
+ * registration -- the ch7 band map statically rejects covered sources at
+ * SimInit, see checkCouplingMapPattern):
+ * - `C2F_COMPACT_MOMENT` [DEFAULT]: moment-based compact
  *   interpolation (Schönherr 2015 thesis, Sec. 7.2, Eqs. 7.10-7.48; the
  *   production scheme of the Musubi code) from the 2x2x2-cell home window
  *   (the C2F_TRILINEAR stencil): the five independent second-order
@@ -104,13 +104,16 @@
  *   second-order cumulants with the cumulant back-transformation of
  *   col_cum.h, with third-order and higher central moments zeroed
  *   (projects the non-hydrodynamic modes out of the interface instead of
- *   interpolating them per direction). The carve pre-pass shifts the
- *   window one cell outward, away from any covered (`GEO_NOTHING`) coarse
- *   cell it would touch, and evaluates off-center (|t_rel| up to 0.75);
- *   carve is default-on, opt-out via `C2F_NO_CARVE`. The define
- *   `C2F_COMPACT_MOMENT` itself is a no-op kept as an explicit selector
- *   for readability of old configurations; the retired `C2F_CARVE` opt-in
- *   is likewise accepted as a no-op.
+ *   interpolating them per direction). The former carve pre-pass (one-cell
+ *   window shift away from covered sources, off-center evaluation up to
+ *   |t_rel| = 0.75) was HARD-REMOVED on 2026-08-23: under the ch7 band
+ *   registration every nominal window of a valid coupling straddles live
+ *   GEO_AMR_INTERFACE cells only -- asserted statically by
+ *   checkCouplingMapPattern at SimInit -- so a covered window is an
+ *   invalid registration, not a runtime case, and the pre-pass could never
+ *   fire; `C2F_CARVE`/`C2F_NO_CARVE` warn at configure and gate no code.
+ *   The define `C2F_COMPACT_MOMENT` itself is a no-op kept as an explicit
+ *   selector for readability of old configurations.
  * - `C2F_LAGRANGE`: opts out to the 3rd-order tensor-product Lagrange
  *   scheme described above (the pre-flip default; its 4-node window can
  *   read covered coarse cells).
@@ -710,11 +713,19 @@ __global__ void cudaAMR_CoarseToFine(
 	using dreal = typename TRAITS::dreal;
 	using LBM_KS = typename CONFIG::template KernelStruct<dreal>;
 
-	const idx x = threadIdx.x + blockIdx.x * blockDim.x + ghost_begin_fine.x();
-	const idx y = threadIdx.y + blockIdx.y * blockDim.y + ghost_begin_fine.y();
-	const idx z = threadIdx.z + blockIdx.z * blockDim.z + ghost_begin_fine.z();
-
-	if (x >= ghost_end_fine.x() || y >= ghost_end_fine.y() || z >= ghost_end_fine.z())
+	// Schönherr group mapping (per-window organization of the thesis Sec.
+	// 7.2 reference implementation): one thread computes the up-to-8
+	// destination cells of a 2x2x2 destination group rather than a single
+	// destination cell, so the source work shared by neighbouring
+	// destinations is computed once; a thread's group origin is begin +
+	// 2*tid per axis, so a launch grid spanning ceil-div-2 per axis is the
+	// tight sizing -- today's callers grid per-cell, which is equally
+	// correct: the group mapping is idempotent per cell and the excess
+	// threads early-return (perf-only deferred trim)
+	const idx gx0 = ghost_begin_fine.x() + 2 * (threadIdx.x + blockIdx.x * blockDim.x);
+	const idx gy0 = ghost_begin_fine.y() + 2 * (threadIdx.y + blockIdx.y * blockDim.y);
+	const idx gz0 = ghost_begin_fine.z() + 2 * (threadIdx.z + blockIdx.z * blockDim.z);
+	if (gx0 >= ghost_end_fine.x() || gy0 >= ghost_end_fine.y() || gz0 >= ghost_end_fine.z())
 		return;
 
 	// coarse-side DF read in the orientation produced by the last coarse
@@ -750,7 +761,7 @@ __global__ void cudaAMR_CoarseToFine(
 	// direction q goes to slot q; the A-A spatial ("odd") substep pulls the
 	// DF streaming out of a ghost cell in direction q from the
 	// opposite-direction slot, so direction q is stored twisted
-	const auto store_fine_df = [&fine_SD, x, y, z](int q, dreal f) -> void
+	const auto store_fine_df = [&fine_SD](int q, idx x, idx y, idx z, dreal f) -> void
 	{
 #ifdef AB_PATTERN
 		fine_SD.df(df_cur, q, x, y, z) = f;
@@ -759,9 +770,17 @@ __global__ void cudaAMR_CoarseToFine(
 #endif
 	};
 
-	// macros supplied to the fine ghost cell (interpolated or the home
-	// coarse cell's), also used for the dmacro write at the end
-	dreal rho_f = 0, vx_f = 0, vy_f = 0, vz_f = 0;
+	// per-destination macro write for GEO_AMR_INTERFACE cells (no-op in v1,
+	// see the file docstring)
+	const auto write_fine_macro = [&fine_SD](idx x, idx y, idx z, dreal rho_f, dreal vx_f, dreal vy_f, dreal vz_f) -> void
+	{
+		if (fine_SD.map(x, y, z) == BC::GEO_AMR_INTERFACE) {
+			fine_SD.macro(MACRO::e_rho, x, y, z) = rho_f;
+			fine_SD.macro(MACRO::e_vx, x, y, z) = vx_f;
+			fine_SD.macro(MACRO::e_vy, x, y, z) = vy_f;
+			fine_SD.macro(MACRO::e_vz, x, y, z) = vz_f;
+		}
+	};
 
 #if defined(C2F_LINEAR_EXPLOSION) || defined(C2F_UNIFORM_EXPLOSION)
 	// ---- Explosion strategies (Eitel-Amor et al. 2025): the fine ghost
@@ -782,41 +801,62 @@ __global__ void cudaAMR_CoarseToFine(
 		const idx hi = size_a - 1 + ov_a;
 		return h < lo ? lo : (h > hi ? hi : h);
 	};
-	const idx cx = clamped_home(x + fine_off.x(), coarse_off.x(), coarse_SD.X(), coarse_SD.indexer.template getOverlap<0>());
-	const idx cy = clamped_home(y + fine_off.y(), coarse_off.y(), coarse_SD.Y(), coarse_SD.indexer.template getOverlap<1>());
-	const idx cz = clamped_home(z + fine_off.z(), coarse_off.z(), coarse_SD.Z(), coarse_SD.indexer.template getOverlap<2>());
 
-	// the home coarse cell's DF state and its macros
-	LBM_KS KS_H;
-	for (int q = 0; q < CONFIG::Q; q++)
-		KS_H.f[q] = read_coarse_df(q, cx, cy, cz);
-	COLL::computeDensityAndVelocity(KS_H);
-	rho_f = KS_H.rho;
-	vx_f = KS_H.vx;
-	vy_f = KS_H.vy;
-	vz_f = KS_H.vz;
+	// destination-group loop (up to 8 cells per thread, bounds-guarded)
+	for (int idz = 0; idz < 2; idz++) {
+		const idx z = gz0 + idz;
+		if (z >= ghost_end_fine.z())
+			continue;
+		for (int idy = 0; idy < 2; idy++) {
+			const idx y = gy0 + idy;
+			if (y >= ghost_end_fine.y())
+				continue;
+			for (int idx_ = 0; idx_ < 2; idx_++) {
+				const idx x = gx0 + idx_;
+				if (x >= ghost_end_fine.x())
+					continue;
+
+				const idx cx = clamped_home(x + fine_off.x(), coarse_off.x(), coarse_SD.X(), coarse_SD.indexer.template getOverlap<0>());
+				const idx cy = clamped_home(y + fine_off.y(), coarse_off.y(), coarse_SD.Y(), coarse_SD.indexer.template getOverlap<1>());
+				const idx cz = clamped_home(z + fine_off.z(), coarse_off.z(), coarse_SD.Z(), coarse_SD.indexer.template getOverlap<2>());
+
+				// the home coarse cell's DF state and its macros
+				LBM_KS KS_H;
+				for (int q = 0; q < CONFIG::Q; q++)
+					KS_H.f[q] = read_coarse_df(q, cx, cy, cz);
+				COLL::computeDensityAndVelocity(KS_H);
+				const dreal rho_f = KS_H.rho;
+				const dreal vx_f = KS_H.vx;
+				const dreal vy_f = KS_H.vy;
+				const dreal vz_f = KS_H.vz;
 
 	#ifdef C2F_LINEAR_EXPLOSION
-	// linear explosion: the home cell's macros (rho, u) are distributed to
-	// the fine subcells -- the equilibrium is re-evaluated at those macros
-	// and the non-equilibrium part is τ-rescaled from the home cell
-	// (preserves stress information without neighbor-cell reads)
-	LBM_KS KS_EQ;
-	KS_EQ.rho = rho_f;
-	KS_EQ.vx = vx_f;
-	KS_EQ.vy = vy_f;
-	KS_EQ.vz = vz_f;
-	COLL::setEquilibrium(KS_EQ);
-	const dreal neq_scale = tau_fine / tau_coarse;
-	for (int q = 0; q < CONFIG::Q; q++)
-		store_fine_df(q, KS_EQ.f[q] + neq_scale * (KS_H.f[q] - KS_EQ.f[q]));
+				// linear explosion: the home cell's macros (rho, u) are
+				// distributed to the fine subcells -- the equilibrium is
+				// re-evaluated at those macros and the non-equilibrium part
+				// is τ-rescaled from the home cell (preserves stress
+				// information without neighbor-cell reads)
+				LBM_KS KS_EQ;
+				KS_EQ.rho = rho_f;
+				KS_EQ.vx = vx_f;
+				KS_EQ.vy = vy_f;
+				KS_EQ.vz = vz_f;
+				COLL::setEquilibrium(KS_EQ);
+				const dreal neq_scale = tau_fine / tau_coarse;
+				for (int q = 0; q < CONFIG::Q; q++)
+					store_fine_df(q, x, y, z, KS_EQ.f[q] + neq_scale * (KS_H.f[q] - KS_EQ.f[q]));
 	#else
-	// uniform explosion: the home cell's DFs are duplicated to every fine
-	// subcell unchanged (zeroth order; no equilibrium re-evaluation, no
-	// rescaling)
-	for (int q = 0; q < CONFIG::Q; q++)
-		store_fine_df(q, KS_H.f[q]);
+				// uniform explosion: the home cell's DFs are duplicated to
+				// every fine subcell unchanged (zeroth order; no
+				// equilibrium re-evaluation, no rescaling)
+				for (int q = 0; q < CONFIG::Q; q++)
+					store_fine_df(q, x, y, z, KS_H.f[q]);
 	#endif
+
+				write_fine_macro(x, y, z, rho_f, vx_f, vy_f, vz_f);
+			}
+		}
+	}
 
 #elif ! defined(C2F_LAGRANGE) && ! defined(C2F_TRILINEAR)
 	// (default branch -- C2F_COMPACT_MOMENT is accepted as an explicit selector
@@ -844,17 +884,15 @@ __global__ void cudaAMR_CoarseToFine(
 	const dreal omega_s = no1 / tau_coarse;
 	const dreal omega_d = no1 / tau_fine;
 
-	// Step A: 2-cell-per-axis source window and the evaluation point. The
-	// axis_stencil lambda of the default branch is not visible here, so
-	// the window logic is duplicated (nodes only; the Lagrange weights of
-	// the default branch are not needed): the nominal window is
+	// Per-destination axis window (nodes only; the Lagrange weights of the
+	// default branch are not needed): the nominal window is
 	// {home-1, home} for even fg and {home, home+1} for odd fg, shifted
 	// into the coarse storage extent by the storability guard; the nodal
 	// local coordinates are +-1/2 (bx=0 -> -1/2) and the fine cell center
-	// evaluates at (tx,ty,tz) = +-1/4 per axis. On a degenerate axis
-	// (storage extent 1) the single cell is mirrored at both nodes: all
-	// coefficients of monomials containing that axis then evaluate to
-	// zero, so the polynomials reduce correctly.
+	// evaluates at +-1/4 per axis. On a degenerate axis (storage extent 1)
+	// the single cell is mirrored at both nodes: all coefficients of
+	// monomials containing that axis then evaluate to zero, so the
+	// polynomials reduce correctly.
 	const auto axis_window = [&fdiv2](idx fg, idx coarse_off_a, idx size_a, idx ov_a, idx* nodes) -> dreal
 	{
 		const idx home = fdiv2(fg);
@@ -874,247 +912,171 @@ __global__ void cudaAMR_CoarseToFine(
 		// evaluation point relative to the window center (start + 1/2)
 		return static_cast<dreal>(t - (static_cast<double>(start) + 0.5));
 	};
-	idx cnx[2], cny[2], cnz[2];
-	// tx/ty/tz stay mutable only so the C2F_CARVE pre-pass below can re-offset them under the define
-	dreal tx = axis_window(x + fine_off.x(), coarse_off.x(), coarse_SD.X(), coarse_SD.indexer.template getOverlap<0>(), cnx);
-	dreal ty = axis_window(y + fine_off.y(), coarse_off.y(), coarse_SD.Y(), coarse_SD.indexer.template getOverlap<1>(), cny);
-	dreal tz = axis_window(z + fine_off.z(), coarse_off.z(), coarse_SD.Z(), coarse_SD.indexer.template getOverlap<2>(), cnz);
 
-	#if ! defined(C2F_NO_CARVE) && ! defined(TNL_TEST_NO_CARVE)
-	// ---- Change-5 carve, now default-on (2026-08-18 default flip, user
-	// ruling; opt-out define: C2F_NO_CARVE; the former C2F_CARVE opt-in is
-	// retired -- defining it is a harmless no-op)
-	// (amr-interface-redesign-plan.md, Experiment A item
-	// 1 -- the "|t_rel| 0.25 -> 0.75, 0.25-cell extrapolation (Schönherr
-	// offset)" note; docs/AMR-interface-proposed-diagram.md change 5 and the
-	// §2 layout diagram; Schönherr 2015 thesis Eqs. 7.49-7.57): conservative
-	// map-based joint pre-pass over the up-to-8 candidate window cells of
-	// this thread's ghost cell. Per axis, shift the storage-clamped 2-cell
-	// window ONE CELL OUTWARD, away from the covered side, iff a GEO_NOTHING
-	// cell appears in any tensor-window combination at EXACTLY ONE end of the
-	// window ("shift iff it would touch a GEO_NOTHING cell in any tensor
-	// combination along that axis" -- a both-ends-covered window has no valid
-	// outward direction); the evaluation then runs off-center toward the
-	// fine side with |t_rel| = 0.75 via the SAME axis_window machinery above
-	// (t_rel moves with the window center). Both-ends-covered means the taint
-	// enters only through a sibling axis's candidate cells (tangent axes at
-	// faces/edges/corners) and the axis stays put -- the sibling's shift
-	// cleans the full tuple, which the final scan below verifies. Valid
-	// geometries (single rectangular footprint, ghosts >= 2 cells inside the
-	// coarse storage extent) never take the two degenerate paths: (1) a
-	// shift blocked by the storage edge (a face within 1 cell of it) and
-	// (2) a residual covered cell in the carved tuple (footprint < 3 coarse
-	// cells thick, or squeezed/multi-footprint maps); both shorten to the
-	// mirrored home cell with a rate-limited warning -- today's
-	// storability-guard shorten behavior (see axis_window above) plus the
-	// plan-required logged warning, capped so a degenerate map cannot storm
-	// stdout. Without this define none of this block exists and the CM
-	// branch is the original flow.
-	// Schönherr ch7 conversion, 2026-08-21 (T11 demotion record, audit
-	// A.4-R2): the one-cell window shift + off-center evaluation above
-	// implements exactly the |offset| <= 1 per-axis case of the thesis
-	// sec. 7.3 hat extrapolation (Eqs. 7.49-7.57): the hat-polynomial
-	// Taylor shift of the fitted coefficients evaluated at the
-	// destination equals the refit on the shifted window evaluated at
-	// the destination's source-frame position (verified equivalent,
-	// including multi-axis corner shifts; arbitrary/multi-cell offsets
-	// are unsupported and take the mirrored-home-cell collapse paths
-	// above). Under the conversion band map
-	// (docs/AMR-schonherr-ch7-target-contract.md sec. 2), every nominal
-	// face-normal source window of a valid face straddles the shared
-	// vertex with both sources on GEO_AMR_INTERFACE rows {c = -1, c =
-	// 0}, so this pre-pass is UNREACHABLE at valid faces; it is kept for
-	// wall-adjacent and degenerate geometries only. `C2F_NO_CARVE` /
-	// `TNL_TEST_NO_CARVE` semantics are unchanged.
-	static __device__ int c2f_carve_warn_budget = 16;
-
-	// one map read per candidate window cell (8 reads, nominal tuple)
-	bool cov[2][2][2];
-	for (int ibz = 0; ibz < 2; ibz++)
-		for (int iby = 0; iby < 2; iby++)
-			for (int ibx = 0; ibx < 2; ibx++)
-				cov[ibx][iby][ibz] = coarse_SD.map(cnx[ibx], cny[iby], cnz[ibz]) == BC::GEO_NOTHING;
-
-	// ghost's home coarse cell in the coarse indexer frame (never covered in
-	// valid geometries: it parents a fine ghost cell) -- the degenerate
-	// mirror target
-	const idx hox = fdiv2(x + fine_off.x()) - coarse_off.x();
-	const idx hoy = fdiv2(y + fine_off.y()) - coarse_off.y();
-	const idx hoz = fdiv2(z + fine_off.z()) - coarse_off.z();
-
-	// per-axis joint rule helper: taint_lo/taint_hi mark covered tensor
-	// combinations touching nodes[0]/nodes[1]; lo/hi are the storable
-	// single-cell bounds of the axis
-	const auto carve_warn = [x, y, z](int axis_id, idx n0, idx n1) -> void
-	{
-		const int ticket = atomicAdd(&c2f_carve_warn_budget, -1);
-		if (ticket > 0)
-			printf(
-				"C2F_CARVE: degenerate window, axis %d of fine ghost (%d,%d,%d) shortened to home cell (window [%d,%d])\n",
-				axis_id,
-				static_cast<int>(x),
-				static_cast<int>(y),
-				static_cast<int>(z),
-				static_cast<int>(n0),
-				static_cast<int>(n1)
-			);
-	};
-	const auto carve_window_off_covered_cells =
-		[&carve_warn](idx* nodes, dreal& t_rel, bool taint_lo, bool taint_hi, idx lo, idx hi, idx home, int axis_id) -> void
-	{
-		if (nodes[0] == nodes[1])
-			return;	 // axis already storage-shortened: nothing left to carve
-		if (taint_lo == taint_hi)
-			return;	 // clean window, or taint entering only through a sibling axis (whose shift cleans the tuple)
-		const idx start = taint_hi ? nodes[0] - 1 : nodes[0] + 1;  // shift one cell away from the covered end
-		if (start < lo || start + 1 > hi) {
-			// face within 1 cell of the coarse storage edge: degenerate
-			// shorten to the mirrored home cell (storability-guard behavior)
-			carve_warn(axis_id, nodes[0], nodes[1]);
-			t_rel += static_cast<dreal>(nodes[0] - home);
-			nodes[0] = home;
-			nodes[1] = home;
-			return;
+	// ---- Phase 1: per-destination window solve for the group ----
+	// Each of the up-to-8 destinations of the group carries the storage-
+	// clamped window pair of its own fdiv2/axis_window solve (verbatim the
+	// former single-destination behaviour); the union span of all in-range
+	// destinations' windows bounds the shared source staging below.
+	bool dst_in[8];
+	idx dst_n[8][3][2];	 // per-destination per-axis window nodes {lo, hi}
+	dreal dst_t[8][3];
+	idx umin[3], umax[3];
+	bool u_init = false;
+	for (int d = 0; d < 8; d++) {
+		const idx fx = gx0 + (d & 1);
+		const idx fy = gy0 + ((d >> 1) & 1);
+		const idx fz = gz0 + ((d >> 2) & 1);
+		dst_in[d] = fx < ghost_end_fine.x() && fy < ghost_end_fine.y() && fz < ghost_end_fine.z();
+		if (! dst_in[d])
+			continue;
+		idx cnx[2], cny[2], cnz[2];
+		dst_t[d][0] = axis_window(fx + fine_off.x(), coarse_off.x(), coarse_SD.X(), coarse_SD.indexer.template getOverlap<0>(), cnx);
+		dst_t[d][1] = axis_window(fy + fine_off.y(), coarse_off.y(), coarse_SD.Y(), coarse_SD.indexer.template getOverlap<1>(), cny);
+		dst_t[d][2] = axis_window(fz + fine_off.z(), coarse_off.z(), coarse_SD.Z(), coarse_SD.indexer.template getOverlap<2>(), cnz);
+		dst_n[d][0][0] = cnx[0];
+		dst_n[d][0][1] = cnx[1];
+		dst_n[d][1][0] = cny[0];
+		dst_n[d][1][1] = cny[1];
+		dst_n[d][2][0] = cnz[0];
+		dst_n[d][2][1] = cnz[1];
+		if (! u_init) {
+			u_init = true;
+			umin[0] = umax[0] = cnx[0];
+			umin[1] = umax[1] = cny[0];
+			umin[2] = umax[2] = cnz[0];
 		}
-		// evaluation point moves off-center with the window center
-		t_rel += static_cast<dreal>(nodes[0] - start);
-		nodes[0] = start;
-		nodes[1] = start + 1;
-	};
-
-	// apply the joint rule per axis
-	const idx ovx = coarse_SD.indexer.template getOverlap<0>();
-	const idx ovy = coarse_SD.indexer.template getOverlap<1>();
-	const idx ovz = coarse_SD.indexer.template getOverlap<2>();
-	carve_window_off_covered_cells(
-		cnx,
-		tx,
-		cov[0][0][0] || cov[0][0][1] || cov[0][1][0] || cov[0][1][1],
-		cov[1][0][0] || cov[1][0][1] || cov[1][1][0] || cov[1][1][1],
-		-ovx,
-		coarse_SD.X() - 1 + ovx,
-		hox,
-		0
-	);
-	carve_window_off_covered_cells(
-		cny,
-		ty,
-		cov[0][0][0] || cov[0][0][1] || cov[1][0][0] || cov[1][0][1],
-		cov[0][1][0] || cov[0][1][1] || cov[1][1][0] || cov[1][1][1],
-		-ovy,
-		coarse_SD.Y() - 1 + ovy,
-		hoy,
-		1
-	);
-	carve_window_off_covered_cells(
-		cnz,
-		tz,
-		cov[0][0][0] || cov[0][1][0] || cov[1][0][0] || cov[1][1][0],
-		cov[0][0][1] || cov[0][1][1] || cov[1][0][1] || cov[1][1][1],
-		-ovz,
-		coarse_SD.Z() - 1 + ovz,
-		hoz,
-		2
-	);
-
-	// final tuple scan: squeezed maps (footprint < 3 coarse cells thick along
-	// a tangent axis, two footprints bracketing the ghost) can leave a
-	// covered cell in the carved tuple -- collapse all axes to the mirrored
-	// home cell (the only cell the caller guarantees uncovered) and warn
-	bool c2f_carve_residual = false;
-	for (int ibz = 0; ibz < 2 && ! c2f_carve_residual; ibz++)
-		for (int iby = 0; iby < 2 && ! c2f_carve_residual; iby++)
-			for (int ibx = 0; ibx < 2 && ! c2f_carve_residual; ibx++)
-				c2f_carve_residual = coarse_SD.map(cnx[ibx], cny[iby], cnz[ibz]) == BC::GEO_NOTHING;
-	if (c2f_carve_residual) {
-		carve_warn(3, hox, hox);  // axis_id 3 = whole-tuple collapse
-		cnx[0] = hox;
-		cnx[1] = hox;
-		cny[0] = hoy;
-		cny[1] = hoy;
-		cnz[0] = hoz;
-		cnz[1] = hoz;
-		tx = 0;
-		ty = 0;
-		tz = 0;
+		umin[0] = std::min(std::min(cnx[0], cnx[1]), umin[0]);
+		umax[0] = std::max(std::max(cnx[0], cnx[1]), umax[0]);
+		umin[1] = std::min(std::min(cny[0], cny[1]), umin[1]);
+		umax[1] = std::max(std::max(cny[0], cny[1]), umax[1]);
+		umin[2] = std::min(std::min(cnz[0], cnz[1]), umin[2]);
+		umax[2] = std::max(std::max(cnz[0], cnz[1]), umax[2]);
 	}
-	#endif
 
-	// Steps B-D: visit the 8 source cells (local coordinates (xn,yn,zn)
-	// in {+-1/2}^3) and accumulate the polynomial coefficient sums; the
-	// prefactors of Eqs. 7.10-7.28 are applied after the loop
-	dreal sd0 = 0, sdx = 0, sdy = 0, sdz = 0, sdxy = 0, sdyz = 0, sdxz = 0, sdxyz = 0;
-	dreal sa0 = 0, sax = 0, say = 0, saz = 0, saxx = 0, sayy = 0, sazz = 0, saxy = 0, sayz = 0, saxz = 0, saxyz = 0;
-	dreal sb0 = 0, sbx = 0, sby = 0, sbz = 0, sbxx = 0, sbyy = 0, sbzz = 0, sbxy = 0, sbxz = 0, sbyz = 0, sbxyz = 0;
-	dreal sc0 = 0, scx = 0, scy = 0, scz = 0, scxx = 0, scyy = 0, sczz = 0, scxy = 0, scyz = 0, scxz = 0, scxyz = 0;
-	dreal sk_xy = 0, sk_yz = 0, sk_xz = 0, sk_xx_yy = 0, sk_xx_zz = 0;
-	for (int ibz = 0; ibz < 2; ibz++) {
-		const dreal zn = static_cast<dreal>(ibz) - n1o2;
-		const idx cz = cnz[ibz];
-		for (int iby = 0; iby < 2; iby++) {
-			const dreal yn = static_cast<dreal>(iby) - n1o2;
-			const idx cy = cny[iby];
-			for (int ibx = 0; ibx < 2; ibx++) {
-				const dreal xn = static_cast<dreal>(ibx) - n1o2;
-
-				AMR_CM_MACROS_AND_KMOMENTS(read_coarse_df, cnx[ibx], cy, cz);
+	// ---- Phase 2: shared source staging ----
+	// Read each coarse source cell of the group's union window ONCE (DF
+	// loads, macros, the five second-order non-equilibrium moments) and
+	// stage the rows every destination's donation chain consumes;
+	// per-axis span is at most 3 (two parities' 2-cell windows)
+	dreal su_rho[3][3][3], su_vx[3][3][3], su_vy[3][3][3], su_vz[3][3][3];
+	dreal su_kxy[3][3][3], su_kyz[3][3][3], su_kxz[3][3][3], su_kxxyy[3][3][3], su_kxxzz[3][3][3];
+	for (int ju_z = 0; ju_z <= umax[2] - umin[2]; ju_z++) {
+		const idx cz = umin[2] + ju_z;
+		for (int ju_y = 0; ju_y <= umax[1] - umin[1]; ju_y++) {
+			const idx cy = umin[1] + ju_y;
+			for (int ju_x = 0; ju_x <= umax[0] - umin[0]; ju_x++) {
+				const idx cx = umin[0] + ju_x;
+				AMR_CM_MACROS_AND_KMOMENTS(read_coarse_df, cx, cy, cz);
 	#ifndef C2F_EQ_ONLY
-				// (skipped under the C2F_EQ_ONLY debug experiment: zero
-				// strain-rate content makes the reconstructed cumulants pure
-				// equilibrium -- the fill writes eq(rho,u) only)
+				// (skipped under the C2F_EQ_ONLY debug experiment, as in
+				// the single-destination branch)
 				AMR_CM_PI_NEQ;
 	#endif
 	#ifdef C2F_DEV_ONLY
-				// trace-off experiment (seam investigation, 2026-08-19):
-				// subtract the trace of the non-equilibrium pressure tensor
-				// from the diagonals before the omega scaling -- deviatoric
-				// only, since the tau-rescaled compressional part is the
-				// suspected density-pump term
 				AMR_CM_PI_DEV;
 	#endif
 	#ifdef C2F_NORM_ONLY
-				// norm-only experiment (seam investigation): keep only the
-				// diagonal deviatoric part and zero the off-diagonal shear,
-				// so that FULL = NORM + SHEAR + trace partitions bit-exactly
-				// (the trace itself is zero-tested by C2F_DEV_ONLY)
 				AMR_CM_PI_NORM;
 	#endif
 	#ifdef C2F_SHEAR_ONLY
-				// shear-only experiment (seam investigation): keep only the
-				// off-diagonal shear part, zero the diagonals; NORM + SHEAR
-				// partition the full tensor's deviatoric content (trace is
-				// zero at the TGV fill sites, see C2F_DEV_ONLY)
 				AMR_CM_PI_SHEAR;
 	#endif
-
 				AMR_CM_KMOMENTS(omega_s);
-
-				AMR_CM_FIT_ACCUMULATE;
+				su_rho[ju_z][ju_y][ju_x] = rho_n;
+				su_vx[ju_z][ju_y][ju_x] = u;
+				su_vy[ju_z][ju_y][ju_x] = v;
+				su_vz[ju_z][ju_y][ju_x] = w;
+				su_kxy[ju_z][ju_y][ju_x] = k_xy;
+				su_kyz[ju_z][ju_y][ju_x] = k_yz;
+				su_kxz[ju_z][ju_y][ju_x] = k_xz;
+				su_kxxyy[ju_z][ju_y][ju_x] = k_xx_yy;
+				su_kxxzz[ju_z][ju_y][ju_x] = k_xx_zz;
 			}
 		}
 	}
 
-	// Step C: density polynomial coefficients (Eqs. 7.10-7.17) and the
-	// density at the fine cell center (Eq. 7.37)
-	// Step D: velocity polynomial coefficients (Eqs. 7.18-7.28 and the
-	// cyclic permutations for the y- and z-families) --
-	// AMR_CM_FIT_COEFFICIENTS
-	AMR_CM_FIT_COEFFICIENTS(tx, ty, tz);
+	// (the former map-based carve pre-pass was removed on 2026-08-23 after
+	// the simulated-band conversion: under the ch7 band map every nominal
+	// source window of a valid registration straddles live GEO_AMR_INTERFACE
+	// cells only, so the pre-pass could never fire; the frozen-window
+	// invariant is asserted statically by checkCouplingMapPattern at
+	// SimInit, and degenerate multi-footprint maps take the
+	// storability-guard shorten of axis_window above)
+	// ---- Phase 3: per-destination downstream for the group ----
+	// Every destination of the group carries the full single-destination
+	// synthesis with the donations taken from the shared staged union
+	// rows (Steps B-D accumulators, the coefficient fits, the corrected
+	// cumulants and the back-transformation); the donation slot order is
+	// the destination's own window order
+	for (int d = 0; d < 8; d++) {
+		if (! dst_in[d])
+			continue;
+		const idx fx = gx0 + (d & 1);
+		const idx fy = gy0 + ((d >> 1) & 1);
+		const idx fz = gz0 + ((d >> 2) & 1);
 
-	// velocities at the fine cell center (Eqs. 7.34-7.36) --
-	// AMR_CM_EVALUATE
-	AMR_CM_EVALUATE(tx, ty, tz);
+		dreal rho_f = 0, vx_f = 0, vy_f = 0, vz_f = 0;
+		dreal sd0 = 0, sdx = 0, sdy = 0, sdz = 0, sdxy = 0, sdyz = 0, sdxz = 0, sdxyz = 0;
+		dreal sa0 = 0, sax = 0, say = 0, saz = 0, saxx = 0, sayy = 0, sazz = 0, saxy = 0, sayz = 0, saxz = 0, saxyz = 0;
+		dreal sb0 = 0, sbx = 0, sby = 0, sbz = 0, sbxx = 0, sbyy = 0, sbzz = 0, sbxy = 0, sbxz = 0, sbyz = 0, sbxyz = 0;
+		dreal sc0 = 0, scx = 0, scy = 0, scz = 0, scxx = 0, scyy = 0, sczz = 0, scxy = 0, scyz = 0, scxz = 0, scxyz = 0;
+		dreal sk_xy = 0, sk_yz = 0, sk_xz = 0, sk_xx_yy = 0, sk_xx_zz = 0;
+		for (int ibz = 0; ibz < 2; ibz++) {
+			const dreal zn = static_cast<dreal>(ibz) - n1o2;
+			const idx ju_z = dst_n[d][2][ibz] - umin[2];
+			for (int iby = 0; iby < 2; iby++) {
+				const dreal yn = static_cast<dreal>(iby) - n1o2;
+				const idx ju_y = dst_n[d][1][iby] - umin[1];
+				for (int ibx = 0; ibx < 2; ibx++) {
+					const dreal xn = static_cast<dreal>(ibx) - n1o2;
+					const idx ju_x = dst_n[d][0][ibx] - umin[0];
 
-	// Step E: averaged second-order moments with the velocity-gradient
-	// corrections (Eqs. 7.29-7.33) and Step F: second-order cumulants at
-	// the fine cell (Eqs. 7.38-7.48); sigma_{c->f} = 1/2, omega_d is the
-	// destination (fine) grid rate -- AMR_CM_CORRECTED_CUMULANTS
-	AMR_CM_CORRECTED_CUMULANTS(n1o2);
+					// canonical donation scope of AMR_CM_FIT_ACCUMULATE,
+					// served from the staged union rows (identical values
+					// and accumulation order to the single-destination
+					// branch's per-source recomputation)
+					const dreal rho_n = su_rho[ju_z][ju_y][ju_x];
+					const dreal u = su_vx[ju_z][ju_y][ju_x];
+					const dreal v = su_vy[ju_z][ju_y][ju_x];
+					const dreal w = su_vz[ju_z][ju_y][ju_x];
+					const dreal k_xy = su_kxy[ju_z][ju_y][ju_x];
+					const dreal k_yz = su_kyz[ju_z][ju_y][ju_x];
+					const dreal k_xz = su_kxz[ju_z][ju_y][ju_x];
+					const dreal k_xx_yy = su_kxxyy[ju_z][ju_y][ju_x];
+					const dreal k_xx_zz = su_kxxzz[ju_z][ju_y][ju_x];
+					AMR_CM_FIT_ACCUMULATE;
+				}
+			}
+		}
 
-	// Steps G-H: cumulant/central-moment state at the fine cell and the
-	// cumulant back-transformation into the fine DFs (Geier 2015 Eqs.
-	// 81-96) -- AMR_CM_BACKTRANSFORM
-	AMR_CM_BACKTRANSFORM(store_fine_df);
+		// Step C: density coefficients (Eqs. 7.10-7.17) + destination
+		// density (Eq. 7.37); Step D: velocity coefficient families (Eqs.
+		// 7.18-7.28 and the cyclic permutations)
+		const dreal tx = dst_t[d][0];
+		const dreal ty = dst_t[d][1];
+		const dreal tz = dst_t[d][2];
+		AMR_CM_FIT_COEFFICIENTS(tx, ty, tz);
+
+		// velocities at the destination (Eqs. 7.34-7.36)
+		AMR_CM_EVALUATE(tx, ty, tz);
+
+		// Step E: averaged second-order moments with velocity-gradient
+		// corrections (Eqs. 7.29-7.33) and Step F: second-order cumulants
+		// at the destination (Eqs. 7.38-7.48); sigma_{c->f} = 1/2
+		AMR_CM_CORRECTED_CUMULANTS(n1o2);
+
+		// Steps G-H: cumulant/central-moment state and the cumulant
+		// back-transformation into the destination DFs (Geier 2015 Eqs.
+		// 81-96)
+		const auto store_df_cell = [&store_fine_df, fx, fy, fz](int q, dreal f) -> void
+		{
+			store_fine_df(q, fx, fy, fz, f);
+		};
+		AMR_CM_BACKTRANSFORM(store_df_cell);
+
+		write_fine_macro(fx, fy, fz, rho_f, vx_f, vy_f, vz_f);
+	}
 
 #else  // (C2F_LAGRANGE || C2F_TRILINEAR)
 	// ---- Interpolation strategies (opt-in since the 2026-08-18 flip:
@@ -1170,75 +1132,87 @@ __global__ void cudaAMR_CoarseToFine(
 		}
 		return n;
 	};
-	idx cnx[C2F_STENCIL], cny[C2F_STENCIL], cnz[C2F_STENCIL];
-	dreal cwx[C2F_STENCIL], cwy[C2F_STENCIL], cwz[C2F_STENCIL];
-	const int nnx = axis_stencil(x + fine_off.x(), coarse_off.x(), coarse_SD.X(), coarse_SD.indexer.template getOverlap<0>(), cnx, cwx);
-	const int nny = axis_stencil(y + fine_off.y(), coarse_off.y(), coarse_SD.Y(), coarse_SD.indexer.template getOverlap<1>(), cny, cwy);
-	const int nnz = axis_stencil(z + fine_off.z(), coarse_off.z(), coarse_SD.Z(), coarse_SD.indexer.template getOverlap<2>(), cnz, cwz);
 
-	// per-direction non-equilibrium sums (the interpolated macros accumulate
-	// into the rho_f/vx_f/vy_f/vz_f declared above)
-	dreal f_neq[CONFIG::Q] = {};
+	// destination-group loop (up to 8 cells per thread, bounds-guarded)
+	for (int idz = 0; idz < 2; idz++) {
+		const idx z = gz0 + idz;
+		if (z >= ghost_end_fine.z())
+			continue;
+		for (int idy = 0; idy < 2; idy++) {
+			const idx y = gy0 + idy;
+			if (y >= ghost_end_fine.y())
+				continue;
+			for (int idx_ = 0; idx_ < 2; idx_++) {
+				const idx x = gx0 + idx_;
+				if (x >= ghost_end_fine.x())
+					continue;
 
-	// visit the coarse cells of the interpolation stencil (up to 4x4x4 cells
-	// whose centers surround the fine cell center)
-	for (int bz = 0; bz < nnz; bz++) {
-		for (int by = 0; by < nny; by++) {
-			for (int bx = 0; bx < nnx; bx++) {
-				const dreal w = cwx[bx] * cwy[by] * cwz[bz];
+				idx cnx[C2F_STENCIL], cny[C2F_STENCIL], cnz[C2F_STENCIL];
+				dreal cwx[C2F_STENCIL], cwy[C2F_STENCIL], cwz[C2F_STENCIL];
+				const int nnx = axis_stencil(x + fine_off.x(), coarse_off.x(), coarse_SD.X(), coarse_SD.indexer.template getOverlap<0>(), cnx, cwx);
+				const int nny = axis_stencil(y + fine_off.y(), coarse_off.y(), coarse_SD.Y(), coarse_SD.indexer.template getOverlap<1>(), cny, cwy);
+				const int nnz = axis_stencil(z + fine_off.z(), coarse_off.z(), coarse_SD.Z(), coarse_SD.indexer.template getOverlap<2>(), cnz, cwz);
 
-				// coarse-cell DF state and its macroscopic quantities
-				LBM_KS KS;
+				// interpolated macros and per-direction non-equilibrium sums
+				dreal rho_f = 0, vx_f = 0, vy_f = 0, vz_f = 0;
+				dreal f_neq[CONFIG::Q] = {};
+
+				// visit the coarse cells of the interpolation stencil (up to
+				// 4x4x4 cells whose centers surround the fine cell center)
+				for (int bz = 0; bz < nnz; bz++) {
+					for (int by = 0; by < nny; by++) {
+						for (int bx = 0; bx < nnx; bx++) {
+							const dreal w = cwx[bx] * cwy[by] * cwz[bz];
+
+							// coarse-cell DF state and its macroscopic quantities
+							LBM_KS KS;
+							for (int q = 0; q < CONFIG::Q; q++)
+								KS.f[q] = read_coarse_df(q, cnx[bx], cny[by], cnz[bz]);
+							COLL::computeDensityAndVelocity(KS);
+							rho_f += w * KS.rho;
+							vx_f += w * KS.vx;
+							vy_f += w * KS.vy;
+							vz_f += w * KS.vz;
+
+							// non-equilibrium at the coarse cell: f_neq[q] = f[q] - eq_q(rho_c, u_c)
+							LBM_KS KS_EQ;
+							KS_EQ.rho = KS.rho;
+							KS_EQ.vx = KS.vx;
+							KS_EQ.vy = KS.vy;
+							KS_EQ.vz = KS.vz;
+							COLL::setEquilibrium(KS_EQ);
+							for (int q = 0; q < CONFIG::Q; q++)
+								f_neq[q] += w * (KS.f[q] - KS_EQ.f[q]);
+						}
+					}
+				}
+
+				// equilibrium at the interpolated macros
+				LBM_KS KS_F;
+				KS_F.rho = rho_f;
+				KS_F.vx = vx_f;
+				KS_F.vy = vy_f;
+				KS_F.vz = vz_f;
+				COLL::setEquilibrium(KS_F);
+
+	#ifdef C2F_EQ_ONLY
+				// debug experiment: equilibrium-only fill (no non-equilibrium content)
+				static_cast<void>(tau_fine);
+				static_cast<void>(tau_coarse);
 				for (int q = 0; q < CONFIG::Q; q++)
-					KS.f[q] = read_coarse_df(q, cnx[bx], cny[by], cnz[bz]);
-				COLL::computeDensityAndVelocity(KS);
-				rho_f += w * KS.rho;
-				vx_f += w * KS.vx;
-				vy_f += w * KS.vy;
-				vz_f += w * KS.vz;
-
-				// non-equilibrium at the coarse cell: f_neq[q] = f[q] - eq_q(rho_c, u_c)
-				LBM_KS KS_EQ;
-				KS_EQ.rho = KS.rho;
-				KS_EQ.vx = KS.vx;
-				KS_EQ.vy = KS.vy;
-				KS_EQ.vz = KS.vz;
-				COLL::setEquilibrium(KS_EQ);
+					store_fine_df(q, x, y, z, KS_F.f[q]);
+	#else
+				// volumetric rescaling, f_fine[q] = eq_q(rho_f,u_f) + (tau_f/tau_c)*f_neq[q]
+				const dreal neq_scale = tau_fine / tau_coarse;
 				for (int q = 0; q < CONFIG::Q; q++)
-					f_neq[q] += w * (KS.f[q] - KS_EQ.f[q]);
+					store_fine_df(q, x, y, z, KS_F.f[q] + neq_scale * f_neq[q]);
+	#endif
+
+				write_fine_macro(x, y, z, rho_f, vx_f, vy_f, vz_f);
 			}
 		}
 	}
-
-	// equilibrium at the interpolated macros
-	LBM_KS KS_F;
-	KS_F.rho = rho_f;
-	KS_F.vx = vx_f;
-	KS_F.vy = vy_f;
-	KS_F.vz = vz_f;
-	COLL::setEquilibrium(KS_F);
-
-	#ifdef C2F_EQ_ONLY
-	// debug experiment: equilibrium-only fill (no non-equilibrium content)
-	static_cast<void>(tau_fine);
-	static_cast<void>(tau_coarse);
-	for (int q = 0; q < CONFIG::Q; q++)
-		store_fine_df(q, KS_F.f[q]);
-	#else
-	// volumetric rescaling, f_fine[q] = eq_q(rho_f,u_f) + (tau_f/tau_c)*f_neq[q]
-	const dreal neq_scale = tau_fine / tau_coarse;
-	for (int q = 0; q < CONFIG::Q; q++)
-		store_fine_df(q, KS_F.f[q] + neq_scale * f_neq[q]);
-	#endif
 #endif
-
-	// macros for GEO_AMR_INTERFACE cells (no-op in v1, see the file docstring)
-	if (fine_SD.map(x, y, z) == BC::GEO_AMR_INTERFACE) {
-		fine_SD.macro(MACRO::e_rho, x, y, z) = rho_f;
-		fine_SD.macro(MACRO::e_vx, x, y, z) = vx_f;
-		fine_SD.macro(MACRO::e_vy, x, y, z) = vy_f;
-		fine_SD.macro(MACRO::e_vz, x, y, z) = vz_f;
-	}
 }
 
 /**
