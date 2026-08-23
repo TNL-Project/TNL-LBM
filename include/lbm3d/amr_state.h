@@ -31,23 +31,32 @@ struct AMRConservationStats
  *
  * \ref State_AMR inherits \ref State and overrides \ref SimUpdate to advance
  * a multi-level block hierarchy in time with the classic Berger & Colella
- * (1989) subcycling schedule, ordered into the Schönherr six-step cycle
- * (Schönherr 2015 thesis ch.7; the cycle contract of
+ * (1989) subcycling schedule, ordered into the Schönherr cycle with
+ * SIMULATED band (Schönherr 2015 thesis ch.7; the cycle contract of
  * docs/AMR-schonherr-ch7-target-contract.md / plan
- * .omo/plans/schonherr-ch7-conversion.md sec. 1.3). One global iteration
- * performs, per cycle and per level pair (L-1, L):
+ * .omo/plans/schonherr-ch7-conversion.md sec. 1.3; the passive-band form
+ * shipped by the conversion was flipped to the simulated band after the
+ * T16 20-tc null verdict - contract sec. 4 fork row (c)). One global
+ * iteration performs, per cycle and per level pair (L-1, L):
  *
  * 1. fine substep 1 of 2 at level L: `updateKernelDataForLevel(L, 0)`
  *    selects the fine level's substep-0 parity / DF rotation (MANDATORY
  *    before the kernel - for the A-B pattern the rotation selects the
  *    physical array `df_cur` refers to; the global `updateKernelData()` is
  *    driven by the coarse clock and must not drive the fine substeps),
- *    then `cudaLBMKernel`. The substep reads the fine ghost rows filled
- *    at the END of the previous cycle (steps 5-6 below; cycle 0 reads the
- *    initial fill \ref SimInit performed),
+ *    then `cudaLBMKernel` launched on the WIDENED extent
+ *    [-1, local+1) per axis (`ghost_layers = 1`): the inner ghost rows
+ *    are INTEGRATED like interior fluid (they are GEO_FLUID and collide
+ *    + stream), pulling their streaming input from the outer ghost row
+ *    filled at the END of the previous cycle (step 5 below; cycle 0
+ *    reads the initial fill \ref SimInit performed). The interior reads
+ *    the inner ghost row of the same frame -- that frame's fill,
  * 2. fine substep 2 of 2: `updateKernelDataForLevel(L, 1)` +
- *    `cudaLBMKernel` (same rotation requirement; the substep reads the
- *    OTHER AB frame's ghost rows - hence the both-frames fill),
+ *    `cudaLBMKernel` on the interior-only extent (same rotation
+ *    requirement). The boundary data of this substep is substep 1's
+ *    kernel-updated inner ghost rows in the OTHER AB frame, so the band
+ *    advances synchronously with the fine clock and no fill is needed
+ *    for this frame,
  * 3. ONE coarse (level 0) LBM step on all level-0 blocks
  *    (`updateKernelData()` was already called by `execute()` in `core.h`
  *    and set the level-0 even_iter parity / DF rotation from the global
@@ -58,30 +67,28 @@ struct AMRConservationStats
  *    the coarse kernel is their only writer -- fine feedback reaches them
  *    through streaming from the skin cells the interior F2C wrote at the
  *    end of the previous cycle (step 4 below),
- * 4. fine-to-coarse transfer: `cudaAMR_FineToCoarse` transfers the
- *    strategy-selected fine state (the Schönherr compact-moment
- *    reconstruction of the F2C_SCHONHERR default; the Lagrava-filtered
- *    fine state under the F2C_LAGRAVA opt-out) back onto the frozen
- *    GEO_NOTHING skin cells of level L-1, reading the fine level's
- *    rotation-1 frame (the post-substep-2 array; see
+ * 4. fine-to-coarse transfer: `cudaAMR_FineToCoarse`, called ONCE per
+ *    cycle, transfers the strategy-selected fine state (the Schönherr
+ *    compact-moment reconstruction of the F2C_SCHONHERR default; the
+ *    Lagrava-filtered fine state under the F2C_LAGRAVA opt-out) back
+ *    onto the frozen GEO_NOTHING skin cells of level L-1, reading the
+ *    fine level's rotation-1 frame (the post-substep-2 array; see
  *    `launchFineToCoarseTransfersInterior`),
- * 5. coarse-to-fine transfer of frame 0: `updateKernelDataForLevel(L, 0)`
- *    + `cudaAMR_CoarseToFine` fills the fine ghost rows in the physical
- *    frame the next cycle's substep 1 consumes,
- * 6. coarse-to-fine transfer of frame 1: `updateKernelDataForLevel(L, 1)`
- *    + `cudaAMR_CoarseToFine` fills the fine ghost rows in the physical
- *    frame the next cycle's substep 2 consumes (identical content to
- *    step 5 - both AB frames must carry valid destinations at the cycle
- *    boundary).
+ * 5. coarse-to-fine transfer, the single fill of the cycle:
+ *    `updateKernelDataForLevel(L, 0)` + `cudaAMR_CoarseToFine` fills the
+ *    fine ghost rows (both overlap rows) in the physical frame the next
+ *    cycle's substep 1 consumes. The other frame needs no fill: substep
+ *    2 consumes substep 1's updated inner ghost rows from it, and its
+ *    outer row is unreachable (substep 2 is interior-only).
  *
- * The relative order of step 4 (F2C) against steps 5-6 (C2F) is
+ * The relative order of step 4 (F2C) against step 5 (C2F) is
  * irrelevant: their touched sets are disjoint (F2C writes coarse skin
  * cells of the coarse post-step array, C2F writes fine ghost rows) -
  * declared per the cycle contract. \ref SimInit performs the same
- * both-frames fill (steps 5-6) after building \ref couplings, so cycle 0
- * starts with valid destinations in both frames (the fine substep 1 of
- * cycle 0 therefore reads a t_0 fill - the startup transient of the
- * contract sec. 1.3).
+ * single-frame fill (step 5) after building \ref couplings, so cycle 0
+ * starts with valid destinations in the substep-0 frame (the fine
+ * substep 1 of cycle 0 therefore reads a t_0 fill - the startup
+ * transient of the contract sec. 1.3).
  *
  * `nse.iterations` counts COARSE steps only; fine substeps advance the
  * level clocks, not the global counter. With the 2:1 refinement ratio the
@@ -218,9 +225,15 @@ struct State_AMR : State<NSE>
 	// delegate to these implementations (the schedule census of
 	// tests/test_amr_subcycling.cu).
 
-	// launch `cudaLBMKernel` on the full extent of every block at `level`
-	// (null-stream, interior launch configuration) and synchronize
-	virtual void launchLBMKernelForLevel(int level, bool compute_macro);
+	// launch `cudaLBMKernel` on every block at `level` (null-stream,
+	// interior launch configuration) and synchronize. With
+	// `ghost_layers > 0` the launch extent is widened by that many overlap
+	// cells per face (bounded by the allocated overlap of each block) --
+	// the Schönherr-simulated-band substep-1 launch at fine levels
+	// integrates the inner ghost rows (collide+stream like interior
+	// fluid, their streaming source is the outer overlap row); all other
+	// launches pass 0 and cover the interior [0, local) only.
+	virtual void launchLBMKernelForLevel(int level, bool compute_macro, int ghost_layers);
 	// fill the ghost layer of every level-`fine_level` block from level
 	// `fine_level - 1` via `cudaAMR_CoarseToFine`, iterating the
 	// `AMR_InterfacePatch` descriptors of \ref couplings
@@ -279,16 +292,25 @@ struct State_AMR : State<NSE>
  * maintained by the coupling kernels, not by MPI overlap synchronization.
  */
 template <typename NSE>
-void State_AMR<NSE>::launchLBMKernelForLevel(int level, bool compute_macro)
+void State_AMR<NSE>::launchLBMKernelForLevel(int level, bool compute_macro, int ghost_layers)
 {
+	using idx = typename NSE::TRAITS::idx;
 	for (auto* block : this->nse.getBlocksAtLevel(level)) {
 		const auto direction = TNL::Containers::SyncDirection::None;
 		TNL::Backend::LaunchConfiguration launch_config;
 		launch_config.blockSize = block->computeData.at(direction).blockSize;
-		launch_config.gridSize = block->computeData.at(direction).gridSize;
-		TNL::Backend::launchKernelAsync(
-			cudaLBMKernel<NSE>, launch_config, block->data, idx3d{0, 0, 0}, block->local, block->is_distributed(), compute_macro
-		);
+		// widened extent: cover the inner overlap rows (bounded by the
+		// allocated overlap, which is 2 on refinement-level blocks); the
+		// kernel's neighbor clamps (kernels.h) then reach the outer
+		// overlap row as the streaming source, filled by the C2F transfer
+		const idx g_x = std::min<idx>(ghost_layers, block->df_overlap_X());
+		const idx g_y = std::min<idx>(ghost_layers, block->df_overlap_Y());
+		const idx g_z = std::min<idx>(ghost_layers, block->df_overlap_Z());
+		const idx3d begin{-g_x, -g_y, -g_z};
+		const idx3d size{block->local.x() + 2 * g_x, block->local.y() + 2 * g_y, block->local.z() + 2 * g_z};
+		launch_config.gridSize =
+			(g_x == 0 && g_y == 0 && g_z == 0) ? block->computeData.at(direction).gridSize : block->getCudaGridSize(size, launch_config.blockSize);
+		TNL::Backend::launchKernelAsync(cudaLBMKernel<NSE>, launch_config, block->data, begin, begin + size, block->is_distributed(), compute_macro);
 	}
 	// synchronize the null-stream after all grids (same as the base driver)
 	TNL::Backend::streamSynchronize(0);
@@ -367,18 +389,17 @@ void State_AMR<NSE>::SimInit()
 		);
 
 #ifdef USE_CUDA
-	// Schönherr six-step cycle (the cycle contract of
+	// Schönherr cycle (the cycle contract of
 	// docs/AMR-schonherr-ch7-target-contract.md sec. 1.3): initial
-	// both-frames coarse-to-fine fill, identical to steps 5-6 of
-	// SimUpdate - cycle 0's fine substeps read the destinations filled
-	// here (substep 1 the substep-0 rotation frame, substep 2 the
-	// substep-1 rotation frame). The fill reads the initial coarse state
-	// (the t_0 fill; the startup transient of the contract). Without it
-	// cycle 0 would read uninitialized ghost frames.
+	// coarse-to-fine fill of the substep-0 rotation frame, identical to
+	// step 5 of SimUpdate - cycle 0's substep 1 reads the destinations
+	// filled here (substep 2 consumes substep 1's kernel-updated inner
+	// ghost rows from the other frame, so no second fill is needed).
+	// The fill reads the initial coarse state (the t_0 fill; the startup
+	// transient of the contract). Without it cycle 0 would read
+	// uninitialized ghost rows.
 	for (int L = 1; L <= this->nse.max_level; L++) {
 		this->nse.updateKernelDataForLevel(L, 0);
-		launchCoarseToFineTransfers(L);
-		this->nse.updateKernelDataForLevel(L, 1);
 		launchCoarseToFineTransfers(L);
 	}
 #endif
@@ -928,8 +949,8 @@ typename State_AMR<NSE>::BLOCK_NSE* State_AMR<NSE>::findBlockById(int level, int
 }
 
 /**
- * \brief Coarse-to-fine ghost-layer fill for one level (steps 5-6 of the
- * Schönherr six-step cycle - and the identical initial fill of
+ * \brief Coarse-to-fine ghost-layer fill for one level (step 5 of the
+ * Schönherr simulated-band cycle - and the identical initial fill of
  * \ref SimInit).
  *
  * Iterates the `AMR_InterfacePatch` descriptors of \ref couplings matching
@@ -1221,8 +1242,13 @@ void State_AMR<NSE>::SimUpdate()
 		// drive the fine substeps)
 		this->nse.updateKernelDataForLevel(L, 0);
 
-		// step 1: fine substep 1 of 2
-		launchLBMKernelForLevel(L, compute_macro);
+		// step 1: fine substep 1 of 2 -- simulated band (Schönherr ch.7):
+		// the launch extent is widened one overlap cell per face, so the
+		// inner ghost rows are INTEGRATED by the kernel (collide + stream
+		// like the interior fluid, GEO_FLUID by resetMap); their streaming
+		// source is the outer overlap row, filled by the cycle-end C2F
+		// transfer (step 5 below)
+		launchLBMKernelForLevel(L, compute_macro, /*ghost_layers=*/1);
 
 	#ifdef HAVE_MPI
 		// exchange the latest DFs and dmacro on overlaps between the
@@ -1238,8 +1264,11 @@ void State_AMR<NSE>::SimUpdate()
 		// read the OTHER frame's destinations)
 		this->nse.updateKernelDataForLevel(L, 1);
 
-		// step 2: fine substep 2 of 2
-		launchLBMKernelForLevel(L, compute_macro);
+		// step 2: fine substep 2 of 2 -- interior-only extent: the
+		// boundary data of this substep is substep 1's UPDATED inner ghost
+		// rows (the other AB frame), so no fill and no ghost integration
+		// is needed here
+		launchLBMKernelForLevel(L, compute_macro, /*ghost_layers=*/0);
 
 	#ifdef HAVE_MPI
 		// exchange the latest DFs and dmacro on overlaps between the
@@ -1260,7 +1289,7 @@ void State_AMR<NSE>::SimUpdate()
 	// since the ring fine-to-coarse launch was removed (D.1) - fine
 	// feedback reaches them through streaming from the skin cells the
 	// interior F2C wrote at the end of the previous cycle (step 4 below)
-	launchLBMKernelForLevel(0, compute_macro);
+	launchLBMKernelForLevel(0, compute_macro, /*ghost_layers=*/0);
 
 	#ifdef HAVE_MPI
 	// exchange the latest DFs and dmacro on overlaps between the LEVEL-0
@@ -1274,8 +1303,8 @@ void State_AMR<NSE>::SimUpdate()
 	}
 	#endif
 
-	// ---------- Schönherr cycle steps 4-6: transfers at the cycle end ----------
-	// The relative order of step 4 (F2C) against steps 5-6 (C2F) is
+	// ---------- Schönherr cycle steps 4-5: transfers at the cycle end ----------
+	// The relative order of step 4 (F2C) against step 5 (C2F) is
 	// IRRELEVANT: the touched sets are disjoint (F2C writes coarse skin
 	// cells in the coarse post-step array, C2F writes fine ghost rows) -
 	// declared per the cycle contract.
@@ -1291,17 +1320,15 @@ void State_AMR<NSE>::SimUpdate()
 		// coarse step (df_out -> next df_cur convention, no kernel change)
 		launchFineToCoarseTransfersInterior(L);
 
-		// step 5: coarse-to-fine frame 0 - fill the ghost rows of the
-		// substep-0 rotation frame (the next cycle's substep 1 consumes
-		// this frame)
+		// step 5: coarse-to-fine -- the single fill of the cycle
+		// (Schönherr simulated band): fill the ghost rows of the
+		// substep-0 rotation frame, which the next cycle's substep 1
+		// consumes. The other frame needs no fill: substep 2 reads
+		// substep 1's kernel-updated inner ghost rows from it, and the
+		// outer row of that frame is unreachable (substep 2 is
+		// interior-only), so the former frame-1 fill was dead storage
+		// traffic
 		this->nse.updateKernelDataForLevel(L, 0);
-		launchCoarseToFineTransfers(L);
-
-		// step 6: coarse-to-fine frame 1 - fill the ghost rows of the
-		// substep-1 rotation frame (identical content to step 5: both AB
-		// frames must carry valid destinations at the cycle boundary so
-		// the next cycle's substep 2 reads fresh data)
-		this->nse.updateKernelDataForLevel(L, 1);
 		launchCoarseToFineTransfers(L);
 	}
 
