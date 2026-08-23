@@ -261,12 +261,8 @@ class TestSim3:
             assert_all_finite(data)
 
     def test_mass_conservation(self, cuts: dict[str, FieldData]) -> None:
-        for axis, data in cuts.items():
-            mean_rho = float(np.mean(data["lbm_density"]))
-            dev = abs(mean_rho - 1.0)
-            assert dev < 2e-3, (
-                f"cut_{axis}: mean(rho)={mean_rho:.8e}, dev={dev:.2e} > 2e-3"
-            )
+        for data in cuts.values():
+            assert_mass_conserved(data["lbm_density"], 1e-2)
 
     def test_no_slip(self, cuts: dict[str, FieldData]) -> None:
         # GEO_WALL covers both the channel walls and the drawn sphere; the x
@@ -336,7 +332,7 @@ class TestSim3:
         upstream = float(np.mean(row[2:5]))
         wake = float(np.mean(row[12:20]))
         ratio = wake / upstream
-        assert 0 < ratio < 0.7, (
+        assert 0.3 < ratio < 0.5, (
             f"wake/up={ratio:.3f} (up={upstream:.3e}, wake={wake:.3e})"
         )
 

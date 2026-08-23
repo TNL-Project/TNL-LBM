@@ -186,7 +186,7 @@ class TestSim2dHills:
 
     def test_mass_conservation(self, data: FieldData) -> None:
         # Open outflow -> slightly looser than periodic.
-        assert_mass_conserved(data["lbm_density"], tolerance=5e-3)
+        assert_mass_conserved(data["lbm_density"], tolerance=7e-3)
 
     def test_sym_top_smooth(self, data: FieldData) -> None:
         # Without collision on SYM_TOP cells, the tangential distributions

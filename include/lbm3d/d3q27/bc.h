@@ -69,6 +69,7 @@ struct D3Q27_BC_All
 		switch (mapgi) {
 			case GEO_OUTFLOW_RIGHT:
 				STREAMING::streamingOutflowRight(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+				applySymmetryCorner(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				COLL::computeDensityAndVelocity(KS);
 				KS.rho = 1;
 				COLL::collision(KS);
@@ -76,6 +77,7 @@ struct D3Q27_BC_All
 				break;
 			case GEO_OUTFLOW_RIGHT_INTERP:
 				STREAMING::streamingOutflowInterpRight(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+				applySymmetryCorner(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				COLL::computeDensityAndVelocity(KS);
 				COLL::setEquilibriumDecomposition(KS, 1);
 				KS.rho = 1;
@@ -162,6 +164,51 @@ struct D3Q27_BC_All
 		}
 	}
 
+	// Mirror-precondition for BC cells adjacent to GEO_SYMMETRY planes.
+	// Checks the BC cell's own 6 neighbors: if a neighbor is GEO_SYMMETRY,
+	// the remaining perpendicular neighbors are checked for GEO_NOTHING to
+	// find the mirror half-planes. Symmetry may be on multiple axes;
+	// each axis is checked independently.
+	// No symmetry neighbor → no closure. The direction from the BC cell to the
+	// symmetry cell is never mirrored (the BC handles those populations).
+	template <typename LBM_KS>
+	__cuda_callable__ static void applySymmetryCorner(DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
+	{
+		std::uint8_t ghosts = 0;
+		if (SD.map(xm, y, z) == GEO_SYMMETRY || SD.map(xp, y, z) == GEO_SYMMETRY) {
+			if (SD.map(x, ym, z) == GEO_NOTHING)
+				ghosts |= SYM_YM;
+			if (SD.map(x, yp, z) == GEO_NOTHING)
+				ghosts |= SYM_YP;
+			if (SD.map(x, y, zm) == GEO_NOTHING)
+				ghosts |= SYM_ZM;
+			if (SD.map(x, y, zp) == GEO_NOTHING)
+				ghosts |= SYM_ZP;
+		}
+		if (SD.map(x, ym, z) == GEO_SYMMETRY || SD.map(x, yp, z) == GEO_SYMMETRY) {
+			if (SD.map(xm, y, z) == GEO_NOTHING)
+				ghosts |= SYM_XM;
+			if (SD.map(xp, y, z) == GEO_NOTHING)
+				ghosts |= SYM_XP;
+			if (SD.map(x, y, zm) == GEO_NOTHING)
+				ghosts |= SYM_ZM;
+			if (SD.map(x, y, zp) == GEO_NOTHING)
+				ghosts |= SYM_ZP;
+		}
+		if (SD.map(x, y, zm) == GEO_SYMMETRY || SD.map(x, y, zp) == GEO_SYMMETRY) {
+			if (SD.map(xm, y, z) == GEO_NOTHING)
+				ghosts |= SYM_XM;
+			if (SD.map(xp, y, z) == GEO_NOTHING)
+				ghosts |= SYM_XP;
+			if (SD.map(x, ym, z) == GEO_NOTHING)
+				ghosts |= SYM_YM;
+			if (SD.map(x, yp, z) == GEO_NOTHING)
+				ghosts |= SYM_YP;
+		}
+		if (ghosts)
+			applySymmetry(KS, ghosts);
+	}
+
 	template <typename LBM_KS>
 	__cuda_callable__ static void preCollision(DATA& SD, LBM_KS& KS, map_t mapgi, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
@@ -195,6 +242,7 @@ struct D3Q27_BC_All
 			case GEO_INFLOW_LEFT:
 				{
 					SD.inflow(KS, x, y, z);
+					applySymmetryCorner(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 					// moment boundary condition by Pavel Eichler https://doi.org/10.1016/j.camwa.2024.08.009
 					// expressions symetrized by Jakub Klinkovsky
 					// clang-format off
@@ -246,6 +294,7 @@ struct D3Q27_BC_All
 				}
 			case GEO_INFLOW_BOUNCEBACK:
 				SD.inflow(KS, x, y, z);
+				applySymmetryCorner(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				// collision step: bounce-back with modified right-hand-side:
 				// -2/c_s^2 * rho(x_wall, t_n) * (\xi_k, v_wall)
 				{
@@ -307,6 +356,7 @@ struct D3Q27_BC_All
 				break;
 			case GEO_INFLOW_EQ_LEFT:
 				SD.inflow(KS, x, y, z);
+				applySymmetryCorner(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				// clang-format off
 				KS.rho = (dreal)1.0/(1-KS.vx) * (
 					(
@@ -326,6 +376,7 @@ struct D3Q27_BC_All
 				COLL::setEquilibrium(KS);
 				break;
 			case GEO_OUTFLOW_EQ:
+				applySymmetryCorner(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				COLL::computeDensityAndVelocity(KS);
 				KS.rho = 1;
 				COLL::setEquilibrium(KS);
