@@ -1,7 +1,7 @@
 # TNL-LBM PROJECT KNOWLEDGE BASE
 
-**Updated:** 2026-08-20
-**Branch:** main
+**Updated:** 2026-08-22
+**Branch:** feat/amr-schonherr-ch7
 
 ## OVERVIEW
 
@@ -24,6 +24,7 @@ with optional Python bindings via nanobind and distributed execution through CUD
 ├── sim_NSE/             # 3D Navier-Stokes example simulations
 ├── sim_NSE_ADE/         # 3D NSE + advection-diffusion examples
 ├── sim_adjoint/         # 3D Adjoint-based sensitivity examples
+├── sim_AMR/             # 2-level AMR example simulations (Taylor-Green + developing channel)
 ├── sim_2D/              # 2D example simulations
 ├── pytnl_lbm/           # Python extension module
 ├── tests/               # pytest unit, regression & integration suites + subproject test
@@ -162,6 +163,12 @@ TNL_LBM_BUILD_DIR=build-ab pytest
 # Python bindings (after build)
 PYTHONPATH=build/pytnl_lbm python -c "import pytnl_lbm"
 
+# AMR gate: build + run the 7 AMR test targets (needs a CUDA GPU)
+./tests/run-amr-tests.sh
+# 2-level AMR example simulations (Taylor-Green; --convective-times 20 for the long decision-table run)
+./build/sim_AMR/sim_AMR --resolution 1
+./build/sim_AMR/sim_AMR_channel --resolution 1
+
 # Spell-check (CI lint job)
 typos --color always --sort
 ```
@@ -231,6 +238,58 @@ provides the AB default when neither is set.
     ~72% of cells carry ulp diffs by mid-run, final max|d| ≈ 3.57e-4 (vx).
     Codegen attribution: `docs/aa-ab-divergence-sm120-codegen/`.
   Two candidate fixes `fix-outflow-unify-codegen` (`a164865`) and `fix-outflow-pin-arithmetic` (`aaaac43`).
+
+## AMR (STATIC 2:1 REFINEMENT — SCHÖNHERR-CH7 BAND)
+
+Static, cell-centered, volumetric AMR — one refinement level, single MPI rank,
+single GPU, D3Q27, CUDA-only coupling kernels. The coupling is the
+Schönherr-2015 ch.7 target-band conversion landed on this branch (16 commits;
+internals doc `docs/AMR-for-LBM-implementation.md`, normative band/cycle
+contract `docs/AMR-schonherr-ch7-target-contract.md`).
+
+- **Simulations**: `sim_AMR/sim_AMR.cu` (Taylor-Green 2-level AMR,
+  `--convective-times N` long runs), `sim_AMR/sim_AMR_channel.cu` (Dirichlet
+  developing-channel diagnostic, the B.7 artifact). Probe CLI on both:
+  `--write-dfs` (raw DF fields in VTKHDF) and `--out3d-iter-period N`
+  (per-iteration frame cadence).
+- **Surfaces**: `include/lbm3d/amr_decomposition.h` (`createAMRBlocks` —
+  footprint re-anchored one fine cell inward per face, gs ≥ 3 minimum;
+  `markAMRInterface` — ring {halo c=−1 + reactivated surface shell c=0} tagged
+  `GEO_AMR_INTERFACE`, footprint-depth ≥ 1 cells frozen `GEO_NOTHING`),
+  `include/lbm3d/amr_state.h` (`State_AMR` driver: `SimUpdate` six-step cycle,
+  `buildCouplings` vertex-straddling patches, SimInit map-pattern assertion),
+  `include/lbm3d/d3q27/amr_coupling.h` (`cudaAMR_CoarseToFine`,
+  `cudaAMR_FineToCoarse`), `include/lbm3d/viz/OverlappingAMRWriter.{h,hpp}`.
+- **Six-step cycle** (per cycle, per level): fine substep 1 → fine substep 2 →
+  coarse step → F2C (depth-1 skin, reads rotation-1 frame) → C2F frame 0 →
+  C2F frame 1 (identical content; SimInit does the same both-frames fill for
+  cycle 0). H9 and the BVP refill are hard-removed; F2C and C2F touch disjoint
+  sets. Checkpoint restart does not carry across the band registration.
+- **Strategy surfaces** (`sim_AMR/CMakeLists.txt`): C2F default is the σ-form
+  compact-moment (σ = 1/2; `TNL_LBM_C2F_STRATEGY=C2F_LAGRANGE` opts back to the
+  3rd-order Lagrange; carve default-on, `C2F_NO_CARVE` disables). F2C default
+  is `TNL_LBM_F2C_STRATEGY=F2C_SCHONHERR` (the §7.2 σ = 2 compact-moment
+  transfer, default since commit 15); `=F2C_LAGRAVA` opts out to the 4×4×4
+  Lagrava filter — a named no-op define: the kernel splits on
+  `#ifdef F2C_SCHONHERR` only, and `F2C_BOX_AVERAGE` selects the 1/8 average
+  inside that else-branch. Debug channel defines:
+  `C2F_EQ_ONLY/DEV_ONLY/NORM_ONLY/SHEAR_ONLY`. Pre-flip build caches keep the
+  old empty strategy — re-default with `cmake -B build -S . -UTNL_LBM_F2C_STRATEGY`.
+- **AMR gate**: `tests/run-amr-tests.sh` builds and runs the 7 AMR targets
+  (coupling/subcycling/vtkhdf mocks × {ab,aa} + ParaView E2E); 7/7 at HEAD.
+  pytest sides: `tests/unit/test_cpp_units.py` (AMR doctest suites),
+  `tests/unit/test_amr_f2c_schonherr.py`, `tests/unit/test_amr_c2f_debug_smoke.py`.
+- **Measured verdict (recorded, not repaired)**: the conversion was an
+  experiment (contract §1). On the T16 20-tc decision table the −23 % mass
+  leak is closed ~5 orders on every HEAD arm (era effect of the band
+  registration + six-step cycle, not the F2C branch), the seam bias amplifies
+  ×1.166 within the pre-registered ×1.2 bound, and the vortex does NOT survive
+  at 20 tc on any arm (the control-era survival was interface-pump-fed) —
+  honest negative/null result; the full table is quoted in commit `1bd158c`'s
+  body and at `docs/AMR-for-LBM-implementation.md` ¶ "Interface density bias".
+  Probe tools: `tests/interface_seam_metric.py` (`--fine-row 0 --coarse-row 16`
+  = the re-paired pairing of contract §5), `tests/between_metric.py`
+  (footprint window re-pinned 33/62).
 
 ## NOTES
 
