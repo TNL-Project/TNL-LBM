@@ -42,9 +42,9 @@ Face-normal axis; coarse cell centers at integers; ring row c=−1, today's skin
 |---|---|---|---|
 | c=−2 | bulk (today's carve-era outer source; never read nominally) | fluid (unchanged) | — |
 | c=−1 | C2F source line 1 | GEO_AMR_INTERFACE (unchanged) | — |
-| −0.75 (+¼ of c=−1) | C2F destination (ghost row 1) | ghost | old −1 → **new −2** |
+| −0.75 (+¼ of c=−1) | C2F destination (ghost row 1) — filled every cycle; **simulated band: the streaming source of the inner row's substep-1 integration (never itself collided/streamed)** | ghost | old −1 → **new −2** |
 | c=0 | C2F source line 2, SIMULATED | skin GEO_NOTHING → **GEO_AMR_INTERFACE** (ring row 2) | — |
-| −0.25 (−¼ of c=0) | C2F destination (ghost row 2) | interior → ghost | old 0 → **new −1** |
+| −0.25 (−¼ of c=0) | C2F destination (ghost row 2) — filled every cycle; **simulated band: INTEGRATED by the widened substep-1 fine kernel (collide+stream), then consumed by substep 2 as the boundary** | interior → ghost | old 0 → **new −1** |
 | +0.25 (+¼ of c=0) | standard LBM | interior | old 1 → **new local 0** |
 | +0.75, +1.25 (subcells of c=1) | F2C source rows | interior | old {2,3} → new {1,2} |
 | c=1 | F2C destination (frozen, refilled) | 1st deep frozen → **GEO_NOTHING skin target** | — |
@@ -86,17 +86,19 @@ Patch destination census per face family: **{648, 648, 504, 504, 392, 392}**; co
 
 ---
 
-## 3. Cycle contract (T7)
+## 3. Cycle contract (T7; **amended 2026-08-23 to the simulated band** — trigger of fork row (c) fired with the T16 null verdict)
 
 Per cycle, per level:
 
-`fine substep 1 → fine substep 2 → coarse step → F2C → C2F (frame 0) → C2F (frame 1)`
+`fine substep 1 (widened extent [−1, local+1): inner ghost rows INTEGRATED) → fine substep 2 (interior-only) → coarse step → F2C (once) → C2F (single fill of the substep-0 frame, BOTH ghost rows)`
 
-- **F2C** reads the rotation-1 post-substep-2 frame.
-- **C2F runs twice with identical content** — once per AB frame so each substep's frame carries valid destinations; SimInit does the same both-frames fill for cycle 0.
+- **Fine substep 1** runs on the widened extent: the inner ghost rows (ghost row 2 of the band map) collide + stream like interior fluid (GEO_FLUID by construction), sourcing the outer ghost row (ghost row 1); the interior sources the inner row's fill.
+- **Fine substep 2** runs on the interior-only extent; its boundary data is substep 1's kernel-updated inner rows in the other AB frame — the band advances synchronously with the fine clock.
+- **F2C** reads the rotation-1 post-substep-2 frame; runs **once per coarse step** (as it already did).
+- **C2F runs once per cycle** — the single fill targets the substep-0 frame (consumed by the next cycle's substep 1) and covers **both** ghost rows of the band; SimInit does the same single-frame fill for cycle 0. The other frame needs no fill: substep 2 consumes substep 1's updated inner rows from it, and its outer row is unreachable (substep 2 is interior-only) — the former frame-1 fill was dead traffic under the simulated band and is **removed**.
 - **F2C↔C2F order is irrelevant** — touched sets are disjoint (declared in docstring).
-- **BVP refill = content no-op today** — today's fill #2 is content-identical to fill #1 (verified by review), so its removal is **lossless**. **H9 removal is lossless** on the same basis.
-- **Probe-visible cycle-1 caveat:** the both-frames fill means cycle-1 fine1 reads a t_0 fill — the seam metric compares cycle-1 separately from cycle ≥ 2 (Oracle startup-transient note).
+- **BVP refill = content no-op today** — the conversion-era fill #2 was content-identical to fill #1 (verified by review), so its removal was **lossless**. **H9 removal is lossless** on the same basis.
+- **Probe-visible cycle-1 caveat:** the single-frame fill means cycle-1 fine1 reads a t_0 fill — the seam metric compares cycle-1 separately from cycle ≥ 2 (Oracle startup-transient note).
 - **Checkpoint restart compatibility is declared INCOMPATIBLE** across the re-anchor (array shapes change). Declared, acceptable on this branch; intentional per fork (i).
 
 ---
@@ -107,11 +109,11 @@ Per cycle, per level:
 |---|---|---|
 | (a) | F2C destination row **frozen `GEO_NOTHING`** (Guzik-equivalence: frozen covered cell + adjusted stream semantics is verbatim-blessed — report_guzik_bvp_stencils.md §7) | **`F2C_DEST_ACTIVE`** collision-active-if-tagged variant — only budgeted/implemented if the T16 decision table is null on the frozen arm |
 | (b) | deep footprint stays allocated frozen (storage-only superset; Schönherr's unallocated deep cells ≈ same physics — memory, not physics) | — |
-| (c) | **declared deviation:** fine destination rows are **passive overlap rows** (never collide/stream), i.e. IVP-class semantics, NOT Schönherr's simulated destinations; ghost row −2 is un-read by v1 kernels — kept for band parity, declared, harmless | **simulated-band variant budgeted if T16 null** (`F2C_SIMULATED_BAND` arm; Guzik §1 steady-state-perturbation class argument stands against a passive band in general — our per-cycle fill frequency mitigates; measured verdict decides) |
+| (c) | **CONVERTED (2026-08-23):** fine destination rows are **Schönherr's simulated destinations** — the inner ghost row is integrated by the widened substep-1 fine kernel (collide+stream like interior fluid); the outer ghost row stays fill-only as that integration's streaming source. The trigger of the registered fallback arm fired (T16 20-tc null verdict on every arm; measured verdict decided); the conversion-era passive band (IVP-class semantics, both-frames fill) is superseded — see §3. The arm landed as a **default behavior change** (no `F2C_SIMULATED_BAND` macro) | (superseded: the passive band of the conversion wave) |
 | (d) | H9 + BVP refill: **hard removal** (`C2F_H9`, `h9_first_fill`, `c2f_time_centered`, CMake var + retirement warning idiom) | — |
 | (e) | stage-3 reuses CM coefficient code (`sd/sa/sb/sc/sk` sums exist; extract shared helpers in T13 bitwise-gated) | — |
 | (f) | MPI nproc=1 only; explicit non-goal; SimInit note | — |
-| (g) | destination rows live in overlap storage only, never kernel-domain | — |
+| (g) | destination rows live in overlap storage; **amended with row (c) (2026-08-23):** the INNER destination row is additionally kernel-domain during fine substep 1 (widened launch extent [−1, local+1)); the outer destination row stays fill-only (never kernel-domain) | — |
 | (h) | F2C sources = the destination cell's own 8 subcells (**closed**; new locals {1,2}) | — |
 | (i) | ring tagging = reactivation semantics (ring row 2 = reactivated skin; **no outward growth**, c=−2 stays fluid) — **checkpoint restart compatibility intentionally broken** | — |
 | (j) | fix-forward audit deltas; **`F2C_SCHONHERR` default at T17** with **`F2C_LAGRAVA` opt-out kept** | — |
@@ -546,15 +548,16 @@ conversion band map demotes carve to wall/degenerate-only
   errors at the destination cells). **T14 impact:** `a_0`/`b_0`/`c_0` carry
   the 7.18 correction into the F2C destination velocity — the same family
   choice propagates (§A.2.3 caveat); lock reused at commit 13.
-- **R2 (RESOLVED):** Eqs. 7.49–7.57 — the carve implements the 1-cell-shift
+- **R2 (RESOLVED):** Eqs. 7.49–7.57 — the carve implemented the 1-cell-shift
   case of the hat extrapolation by refit+off-center evaluation (verified
   equivalent for |offset| ≤ 1/axis, incl. multi-axis corner shifts);
   arbitrary offsets unsupported (degenerate collapse). After the carve
-  demotion (valid faces never carve) this is wall-lane documentation: the
-  demotion record at `amr_coupling.h:438–453` states the |offset| ≤ 1 scope
-  and the under-the-band-map unreachability at valid faces explicitly;
-  `C2F_NO_CARVE`/`TNL_TEST_NO_CARVE` semantics unchanged. Tests 10–13/17
-  already pin the behavior.
+  demotion (valid faces never carve) this was wall-lane documentation, and
+  on 2026-08-23 the pre-pass itself was HARD-REMOVED together with the
+  `C2F_NO_CARVE`/`TNL_TEST_NO_CARVE` knobs and the mock carve tests
+  (10–13/17): under the simulated-band map a covered window is an invalid
+  registration, statically rejected by checkCouplingMapPattern at SimInit.
+  This R-item stays as the audit trail of the removed code path.
 - **R3 (noted, no action beyond the docstring clause):** (a) coupling macros
   use the force-free moment (`fx=0` fresh KS) — matches thesis §7.2 (no
   force); if volume forcing ever reaches the band, the coupling velocity

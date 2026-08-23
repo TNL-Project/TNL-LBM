@@ -1454,14 +1454,18 @@ void test_f2c_df_store_map_guard()
 	}
 }
 
-// Tests 8-13 + 17: compact-moment (CM; the default C2F branch since the
-// 2026-08-18 flip) and carve (default-on; opt-out C2F_NO_CARVE) exactness --
-// Experiment A item 2 (adjudicator of the A.2 TG
-// smoke blow-up:
-// synthetic-field exactness separates carve-math bugs from carve physics).
-// (Pre-flip note: before the 2026-08-18 default flip, the default build
-// compiled this whole block out; the mirror conditions below now include it
-// whenever the production branch is CM -- including the default build.)
+// Tests 8/9: compact-moment (CM; the default C2F branch since the
+// 2026-08-18 flip) exactness -- Experiment A item 2 (adjudicator of the A.2
+// TG smoke blow-up: synthetic-field exactness separates kernel-math bugs
+// from coupling physics). (Pre-flip note: before the 2026-08-18 default
+// flip, the default build compiled this whole block out; the mirror
+// conditions below now include it whenever the production branch is CM --
+// including the default build.) The former carve exactness tests (Tests
+// 10-13/17) were removed on 2026-08-23 together with the kernel's carve
+// pre-pass: under the ch7 band registration every nominal source window of
+// a valid coupling straddles live GEO_AMR_INTERFACE cells only (asserted
+// statically by checkCouplingMapPattern at SimInit), so a covered-source
+// map is an invalid registration, not a runtime case.
 //
 // EXACTNESS CLASS (from the CM machinery, amr_coupling.h:321-334): the
 // 8-coefficient density polynomial is the plain trilinear fit of the 8 nodal
@@ -1490,56 +1494,20 @@ void test_f2c_df_store_map_guard()
 // pure quadratic velocity fields additionally a_xx/a_yy/a_xx = the
 // curvature).
 //
-// WINDOW/t_rel TABLE (all geometries: coarse 8^3 with 1-cell overlap,
-// storage [-1,9); fine 16^3; offsets zero; fine cell center = fg*0.5-0.25 in
-// coarse indexer coords):
-//   Tests 8/9 (nominal): covered plane x=-1 far from every window -> inert
-//   (in the carve build this is the "carved nominal == uncarved" case);
-//   launch fg in [2,15)^3 -> nominal windows subset of [0,8], |t_rel|=0.25.
-//   Test 10 (1-axis carve): covered plane x=2 (y,z in [0,8]); e.g. probe
-//   fg=6: window {2,3} -> {3,4}, t_rel -0.75 (the Schönherr offset case);
-//   fg=3: {1,2} -> {0,1}, t_rel +0.75; fg=4/5 shift to |t_rel|=1.25
-//   (home cell covered); fg>=7: no taint (control). Tangent axes see taint
-//   at both window ends (full plane) and stay nominal.
-//   Test 11 (3-axis corner carve): covered corner cell (2,2,2) only; probe
-//   (6,6,6): tuple {2,3}^3 tainted at the lo-lo-lo corner only -> all three
-//   axes shift +1, tuple {3,4}^3, t_rel = (-0.75,-0.75,-0.75); probe
-//   (7,7,7): tuple {3,4}^3 untouched (control).
-//   Test 12 (degenerate storage edge): covered {(7,5,5),(7,5,6)}; single
-//   fine cell (15,12,12), home (7,6,6), windows x{7,8},y{5,6},z{5,6}:
-//   x tainted lo-only -> shift to {8,9} blocked by the storage edge
-//   (hi=8) -> x collapses to the mirrored home cell + ONE warning
-//   (axis 0); y tainted lo-only after x-collapse reads -> carves to {6,7};
-//   z tainted at both ends -> stays {5,6}. Final tuple {(7),(6,7),(5,6)}
-//   clean. Field is x-independent so the collapsed x-dependence keeps the
-//   exactness analytic and tight.
-//   Test 13 (degenerate residual tuple): covered = {2,3}^3 minus the home
-//   cell (3,3,3); single fine cell (6,6,6): every axis tainted at BOTH
-//   ends -> no axis shifts; final rescan finds the covered cells ->
-//   whole-tuple collapse to the mirrored home + ONE warning (axis id 3).
-//   Output equals the analytic field AT THE HOME CELL CENTER (3,3,3).
-//   Test 17 (2-axis edge carve, added by D.2): covered column {(2,2,z) :
-//   z in [0,8]} (the intersection line of two covered faces x=2, y=2);
-//   probes with BOTH tangents in {3,4,5,6} shift the two NORMAL axes (each
-//   tainted at exactly one end; mixed-sign shift directions included),
-//   z stays nominal (column taints both ends); probes with a tangent
-//   outside {3..6} are the inert controls.
+// GEOMETRY (Tests 8/9): coarse 8^3 with 1-cell overlap, storage [-1,9);
+// fine 16^3; offsets zero; fine cell center = fg*0.5-0.25 in coarse
+// indexer coords. Launch fg in [2,15)^3 -> nominal windows subset of
+// [0,8], never clamped, |t_rel| = 0.25 everywhere.
 // Covered cells' DFs are poisoned with NaN in every array/slot: any read of
 // a covered cell contaminates the output with NaN and fails the finiteness
 // assertion ("no covered data contaminates the output").
-//
-// WARNING BUDGET: the kernel's rate-limited warning budget is 16 prints per
-// process per kernel instantiation; Tests 12/13 trigger exactly ONE warning
-// each from exactly ONE thread (deterministic content and order), so the
-// budget is never the assertion target -- degenerate assertions are on the
-// collapse RESULT semantics; the warning text is verified in the run logs.
 //
 // EXISTING TESTS: untouched; they pin the default Lagrange path and are
 // compiled identically under the defines (Tests 1-7 pass unchanged in the
 // a1/a2 builds, verified by the run logs).
 // B.5 hoist: the six helpers below (d3q27Weight, fillFieldCE,
 // poisonCellDFs, fineGhostMacros, checkFineMacrosExact, tagNothingCells)
-// are shared by the CM exactness tests (Tests 8-13, define-gated below)
+// are shared by the CM exactness tests (Tests 8/9, define-gated below)
 // and the F2C skin tests (Tests 14-16 + 18). Unconditional since D.1
 // retired F2C_SKIN_ONLY (gate B ruling): the skin tests now compile in
 // every build.
@@ -1653,10 +1621,10 @@ bool checkFineMacrosExact(const MockBlock& fine, idx3d begin, idx3d end, const F
 }
 
 // tag a coarse-cell list as GEO_NOTHING and upload the map (MockBlock maps
-// default to GEO_FLUID, see tagCouplingCells): the C2F carve pre-pass
-// queries the coarse map through coarse_SD.map (Tests 8-13/17), and the
-// F2C allowed-GEO store guard lets GEO_NOTHING cells RECEIVE skin writes
-// (the Tests 7/16 guard-matrix class cells)
+// default to GEO_FLUID, see tagCouplingCells): a tagged cell is NaN-poison
+// proving the C2F window solve never reads outside the nominal window
+// (Tests 8/9), and the F2C allowed-GEO store guard lets GEO_NOTHING cells
+// RECEIVE skin writes (the Tests 7/16 guard-matrix class cells)
 void tagNothingCells(MockBlock& block, const std::vector<idx3d>& cells)
 {
 	for (const idx3d& c : cells)
@@ -1716,33 +1684,9 @@ struct CMQuadraticField {
 	}
 };
 
-// Test 12 field: x-INDEPENDENT (the storage-edge collapse mirrors the home
-// cell along x; with no x-dependence the collapse keeps the exactness
-// analytic and tight)
-struct CMEdgeField {
-	std::array<dreal, 10> fill(idx /*x*/, idx y, idx z) const
-	{
-		const std::array<double, 4> e = exact(0, y, z);
-		const double dudy = 0.001 + 2 * 0.0006 * y, dudz = 0.0007 - 2 * 0.0005 * z;
-		const double dvdy = 0.0012 - 2 * 0.0004 * y, dvdz = -0.0009 + 2 * 0.0006 * z;
-		const double dwdy = 0.0011 + 2 * 0.0005 * y, dwdz = 0.0008 + 2 * 0.0004 * z;
-		return {static_cast<dreal>(e[0]), static_cast<dreal>(e[1]), static_cast<dreal>(e[2]), static_cast<dreal>(e[3]),
-			dreal(0), static_cast<dreal>(2 * dvdy), static_cast<dreal>(2 * dwdz),		// Gxx = 2 du/dx = 0
-			static_cast<dreal>(dudy), static_cast<dreal>(dudz), static_cast<dreal>(dwdy + dvdz)};
-	}
-	std::array<double, 4> exact(double /*X*/, double Y, double Z) const
-	{
-		return {
-			1.0 + 0.008 * Y - 0.006 * Z,
-			0.025 + 0.001 * Y + 0.0007 * Z + 0.0006 * Y * Y - 0.0005 * Z * Z,
-			-0.018 + 0.0012 * Y - 0.0009 * Z - 0.0004 * Y * Y + 0.0006 * Z * Z,
-			0.012 + 0.0011 * Y + 0.0008 * Z + 0.0005 * Y * Y + 0.0004 * Z * Z,
-		};
-	}
-};
 
-// covered-plane helper for Tests 8/9 (far plane x=-1) and Test 10 (x=2):
-// tag + NaN-poison a y-z plane of coarse cells
+// covered-plane helper for Tests 8/9 (far plane x=-1): tag + NaN-poison a
+// y-z plane of coarse cells
 void coverPlaneYZ(MockBlock& coarse, idx cx, idx lo, idx hi)
 {
 	std::vector<idx3d> cells;
@@ -1754,23 +1698,13 @@ void coverPlaneYZ(MockBlock& coarse, idx cx, idx lo, idx hi)
 	tagNothingCells(coarse, cells);
 }
 
-#if !defined(C2F_NO_CARVE) && !defined(TNL_TEST_NO_CARVE)
-void coverCellList(MockBlock& coarse, const std::vector<idx3d>& cells)
-{
-	for (const idx3d& c : cells)
-		poisonCellDFs(coarse, c.x(), c.y(), c.z());
-	tagNothingCells(coarse, cells);
-}
-#endif
-
 // Tests 8 and 9: nominal-window CM exactness -- CE-consistent linear (8) and
 // linear-rho + pure-quadratic-velocity (9) fields, launch over fg in
-// [2,15)^3: every nominal window is inside [0,8], never clamped or carved
-// (|t_rel| = 0.25 everywhere). A GEO_NOTHING plane at x = -1 (outside
-// every candidate window, NaN-poisoned) proves the carve pre-pass is inert
-// far from the windows in the carve build; in the uncarved build it is a
-// no-op. The reconstructed macros must match the analytic field at every
-// fine cell center to fp tolerance.
+// [2,15)^3: every nominal window is inside [0,8], never clamped (|t_rel| =
+// 0.25 everywhere). A GEO_NOTHING plane at x = -1 (outside every candidate
+// window, NaN-poisoned) proves the window solve never reads outside the
+// nominal window. The reconstructed macros must match the analytic field at
+// every fine cell center to fp tolerance.
 void test_cm_exactness_nominal()
 {
 	const bool even_iter = false;
@@ -1808,221 +1742,6 @@ void test_cm_exactness_nominal()
 	}
 }
 
-#if !defined(C2F_NO_CARVE) && !defined(TNL_TEST_NO_CARVE)
-
-// Test 10: 1-axis carved window exactness -- covered plane x = 2 (y,z in
-// [0,8]) taints the x-window of every fine ghost cell whose per-axis x
-// window contains 2; the tangent windows see covered cells at BOTH ends and
-// stay nominal (per-axis XOR joint rule), so exactly the x axis is carved.
-// Headline probe fg = 6: window {2,3} -> {3,4}, |t_rel| = 0.75. The whole
-// launch region stays in the linear/quadratic exactness class.
-void test_cm_exactness_carve_1axis()
-{
-	const bool even_iter = false;
-
-	struct Case
-	{
-		const char* name;
-		bool quadratic;
-	};
-	const Case cases[2] = {{"linear field", false}, {"linear rho + pure quadratic velocity field", true}};
-
-	for (const Case& cse : cases) {
-		MockBlock coarse, fine;
-		coarse.allocate(COARSE_N);
-		fine.allocate(FINE_N);
-		if (cse.quadratic)
-			fillFieldCE(coarse, even_iter, CMQuadraticField{});
-		else
-			fillFieldCE(coarse, even_iter, CMLinearField{});
-		coverPlaneYZ(coarse, 2, 0, COARSE_N);
-		coarse.copyToDevice();
-
-		launchCoarseToFine(fine, coarse, {2, 2, 2}, {15, 15, 15}, {0, 0, 0}, {0, 0, 0}, even_iter);
-		fine.copyToHost();
-
-		if (cse.quadratic)
-			checkFineMacrosExact(
-				fine, {2, 2, 2}, {15, 15, 15}, CMQuadraticField{}, 1e-4, 1e-6, "Test 10 carve 1-axis exactness (covered plane x=2; quadratic)"
-			);
-		else
-			checkFineMacrosExact(
-				fine, {2, 2, 2}, {15, 15, 15}, CMLinearField{}, 1e-4, 1e-6, "Test 10 carve 1-axis exactness (covered plane x=2; linear)"
-			);
-	}
-}
-
-// Test 11: 3-axis corner-carved window exactness -- the single covered
-// corner cell (2,2,2) sits at the lo-lo-lo corner of the nominal tuple of
-// probe (6,6,6): every per-axis window sees taint at exactly its lo end, so
-// all three axes shift +1 (tuple {3,4}^3, t_rel = (-0.75,-0.75,-0.75)).
-void test_cm_exactness_carve_3axis_corner()
-{
-	const bool even_iter = false;
-
-	struct Case
-	{
-		const char* name;
-		bool quadratic;
-	};
-	const Case cases[2] = {{"linear field", false}, {"linear rho + pure quadratic velocity field", true}};
-
-	for (const Case& cse : cases) {
-		MockBlock coarse, fine;
-		coarse.allocate(COARSE_N);
-		fine.allocate(FINE_N);
-		if (cse.quadratic)
-			fillFieldCE(coarse, even_iter, CMQuadraticField{});
-		else
-			fillFieldCE(coarse, even_iter, CMLinearField{});
-		coverCellList(coarse, {{2, 2, 2}});
-		coarse.copyToDevice();
-
-		launchCoarseToFine(fine, coarse, {2, 2, 2}, {15, 15, 15}, {0, 0, 0}, {0, 0, 0}, even_iter);
-		fine.copyToHost();
-
-		if (cse.quadratic)
-			checkFineMacrosExact(
-				fine, {2, 2, 2}, {15, 15, 15}, CMQuadraticField{}, 1e-4, 1e-6, "Test 11 carve 3-axis corner exactness (covered corner (2,2,2); quadratic)"
-			);
-		else
-			checkFineMacrosExact(
-				fine, {2, 2, 2}, {15, 15, 15}, CMLinearField{}, 1e-4, 1e-6, "Test 11 carve 3-axis corner exactness (covered corner (2,2,2); linear)"
-			);
-	}
-}
-
-// Test 12: degenerate carve, storage edge -- covered {(7,5,5),(7,5,6)}
-// taints the lo end of the x window {7,8} of the single fine ghost cell
-// (15,12,12); the cure window {8,9} overreaches the coarse storage extent
-// (max storable coarse index = 8), so the x axis shortens to the mirrored
-// home cell 7 with ONE warning (axis 0). The y window carves lo-tainted
-// {5,6} -> {6,7}, the z window stays: final tuple {(7),(6,7),(5,6)} clean.
-// The field is x-independent, so the collapsed x-dependence (all monomial
-// coefficients containing x vanish, mirrored-cell idiom) still reproduces
-// the analytic field exactly; any read of a covered cell poisons the
-// output with NaN.
-void test_cm_exactness_carve_degenerate_storage_edge()
-{
-	const bool even_iter = false;
-
-	MockBlock coarse, fine;
-	coarse.allocate(COARSE_N);
-	fine.allocate(FINE_N);
-	fillFieldCE(coarse, even_iter, CMEdgeField{});
-	coverCellList(coarse, {{7, 5, 5}, {7, 5, 6}});
-	coarse.copyToDevice();
-
-	launchCoarseToFine(fine, coarse, {15, 12, 12}, {16, 13, 13}, {0, 0, 0}, {0, 0, 0}, even_iter);
-	fine.copyToHost();
-
-	checkFineMacrosExact(
-		fine, {15, 12, 12}, {16, 13, 13}, CMEdgeField{}, 1e-4, 1e-6,
-		"Test 12 carve degenerate storage-edge collapse (x shortened to home 7 + warning; output finite == analytic field at (Y,Z) = (5.75,5.75))"
-	);
-}
-
-// Test 13: degenerate carve, residual covered cell in the carved tuple --
-// covered = {2,3}^3 minus the home cell (3,3,3): every axis of the nominal
-// tuple of the single fine ghost cell (6,6,6) is tainted at BOTH ends, so
-// no axis can shift (footprint < 3 coarse cells thick idiom); the final
-// tuple rescan finds covered cells and collapses ALL axes to the mirrored
-// home cell with ONE warning (axis id 3). Fallback semantics: the output
-// equals the analytic field AT THE HOME CELL CENTER (3,3,3), finite, with
-// no covered (NaN) data read.
-void test_cm_exactness_carve_degenerate_residual()
-{
-	const bool even_iter = false;
-
-	MockBlock coarse, fine;
-	coarse.allocate(COARSE_N);
-	fine.allocate(FINE_N);
-	fillFieldCE(coarse, even_iter, CMQuadraticField{});
-	std::vector<idx3d> cells;
-	for (idx z = 2; z <= 3; z++)
-		for (idx y = 2; y <= 3; y++)
-			for (idx x = 2; x <= 3; x++)
-				if (x != 3 || y != 3 || z != 3)
-					cells.push_back({x, y, z});
-	coverCellList(coarse, cells);
-	coarse.copyToDevice();
-
-	launchCoarseToFine(fine, coarse, {6, 6, 6}, {7, 7, 7}, {0, 0, 0}, {0, 0, 0}, even_iter);
-	fine.copyToHost();
-
-	// mirrored-home fallback expectation: constant field at the home center
-	struct CMHomeField
-	{
-		std::array<double, 4> v;
-		std::array<double, 4> exact(double, double, double) const
-		{
-			return v;
-		}
-	};
-	checkFineMacrosExact(
-		fine, {6, 6, 6}, {7, 7, 7}, CMHomeField{CMQuadraticField{}.exact(3, 3, 3)}, 1e-4, 1e-6,
-		"Test 13 carve degenerate residual-tuple collapse (all axes mirrored to home (3,3,3) + warning; output finite == analytic field at the home cell)"
-	);
-}
-
-// Test 17: 2-axis edge-carved window exactness -- the covered EDGE column
-// {(2,2,z) : z in [0,8]} (the intersection line of two covered faces x=2
-// and y=2) taints the two NORMAL-axis windows of every fine ghost cell
-// having BOTH tangent indices in {3,4,5,6} at exactly ONE end each:
-// fgx,fgy in {3,4}: windows {1,2} covered at the hi ends -> shift -1 to
-// {0,1}; fgx,fgy in {5,6}: windows {2,3} covered at the lo ends -> shift
-// +1 to {3,4}; mixed pairs shift in opposite directions (all four sign
-// combinations appear in the launch region). The z window sees the column
-// at BOTH ends (full column span) and stays nominal (per-axis XOR joint
-// rule) -- the two-shifted-axes edge geometry no sibling exercises (Test
-// 10 shifts ONE axis, Test 11 shifts all THREE, Test 12 mixes one shift
-// with a degenerate shorten). Cells (fgx,fgy) in {4,5}^2 have the home
-// cell itself covered (|t_rel| = 1.25 class, still exact -- the Test 10
-// fg=4/5 mechanism). Every carved tuple leaves the column cells, so no
-// degenerate path triggers and no warning fires; the NaN-poisoned column
-// proves no covered cell is read. Tangents outside {3..6} are inert
-// controls. Runs only in the carve build(s); the carve is a retained
-// non-default option after gate A falsified CM+carve for the direct path.
-void test_cm_exactness_carve_2axis_edge()
-{
-	const bool even_iter = false;
-
-	struct Case
-	{
-		const char* name;
-		bool quadratic;
-	};
-	const Case cases[2] = {{"linear field", false}, {"linear rho + pure quadratic velocity field", true}};
-
-	for (const Case& cse : cases) {
-		MockBlock coarse, fine;
-		coarse.allocate(COARSE_N);
-		fine.allocate(FINE_N);
-		if (cse.quadratic)
-			fillFieldCE(coarse, even_iter, CMQuadraticField{});
-		else
-			fillFieldCE(coarse, even_iter, CMLinearField{});
-		std::vector<idx3d> column;
-		for (idx cz = 0; cz <= COARSE_N; cz++)
-			column.push_back({2, 2, cz});
-		coverCellList(coarse, column);
-		coarse.copyToDevice();
-
-		launchCoarseToFine(fine, coarse, {2, 2, 2}, {15, 15, 15}, {0, 0, 0}, {0, 0, 0}, even_iter);
-		fine.copyToHost();
-
-		if (cse.quadratic)
-			checkFineMacrosExact(
-				fine, {2, 2, 2}, {15, 15, 15}, CMQuadraticField{}, 1e-4, 1e-6, "Test 17 carve 2-axis edge exactness (covered column x=y=2, z in [0,8]; quadratic)"
-			);
-		else
-			checkFineMacrosExact(
-				fine, {2, 2, 2}, {15, 15, 15}, CMLinearField{}, 1e-4, 1e-6, "Test 17 carve 2-axis edge exactness (covered column x=y=2, z in [0,8]; linear)"
-			);
-	}
-}
-
-#endif	// carve active
 #endif	// CM semantics active
 
 // Tests 14-16 + 18: F2C skin-launch coverage (changes 2+3 of the AMR
@@ -2632,13 +2351,6 @@ int main()
 #if defined(C2F_COMPACT_MOMENT) || (!defined(C2F_LAGRANGE) && !defined(C2F_TRILINEAR) && !defined(C2F_LINEAR_EXPLOSION) && !defined(C2F_UNIFORM_EXPLOSION))
 	// production CM semantics (default since the 2026-08-18 flip, user ruling)
 	test_cm_exactness_nominal();
-#if !defined(C2F_NO_CARVE) && !defined(TNL_TEST_NO_CARVE)
-	test_cm_exactness_carve_1axis();
-	test_cm_exactness_carve_3axis_corner();
-	test_cm_exactness_carve_degenerate_storage_edge();
-	test_cm_exactness_carve_degenerate_residual();
-	test_cm_exactness_carve_2axis_edge();
-#endif	// carve active (TNL_TEST_NO_CARVE escape hatch)
 #endif	// CM semantics active
 
 	if (g_failures == 0) {
