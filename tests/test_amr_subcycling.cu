@@ -1,23 +1,26 @@
 // Unit tests for the Berger-Colella time-subcycling orchestration in
 // State_AMR (include/lbm3d/amr_state.h), scheduled as the Schönherr
-// six-step cycle (docs/AMR-schonherr-ch7-target-contract.md sec. 1.3).
+// cycle with simulated band (docs/AMR-schonherr-ch7-target-contract.md
+// sec. 1.3).
 //
 // Different from test_amr_coupling.cu (which exercises the coupling kernels
 // directly), these tests drive SMALL two-level State_AMR instances through
 // the real SimInit/SimUpdate machinery and verify the subcycling schedule
 // from host-observable per-level state:
 //
-// - Test 1 (six-step launch census): State_AMR declares its per-stage
-//   launch helpers virtual, so the test subclass StateSchedule_AMR
-//   overrides them to record one event per stage launch (kind, level, and
-//   the parity state at the call site) and delegates to the production
-//   implementations. Per cycle and level pair the census is exactly 2 fine
-//   substeps + 1 coarse step + 3 fill launches (1 F2C + 2 identical C2F),
-//   with the AB-frame pairing asserted at every call site (the parity
-//   table in test_subcycling_schedule); for the A-A pattern the frame
-//   identities map to data.even_iter states. SimInit's initial
-//   both-frames fill is asserted the same way (2 C2F events, frame 0
-//   then frame 1).
+// - Test 1 (launch census): State_AMR declares its per-stage launch
+//   helpers virtual, so the test subclass StateSchedule_AMR overrides
+//   them to record one event per stage launch (kind, level, the parity
+//   state at the call site, and the kernel launch extent class) and
+//   delegates to the production implementations. Per cycle and level
+//   pair the census is exactly 2 fine substeps + 1 coarse step + 2 fill
+//   launches (1 F2C + 1 C2F -- the simulated band needs one fill, in
+//   the substep-0 frame), with the AB-frame pairing asserted at every
+//   call site (the parity table in test_subcycling_schedule) and the
+//   widened substep-1 extent asserted from the ghost_layers argument;
+//   for the A-A pattern the frame identities map to data.even_iter
+//   states. SimInit's initial single-frame fill is asserted the same
+//   way (1 C2F event, frame 0).
 // - Test 2 (time synchronization): with the 2:1 refinement the fine level
 //   performs exactly 2 substeps per coarse step (proven by Test 1's
 //   census) and lat_local.physDt is exactly physDt/2, hence the physical
@@ -242,13 +245,14 @@ struct StateSchedule_AMR : StateLocal_AMR<NSE>
 	enum class Stage
 	{
 		kernel,	 // launchLBMKernelForLevel (fine substep or coarse step)
-		c2f,	 // launchCoarseToFineTransfers (ghost fill of one frame)
+		c2f,	 // launchCoarseToFineTransfers (ghost fill of the cycle)
 		f2c,	 // launchFineToCoarseTransfersInterior (skin feedback)
 	};
 	struct Event
 	{
 		Stage stage;
 		int level = -1;
+		int ghost_layers = 0;  // kernel launch extent class (0 = interior-only, 1 = widened simulated-band substep)
 #ifdef AB_PATTERN
 		const void* fine_cur = nullptr;	   // fine block's data.dfs[0] (df_cur) at the call site
 		const void* fine_out = nullptr;	   // fine block's data.dfs[1] (df_out) at the call site
@@ -260,11 +264,12 @@ struct StateSchedule_AMR : StateLocal_AMR<NSE>
 	};
 	std::vector<Event> events;
 
-	void record(Stage stage, int level)
+	void record(Stage stage, int level, int ghost_layers = 0)
 	{
 		Event e;
 		e.stage = stage;
 		e.level = level;
+		e.ghost_layers = ghost_layers;
 		// the fixture has exactly one block per level and max_level == 1,
 		// so the coarse side of every transfer is the level-0 block
 		BLOCK_NSE* fine = level > 0 ? this->nse.getBlocksAtLevel(level).front() : nullptr;
@@ -283,10 +288,10 @@ struct StateSchedule_AMR : StateLocal_AMR<NSE>
 		events.push_back(e);
 	}
 
-	void launchLBMKernelForLevel(int level, bool compute_macro) override
+	void launchLBMKernelForLevel(int level, bool compute_macro, int ghost_layers) override
 	{
-		record(Stage::kernel, level);
-		Base::launchLBMKernelForLevel(level, compute_macro);
+		record(Stage::kernel, level, ghost_layers);
+		Base::launchLBMKernelForLevel(level, compute_macro, ghost_layers);
 	}
 	void launchCoarseToFineTransfers(int fine_level) override
 	{
@@ -300,28 +305,34 @@ struct StateSchedule_AMR : StateLocal_AMR<NSE>
 	}
 };
 
-// Tests 1 and 2: six-step cycle launch census with parity-at-call-site
-// locks, and time synchronization. Per SimUpdate call the schedule must
-// record exactly this ordered census per level pair (plan contract sec.
-// 1.3, cycle steps named in State_AMR's file docstring):
+// Tests 1 and 2: cycle launch census with parity-at-call-site locks, and
+// time synchronization. Per SimUpdate call the schedule must record
+// exactly this ordered census per level pair (plan contract sec. 1.3,
+// cycle steps named in State_AMR's file docstring):
 //
 //   #   stage        AB frame pairing at the call site (P = dfs[0], Q = dfs[1])
-//   1   kernel L1    fine df_cur == P (substep 1 consumes P, produces Q)
-//   2   kernel L1    fine df_cur == Q (substep 2 consumes Q, produces P)
-//   3   kernel L0    coarse step (rotation from the global iterations clock)
+//   1   kernel L1    fine df_cur == P, ghost_layers == 1 (simulated band:
+//                    substep 1 integrates the inner ghost rows of P,
+//                    sourcing the outer row's fill, produces Q)
+//   2   kernel L1    fine df_cur == Q, ghost_layers == 0 (interior-only:
+//                    substep 2 consumes substep 1's updated inner ghost
+//                    rows of Q, produces P)
+//   3   kernel L0    coarse step, ghost_layers == 0 (rotation from the
+//                    global iterations clock)
 //   4   f2c L1       fine df_out == P (reads the post-substep-2 array; the
 //                    rotation is still substep-1's, so df_cur == Q)
-//   5   c2f L1       fine df_cur == P (fills frame 0 for the next cycle's
-//                    substep 1; prepared by updateKernelDataForLevel(L, 0))
-//   6   c2f L1       fine df_cur == Q (fills frame 1 for substep 2;
-//                    identical content to fill #1)
+//   5   c2f L1       fine df_cur == P (the single fill of the cycle:
+//                    frame 0 for the next cycle's substep 1; prepared by
+//                    updateKernelDataForLevel(L, 0))
 //
-// i.e. 2 fine substeps + 1 coarse step + 3 fill launches (1 F2C + 2
-// identical C2F) per cycle per level. The coarse rotation is set once per
-// cycle by the global updateKernelData() and must not change across
-// events 3-6 (no fine-level preparation touches level 0). Under AA the
-// frame identities map to the even_iter values false, true, -, true (f2c
-// reads the twisted post-collision state), false, true.
+// i.e. 2 fine substeps + 1 coarse step + 2 fill launches (1 F2C + 1 C2F)
+// per cycle per level -- the simulated band consumes the other frame's
+// inner ghost rows as substep 1's kernel output, so a frame-1 fill would
+// be dead traffic. The coarse rotation is set once per cycle by the
+// global updateKernelData() and must not change across events 3-5 (no
+// fine-level preparation touches level 0). Under AA the frame identities
+// map to the even_iter values false, true, -, true (f2c reads the twisted
+// post-collision state), false.
 void test_subcycling_schedule()
 {
 	lat_t lat = makeLattice();
@@ -345,7 +356,7 @@ void test_subcycling_schedule()
 	BLOCK* fine = level1.front();
 
 	// full initialization (allocation, boundary setup, interface tagging,
-	// coupling patches, initial condition, initial both-frames fill)
+	// coupling patches, initial condition, initial single-frame fill)
 	state.SimInit();
 	if (state.nse.terminate) {
 		report(false, "Test 1/2 setup: SimInit triggered the terminate flag");
@@ -361,28 +372,25 @@ void test_subcycling_schedule()
 		fmt::format("Test 1 setup: fine lattice viscosity is doubled (nu_fine = {:.6e}, nu_coarse = {:.6e})", nu_lb_fine, nu_lb_coarse)
 	);
 
-	// SimInit's initial both-frames fill (the cycle-0 anchor of the six-step
-	// cycle): two C2F launches filling the substep-0 and substep-1 frame
-	// rotations in this order, before any SimUpdate
-	if (state.events.size() != 2 || state.events[0].stage != StateSchedule_AMR<NSE_CONFIG>::Stage::c2f
-		|| state.events[1].stage != StateSchedule_AMR<NSE_CONFIG>::Stage::c2f)
-	{
-		report(false, fmt::format("Test 1 setup: SimInit launched {} events, expected exactly 2 (C2F frame 0, C2F frame 1)", state.events.size()));
+	// SimInit's initial single-frame fill (the cycle-0 anchor of the
+	// Schönherr cycle): one C2F launch filling the substep-0 frame
+	// rotation, before any SimUpdate
+	if (state.events.size() != 1 || state.events[0].stage != StateSchedule_AMR<NSE_CONFIG>::Stage::c2f) {
+		report(false, fmt::format("Test 1 setup: SimInit launched {} events, expected exactly 1 (C2F frame 0)", state.events.size()));
 		return;
 	}
 #ifdef AB_PATTERN
 	{
 		const void* const P = fine->dfs[0].getData();
-		const void* const Q = fine->dfs[1].getData();
 		report(
-			state.events[0].fine_cur == P && state.events[1].fine_cur == Q,
-			"Test 1 setup: SimInit's initial both-frames fill targeted frame P (substep-0 rotation) then frame Q (substep-1 rotation)"
+			state.events[0].fine_cur == P,
+			"Test 1 setup: SimInit's initial fill targeted frame P (the substep-0 rotation)"
 		);
 	}
 #elif defined(AA_PATTERN)
 	report(
-		state.events[0].fine_even == false && state.events[1].fine_even == true,
-		"Test 1 setup: SimInit's initial both-frames fill ran at even_iter false (substep-0 parity) then true (substep-1 parity)"
+		state.events[0].fine_even == false,
+		"Test 1 setup: SimInit's initial fill ran at even_iter false (the substep-0 parity)"
 	);
 #endif
 	// consume the SimInit events so the cycle census starts empty
@@ -400,38 +408,40 @@ void test_subcycling_schedule()
 		// one call of SimUpdate = exactly one coarse iteration
 		const bool iter_ok = (state.nse.iterations == call);
 
-		// the six-step census and the parity-at-call-site table (see the
+		// the launch census and the parity-at-call-site table (see the
 		// header comment); every failing event is dumped for the log
 		using Evt = typename StateSchedule_AMR<NSE_CONFIG>::Event;
 		using Stage = typename StateSchedule_AMR<NSE_CONFIG>::Stage;
-		const Evt* ev = state.events.size() >= base + 6 ? state.events.data() + base : nullptr;
+		const Evt* ev = state.events.size() >= base + 5 ? state.events.data() + base : nullptr;
 		bool call_ok = iter_ok && ev != nullptr;
 #ifdef AB_PATTERN
 		const void* const P = fine->dfs[0].getData();
 		const void* const Q = fine->dfs[1].getData();
 		const void* const expected_coarse = ((call - 1) % 2 == 0) ? coarse->dfs[0].getData() : coarse->dfs[1].getData();
 		if (call_ok) {
-			call_ok = ev[0].stage == Stage::kernel && ev[0].level == 1 && ev[0].fine_cur == P && ev[0].fine_out == Q;
-			call_ok = call_ok && ev[1].stage == Stage::kernel && ev[1].level == 1 && ev[1].fine_cur == Q && ev[1].fine_out == P;
-			call_ok = call_ok && ev[2].stage == Stage::kernel && ev[2].level == 0 && ev[2].coarse_cur == expected_coarse;
+			call_ok = ev[0].stage == Stage::kernel && ev[0].level == 1 && ev[0].fine_cur == P && ev[0].fine_out == Q
+				   && ev[0].ghost_layers == 1;
+			call_ok = call_ok && ev[1].stage == Stage::kernel && ev[1].level == 1 && ev[1].fine_cur == Q && ev[1].fine_out == P
+					   && ev[1].ghost_layers == 0;
+			call_ok = call_ok && ev[2].stage == Stage::kernel && ev[2].level == 0 && ev[2].coarse_cur == expected_coarse
+					   && ev[2].ghost_layers == 0;
 			call_ok = call_ok && ev[3].stage == Stage::f2c && ev[3].level == 1 && ev[3].fine_cur == Q && ev[3].fine_out == P;
 			call_ok = call_ok && ev[4].stage == Stage::c2f && ev[4].level == 1 && ev[4].fine_cur == P;
-			call_ok = call_ok && ev[5].stage == Stage::c2f && ev[5].level == 1 && ev[5].fine_cur == Q;
-			// the coarse rotation must not change across events 3-6 (no
+			// the coarse rotation must not change across events 3-5 (no
 			// fine-level preparation may touch level 0)
-			call_ok = call_ok && ev[3].coarse_cur == expected_coarse && ev[4].coarse_cur == expected_coarse && ev[5].coarse_cur == expected_coarse;
+			call_ok = call_ok && ev[3].coarse_cur == expected_coarse && ev[4].coarse_cur == expected_coarse;
 		}
 #elif defined(AA_PATTERN)
 		const bool expected_coarse_even = ((call - 1) % 2 == 1);
 		if (call_ok) {
-			call_ok = ev[0].stage == Stage::kernel && ev[0].level == 1 && ev[0].fine_even == false;
-			call_ok = call_ok && ev[1].stage == Stage::kernel && ev[1].level == 1 && ev[1].fine_even == true;
-			call_ok = call_ok && ev[2].stage == Stage::kernel && ev[2].level == 0 && ev[2].coarse_even == expected_coarse_even;
+			call_ok = ev[0].stage == Stage::kernel && ev[0].level == 1 && ev[0].fine_even == false && ev[0].ghost_layers == 1;
+			call_ok = call_ok && ev[1].stage == Stage::kernel && ev[1].level == 1 && ev[1].fine_even == true
+					   && ev[1].ghost_layers == 0;
+			call_ok = call_ok && ev[2].stage == Stage::kernel && ev[2].level == 0 && ev[2].coarse_even == expected_coarse_even
+					   && ev[2].ghost_layers == 0;
 			call_ok = call_ok && ev[3].stage == Stage::f2c && ev[3].level == 1 && ev[3].fine_even == true;
 			call_ok = call_ok && ev[4].stage == Stage::c2f && ev[4].level == 1 && ev[4].fine_even == false;
-			call_ok = call_ok && ev[5].stage == Stage::c2f && ev[5].level == 1 && ev[5].fine_even == true;
-			call_ok = call_ok && ev[3].coarse_even == expected_coarse_even && ev[4].coarse_even == expected_coarse_even
-				   && ev[5].coarse_even == expected_coarse_even;
+			call_ok = call_ok && ev[3].coarse_even == expected_coarse_even && ev[4].coarse_even == expected_coarse_even;
 		}
 #endif
 		if (! call_ok) {
@@ -439,7 +449,7 @@ void test_subcycling_schedule()
 			report(
 				false,
 				fmt::format(
-					"Test 1 six-step census after call {}: iterations = {}, {} events recorded -- {} | {}",
+					"Test 1 launch census after call {}: iterations = {}, {} events recorded -- {} | {}",
 					call,
 					state.nse.iterations,
 					state.events.size() - base,
@@ -475,9 +485,9 @@ void test_subcycling_schedule()
 	}
 
 	report(
-		state.nse.iterations == 3 && state.events.size() == 3 * 6 && census_ok && visc_ok,
-		"Test 1 six-step census: 3 coarse iterations, each recording 2 fine substeps + 1 coarse step + 3 fill launches (1 F2C + 2 identical "
-		"C2F) with the parity-at-call-site table asserted (per-level viscosities restored)"
+		state.nse.iterations == 3 && state.events.size() == 3 * 5 && census_ok && visc_ok,
+		"Test 1 launch census: 3 coarse iterations, each recording 2 fine substeps + 1 coarse step + 2 fill launches (1 F2C + 1 C2F) with the "
+		"parity-at-call-site and launch-extent table asserted (per-level viscosities restored)"
 	);
 	report(
 		sync_ok, "Test 2 time synchronization: fine clock (2 substeps of dt/2) equals coarse clock (1 step of dt) after every Berger-Colella step"
@@ -577,16 +587,21 @@ CoarseMacroScan captureCoarseMacros(const BLOCK& block)
 
 // scan-order capture of the fine block's C2F destination cells (the stored
 // overlap complement outside the simulated interior) from the AB frames --
-// the cross-state carrier of Test 4's both-frames fill lock (the fresh
-// expected-state model of the once-per-cycle fill). Host mirrors take
-// (offset + local) coordinates with the +-overlap margin (the
+// the cross-state carrier of Test 4's fill and simulated-band locks. Host
+// mirrors take (offset + local) coordinates with the +-overlap margin (the
 // computeReferenceStats idiom), so the destination window is
-// [offset - ov, offset + local + ov)^3 minus the interior.
+// [offset - ov, offset + local + ov)^3 minus the interior. The per-entry
+// coordinates are kept so the assertions can split the INNER overlap layer
+// (Chebyshev distance 1 from the interior box: the kernel-integrated
+// simulated-band rows) from the OUTER layer (distance 2: the fill-only
+// streaming source of the inner rows).
 struct FineGhostScan
 {
 	idx3d offset{0, 0, 0};
 	idx3d local{0, 0, 0};
 	idx3d overlap{0, 0, 0};
+	std::vector<idx3d> coords;	 // per-entry global coordinates (same order as frame0/frame1)
+	std::vector<int> map;		 // per-entry GEO tag (the simulated band relies on GEO_FLUID ghost rows)
 	std::vector<double> frame0;	 // per-destination-cell values of dfs[0]
 	std::vector<double> frame1;	 // per-destination-cell values of dfs[1] (AB only)
 };
@@ -607,12 +622,26 @@ FineGhostScan captureFineGhost(BLOCK& block)
 									   && y < scan.offset.y() + scan.local.y() && z >= scan.offset.z() && z < scan.offset.z() + scan.local.z();
 					if (interior)
 						continue;
+					scan.coords.emplace_back(idx3d{x, y, z});
+					scan.map.push_back(block.hmap(x, y, z));
 					scan.frame0.push_back(block.hfs[0](q, x, y, z));
 #ifdef AB_PATTERN
 					scan.frame1.push_back(block.hfs[1](q, x, y, z));
 #endif
 				}
 	return scan;
+}
+
+// Chebyshev distance of a destination-complement cell from the interior box
+// [offset, offset + local): 1 = inner overlap layer (the simulated-band rows
+// the substep-1 kernel integrates), 2 = outer overlap layer (the fill-only
+// streaming source of the inner rows).
+int ghostLayerDepth(const FineGhostScan& scan, const idx3d& c)
+{
+	const idx d_x = c.x() < scan.offset.x() ? scan.offset.x() - c.x() : c.x() - (scan.offset.x() + scan.local.x() - 1);
+	const idx d_y = c.y() < scan.offset.y() ? scan.offset.y() - c.y() : c.y() - (scan.offset.y() + scan.local.y() - 1);
+	const idx d_z = c.z() < scan.offset.z() ? scan.offset.z() - c.z() : c.z() - (scan.offset.z() + scan.local.z() - 1);
+	return static_cast<int>(std::max(std::max(d_x, d_y), d_z));
 }
 
 // Test 3: max_level == 0 fallthrough must be identical to the base driver.
@@ -705,30 +734,33 @@ void test_max_level_zero_fallthrough()
 	}
 }
 
-// Test 4 (B.5 lock, sole variant since D.1): after one six-step cycle
-// every ring cell's macros must equal the KERNEL-PRODUCED values, and the
-// fine-level C2F destination cells must carry the once-per-cycle
-// both-frames fill of the Schönherr cycle contract (sec. 1.3: one
-// identical-content fill per AB frame at the cycle end - the per-substep
-// BVP refill is retired and SimInit performs the same fill for cycle 0).
-// Ring cells are collision-active, and no coupling channel writes them
-// (the skin F2C rectangles lie inside the footprint = GEO_NOTHING region,
-// disjoint from the ring; C2F writes fine ghost cells only), so the kernel
-// is their only writer. Detection for the ring: compare against a
-// DETERMINISTIC kernels-only reference -- the same initialization advanced
-// by the SAME SimUpdate with ALL coupling launches disabled
-// (couplings.clear() after SimInit; every transfer helper is then a silent
-// no-op with empty couplings, while the parity, counter, and kernel flow
-// of SimUpdate stay identical). The reference stays valid under the
-// six-step cycle: SimInit's initial both-frames fill ran BEFORE the
-// clear() and touches fine ghost cells only, and in both runs the only
-// writer of ring cells is the coarse kernel on identical input, so the
-// expected maximum difference is exactly 0 (assert == 0 and print the
-// max). NOTE: the reference's FOOTPRINT cells intentionally diverge
-// (frozen init state, never skin-written), so every cross-state ring
-// comparison below is map-selected on GEO_AMR_INTERFACE; the FINE ghost
-// cells are compared separately below against the fill locks (the
-// subject's cycle-end fill vs the reference's SimInit-era fill).
+// Test 4 (B.5 lock, sole variant since D.1): after one cycle every ring
+// cell's macros must equal the KERNEL-PRODUCED values, and the fine-level
+// C2F destination cells must carry the single-fill, simulated-band state of
+// the Schönherr cycle contract: the cycle-end fill rewrites BOTH overlap
+// layers of the substep-0 frame (frame 0), the kernel INTEGRATES the inner
+// overlap layer during substep 1 (its updated rows land in the other
+// frame), and the outer layer of the other frame keeps the SimInit-era
+// fill (no frame-1 fill exists under the simulated band). Ring cells are
+// collision-active, and no coupling channel writes them (the skin F2C
+// rectangles lie inside the footprint = GEO_NOTHING region, disjoint from
+// the ring; C2F writes fine ghost cells only), so the kernel is their only
+// writer. Detection for the ring: compare against a DETERMINISTIC
+// kernels-only reference -- the same initialization advanced by the SAME
+// SimUpdate with ALL coupling launches disabled (couplings.clear() after
+// SimInit; every transfer helper is then a silent no-op with empty
+// couplings, while the parity, counter, and kernel flow of SimUpdate stay
+// identical). The reference stays valid under the cycle: SimInit's initial
+// fill ran BEFORE the clear() and touches fine ghost cells only, and in
+// both runs the only writer of ring cells is the coarse kernel on
+// identical input, so the expected maximum difference is exactly 0
+// (assert == 0 and print the max). NOTE: the reference's FOOTPRINT cells
+// intentionally diverge (frozen init state, never skin-written), so every
+// cross-state ring comparison below is map-selected on GEO_AMR_INTERFACE;
+// the FINE ghost cells are compared separately below against the fill and
+// simulated-band locks (the subject's cycle-end frame-0 fill vs the
+// reference's SimInit-era fill; the frame-1 inner overlap layer, which the
+// kernel updates identically in both runs).
 //
 // Why not the placeholder probe alone: the (rho = 1, v = 0) freshness the
 // historical test asserts does NOT detect a coupling channel's absence on
@@ -756,9 +788,10 @@ void test_interface_ring_freshness()
 {
 	lat_t lat = makeLattice();
 
-	// subject: one full coupled six-step cycle
+	// subject: one full coupled Schönherr cycle
 	CoarseMacroScan subject;
 	FineGhostScan subject_ghost;
+	FineGhostScan subject_ghost_init;
 	HostSnapshot subject_init;
 	{
 		const std::string id = fmt::format("test_amr_subcycling_{}_ring", pattern_name);
@@ -782,12 +815,21 @@ void test_interface_ring_freshness()
 		BLOCK* coarse = state.nse.getBlocksAtLevel(0).front();
 		subject_init = snapshotBlock(*coarse);
 
+		// pre-cycle fine ghost snapshot (the SimInit-era fill): baseline of
+		// the simulated-band locks -- the frame-1 inner overlap rows must be
+		// CHANGED by the widened substep-1 kernel integration, the frame-1
+		// outer rows must be UNCHANGED (no frame-1 fill exists, and the
+		// kernel never reaches the outer layer)
+		BLOCK* fine = state.nse.getBlocksAtLevel(1).front();
+		fine->copyDFsToHost();
+		subject_ghost_init = captureFineGhost(*fine);
+
 		// force macroscopic output inside the kernel (same flag as the
 		// default variant) so the kernel-produced ring macros land in dmacro
 		state.cnt[OUT3DCUT].period = 1e-30;
 
-		// one coupled six-step cycle (2 fine substeps + coarse step + F2C +
-		// the cycle-end both-frames C2F fills; ring F2C removed in D.1, the
+		// one coupled Schönherr cycle (2 fine substeps + coarse step + F2C +
+		// the cycle-end single-frame C2F fill; ring F2C removed in D.1, the
 		// skin F2C transfer runs unconditionally as the only fine-to-coarse
 		// channel)
 		state.updateKernelData();
@@ -802,10 +844,11 @@ void test_interface_ring_freshness()
 		subject = captureCoarseMacros(*coarse);
 
 		// the fill locks' subject carrier: the fine block's C2F destination
-		// cells of BOTH AB frames after the cycle (the cycle-end fills
-		// wrote them; the kernels never write ghost rows, so what remains
-		// is exactly the fill output)
-		BLOCK* fine = state.nse.getBlocksAtLevel(1).front();
+		// cells of BOTH AB frames after the cycle (frame 0's complement was
+		// rewritten by the cycle-end fill; frame 1's inner overlap layer was
+		// INTEGRATED by the widened substep-1 kernel and frame 1's outer
+		// layer still holds the SimInit-era fill, as no frame-1 fill exists)
+		fine->copyMapToHost();
 		fine->copyDFsToHost();
 		subject_ghost = captureFineGhost(*fine);
 	}
@@ -921,68 +964,127 @@ void test_interface_ring_freshness()
 		fmt::format("Test 4 fill census: the fine block has 3,088 fill-owned destination cells (got {})", ghost_cells)
 	);
 
-#ifdef AB_PATTERN
-	// LOCK 3 (AB only; under AA the both-frames parity degenerates to one
-	// physical frame and the parity-side evidence lives in Test 1's
-	// census): the cycle-end C2F fill writes the destination complement of
-	// BOTH AB frames with IDENTICAL content - the plan's cycle contract
-	// sec. 1.3 (fill #2 is content-identical to fill #1: both read the
-	// same coarse post-step state, and their source sets are disjoint from
-	// the skin cells F2C writes in between), so the subject's two frames
-	// must be bitwise equal at every destination cell
-	double max_frame_diff = 0;
-	for (std::size_t i = 0; i < subject_ghost.frame0.size(); i++)
-		max_frame_diff = std::max(max_frame_diff, std::abs(subject_ghost.frame0[i] - subject_ghost.frame1[i]));
+	// LOCK 3 (ghost-map / simulated-band precondition): every C2F
+	// destination cell must be GEO_FLUID -- the widened substep-1 kernel
+	// dispatches BCs on the inner overlap rows and must collide+stream
+	// there like on interior fluid
+	idx non_fluid_ghosts = 0;
+	for (std::size_t i = 0; i < subject_ghost.map.size(); i++)
+		if (subject_ghost.map[i] != NSE_CONFIG::BC::GEO_FLUID)
+			non_fluid_ghosts++;
 	report(
-		subject_ghost.frame0.size() == subject_ghost.frame1.size() && max_frame_diff == 0,
+		non_fluid_ghosts == 0,
 		fmt::format(
-			"Test 4 both-frames fill: the subject's two AB frames carry bitwise-identical fills at all {} destination cells (max |diff| = {:.3e})",
+			"Test 4 ghost map: all {} destination cells are GEO_FLUID ({} non-fluid entries) so the widened substep-1 kernel "
+			"integrates the inner overlap rows",
 			ghost_cells,
-			max_frame_diff
+			non_fluid_ghosts
+		)
+	);
+
+	// LOCK 4 (fill coverage, Schönherr band): the cycle-end fill must have
+	// rewritten BOTH overlap layers of frame 0 vs the reference's
+	// SimInit-era fill -- the inner layer is what the interior pulls (and
+	// the layer the widened substep-1 kernel integrates), the outer layer
+	// is the integration's streaming source; a fill reaching only one
+	// layer silently starves the band
+	idx refilled_inner = 0;
+	idx refilled_outer = 0;
+	for (std::size_t i = 0; i < subject_ghost.frame0.size(); i++) {
+		if (subject_ghost.frame0[i] == reference_ghost.frame0[i])
+			continue;
+		if (ghostLayerDepth(subject_ghost, subject_ghost.coords[i]) == 1)
+			refilled_inner++;
+		else
+			refilled_outer++;
+	}
+	report(
+		refilled_inner > 0 && refilled_outer > 0,
+		fmt::format(
+			"Test 4 fill coverage: the cycle-end fill re-wrote {} inner-layer and {} outer-layer destination entries of frame 0 "
+			"(both ghost layers must be filled)",
+			refilled_inner,
+			refilled_outer
+		)
+	);
+
+#ifdef AB_PATTERN
+	// LOCK 5 (the pair discriminates the simulated band from both the old
+	// both-frames fill and from a no-widening regression):
+	// (SB1) the widened substep-1 kernel INTEGRATED the inner overlap rows:
+	// frame-1 inner-layer entries must differ from the pre-cycle snapshot
+	// (under the old both-frames fill they would carry the cycle-end fill;
+	// under a no-widening regression they would keep the init fill);
+	// (SB2) no frame-1 fill exists and the kernel never reaches the outer
+	// layer: frame-1 outer-layer entries must equal the pre-cycle snapshot
+	// bitwise (under the old both-frames fill they would have moved)
+	idx sb1_inner_total = 0;
+	idx sb1_changed = 0;
+	idx sb2_outer_total = 0;
+	double sb1_max_diff = 0;
+	double sb2_max_diff = 0;
+	for (std::size_t i = 0; i < subject_ghost.frame1.size(); i++) {
+		const double diff = std::abs(subject_ghost.frame1[i] - subject_ghost_init.frame1[i]);
+		if (ghostLayerDepth(subject_ghost, subject_ghost.coords[i]) == 1) {
+			sb1_inner_total++;
+			sb1_max_diff = std::max(sb1_max_diff, diff);
+			if (diff > 0)
+				sb1_changed++;
+		}
+		else {
+			sb2_outer_total++;
+			sb2_max_diff = std::max(sb2_max_diff, diff);
+		}
+	}
+	report(
+		sb1_inner_total > 0 && sb1_changed > 0,
+		fmt::format(
+			"Test 4 simulated band (substep-1 integration): {} of {} frame-1 inner-layer destination entries were updated by the "
+			"widened kernel (max |change| = {:.3e})",
+			sb1_changed,
+			sb1_inner_total,
+			sb1_max_diff
+		)
+	);
+	report(
+		sb2_outer_total > 0 && sb2_max_diff == 0,
+		fmt::format(
+			"Test 4 single fill (no frame-1 fill): all {} frame-1 outer-layer destination entries keep the SimInit-era fill "
+			"bitwise (max |diff| = {:.3e})",
+			sb2_outer_total,
+			sb2_max_diff
 		)
 	);
 #endif
-
-	// LOCK 4: a fill RAN at the cycle end - the subject's cycle-end fill
-	// (from the coarse post-step state) must differ from the reference's
-	// SimInit-era fill (from the coarse initial state) somewhere in the
-	// destination complement (the sine IC evolves, so the kernel step
-	// changes the ring sources; couplings.clear() made the reference keep
-	// its initial fill)
-	idx refilled_cells = 0;
-	for (std::size_t i = 0; i < subject_ghost.frame0.size(); i++)
-		if (subject_ghost.frame0[i] != reference_ghost.frame0[i])
-			refilled_cells++;
-	report(
-		refilled_cells > 0,
-		fmt::format(
-			"Test 4 fill freshness: the subject's cycle-end fill re-wrote {} of {} destination entries vs the reference's SimInit-era fill",
-			refilled_cells,
-			subject_ghost.frame0.size()
-		)
-	);
 }
 
 // Test 8 (T8 generative fill-freshness model, N cycles): the fine block's
-// C2F destination complement is fill-owned (kernels never write ghost rows
-// -- a model premise locked by the census and the both-frames assertions),
-// so the six-step schedule forces an exact generative law for its content:
-// after every cycle the destination rows carry THE fill of the coarse ring
-// state that the coarse kernel produced during that cycle, i.e. of the
-// kernel's own evolution from the initial (SimInit) fill's source state.
-// Over N = 3 coupled cycles on this fixture:
+// C2F destination complement is filled ONCE per cycle (the single-fill
+// simulated-band schedule: the frame-0 complement is fill-owned -- no
+// kernel writes frame 0's ghost rows, a model premise locked by the census
+// and Test 4's coverage lock), so the schedule forces an exact generative
+// law for the fill content: after every cycle the frame-0 destination rows
+// carry THE fill of the coarse ring state that the coarse kernel produced
+// during that cycle, i.e. of the kernel's own evolution from the initial
+// (SimInit) fill's source state. The frame-1 content follows the
+// simulated-band law instead: its INNER layer is the substep-1 kernel's
+// output (fresh every cycle), its OUTER layer is the SimInit anchor fill
+// forever (no frame-1 fill exists and the kernel never reaches the outer
+// layer). Over N = 3 coupled cycles on this fixture:
 //
-// (M1) fresh-fill cadence, never a stale re-write: cycle k's fill differs
-//      from EVERY earlier fill's content. An aliased/wedged cycle-end fill
-//      would re-emit an older fill's content bitwise; the evolving sine IC
-//      guarantees a genuinely different source state each cycle (the same
-//      fixture property Test 3 uses to prove kernel activity), so the lock
-//      is structural and carries no numeric expectation;
-// (M2) one logical write to both AB frames per cycle end, bitwise
-//      detectable: frame0 == frame1 entry-for-entry at cycle 0 (the SimInit
-//      both-frames anchor) and at every cycle end (AB only; under AA the
-//      two fill events map onto one physical frame and the parity evidence
-//      is Tests 1/9's even_iter census).
+// (M1) fresh-fill cadence, never a stale re-write: cycle k's frame-0 fill
+//      differs from EVERY earlier fill's content. An aliased/wedged
+//      cycle-end fill would re-emit an older fill's content bitwise; the
+//      evolving sine IC guarantees a genuinely different source state each
+//      cycle (the same fixture property Test 3 uses to prove kernel
+//      activity), so the lock is structural and carries no numeric
+//      expectation;
+// (M2) simulated-band generative law on frame 1 (AB only): the inner layer
+//      is fresh kernel output every cycle (differs from the anchor and
+//      from the previous cycle), the outer layer is the constant SimInit
+//      anchor fill at every cycle end (bitwise; under AA the two frames
+//      are parity states of one array and the parity evidence is Tests
+//      1/9's even_iter census).
 //
 // Dedupe note vs Test 4: extending the kernels-only ring comparison past
 // cycle 1 would be physically WRONG -- from cycle 2 on, ring cells
@@ -990,7 +1092,8 @@ void test_interface_ring_freshness()
 // d3q27/bc.h preCollision comment), so the coupled subject's ring is
 // kernel-only in WRITE REACH but not kernels-only in content. The bitwise
 // kernels-only reference comparison therefore stays the 1-cycle canary in
-// Test 4; this test pins the fill side's generative cadence instead.
+// Test 4; this test pins the fill and band sides' generative cadence
+// instead.
 void test_interface_ring_freshness_model()
 {
 	lat_t lat = makeLattice();
@@ -1008,8 +1111,8 @@ void test_interface_ring_freshness_model()
 	}
 
 	// scan the destination complement once per fill epoch: index 0 = the
-	// SimInit both-frames fill (the cycle-0 anchor of the six-step cycle),
-	// index k = the cycle-k cycle-end fill
+	// SimInit single-frame fill (the cycle-0 anchor of the cycle), index
+	// k = the cycle-k cycle-end fill
 	constexpr int cycles = 3;
 	BLOCK* fine = state.nse.getBlocksAtLevel(1).front();
 	std::vector<FineGhostScan> fills;
@@ -1024,7 +1127,7 @@ void test_interface_ring_freshness_model()
 	}
 	report(
 		static_cast<int>(fills.size()) == cycles + 1 && ! state.nse.terminate,
-		"Test 8 setup: the SimInit anchor fill plus 3 coupled six-step cycle-end fills were scanned without termination"
+		"Test 8 setup: the SimInit anchor fill plus 3 coupled cycle-end fills were scanned without termination"
 	);
 	if (static_cast<int>(fills.size()) != cycles + 1)
 		return;
@@ -1061,26 +1164,55 @@ void test_interface_ring_freshness_model()
 	}
 
 #ifdef AB_PATTERN
-	// M2: the cycle-end double write to both AB frames is bitwise-detectable
-	// as ONE write, at the SimInit anchor and at every cycle end
-	double max_frame_diff = 0;
-	int equal_frames = 0;
-	for (int k = 0; k <= cycles; k++) {
-		if (fills[k].frame0.size() != fills[k].frame1.size())
-			continue;
-		equal_frames++;
-		for (std::size_t i = 0; i < fills[k].frame0.size(); i++)
-			max_frame_diff = std::max(max_frame_diff, std::abs(fills[k].frame0[i] - fills[k].frame1[i]));
+	// M2a: the frame-1 INNER layer is fresh substep-1 kernel output every
+	// cycle -- it must differ from the SimInit anchor and from the previous
+	// cycle's inner content at every cycle end
+	for (int k = 1; k <= cycles; k++) {
+		long inner_vs_anchor = 0;
+		long inner_vs_prev = 0;
+		for (std::size_t i = 0; i < fills[k].frame1.size(); i++) {
+			if (ghostLayerDepth(fills[k], fills[k].coords[i]) != 1)
+				continue;
+			if (fills[k].frame1[i] != fills[0].frame1[i])
+				inner_vs_anchor++;
+			if (fills[k].frame1[i] != fills[k - 1].frame1[i])
+				inner_vs_prev++;
+		}
+		report(
+			inner_vs_anchor > 0 && inner_vs_prev > 0,
+			fmt::format(
+				"Test 8 simulated-band inner layer, cycle {}: the substep-1 kernel's inner-overlap output is fresh ({} differing "
+				"entries vs the SimInit anchor, {} vs the previous cycle)",
+				k,
+				inner_vs_anchor,
+				inner_vs_prev
+			)
+		);
 	}
-	report(
-		equal_frames == cycles + 1 && max_frame_diff == 0,
-		fmt::format(
-			"Test 8 one-write-per-cycle: the cycle-end double write to both AB frames is bitwise one write at the SimInit anchor and "
-			"at all {} cycle ends (max |diff| = {:.3e} over the destination complement)",
-			cycles,
-			max_frame_diff
-		)
-	);
+
+	// M2b: the frame-1 OUTER layer is the fill-only row of frame 1 -- no
+	// fill and no kernel write reaches it, so it stays the SimInit anchor
+	// fill bitwise at every cycle end
+	for (int k = 1; k <= cycles; k++) {
+		long outer_total = 0;
+		double outer_max_diff = 0;
+		for (std::size_t i = 0; i < fills[k].frame1.size(); i++) {
+			if (ghostLayerDepth(fills[k], fills[k].coords[i]) != 2)
+				continue;
+			outer_total++;
+			outer_max_diff = std::max(outer_max_diff, static_cast<double>(std::abs(fills[k].frame1[i] - fills[0].frame1[i])));
+		}
+		report(
+			outer_total > 0 && outer_max_diff == 0,
+			fmt::format(
+				"Test 8 fill-only outer layer, cycle {}: all {} frame-1 outer-layer destination entries still hold the SimInit "
+				"anchor fill bitwise (max |diff| = {:.3e})",
+				k,
+				outer_total,
+				outer_max_diff
+			)
+		);
+	}
 #endif
 }
 
@@ -1093,20 +1225,19 @@ void test_interface_ring_freshness_model()
 // transitions both covered) on the same schedule spy as Test 1:
 //
 // (P1) cycle-invariant fine-frame parity per call-site slot: the ghost
-//      frame consumed by substep 1 (substep 2) and targeted by fill #1
-//      (#2) is the SAME frame in every cycle (the absolute identities P/Q
-//      are pinned by Test 1);
+//      frame consumed by substep 1, the frame substep 2 sources from it,
+//      and the frame the single fill targets are the SAME across cycles
+//      (the absolute identities P/Q are pinned by Test 1);
 // (P2) strictly alternating fill-SOURCE parity: the coarse rotation
-//      recorded at every coarse-touching slot (coarse kernel, F2C, both
-//      C2F fills) flips with cycle parity and repeats at same-parity
-//      cycles -- the global updateKernelData() toggles the coarse rotation
-//      once per cycle and nothing inside SimUpdate re-toggles it (the
-//      within-cycle equality across the four slots is Test 1's assertion);
-// (P3) cross-cycle consumption chain: cycle k's substeps consume exactly
-//      the frames that cycle k-1's fill pair was recorded writing
-//      (substep 1 == fill #1's target, substep 2 == fill #2's target) --
-//      the fill written once at the cycle end is what the next cycle runs
-//      on.
+//      recorded at every coarse-touching slot (coarse kernel, F2C, the C2F
+//      fill) flips with cycle parity and repeats at same-parity cycles --
+//      the global updateKernelData() toggles the coarse rotation once per
+//      cycle and nothing inside SimUpdate re-toggles it (the within-cycle
+//      equality across the three slots is Test 1's assertion);
+// (P3) cross-cycle consumption chain: cycle k's substep 1 consumes exactly
+//      the frame that cycle k-1's single fill was recorded writing, and
+//      substep 2 consumes the frame substep 1 wrote -- the fill written
+//      once at the cycle end is what the next cycle runs on.
 //
 // Derivation (the point of the lock): the seam metric samples the fine
 // interior face row, whose evolution each cycle runs on the fill ghost
@@ -1134,7 +1265,7 @@ void test_schedule_parity_structure()
 		report(false, "Test 9 setup: SimInit triggered the terminate flag");
 		return;
 	}
-	// consume SimInit's two C2F events (the cycle-0 anchor, asserted in Test 1)
+	// consume SimInit's C2F event (the cycle-0 anchor, asserted in Test 1)
 	state.events.clear();
 
 	constexpr int cycles = 4;
@@ -1145,28 +1276,28 @@ void test_schedule_parity_structure()
 
 	using Evt = typename StateSchedule_AMR<NSE_CONFIG>::Event;
 	using Stage = typename StateSchedule_AMR<NSE_CONFIG>::Stage;
-	bool premise = ! state.nse.terminate && state.events.size() == static_cast<std::size_t>(6 * cycles);
+	bool premise = ! state.nse.terminate && state.events.size() == static_cast<std::size_t>(5 * cycles);
 	if (premise)
 		for (int k = 0; k < cycles; k++) {
-			const Evt* ev = state.events.data() + 6 * k;
+			const Evt* ev = state.events.data() + 5 * k;
 			premise = premise && ev[0].stage == Stage::kernel && ev[0].level == 1 && ev[1].stage == Stage::kernel && ev[1].level == 1
 				   && ev[2].stage == Stage::kernel && ev[2].level == 0 && ev[3].stage == Stage::f2c && ev[3].level == 1 && ev[4].stage == Stage::c2f
-				   && ev[4].level == 1 && ev[5].stage == Stage::c2f && ev[5].level == 1;
+				   && ev[4].level == 1;
 		}
 	report(
 		premise,
-		"Test 9 premise: 4 cycles recorded exactly the six-step stage sequence each (24 events: kernel L1 x2, kernel L0, F2C, C2F x2 "
-		"per cycle; the indexing premise for the parity derivation)"
+		"Test 9 premise: 4 cycles recorded exactly the simulated-band stage sequence each (20 events: kernel L1 x2, kernel L0, F2C, "
+		"C2F per cycle; the indexing premise for the parity derivation)"
 	);
 	if (! premise)
 		return;
 
 	// P1: cycle-invariant fine-frame parity at every call-site slot
 	bool invariant_ok = true;
-	for (int slot = 0; slot < 6; slot++)
+	for (int slot = 0; slot < 5; slot++)
 		for (int k = 1; k < cycles; k++) {
 			const Evt& ref = state.events[slot];
-			const Evt& cur = state.events[6 * k + slot];
+			const Evt& cur = state.events[5 * k + slot];
 #ifdef AB_PATTERN
 			invariant_ok = invariant_ok && ref.fine_cur == cur.fine_cur && ref.fine_out == cur.fine_out;
 #elif defined(AA_PATTERN)
@@ -1182,47 +1313,49 @@ void test_schedule_parity_structure()
 	// P2: strictly alternating coarse (fill-source) parity at every
 	// coarse-touching slot; repeats at same-parity cycles
 	bool alternation_ok = true;
-	for (int slot = 2; slot < 6; slot++)
+	for (int slot = 2; slot < 5; slot++)
 		for (int k = 0; k + 1 < cycles; k++) {
 #ifdef AB_PATTERN
-			alternation_ok = alternation_ok && state.events[6 * k + slot].coarse_cur != state.events[6 * (k + 1) + slot].coarse_cur;
+			alternation_ok = alternation_ok && state.events[5 * k + slot].coarse_cur != state.events[5 * (k + 1) + slot].coarse_cur;
 #elif defined(AA_PATTERN)
-			alternation_ok = alternation_ok && state.events[6 * k + slot].coarse_even != state.events[6 * (k + 1) + slot].coarse_even;
+			alternation_ok = alternation_ok && state.events[5 * k + slot].coarse_even != state.events[5 * (k + 1) + slot].coarse_even;
 #endif
 		}
-	for (int slot = 2; slot < 6; slot++)
+	for (int slot = 2; slot < 5; slot++)
 		for (int k = 0; k + 2 < cycles; k++) {
 #ifdef AB_PATTERN
-			alternation_ok = alternation_ok && state.events[6 * k + slot].coarse_cur == state.events[6 * (k + 2) + slot].coarse_cur;
+			alternation_ok = alternation_ok && state.events[5 * k + slot].coarse_cur == state.events[5 * (k + 2) + slot].coarse_cur;
 #elif defined(AA_PATTERN)
-			alternation_ok = alternation_ok && state.events[6 * k + slot].coarse_even == state.events[6 * (k + 2) + slot].coarse_even;
+			alternation_ok = alternation_ok && state.events[5 * k + slot].coarse_even == state.events[5 * (k + 2) + slot].coarse_even;
 #endif
 		}
 	report(
 		alternation_ok,
-		"Test 9 alternating fill-source parity: the coarse rotation at every coarse-touching slot (kernel, F2C, both C2F fills) "
-		"flips with cycle parity across all 3 transitions and repeats at same-parity cycles (one toggle per cycle, none inside)"
+		"Test 9 alternating fill-source parity: the coarse rotation at every coarse-touching slot (kernel, F2C, the C2F fill) flips "
+		"with cycle parity across all 3 transitions and repeats at same-parity cycles (one toggle per cycle, none inside)"
 	);
 
-	// P3: cross-cycle consumption chain -- cycle k's substeps consume
-	// exactly the frames that cycle k-1's fill pair was recorded writing
+	// P3: cross-cycle consumption chain -- cycle k's substep 1 consumes
+	// exactly the frame that cycle k-1's single fill was recorded writing,
+	// and substep 2 consumes the frame substep 1 wrote (the simulated-band
+	// chain: the fill feeds the first substep, the updated band feeds the
+	// second)
 	bool consumption_ok = true;
 	for (int k = 1; k < cycles; k++) {
-		const Evt& substep1 = state.events[6 * k];
-		const Evt& substep2 = state.events[6 * k + 1];
-		const Evt& fill1 = state.events[6 * (k - 1) + 4];
-		const Evt& fill2 = state.events[6 * (k - 1) + 5];
+		const Evt& substep1 = state.events[5 * k];
+		const Evt& substep2 = state.events[5 * k + 1];
+		const Evt& fill = state.events[5 * (k - 1) + 4];
 #ifdef AB_PATTERN
-		consumption_ok = consumption_ok && substep1.fine_cur == fill1.fine_cur && substep2.fine_cur == fill2.fine_cur;
+		consumption_ok = consumption_ok && substep1.fine_cur == fill.fine_cur && substep2.fine_cur == substep1.fine_out;
 #elif defined(AA_PATTERN)
-		consumption_ok = consumption_ok && substep1.fine_even == fill1.fine_even && substep2.fine_even == fill2.fine_even;
+		consumption_ok = consumption_ok && substep1.fine_even == fill.fine_even && substep2.fine_even != substep1.fine_even;
 #endif
 	}
 	report(
 		consumption_ok,
-		"Test 9 consumption chain: every cycle's substep 1 (substep 2) consumes exactly the frame that the previous cycle end's "
-		"fill #1 (#2) was recorded writing -- the once-per-cycle fill is what the next cycle runs on, so the fill imprint carried "
-		"to the seam must alternate with the source parity locked above"
+		"Test 9 consumption chain: every cycle's substep 1 consumes exactly the frame that the previous cycle end's fill was "
+		"recorded writing, and substep 2 consumes the frame substep 1 wrote -- the fill imprint carried to the seam still "
+		"alternates with the source parity locked above"
 	);
 }
 
