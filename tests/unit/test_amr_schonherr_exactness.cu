@@ -1070,9 +1070,11 @@ TEST_CASE("T10e destination-row window census: both rows read the ring pair")
 // (T10f) corner destination census on the 3088 fixture: every destination
 // cell of the disjoint patch partition is written EXACTLY ONCE per fill
 // launch. >= 1 (coverage) is measured here: the destinations are
-// sentinel-poisoned on both AB frames and the per-frame fill launches of
-// the production six-step cycle are replayed (updateKernelDataForLevel +
-// launchCoarseToFineTransfers, the straight SimUpdate call sequence); every
+// sentinel-poisoned on both AB frames and the fill launches are replayed
+// under both rotations (updateKernelDataForLevel +
+// launchCoarseToFineTransfers, the straight SimUpdate call sequence; the
+// production cycle fills frame 0 only, the frame-1 replay pins the
+// machinery's frame isolation); every
 // destination cell must hold a non-sentinel finite DF after its frame's
 // fill while the OTHER frame and every non-destination cell stay bitwise
 // untouched (frame isolation + write-closure of the launcher). <= 1 (no
@@ -1140,7 +1142,8 @@ TEST_CASE("T10f fill census: every destination cell written exactly once per fil
 	REQUIRE(poisoned == 3088);
 	fine->copyDFsToDevice();
 
-	// replay the production fill of frame 0 (six-step cycle stage 5)
+	// replay the production-cycle fill (its single fill targets frame 0
+	// under the substep-0 rotation)
 	state.nse.updateKernelDataForLevel(1, 0);
 	state.launchCoarseToFineTransfers(1);
 	fine->copyDFsToHost();
@@ -1201,9 +1204,11 @@ TEST_CASE("T10f fill census: every destination cell written exactly once per fil
 	}
 	CHECK(spill == 0);
 
-	// replay the production fill of frame 1 (six-step cycle stage 6); the
-	// destination cells of frame 1 must now be written, and frame 0's
-	// values must be bitwise at the post-frame-0 state.
+	// replay the same fill machinery under the substep-1 rotation
+	// (production uses no frame-1 fill under the simulated band; this
+	// replay pins the machinery's frame isolation); the destination
+	// cells of frame 1 must now be written, and frame 0's values must be
+	// bitwise at the post-frame-0 state.
 	state.nse.updateKernelDataForLevel(1, 1);
 	state.launchCoarseToFineTransfers(1);
 	fine->copyDFsToHost();

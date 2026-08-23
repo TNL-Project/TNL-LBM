@@ -256,18 +256,28 @@ contract `docs/AMR-schonherr-ch7-target-contract.md`).
   footprint re-anchored one fine cell inward per face, gs ≥ 3 minimum;
   `markAMRInterface` — ring {halo c=−1 + reactivated surface shell c=0} tagged
   `GEO_AMR_INTERFACE`, footprint-depth ≥ 1 cells frozen `GEO_NOTHING`),
-  `include/lbm3d/amr_state.h` (`State_AMR` driver: `SimUpdate` six-step cycle,
-  `buildCouplings` vertex-straddling patches, SimInit map-pattern assertion),
+  `include/lbm3d/amr_state.h` (`State_AMR` driver: `SimUpdate` simulated-band
+  cycle, `buildCouplings` vertex-straddling patches, SimInit map-pattern
+  assertion),
   `include/lbm3d/d3q27/amr_coupling.h` (`cudaAMR_CoarseToFine`,
   `cudaAMR_FineToCoarse`), `include/lbm3d/viz/OverlappingAMRWriter.{h,hpp}`.
-- **Six-step cycle** (per cycle, per level): fine substep 1 → fine substep 2 →
-  coarse step → F2C (depth-1 skin, reads rotation-1 frame) → C2F frame 0 →
-  C2F frame 1 (identical content; SimInit does the same both-frames fill for
-  cycle 0). H9 and the BVP refill are hard-removed; F2C and C2F touch disjoint
-  sets. Checkpoint restart does not carry across the band registration.
+- **Schönherr cycle with simulated band** (per cycle, per level): fine substep 1
+  (**widened extent [−1, local+1)** — the inner ghost rows are INTEGRATED,
+  collide+stream like interior fluid, sourcing the outer ghost row) → fine substep 2
+  (interior-only; its boundary data is substep 1's updated inner rows in the
+  other AB frame) → coarse step → F2C once (depth-1 skin, reads rotation-1
+  frame) → C2F single fill of the substep-0 frame covering **both** ghost rows
+  (SimInit does the same single-frame fill for cycle 0; the former frame-1 fill
+  is removed as dead traffic). Converted 2026-08-23 per the contract's fork row
+  (c) trigger (T16 null verdict); the conversion-era six-step passive band is
+  superseded. H9 and the BVP refill are hard-removed; F2C and C2F touch
+  disjoint sets. Checkpoint restart does not carry across the band registration.
 - **Strategy surfaces** (`sim_AMR/CMakeLists.txt`): C2F default is the σ-form
   compact-moment (σ = 1/2; `TNL_LBM_C2F_STRATEGY=C2F_LAGRANGE` opts back to the
-  3rd-order Lagrange; carve default-on, `C2F_NO_CARVE` disables). F2C default
+  3rd-order Lagrange). The carve pre-pass was hard-removed on 2026-08-23 —
+  the ch7 band map-pattern assertion rejects covered windows at SimInit, so
+  the pre-pass could never fire; `C2F_CARVE`/`C2F_NO_CARVE` warn at configure
+  and gate no code. F2C default
   is `TNL_LBM_F2C_STRATEGY=F2C_SCHONHERR` (the §7.2 σ = 2 compact-moment
   transfer, default since commit 15); `=F2C_LAGRAVA` opts out to the 4×4×4
   Lagrava filter — a named no-op define: the kernel splits on
