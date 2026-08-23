@@ -169,6 +169,27 @@ Gate failure after **2 fix attempts** at any stage: `git revert` to the predeces
 
 The re-anchor changes the fine-row index mapping (§2 indexer column: a fine row's old indexer equals its new indexer plus one, old = new + 1), so the channel diagnostic built on the old rows must be re-read against the §5 re-paired seam/dest rows, not against the old row identities. The **arm-common deficit interpretation stands**; the refreshed table is produced at T18 with the channel diagnostic re-run (plan §2, T18 bullet). Probe semantics are otherwise unchanged: the §5 seam metric remains a face-mean Δ of rho/f00/f05/f06 over per-iteration `--write-dfs` frames.
 
+### 8.1 Refreshed record (T18, 2026-08-22, at the conversion HEAD)
+
+**Run.** Full developing-channel diagnostic at HEAD (the F2C_SCHONHERR default): `build/sim_AMR/sim_AMR_channel --resolution 1 --write-dfs --out3d-iter-period 1` — 641 coarse iterations + the cycle-0 frame (642 outputs, 144 s wall; env pin as the T16 ladder: RTX 5080 sm_120, CUDA 13.3, SP, AB, np=1). Census at HEAD on the channel footprint "1 24 4 4 16 8 8": 1,296 interface cells (halo 776 + reactivated c=0 shell 520), 504 frozen (c=1 skin 312 + deep 192); 6 interface + 6 interior patches; BC-clamped mass invariant at print precision (1.404375e+04, the Dirichlet Qi-drift masking working as designed).
+
+**Index mapping.** The old pairing's FINE row (slab x-min face, old fine local 0 = fine-global 48, center 24.25, vs coarse ring c=−1 at domain 23) is **not re-readable**: old local 0 is now destination row −1 (depth-2 ghost, outside the VTKHDF Level-1 extent). The §5 re-paired pairing on the slab: fine standard row **new local 0** (fine-global 49, center 24.75) vs coarse ring row 2 **c=0** (domain x = 24, center 24.5); tangent windows fine [0:14), coarse [4:12). The committed seam metric's cubic reshape cannot read the channel's non-cubic Level extents (30×14×14 / 64×16×16), so the refresh used a one-off session probe with identical face-mean-Δ semantics (float64, %.10e; `channel_seam_probe.py` in the evidence dir).
+
+**Refreshed seam table (re-paired rows).** Startup cycles 3–10: rho mean **−2.1667504874e-09** (uniform sign — the slab is untouched there: in 10 steps the front has advected ~1 coarse cell from inflow at U_lb = 0.1 and even the acoustic signal at c_s ≈ 0.577 has travelled < 6 cells, far short of the slab's x-min face at x = 24; cycle-0 rows bitwise 0 by the uniform IC). Front arrival before cycle 40 (rho −4.1458e-02). Quasi-steady (last 100 cycles):
+
+| field | mean | signed/abs |
+|---|---|---|
+| rho | **−3.4941984034e-02** | −1.0000 |
+| f00 | −9.5707324016e-03 | −1.0000 |
+| f05 | −4.7143329692e-03 | −1.0000 |
+| f06 | +1.1198423597e-03 | +1.0000 |
+
+The same fine row vs the OLD coarse-row c=−1 column: at quasi-steady the two read within ~1.5e-3 of each other (cycle 640: −3.4436e-02 vs −3.4826e-02), transiently up to 2.8e-2 apart during the front's arrival (cycle 40: −4.1458e-02 vs −6.9014e-02) — the re-pairing changes the row identities, not the class.
+
+**Interpretation.** The B.7-era arm-common deficit reading stands: the ~6e-2 discontinuity bracket the B.7 record tabulated at the slab's min face (cycle-28 coarse centerline 1.1507 / 1.1553 / 1.0966 at x = 23/24/25) re-reads on the converted band as a ~3.5e-02 standing seam jump on the re-paired rows at quasi-steady, uniform-sign. The conversion's band registration was never expected to move this class — the deficit was measured arm-common (B-off and B-on alike), not a differential defect of any transfer path; the refreshed state confirms it persists at the same order at HEAD.
+
+**Evidence** (untracked): `.omo/evidence/schonherr_conversion/t18-b7-channel/` — `sim_channel_probe.log` (sim stdout), `channel_seam_probe.py` (the one-off probe), `channel_seam_probe.log` (the digest above), `channel_seam_series.csv` (all 642 per-iteration rows), `results_sim_AMR_channel_res01_np001/` (642 frames), `adios2.xml`.
+
 ---
 
 ## 9. Glossary
