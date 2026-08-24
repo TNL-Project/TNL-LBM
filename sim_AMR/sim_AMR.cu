@@ -105,7 +105,8 @@ void sim(
 	float phys_final_time = 0.5f,
 	float convective_times = 0.0f,
 	bool write_dfs = false,
-	int out3d_iter_period = 0
+	int out3d_iter_period = 0,
+	bool rest_ic = false
 )
 {
 	using idx = typename NSE::TRAITS::idx;
@@ -140,8 +141,14 @@ void sim(
 	if (! state.canCompute())
 		return;
 
-	state.V_0 = PHYS_VELOCITY;
-	state.k = 2 * TNL::pi / (N * PHYS_DL);
+	// rest initial condition (--rest-ic): V_0 = 0 collapses the Taylor-Green
+	// field to exactly rho = 1, u = v = w = 0 bitwise (the density term is
+	// V_0^2-weighted and all velocity amplitudes are V_0-weighted); used for
+	// coupling null-case experiments (constant macros across the interface)
+	if (! rest_ic) {
+		state.V_0 = PHYS_VELOCITY;
+		state.k = 2 * TNL::pi / (N * PHYS_DL);
+	}
 
 	state.nse.physFinalTime = phys_final_time;	// [s]
 	state.cnt[PRINT].period = 0.01;
@@ -191,7 +198,8 @@ void run(
 	float phys_final_time = 0.5f,
 	float convective_times = 0.0f,
 	bool write_dfs = false,
-	int out3d_iter_period = 0
+	int out3d_iter_period = 0,
+	bool rest_ic = false
 )
 {
 	using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
@@ -206,7 +214,7 @@ void run(
 		D3Q27_BC_All,
 		D3Q27_MACRO_Default<TRAITS>>;
 
-	sim<NSE_CONFIG>(adios_config, resolution, max_level, lattice_viscosity, phys_final_time, convective_times, write_dfs, out3d_iter_period);
+	sim<NSE_CONFIG>(adios_config, resolution, max_level, lattice_viscosity, phys_final_time, convective_times, write_dfs, out3d_iter_period, rest_ic);
 }
 
 int main(int argc, char** argv)
@@ -239,6 +247,7 @@ int main(int argc, char** argv)
 		.scan<'i', int>()
 		.default_value(0)
 		.nargs(1);
+	program.add_argument("--rest-ic").help("rest initial condition (V_0 = 0: rho = 1, u = 0 everywhere) for coupling null-case experiments").default_value(false).implicit_value(true);
 
 	try {
 		program.parse_args(argc, argv);
@@ -257,6 +266,7 @@ int main(int argc, char** argv)
 	const auto convective_times = program.get<float>("--convective-times");
 	const auto write_dfs = program.get<bool>("--write-dfs");
 	const auto out3d_iter_period = program.get<int>("--out3d-iter-period");
+	const auto rest_ic = program.get<bool>("--rest-ic");
 
 	if (resolution < 1) {
 		fmt::println(stderr, "CLI error: resolution must be at least 1");
@@ -269,7 +279,7 @@ int main(int argc, char** argv)
 
 	// SP only (2026-08-18): the DP branch doubled the device-code
 	// instantiation cost of this TU (build-time investigation)
-	run<TraitsSP>(adios_config, resolution, max_level, lattice_viscosity, phys_final_time, convective_times, write_dfs, out3d_iter_period);
+	run<TraitsSP>(adios_config, resolution, max_level, lattice_viscosity, phys_final_time, convective_times, write_dfs, out3d_iter_period, rest_ic);
 
 	return 0;
 }
