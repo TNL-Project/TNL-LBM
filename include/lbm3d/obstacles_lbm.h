@@ -8,10 +8,13 @@ void lbmDrawCube(LBM& lbm, typename LBM::map_t wall_tag, typename LBM::point_t p
 	typename LBM::idx range = ceil(lbm_radius) + 1;
 	for (typename LBM::idx py = lbm_center.y() - range; py <= lbm_center.y() + range; py++)
 		for (typename LBM::idx pz = lbm_center.z() - range; pz <= lbm_center.z() + range; pz++)
-			for (typename LBM::idx px = lbm_center.x() - range; px <= lbm_center.x() + range; px++)
-				if (px - lbm_center.x() < lbm_radius && py - lbm_center.y() < lbm_radius && pz - lbm_center.z() < lbm_radius) {
+			for (typename LBM::idx px = lbm_center.x() - range; px <= lbm_center.x() + range; px++) {
+				const typename LBM::point_t p = lbm.lat.lbm2physPoint({px, py, pz});
+				const typename LBM::point_t d = p - phys_center;
+				if (std::abs(d.x()) < phys_radius && std::abs(d.y()) < phys_radius && std::abs(d.z()) < phys_radius) {
 					lbm.setMap(px, py, pz, wall_tag);
 				}
+			}
 }
 
 template <typename LBM>
@@ -23,9 +26,9 @@ void lbmDrawSphere(LBM& lbm, typename LBM::map_t wall_tag, typename LBM::point_t
 	for (typename LBM::idx py = lbm_center.y() - range; py <= lbm_center.y() + range; py++)
 		for (typename LBM::idx pz = lbm_center.z() - range; pz <= lbm_center.z() + range; pz++)
 			for (typename LBM::idx px = lbm_center.x() - range; px <= lbm_center.x() + range; px++) {
-				const typename LBM::idx3d p{px, py, pz};
-				const typename LBM::real dist = TNL::l2Norm(p - lbm_center);
-				if (dist < lbm_radius) {
+				const typename LBM::point_t p = lbm.lat.lbm2physPoint({px, py, pz});
+				const typename LBM::real dist = TNL::l2Norm(p - phys_center);
+				if (dist < phys_radius) {
 					lbm.setMap(px, py, pz, wall_tag);
 				}
 			}
@@ -40,9 +43,10 @@ void lbmDrawCylinder(LBM& lbm, typename LBM::map_t wall_tag, typename LBM::point
 	for (typename LBM::idx py = 0; py <= lbm.lat.global.y() - 1; py++)
 		for (typename LBM::idx pz = lbm_center.z() - range; pz <= lbm_center.z() + range; pz++)
 			for (typename LBM::idx px = lbm_center.x() - range; px <= lbm_center.x() + range; px++) {
-				const typename LBM::idx3d p{px, lbm_center.y(), pz};
-				const typename LBM::real dist = TNL::l2Norm(p - lbm_center);
-				if (dist < lbm_radius) {
+				const typename LBM::point_t p = lbm.lat.lbm2physPoint({px, py, pz});
+				const typename LBM::real dx = p.x() - phys_center.x();
+				const typename LBM::real dz = p.z() - phys_center.z();
+				if (dx * dx + dz * dz < phys_radius * phys_radius) {
 					lbm.setMap(px, py, pz, wall_tag);
 				}
 			}

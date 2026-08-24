@@ -1,7 +1,7 @@
 # TNL-LBM PROJECT KNOWLEDGE BASE
 
-**Updated:** 2026-08-14
-**Branch:** fix-aa-bc
+**Updated:** 2026-08-20
+**Branch:** main
 
 ## OVERVIEW
 
@@ -113,6 +113,10 @@ with optional Python bindings via nanobind and distributed execution through CUD
 - **Using `-O0` for HIP debug**: Causes memory-access faults; use `-O1`.
 - **Ignoring `isDDNonZero` / `is3DiracNonZero`**: Dirac-delta callers must check non-zero support explicitly.
 - **Unrestricted viscosity**: `LBM_VISCOSITY` must stay below `1/6` for stability in some setups.
+- **Wrong `setBoundary*` call order**: `setBoundaryX/Y/Z` stamp whole planes and overwrite each other at shared edges/corners
+  (last call wins, see `lbm_block.hpp`).
+  Set `GEO_SYMMETRY` planes first, inflow/outflow next, then walls, and the `GEO_NOTHING` ghost layer always last
+  — otherwise symmetry tags capture the inflow/outflow face edges.
 - **Fenced comments**: Do not add decorative comments with "fences", e.g. `# -----------------` or `// -----------------`.
 
 ## UNIQUE STYLES

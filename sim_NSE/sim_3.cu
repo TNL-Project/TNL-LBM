@@ -34,13 +34,15 @@ struct StateLocal : State<NSE>
 
 	void setupBoundaries() override
 	{
+		// symmetry planes first, so inflow/outflow overwrite them at edges/corners
+		nse.setBoundaryY(1, BC::GEO_SYMMETRY);						 // front
+		nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_SYMMETRY);	 // back
+		nse.setBoundaryZ(1, BC::GEO_SYMMETRY);						 // bottom
+		nse.setBoundaryZ(nse.lat.global.z() - 2, BC::GEO_SYMMETRY);	 // top
+
+		// inflow/outflow next, so they win over symmetry at edges/corners
 		nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT);								 // left
 		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT_INTERP);	 // right
-
-		nse.setBoundaryY(1, BC::GEO_SYM_FRONT);						 // front
-		nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_SYM_BACK);	 // back
-		nse.setBoundaryZ(1, BC::GEO_SYM_BOTTOM);					 // bottom
-		nse.setBoundaryZ(nse.lat.global.z() - 2, BC::GEO_SYM_TOP);	 // top
 
 		// extra layer needed due to A-A pattern
 		nse.setBoundaryX(0, BC::GEO_NOTHING);						// left
@@ -129,7 +131,7 @@ void sim(const std::string& adios_config, int RES, double Re)
 	using lat_t = Lattice<3, real, idx>;
 
 	int block_size = 32;
-	real ball_diameter = 0.10;						   // [m]
+	real ball_diameter = 0.01;						   // [m]
 	real real_domain_height = 11 * ball_diameter;	   // [m]
 	real real_domain_length = 2 * real_domain_height;  // [m]
 	idx LBM_Y = RES * block_size;
@@ -138,13 +140,11 @@ void sim(const std::string& adios_config, int RES, double Re)
 	idx LBM_X = (int) (real_domain_length / PHYS_DL) + 2;
 	point_t PHYS_ORIGIN = {0., 0., 0.};
 
-	real PHYS_VISCOSITY = 0.001;  // [m^2/s]
+	// FIXME: pressure waves do not settle for low phys viscosity
+	real PHYS_VISCOSITY = 1e-4;	 // [m^2/s]
 	real PHYS_VELOCITY = Re * PHYS_VISCOSITY / ball_diameter;
 
 	real LBM_VISCOSITY = 0.001;
-
-	//fmt::print("input phys velocity {:f}\ninput lbm velocity {:f}\nRe {:f}\nlbm viscosity {:f}\nphys viscosity {:f}\n", i_PHYS_VELOCITY,
-	//	i_LBM_VELOCITY, i_Re, i_LBM_VISCOSITY, i_PHYS_VISCOSITY);
 	real PHYS_DT = LBM_VISCOSITY / PHYS_VISCOSITY * PHYS_DL * PHYS_DL;
 
 	// initialize the lattice
@@ -170,14 +170,12 @@ void sim(const std::string& adios_config, int RES, double Re)
 	state.lbm_inflow_vx = state.nse.lat.phys2lbmVelocity(PHYS_VELOCITY);
 	//state.nse.physFluidDensity = 1000.0; // [kg/m^3]
 
-	spdlog::info("Reynolds = {:f} lbmvel {:f} physvel {:f}", Re, state.lbm_inflow_vx, PHYS_VELOCITY);
-
 	state.cnt[PRINT].period = 0.1;
+	state.cnt[PROBE1].period = 0.1;
 	state.nse.physFinalTime = 30.0;
 
 	//state.cnt[OUT3D].period = 1.0;
-	state.cnt[OUT2D].period = 0.1;
-	state.cnt[PROBE1].period = 0.1;
+	state.cnt[OUT2D].period = 1.0;
 
 	// add cuts
 	state.add2Dcut_X(LBM_X / 2, "cut_X");

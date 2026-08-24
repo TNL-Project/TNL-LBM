@@ -26,12 +26,7 @@ struct D3Q27_BC_All
 		GEO_OUTFLOW_RIGHT,
 		GEO_OUTFLOW_RIGHT_INTERP,
 		GEO_NOTHING,
-		GEO_SYM_TOP,
-		GEO_SYM_BOTTOM,
-		GEO_SYM_LEFT,
-		GEO_SYM_RIGHT,
-		GEO_SYM_BACK,
-		GEO_SYM_FRONT,
+		GEO_SYMMETRY,
 
 		// Adjoint boundary conditions
 		GEO_ADJOINT_FLUID,
@@ -43,8 +38,7 @@ struct D3Q27_BC_All
 
 	__cuda_callable__ static bool isSymmetric(map_t mapgi)
 	{
-		return mapgi == GEO_SYM_TOP || mapgi == GEO_SYM_BOTTOM || mapgi == GEO_SYM_LEFT || mapgi == GEO_SYM_RIGHT || mapgi == GEO_SYM_BACK
-			|| mapgi == GEO_SYM_FRONT;
+		return mapgi == GEO_SYMMETRY;
 	}
 
 	__cuda_callable__ static bool isFluid(map_t mapgi)
@@ -75,6 +69,7 @@ struct D3Q27_BC_All
 		switch (mapgi) {
 			case GEO_OUTFLOW_RIGHT:
 				STREAMING::streamingOutflowRight(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+				applySymmetryCorner(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				COLL::computeDensityAndVelocity(KS);
 				KS.rho = 1;
 				COLL::collision(KS);
@@ -82,6 +77,7 @@ struct D3Q27_BC_All
 				break;
 			case GEO_OUTFLOW_RIGHT_INTERP:
 				STREAMING::streamingOutflowInterpRight(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+				applySymmetryCorner(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				COLL::computeDensityAndVelocity(KS);
 				COLL::setEquilibriumDecomposition(KS, 1);
 				KS.rho = 1;
@@ -89,6 +85,128 @@ struct D3Q27_BC_All
 				STREAMING::postCollisionStreaming(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				break;
 		}
+	}
+
+	// Bitmask of ghost half-spaces adjacent to a GEO_SYMMETRY cell.
+	// Each bit marks a side where the neighbor cell is GEO_NOTHING (the domain-frame ghost layer).
+	enum SYM_SIDES : std::uint8_t
+	{
+		SYM_XM = 1 << 0,  // ghost at x-1
+		SYM_XP = 1 << 1,  // ghost at x+1
+		SYM_YM = 1 << 2,  // ghost at y-1
+		SYM_YP = 1 << 3,  // ghost at y+1
+		SYM_ZM = 1 << 4,  // ghost at z-1
+		SYM_ZP = 1 << 5,  // ghost at z+1
+	};
+
+	// direction slot for the letter trits (ex, ey, ez) in {m=0, z=1, p=2} packed as 9*ex + 3*ey + ez
+	__cuda_callable__ static constexpr std::uint8_t sym_dir_slot(int code)
+	{
+		// clang-format off
+		switch (code) {
+			case 0:  return mmm;
+			case 1:  return mmz;
+			case 2:  return mmp;
+			case 3:  return mzm;
+			case 4:  return mzz;
+			case 5:  return mzp;
+			case 6:  return mpm;
+			case 7:  return mpz;
+			case 8:  return mpp;
+			case 9:  return zmm;
+			case 10: return zmz;
+			case 11: return zmp;
+			case 12: return zzm;
+			case 13: return zzz;
+			case 14: return zzp;
+			case 15: return zpm;
+			case 16: return zpz;
+			case 17: return zpp;
+			case 18: return pmm;
+			case 19: return pmz;
+			case 20: return pmp;
+			case 21: return pzm;
+			case 22: return pzz;
+			case 23: return pzp;
+			case 24: return ppm;
+			case 25: return ppz;
+			case 26: return ppp;
+			default: return zzz;
+		}
+		// clang-format on
+	}
+
+	// Closure for GEO_SYMMETRY cells adjacent to two or three GEO_NOTHING ghost half-spaces
+	// (edges and corners of the domain frame).
+	// A population is unknown exactly when one of its non-zero components points through a ghost side
+	// ('p**' through the x-1 ghost, 'm**' through x+1, '*p*' through y-1, '*m*' through y+1,
+	// '**p' through z-1, and '**m' through z+1);
+	// each unknown gets the value of the within-cell population with every ghost-crossing component flipped
+	// (single reflection per orthogonal directions, double/triple for diagonals).
+	// The fills are pure copies whose sources never cross a ghost side,
+	// so the result does not depend on where in the domain frame the GEO_SYMMETRY planes lie.
+	template <typename LBM_KS>
+	__cuda_callable__ static void applySymmetry(LBM_KS& KS, std::uint8_t ghosts)
+	{
+		for (int code = 0; code < 27; code++) {
+			const int ex = code / 9;
+			const int ey = code / 3 % 3;
+			const int ez = code % 3;
+			// cx/cy/cz are set when the direction's component crosses a ghost side
+			// ('p' crosses the minus side, 'm' crosses the plus side, 'z' crosses neither)
+			const bool cx = ex != 1 && (ghosts & (ex == 2 ? SYM_XM : SYM_XP));
+			const bool cy = ey != 1 && (ghosts & (ey == 2 ? SYM_YM : SYM_YP));
+			const bool cz = ez != 1 && (ghosts & (ez == 2 ? SYM_ZM : SYM_ZP));
+			if (cx || cy || cz) {
+				const int src = 9 * (cx ? 2 - ex : ex) + 3 * (cy ? 2 - ey : ey) + (cz ? 2 - ez : ez);
+				KS.f[sym_dir_slot(code)] = KS.f[sym_dir_slot(src)];
+			}
+		}
+	}
+
+	// Mirror-precondition for BC cells adjacent to GEO_SYMMETRY planes.
+	// Checks the BC cell's own 6 neighbors: if a neighbor is GEO_SYMMETRY,
+	// the remaining perpendicular neighbors are checked for GEO_NOTHING to
+	// find the mirror half-planes. Symmetry may be on multiple axes;
+	// each axis is checked independently.
+	// No symmetry neighbor → no closure. The direction from the BC cell to the
+	// symmetry cell is never mirrored (the BC handles those populations).
+	template <typename LBM_KS>
+	__cuda_callable__ static void applySymmetryCorner(DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
+	{
+		std::uint8_t ghosts = 0;
+		if (SD.map(xm, y, z) == GEO_SYMMETRY || SD.map(xp, y, z) == GEO_SYMMETRY) {
+			if (SD.map(x, ym, z) == GEO_NOTHING)
+				ghosts |= SYM_YM;
+			if (SD.map(x, yp, z) == GEO_NOTHING)
+				ghosts |= SYM_YP;
+			if (SD.map(x, y, zm) == GEO_NOTHING)
+				ghosts |= SYM_ZM;
+			if (SD.map(x, y, zp) == GEO_NOTHING)
+				ghosts |= SYM_ZP;
+		}
+		if (SD.map(x, ym, z) == GEO_SYMMETRY || SD.map(x, yp, z) == GEO_SYMMETRY) {
+			if (SD.map(xm, y, z) == GEO_NOTHING)
+				ghosts |= SYM_XM;
+			if (SD.map(xp, y, z) == GEO_NOTHING)
+				ghosts |= SYM_XP;
+			if (SD.map(x, y, zm) == GEO_NOTHING)
+				ghosts |= SYM_ZM;
+			if (SD.map(x, y, zp) == GEO_NOTHING)
+				ghosts |= SYM_ZP;
+		}
+		if (SD.map(x, y, zm) == GEO_SYMMETRY || SD.map(x, y, zp) == GEO_SYMMETRY) {
+			if (SD.map(xm, y, z) == GEO_NOTHING)
+				ghosts |= SYM_XM;
+			if (SD.map(xp, y, z) == GEO_NOTHING)
+				ghosts |= SYM_XP;
+			if (SD.map(x, ym, z) == GEO_NOTHING)
+				ghosts |= SYM_YM;
+			if (SD.map(x, yp, z) == GEO_NOTHING)
+				ghosts |= SYM_YP;
+		}
+		if (ghosts)
+			applySymmetry(KS, ghosts);
 	}
 
 	template <typename LBM_KS>
@@ -124,6 +242,7 @@ struct D3Q27_BC_All
 			case GEO_INFLOW_LEFT:
 				{
 					SD.inflow(KS, x, y, z);
+					applySymmetryCorner(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 					// moment boundary condition by Pavel Eichler https://doi.org/10.1016/j.camwa.2024.08.009
 					// expressions symetrized by Jakub Klinkovsky
 					// clang-format off
@@ -175,6 +294,7 @@ struct D3Q27_BC_All
 				}
 			case GEO_INFLOW_BOUNCEBACK:
 				SD.inflow(KS, x, y, z);
+				applySymmetryCorner(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				// collision step: bounce-back with modified right-hand-side:
 				// -2/c_s^2 * rho(x_wall, t_n) * (\xi_k, v_wall)
 				{
@@ -236,6 +356,7 @@ struct D3Q27_BC_All
 				break;
 			case GEO_INFLOW_EQ_LEFT:
 				SD.inflow(KS, x, y, z);
+				applySymmetryCorner(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				// clang-format off
 				KS.rho = (dreal)1.0/(1-KS.vx) * (
 					(
@@ -255,6 +376,7 @@ struct D3Q27_BC_All
 				COLL::setEquilibrium(KS);
 				break;
 			case GEO_OUTFLOW_EQ:
+				applySymmetryCorner(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				COLL::computeDensityAndVelocity(KS);
 				KS.rho = 1;
 				COLL::setEquilibrium(KS);
@@ -280,78 +402,28 @@ struct D3Q27_BC_All
 				TNL::swap(KS.f[zmz], KS.f[zpz]);
 				TNL::swap(KS.f[zmp], KS.f[zpm]);
 				break;
-			case GEO_SYM_TOP:
-				KS.f[mmm] = KS.f[mmp];
-				KS.f[mzm] = KS.f[mzp];
-				KS.f[mpm] = KS.f[mpp];
-				KS.f[zmm] = KS.f[zmp];
-				KS.f[zzm] = KS.f[zzp];
-				KS.f[zpm] = KS.f[zpp];
-				KS.f[pmm] = KS.f[pmp];
-				KS.f[pzm] = KS.f[pzp];
-				KS.f[ppm] = KS.f[ppp];
-				COLL::computeDensityAndVelocity(KS);
-				break;
-			case GEO_SYM_BOTTOM:
-				KS.f[mmp] = KS.f[mmm];
-				KS.f[mzp] = KS.f[mzm];
-				KS.f[mpp] = KS.f[mpm];
-				KS.f[zmp] = KS.f[zmm];
-				KS.f[zzp] = KS.f[zzm];
-				KS.f[zpp] = KS.f[zpm];
-				KS.f[pmp] = KS.f[pmm];
-				KS.f[pzp] = KS.f[pzm];
-				KS.f[ppp] = KS.f[ppm];
-				COLL::computeDensityAndVelocity(KS);
-				break;
-			case GEO_SYM_LEFT:
-				KS.f[pmm] = KS.f[mmm];
-				KS.f[pmz] = KS.f[mmz];
-				KS.f[pmp] = KS.f[mmp];
-				KS.f[pzm] = KS.f[mzm];
-				KS.f[pzz] = KS.f[mzz];
-				KS.f[pzp] = KS.f[mzp];
-				KS.f[ppm] = KS.f[mpm];
-				KS.f[ppz] = KS.f[mpz];
-				KS.f[ppp] = KS.f[mpp];
-				COLL::computeDensityAndVelocity(KS);
-				break;
-			case GEO_SYM_RIGHT:
-				KS.f[mmm] = KS.f[pmm];
-				KS.f[mmz] = KS.f[pmz];
-				KS.f[mmp] = KS.f[pmp];
-				KS.f[mzm] = KS.f[pzm];
-				KS.f[mzz] = KS.f[pzz];
-				KS.f[mzp] = KS.f[pzp];
-				KS.f[mpm] = KS.f[ppm];
-				KS.f[mpz] = KS.f[ppz];
-				KS.f[mpp] = KS.f[ppp];
-				COLL::computeDensityAndVelocity(KS);
-				break;
-			case GEO_SYM_BACK:
-				KS.f[mpm] = KS.f[mmm];
-				KS.f[mpz] = KS.f[mmz];
-				KS.f[mpp] = KS.f[mmp];
-				KS.f[zpm] = KS.f[zmm];
-				KS.f[zpz] = KS.f[zmz];
-				KS.f[zpp] = KS.f[zmp];
-				KS.f[ppm] = KS.f[pmm];
-				KS.f[ppz] = KS.f[pmz];
-				KS.f[ppp] = KS.f[pmp];
-				COLL::computeDensityAndVelocity(KS);
-				break;
-			case GEO_SYM_FRONT:
-				KS.f[mmm] = KS.f[mpm];
-				KS.f[mmz] = KS.f[mpz];
-				KS.f[mmp] = KS.f[mpp];
-				KS.f[zmm] = KS.f[zpm];
-				KS.f[zmz] = KS.f[zpz];
-				KS.f[zmp] = KS.f[zpp];
-				KS.f[pmm] = KS.f[ppm];
-				KS.f[pmz] = KS.f[ppz];
-				KS.f[pmp] = KS.f[ppp];
-				COLL::computeDensityAndVelocity(KS);
-				break;
+			case GEO_SYMMETRY:
+				{
+					// Detect ghost half-spaces on all six sides, handling edges and corners.
+					// The symmetry cell acts as a fluid cell
+					// and directions towards GEO_NOTHING determine the normal of the symmetry plane.
+					std::uint8_t ghosts = 0;
+					if (SD.map(xm, y, z) == GEO_NOTHING)
+						ghosts |= SYM_XM;
+					if (SD.map(xp, y, z) == GEO_NOTHING)
+						ghosts |= SYM_XP;
+					if (SD.map(x, ym, z) == GEO_NOTHING)
+						ghosts |= SYM_YM;
+					if (SD.map(x, yp, z) == GEO_NOTHING)
+						ghosts |= SYM_YP;
+					if (SD.map(x, y, zm) == GEO_NOTHING)
+						ghosts |= SYM_ZM;
+					if (SD.map(x, y, zp) == GEO_NOTHING)
+						ghosts |= SYM_ZP;
+					applySymmetry(KS, ghosts);
+					COLL::computeDensityAndVelocity(KS);
+					break;
+				}
 
 			// Adjoint boundary conditions
 			case GEO_ADJOINT_FLUID:
