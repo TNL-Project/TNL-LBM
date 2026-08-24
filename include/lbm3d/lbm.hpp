@@ -118,22 +118,30 @@ void LBM<CONFIG>::allocatePhiTransferDirectionArrays()
 template <typename CONFIG>
 void LBM<CONFIG>::setBoundaryX(idx x, map_t value)
 {
+	// boundary planes are expressed in level-0 global indices and apply only
+	// to level-0 blocks: fine blocks must keep the all-FLUID interior map set
+	// by createAMRBlocks (their ghost rows are owned by the coupling). Without
+	// the guard, a plane index that numerically falls inside a fine block's
+	// local range would tag a spurious BC slab through the patch interior.
 	for (auto& block : blocks)
-		block.setBoundaryX(x, value);
+		if (block.level == 0)
+			block.setBoundaryX(x, value);
 }
 
 template <typename CONFIG>
 void LBM<CONFIG>::setBoundaryY(idx y, map_t value)
 {
 	for (auto& block : blocks)
-		block.setBoundaryY(y, value);
+		if (block.level == 0)
+			block.setBoundaryY(y, value);
 }
 
 template <typename CONFIG>
 void LBM<CONFIG>::setBoundaryZ(idx z, map_t value)
 {
 	for (auto& block : blocks)
-		block.setBoundaryZ(z, value);
+		if (block.level == 0)
+			block.setBoundaryZ(z, value);
 }
 
 template <typename CONFIG>
