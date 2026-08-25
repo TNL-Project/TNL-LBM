@@ -22,12 +22,16 @@
 //   GEO_NOTHING (the BC planes never sit on the array edge; mirrors sim_1's
 //   extra-layer idiom generalized to R>1),
 // - x edge layers x=0 and x=X-1 GEO_NOTHING,
-// - one level-1 footprint "1 24R 4R 4R 16R 8R 8R" (coarse cells): a slab
-//   crossing the channel's mid-x developing region, strictly interior on all
-//   axes (ring cells at x=23/40, y=3/12, z=3/12 are all collision-active
-//   fluid, 2 cells clear of the walls), so the mean flux passes through the
-//   footprint's x-min/x-max skin faces (B-off: ring-F2C + full-footprint
-//   interior; B-on: skin rect faces only).
+// - one level-1 footprint "1 24R 4R (R+1) 16R 8R 8R" (coarse cells): a slab
+//   crossing the channel's mid-x developing region with its z-min face
+//   ATTACHED TO THE BOTTOM WALL (the Schönherr §7.3 wall-refinement regime;
+//   the footprint's z-min halo row IS the wall plane z=R, the nominal C2F
+//   source pair {R, R+1} covers the wall cell and the coupling kernel's
+//   wall guard steers the window onto the {ring, skin} pair {R+1, R+2});
+//   the x/y faces and the z-max face stay strictly interior (ring cells at
+//   x=23/40, y=3/12, z=9/10 collision-active fluid), so the mean flux passes
+//   through the footprint's x-min/x-max skin faces (B-off: ring-F2C +
+//   full-footprint interior; B-on: skin rect faces only).
 //
 // Physics: lattice inflow velocity U_lb = 0.1 (uniform inflow), lattice
 // viscosity 0.005 on the coarse level (doubles to 0.01 on the fine level by
@@ -87,9 +91,11 @@ struct StateLocal_AMR_Channel : State_AMR<NSE>
 	  )
 	{}
 
-	// channel boundary map on the level-0 lattice (fine blocks are strictly
-	// interior, so no plane reaches them; markAMRInterface runs later and
-	// only re-tags GEO_FLUID cells, leaving these tags intact)
+	// channel boundary map on the level-0 lattice (the wall-refined
+	// footprint's z-min halo sits exactly on the bottom wall plane;
+	// markAMRInterface runs later and only re-tags GEO_FLUID cells, so the
+	// halo row keeps GEO_WALL -- the coupling kernel's wall guard then
+	// steers the C2F source windows off it, thesis §7.3)
 	void setupBoundaries() override
 	{
 		nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT);								 // inflow (constant profile)
@@ -204,8 +210,10 @@ void sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 1, int
 	lat.physDt = PHYS_DT;
 	lat.physViscosity = PHYS_VISCOSITY;
 
-	// one level-1 slab in the mid-channel developing region (coarse cells)
-	const std::string amr_config = fmt::format("1 {} {} {} {} {} {}", 24 * R, 4 * R, 4 * R, 16 * R, 8 * R, 8 * R);
+	// one level-1 slab in the mid-channel developing region (coarse cells);
+	// the z-min face is attached to the bottom wall plane (the footprint's
+	// z-min halo row IS the wall row z = R -- thesis §7.3 wall refinement)
+	const std::string amr_config = fmt::format("1 {} {} {} {} {} {}", 24 * R, 4 * R, R + 1, 16 * R, 8 * R, 8 * R);
 
 	const std::string state_id = fmt::format("sim_AMR_channel_res{:02d}_np{:03d}", RESOLUTION, TNL::MPI::GetSize(MPI_COMM_WORLD));
 	StateLocal_AMR_Channel<NSE> state(state_id, MPI_COMM_WORLD, lat, adios_config, max_level);
