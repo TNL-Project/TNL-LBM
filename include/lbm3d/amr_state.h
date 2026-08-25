@@ -812,11 +812,17 @@ void State_AMR<NSE>::buildCouplings()
  * error is invisible to the kernel-window mocks but breaks every nominal
  * source window, so it is asserted here on the host before the first
  * SimUpdate. Two rails:
- * - (a) for every coarse-to-fine (halo patch) destination cell, the
- *   nominal FACE-NORMAL source pair of the kernel window (the same fdiv2
- *   arithmetic as the kernel's `axis_window`, resolved at the home
- *   coarse cell's tangent) is a subset of the coarse map's
- *   `GEO_AMR_INTERFACE` cells;
+ * - (a) for every coarse-to-fine (halo patch) destination cell, fold the
+ *   destination through the kernel's full window rule (the same fdiv2 /
+ *   axis_window nominal solve + storage clamp, then the thesis Sec. 7.3
+ *   wall shift of `cudaAMR_CoarseToFine`) and assert the final source
+ *   tuple lies on the coupling band: every tuple cell must be
+ *   `GEO_AMR_INTERFACE` (halo or reactivated shell) or a `GEO_NOTHING`
+ *   cell inside the footprint (the F2C-refilled skin). At interior faces
+ *   the fold is identity and the tuple is the ring band of the original
+ *   form; at faces co-located with a physical boundary (wall refinement)
+ *   the nominal tuple covers the boundary row and the wall shift steers
+ *   it onto the {c = 0 ring, c = 1 skin} pair exactly as in the kernel;
  * - (b) every fine-to-coarse (interior patch) destination cell is
  *   `GEO_NOTHING` at EXACTLY footprint surface-depth 1 (c = 1 / c =
  *   gs-2).
@@ -827,7 +833,6 @@ void State_AMR<NSE>::buildCouplings()
 template <typename NSE>
 bool State_AMR<NSE>::checkCouplingMapPattern()
 {
-	using SyncDirection = TNL::Containers::SyncDirection;
 	// kernel fdiv2 (valid for negative fine-global coordinates, unlike the
 	// truncating integer division of C++)
 	const auto fdiv2 = [](idx v) -> idx
@@ -836,50 +841,154 @@ bool State_AMR<NSE>::checkCouplingMapPattern()
 	};
 
 	for (const InterLevelCoupling& coupling : couplings) {
-		// (a) C2F halo patches: the destination cells' nominal face-normal
-		// source pair must be a subset of the ring (GEO_AMR_INTERFACE)
+		// (a) C2F halo patches: fold every destination through the kernel's
+		// full window rule (nominal window + storage clamp + the thesis
+		// Sec. 7.3 wall shift) and assert the final source tuple lies on the
+		// coupling band: every cell must be GEO_AMR_INTERFACE (halo or
+		// reactivated shell) or a GEO_NOTHING cell inside the footprint (the
+		// F2C-refilled skin); physical-BC cells in the final tuple, dead
+		// frozen cells outside the footprint, and plain GEO_FLUID tuple
+		// cells are all registration errors
 		for (std::size_t i = 0; i < coupling.patches.size(); i++) {
 			const AMR_InterfacePatch<NSE>& patch = coupling.patches[i];
 			BLOCK_NSE* fine = findBlockById(coupling.fine_level, coupling.fine_block_ids[i]);
 			BLOCK_NSE* coarse = findBlockById(coupling.coarse_level, coupling.coarse_block_ids[i]);
 			if (fine == nullptr || coarse == nullptr)
 				return false;
-			const int axis = (patch.face == SyncDirection::Left || patch.face == SyncDirection::Right) ? 0
-						   : (patch.face == SyncDirection::Bottom || patch.face == SyncDirection::Top) ? 1
-																									   : 2;
+			const idx3d& go = fine->global_offset;
+			const idx3d gs{(fine->local.x() + 2) / 2, (fine->local.y() + 2) / 2, (fine->local.z() + 2) / 2};
+			const idx csize[3] = {coarse->local.x(), coarse->local.y(), coarse->local.z()};
+			const idx cov[3] = {coarse->df_overlap_X(), coarse->df_overlap_Y(), coarse->df_overlap_Z()};
+			const idx coff[3] = {coarse->offset.x(), coarse->offset.y(), coarse->offset.z()};
+			// the kernel's live-source predicate of the wall guard (a
+			// physical-BC tag makes the cell a non-source)
+			const auto is_source = [&coarse](idx cx, idx cy, idx cz) -> bool
+			{
+				const auto mapgi = coarse->hmap(cx, cy, cz);
+				return NSE::BC::isFluid(mapgi) || mapgi == NSE::BC::GEO_AMR_INTERFACE || mapgi == NSE::BC::GEO_NOTHING;
+			};
+			// final-tuple band membership: the ring (either halo or
+			// reactivated shell) or the F2C-refilled skin inside this patch's
+			// footprint
+			const auto on_band = [&coarse, &go, &gs, &coff](idx cx, idx cy, idx cz) -> bool
+			{
+				const auto mapgi = coarse->hmap(cx, cy, cz);
+				if (mapgi == NSE::BC::GEO_AMR_INTERFACE)
+					return true;
+				if (mapgi != NSE::BC::GEO_NOTHING)
+					return false;
+				const idx gx = cx + coff[0];
+				const idx gy = cy + coff[1];
+				const idx gz = cz + coff[2];
+				return gx >= go.x() && gx < go.x() + gs.x() && gy >= go.y() && gy < go.y() + gs.y() && gz >= go.z() && gz < go.z() + gs.z();
+			};
+			// the kernel wall shift, host replica (one cell away from the
+			// tainted end, or mirrored home at the storage edge)
+			const auto shift_pair = [](idx* nodes, bool taint_lo, bool taint_hi, idx lo, idx hi, idx home) -> void
+			{
+				if (nodes[0] == nodes[1] || taint_lo == taint_hi)
+					return;
+				const idx start = taint_hi ? nodes[0] - 1 : nodes[0] + 1;
+				if (start < lo || start + 1 > hi) {
+					nodes[0] = home;
+					nodes[1] = home;
+					return;
+				}
+				nodes[0] = start;
+				nodes[1] = start + 1;
+			};
 			for (idx x = patch.fine_origin.x(); x < patch.fine_origin.x() + patch.fine_size.x(); x++)
 				for (idx y = patch.fine_origin.y(); y < patch.fine_origin.y() + patch.fine_size.y(); y++)
 					for (idx z = patch.fine_origin.z(); z < patch.fine_origin.z() + patch.fine_size.z(); z++) {
 						const idx fg[3] = {fine->offset.x() + x, fine->offset.y() + y, fine->offset.z() + z};
-						const idx home[3] = {fdiv2(fg[0]), fdiv2(fg[1]), fdiv2(fg[2])};
-						// nominal window pair along the face normal at the
-						// home tangent: even rows cover {m-1, m}, odd {m, m+1}
-						const idx n0 = home[axis] - 1 + static_cast<idx>(fg[axis] & 1);
-						idx cell0[3] = {home[0], home[1], home[2]};
-						idx cell1[3] = {home[0], home[1], home[2]};
-						cell0[axis] = n0;
-						cell1[axis] = n0 + 1;
-						if (coarse->hmap(cell0[0], cell0[1], cell0[2]) != NSE::BC::GEO_AMR_INTERFACE
-							|| coarse->hmap(cell1[0], cell1[1], cell1[2]) != NSE::BC::GEO_AMR_INTERFACE)
-						{
-							spdlog::error(
-								"checkCouplingMapPattern: C2F destination ({},{},{}) of face {} has a nominal source cell outside the ring "
-								"(coarse cells ({},{},{}) + ({},{},{}): tags {}/{})",
-								x,
-								y,
-								z,
-								static_cast<int>(patch.face),
-								cell0[0],
-								cell0[1],
-								cell0[2],
-								cell1[0],
-								cell1[1],
-								cell1[2],
-								static_cast<int>(coarse->hmap(cell0[0], cell0[1], cell0[2])),
-								static_cast<int>(coarse->hmap(cell1[0], cell1[1], cell1[2]))
-							);
-							return false;
+						// the kernel's axis_window nominal solve + storage clamp
+						idx w[3][2], ho[3];
+						for (int a = 0; a < 3; a++) {
+							const idx home = fdiv2(fg[a]) - coff[a];
+							const idx p = fg[a] & 1;
+							ho[a] = home;
+							const int extent = static_cast<int>(csize[a] + 2 * cov[a]);
+							const int n = 2 < extent ? 2 : extent;
+							const idx lo = -cov[a];
+							const idx hi = csize[a] - 1 + cov[a] - (n - 1);
+							idx start = home - 1 + p;
+							start = start < lo ? lo : (start > hi ? hi : start);
+							w[a][0] = start;
+							w[a][1] = start + (n - 1);
 						}
+						// taint scan of the nominal tuple + the wall shift per axis
+						bool inv[2][2][2];
+						bool tainted = false;
+						for (int ibz = 0; ibz < 2; ibz++)
+							for (int iby = 0; iby < 2; iby++)
+								for (int ibx = 0; ibx < 2; ibx++) {
+									inv[ibx][iby][ibz] = ! is_source(w[0][ibx], w[1][iby], w[2][ibz]);
+									tainted = tainted || inv[ibx][iby][ibz];
+								}
+						if (tainted) {
+							shift_pair(
+								w[0],
+								inv[0][0][0] || inv[0][0][1] || inv[0][1][0] || inv[0][1][1],
+								inv[1][0][0] || inv[1][0][1] || inv[1][1][0] || inv[1][1][1],
+								-cov[0],
+								csize[0] - 1 + cov[0],
+								ho[0]
+							);
+							shift_pair(
+								w[1],
+								inv[0][0][0] || inv[0][0][1] || inv[1][0][0] || inv[1][0][1],
+								inv[0][1][0] || inv[0][1][1] || inv[1][1][0] || inv[1][1][1],
+								-cov[1],
+								csize[1] - 1 + cov[1],
+								ho[1]
+							);
+							shift_pair(
+								w[2],
+								inv[0][0][0] || inv[0][1][0] || inv[1][0][0] || inv[1][1][0],
+								inv[0][0][1] || inv[0][1][1] || inv[1][0][1] || inv[1][1][1],
+								-cov[2],
+								csize[2] - 1 + cov[2],
+								ho[2]
+							);
+							// the kernel's residual collapse (a physical BC
+							// thicker than one cell, or a mid-window straddle)
+							bool residual = false;
+							for (int ibz = 0; ibz < 2 && ! residual; ibz++)
+								for (int iby = 0; iby < 2 && ! residual; iby++)
+									for (int ibx = 0; ibx < 2 && ! residual; ibx++)
+										residual = ! is_source(w[0][ibx], w[1][iby], w[2][ibz]);
+							if (residual)
+								for (int a = 0; a < 3; a++) {
+									w[a][0] = ho[a];
+									w[a][1] = ho[a];
+								}
+						}
+						// final-tuple band membership over all 8 source cells
+						for (int ibz = 0; ibz < 2; ibz++)
+							for (int iby = 0; iby < 2; iby++)
+								for (int ibx = 0; ibx < 2; ibx++)
+									if (! on_band(w[0][ibx], w[1][iby], w[2][ibz])) {
+										const idx cell[3] = {w[0][ibx] + coff[0], w[1][iby] + coff[1], w[2][ibz] + coff[2]};
+										spdlog::error(
+											"checkCouplingMapPattern: C2F destination ({},{},{}) of face {} has a source cell off the "
+											"coupling band (coarse cell ({},{},{}): tag {}, footprint [{},{},{}] + [{},{},{}])",
+											x,
+											y,
+											z,
+											static_cast<int>(patch.face),
+											cell[0],
+											cell[1],
+											cell[2],
+											static_cast<int>(coarse->hmap(w[0][ibx], w[1][iby], w[2][ibz])),
+											go.x(),
+											go.y(),
+											go.z(),
+											gs.x(),
+											gs.y(),
+											gs.z()
+										);
+										return false;
+									}
 					}
 		}
 
