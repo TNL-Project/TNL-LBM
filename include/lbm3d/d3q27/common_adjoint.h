@@ -16,6 +16,22 @@ struct D3Q27_COMMON_ADJOINT
 	// false: storage converters are identity (adjoint DFs stored as-is)
 	static constexpr bool is_well_conditioned = false;
 
+	// storage<->physical DF converters: identity for the adjoint convention, see COMMON_WELL for the shifted one
+	__cuda_callable__ static constexpr dreal weight(int i)
+	{
+		return i == zzz ? n8o27 : (i <= zzm ? n2o27 : (i <= zmp ? n1o54 : n1o216));
+	}
+
+	__cuda_callable__ static dreal fromStorage(const dreal* f, int i)
+	{
+		return f[i];
+	}
+
+	__cuda_callable__ static dreal toStorage(dreal f, int i)
+	{
+		return f;
+	}
+
 	template <typename LBM_KS>
 	__cuda_callable__ static void computeDensityAndVelocity(LBM_KS& KS)
 	{

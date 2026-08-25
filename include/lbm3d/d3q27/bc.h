@@ -243,20 +243,25 @@ struct D3Q27_BC_All
 				{
 					SD.inflow(KS, x, y, z);
 					applySymmetryCorner(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+					// moment reconstruction requires physical populations (identity for non-well storages)
+					const auto f = [&KS](int i) -> dreal
+					{
+						return COLL::fromStorage(KS.f, i);
+					};
 					// moment boundary condition by Pavel Eichler https://doi.org/10.1016/j.camwa.2024.08.009
 					// expressions symetrized by Jakub Klinkovsky
 					// clang-format off
 					KS.rho = (dreal)1.0/(1-KS.vx) * (
 						(
-							KS.f[zzz] + (
-								+ ((KS.f[zpp] + KS.f[zmm]) + (KS.f[zpm] + KS.f[zmp]))
-								+ ((KS.f[zpz] + KS.f[zmz]) + (KS.f[zzp] + KS.f[zzm]))
+							f(zzz) + (
+								+ ((f(zpp) + f(zmm)) + (f(zpm) + f(zmp)))
+								+ ((f(zpz) + f(zmz)) + (f(zzp) + f(zzm)))
 							)
 						)
 						+ 2*(
-							KS.f[mzz] + (
-								+ ((KS.f[mpp] + KS.f[mmm]) + (KS.f[mpm] + KS.f[mmp]))
-								+ ((KS.f[mpz] + KS.f[mmz]) + (KS.f[mzp] + KS.f[mzm]))
+							f(mzz) + (
+								+ ((f(mpp) + f(mmm)) + (f(mpm) + f(mmp)))
+								+ ((f(mpz) + f(mmz)) + (f(mzp) + f(mzm)))
 							)
 						)
 					);
@@ -271,25 +276,27 @@ struct D3Q27_BC_All
 					dreal m012 = n1o3 * KS.rho * KS.vy + KS.rho * (KS.vy * (KS.vz * KS.vz));
 					dreal m022 = n1o9 * KS.rho + n1o3 * KS.rho * (KS.vy * KS.vy + KS.vz * KS.vz) + KS.rho * (KS.vy * KS.vy) * (KS.vz * KS.vz);
 					// clang-format off
-					KS.f[pzz] = m100 + (m022 - (m020 + m002))
-						+ KS.f[mzz]
+					KS.f[pzz] = COLL::toStorage(
+						m100 + (m022 - (m020 + m002))
+						+ f(mzz)
 						+ (
-							+ ((KS.f[zpp] + KS.f[zmm]) + (KS.f[zpm] + KS.f[zmp]))
-							+ ((KS.f[zzp] + KS.f[zzm]) + (KS.f[zpz] + KS.f[zmz]))
+							+ ((f(zpp) + f(zmm)) + (f(zpm) + f(zmp)))
+							+ ((f(zzp) + f(zzm)) + (f(zpz) + f(zmz)))
 						)
 						+ 2*(
-							+ ((KS.f[mpp] + KS.f[mmm]) + (KS.f[mpm] + KS.f[mmp]))
-							+ ((KS.f[mpz] + KS.f[mmz]) + (KS.f[mzp] + KS.f[mzm]))
-						);
+							+ ((f(mpp) + f(mmm)) + (f(mpm) + f(mmp)))
+							+ ((f(mpz) + f(mmz)) + (f(mzp) + f(mzm)))
+						),
+						pzz);
 					// clang-format on
-					KS.f[ppz] = (dreal) 0.5 * ((m020 - m022) + (-m012 + m010)) - (KS.f[mpz] + KS.f[zpz]);
-					KS.f[pmz] = (dreal) 0.5 * ((m020 - m022) + (m012 - m010)) - (KS.f[mmz] + KS.f[zmz]);
-					KS.f[pzp] = (dreal) 0.5 * ((m002 - m022) + (-m021 + m001)) - (KS.f[mzp] + KS.f[zzp]);
-					KS.f[pzm] = (dreal) 0.5 * ((m002 - m022) + (m021 - m001)) - (KS.f[mzm] + KS.f[zzm]);
-					KS.f[ppp] = (dreal) 0.25 * ((m022 + m011) + (m021 + m012)) - (KS.f[mpp] + KS.f[zpp]);
-					KS.f[ppm] = (dreal) 0.25 * ((m022 - m011) + (-m021 + m012)) - (KS.f[mpm] + KS.f[zpm]);
-					KS.f[pmp] = (dreal) 0.25 * ((m022 - m011) + (m021 - m012)) - (KS.f[mmp] + KS.f[zmp]);
-					KS.f[pmm] = (dreal) 0.25 * ((m022 + m011) + (-m021 - m012)) - (KS.f[mmm] + KS.f[zmm]);
+					KS.f[ppz] = COLL::toStorage((dreal) 0.5 * ((m020 - m022) + (-m012 + m010)) - (f(mpz) + f(zpz)), ppz);
+					KS.f[pmz] = COLL::toStorage((dreal) 0.5 * ((m020 - m022) + (m012 - m010)) - (f(mmz) + f(zmz)), pmz);
+					KS.f[pzp] = COLL::toStorage((dreal) 0.5 * ((m002 - m022) + (-m021 + m001)) - (f(mzp) + f(zzp)), pzp);
+					KS.f[pzm] = COLL::toStorage((dreal) 0.5 * ((m002 - m022) + (m021 - m001)) - (f(mzm) + f(zzm)), pzm);
+					KS.f[ppp] = COLL::toStorage((dreal) 0.25 * ((m022 + m011) + (m021 + m012)) - (f(mpp) + f(zpp)), ppp);
+					KS.f[ppm] = COLL::toStorage((dreal) 0.25 * ((m022 - m011) + (-m021 + m012)) - (f(mpm) + f(zpm)), ppm);
+					KS.f[pmp] = COLL::toStorage((dreal) 0.25 * ((m022 - m011) + (m021 - m012)) - (f(mmp) + f(zmp)), pmp);
+					KS.f[pmm] = COLL::toStorage((dreal) 0.25 * ((m022 + m011) + (-m021 - m012)) - (f(mmm) + f(zmm)), pmm);
 					break;
 				}
 			case GEO_INFLOW_BOUNCEBACK:
@@ -355,26 +362,33 @@ struct D3Q27_BC_All
 				}
 				break;
 			case GEO_INFLOW_EQ_LEFT:
-				SD.inflow(KS, x, y, z);
-				applySymmetryCorner(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
-				// clang-format off
-				KS.rho = (dreal)1.0/(1-KS.vx) * (
-					(
-						KS.f[zzz] + (
-							+ ((KS.f[zpp] + KS.f[zmm]) + (KS.f[zpm] + KS.f[zmp]))
-							+ ((KS.f[zpz] + KS.f[zmz]) + (KS.f[zzp] + KS.f[zzm]))
+				{
+					SD.inflow(KS, x, y, z);
+					applySymmetryCorner(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+					// moment reconstruction requires physical populations (identity for non-well storages)
+					const auto f = [&KS](int i) -> dreal
+					{
+						return COLL::fromStorage(KS.f, i);
+					};
+					// clang-format off
+					KS.rho = (dreal)1.0/(1-KS.vx) * (
+						(
+							f(zzz) + (
+								+ ((f(zpp) + f(zmm)) + (f(zpm) + f(zmp)))
+								+ ((f(zpz) + f(zmz)) + (f(zzp) + f(zzm)))
+							)
 						)
-					)
-					+ 2*(
-						KS.f[mzz] + (
-							+ ((KS.f[mpp] + KS.f[mmm]) + (KS.f[mpm] + KS.f[mmp]))
-							+ ((KS.f[mpz] + KS.f[mmz]) + (KS.f[mzp] + KS.f[mzm]))
+						+ 2*(
+							f(mzz) + (
+								+ ((f(mpp) + f(mmm)) + (f(mpm) + f(mmp)))
+								+ ((f(mpz) + f(mmz)) + (f(mzp) + f(mzm)))
+							)
 						)
-					)
-				);
-				// clang-format on
-				COLL::setEquilibrium(KS);
-				break;
+					);
+					// clang-format on
+					COLL::setEquilibrium(KS);
+					break;
+				}
 			case GEO_OUTFLOW_EQ:
 				applySymmetryCorner(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				COLL::computeDensityAndVelocity(KS);

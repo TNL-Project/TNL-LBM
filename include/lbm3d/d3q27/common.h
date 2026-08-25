@@ -15,6 +15,28 @@ struct D3Q27_COMMON
 
 	static constexpr bool is_well_conditioned = WELL_CONDITIONED;
 
+	// storage<->physical DF converters: identity for the standard convention, shifted by +/-w_i when WELL_CONDITIONED
+	__cuda_callable__ static constexpr dreal weight(int i)
+	{
+		return i == zzz ? n8o27 : (i <= zzm ? n2o27 : (i <= zmp ? n1o54 : n1o216));
+	}
+
+	__cuda_callable__ static dreal fromStorage(const dreal* f, int i)
+	{
+		if constexpr (WELL_CONDITIONED)
+			return f[i] + weight(i);
+		else
+			return f[i];
+	}
+
+	__cuda_callable__ static dreal toStorage(dreal f, int i)
+	{
+		if constexpr (WELL_CONDITIONED)
+			return f - weight(i);
+		else
+			return f;
+	}
+
 	template <typename LBM_KS>
 	__cuda_callable__ static void computeDensityAndVelocity(LBM_KS& KS)
 	{
