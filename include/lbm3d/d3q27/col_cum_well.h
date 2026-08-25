@@ -23,15 +23,15 @@ struct D3Q27_CUM_WELL : D3Q27_COMMON_WELL<TRAITS, LBM_EQ>
 #define K_zp0 n1o9
 #define K_pp0 n1o36
 
-#define K_m00 n1o9
-#define K_z00 n4o9
-#define K_p00 n1o9
+#define K_m00 n1o6
+#define K_z00 n2o3
+#define K_p00 n1o6
 #define K_m01 0
 #define K_z01 0
 #define K_p01 0
-#define K_m02 n1o27
-#define K_z02 n4o27
-#define K_p02 n1o27
+#define K_m02 n1o18
+#define K_z02 n2o9
+#define K_p02 n1o18
 
 #define K_000 1
 #define K_010 0
