@@ -68,6 +68,37 @@
  * cells receive a shifted-stencil interpolation that is still exact for
  * cubic fields but evaluated from a non-centered window.
  *
+ * Wall guard (Schönherr 2015 thesis, Sec. 7.3, "refinement at the wall"):
+ * when a footprint face coincides with a physical boundary plane, the
+ * nominal compact-moment source window covers a non-fluid cell (the
+ * bounce-back wall row, or any other physical-BC-tagged row) -- an
+ * inappropriate interpolation source in the thesis's words. Following the
+ * thesis remedy (extrapolate from the nearest complete source cell), the
+ * kernel's per-axis window guard detects a physically-tagged cell at
+ * exactly one end of the destination's 2x2x2 nominal window tuple and
+ * shifts the window one cell away from the tainted end; the evaluation
+ * point follows the window center, which is the algebraic equivalent of
+ * the thesis's offset + hat-coefficient transforms (Eqs. 7.49-7.57) for
+ * |offset| <= 1 per axis (verified equivalent in the Sec. A.3.8 audit).
+ * A source cell counts as live iff its map tag is GEO_FLUID,
+ * GEO_AMR_INTERFACE or GEO_NOTHING: at a valid wall-attached registration
+ * the shifted window reads the {c = 0 ring, c = 1 frozen skin} pair whose
+ * content is current at the C2F fill point of the cycle (the skin row is
+ * F2C-refilled one step earlier; cycle 0 reads the initial condition).
+ * The guard never fires at an interior registration (bitwise identity),
+ * and a residual shifted-window taint (a physical BC thicker than one
+ * cell, or a mid-window straddle) collapses to the mirrored home cell --
+ * checkCouplingMapPattern statically rejects those degenerate cases at
+ * SimInit. The same end-tag rule guards the fine-to-coarse filter windows
+ * (inert on the all-GEO_FLUID fine blocks of v1). Streaming-pattern
+ * caveat: unlike an interior face, the shifted wall-window reads a frozen
+ * row that is never rewritten by the coarse kernel, so the read-vs-write
+ * orientation conventions can diverge there -- under AA_PATTERN this is
+ * exactly the frozen-cell read mismatch catalogued as Defect-1 in
+ * docs/AMR-for-LBM-implementation.md (the wall refinement lane, like all
+ * frozen-cell coupling reads, is A-B-pattern-only until Defect-1 is
+ * fixed).
+ *
  * Explosion strategies (Eitel-Amor et al. 2025, Fluids 10(2):31): instead
  * of interpolating from neighboring coarse cells, each fine ghost cell
  * reads ONLY its home coarse cell, which "explodes" into its 8 fine
@@ -1122,9 +1153,40 @@ __global__ void cudaAMR_CoarseToFine(
 	// clamped window pair of its own fdiv2/axis_window solve (verbatim the
 	// former single-destination behaviour); the union span of all in-range
 	// destinations' windows bounds the shared source staging below.
+	// Schönherr 2015 thesis, Sec. 7.3 (refinement at the wall): after the
+	// nominal solve, a per-destination guard shifts any per-axis window
+	// whose 2x2x2 source tuple holds a physically-tagged (non-live)
+	// cell at exactly one of its ends one cell away from that end -- the
+	// |offset| <= 1 wall extrapolation of the thesis, expressed as a window
+	// shift plus relative evaluation rather than the hat-coefficient
+	// transform (the algebraic equivalent, Sec. A.3.8). Live tags are
+	// GEO_FLUID, GEO_AMR_INTERFACE and GEO_NOTHING (the frozen skin of the
+	// ch7 band is F2C-refilled one cycle step before the C2F fill, so its
+	// content is current); interior registrations never trip the guard.
+	const auto shift_off_bc = [](idx* nodes, dreal& t_rel, bool taint_lo, bool taint_hi, idx lo, idx hi, idx home) -> void
+	{
+		if (nodes[0] == nodes[1])
+			return;	 // storage-shortened axis: nothing left to shift
+		if (taint_lo == taint_hi)
+			return;	 // clean window, or both ends tainted (a residual case: no valid one-cell direction)
+		const idx start = taint_hi ? nodes[0] - 1 : nodes[0] + 1;  // shift one cell away from the tainted end
+		if (start < lo || start + 1 > hi) {
+			// storage edge within one cell of the face: degenerate collapse
+			// to the mirrored home cell (rejected at SimInit)
+			t_rel += static_cast<dreal>(nodes[0] - home);
+			nodes[0] = home;
+			nodes[1] = home;
+			return;
+		}
+		// evaluation point moves with the window center (the thesis offset)
+		t_rel += static_cast<dreal>(nodes[0] - start);
+		nodes[0] = start;
+		nodes[1] = start + 1;
+	};
 	bool dst_in[8];
 	idx dst_n[8][3][2];	 // per-destination per-axis window nodes {lo, hi}
 	dreal dst_t[8][3];
+	idx dst_home[8][3];	 // per-destination per-axis home cell (the degenerate-collapse target)
 	idx umin[3], umax[3];
 	bool u_init = false;
 	for (int d = 0; d < 8; d++) {
@@ -1134,29 +1196,110 @@ __global__ void cudaAMR_CoarseToFine(
 		dst_in[d] = fx < ghost_end_fine.x() && fy < ghost_end_fine.y() && fz < ghost_end_fine.z();
 		if (! dst_in[d])
 			continue;
-		idx cnx[2], cny[2], cnz[2];
-		dst_t[d][0] = axis_window(fx + fine_off.x(), coarse_off.x(), coarse_SD.X(), coarse_SD.indexer.template getOverlap<0>(), cnx);
-		dst_t[d][1] = axis_window(fy + fine_off.y(), coarse_off.y(), coarse_SD.Y(), coarse_SD.indexer.template getOverlap<1>(), cny);
-		dst_t[d][2] = axis_window(fz + fine_off.z(), coarse_off.z(), coarse_SD.Z(), coarse_SD.indexer.template getOverlap<2>(), cnz);
-		dst_n[d][0][0] = cnx[0];
-		dst_n[d][0][1] = cnx[1];
-		dst_n[d][1][0] = cny[0];
-		dst_n[d][1][1] = cny[1];
-		dst_n[d][2][0] = cnz[0];
-		dst_n[d][2][1] = cnz[1];
+		dst_t[d][0] = axis_window(fx + fine_off.x(), coarse_off.x(), coarse_SD.X(), coarse_SD.indexer.template getOverlap<0>(), dst_n[d][0]);
+		dst_t[d][1] = axis_window(fy + fine_off.y(), coarse_off.y(), coarse_SD.Y(), coarse_SD.indexer.template getOverlap<1>(), dst_n[d][1]);
+		dst_t[d][2] = axis_window(fz + fine_off.z(), coarse_off.z(), coarse_SD.Z(), coarse_SD.indexer.template getOverlap<2>(), dst_n[d][2]);
+		dst_home[d][0] = fdiv2(fx + fine_off.x()) - coarse_off.x();
+		dst_home[d][1] = fdiv2(fy + fine_off.y()) - coarse_off.y();
+		dst_home[d][2] = fdiv2(fz + fine_off.z()) - coarse_off.z();
+
+		// taint scan of the nominal 2x2x2 source tuple
+		bool inv[2][2][2];
+		bool tainted = false;
+		for (int ibz = 0; ibz < 2; ibz++)
+			for (int iby = 0; iby < 2; iby++)
+				for (int ibx = 0; ibx < 2; ibx++) {
+					const auto mapgi = coarse_SD.map(dst_n[d][0][ibx], dst_n[d][1][iby], dst_n[d][2][ibz]);
+					inv[ibx][iby][ibz] = ! (BC::isFluid(mapgi) || mapgi == BC::GEO_AMR_INTERFACE || mapgi == BC::GEO_NOTHING);
+					tainted = tainted || inv[ibx][iby][ibz];
+				}
+		if (tainted) {
+			// end taints per axis (union over the two tangent axes)
+			shift_off_bc(
+				dst_n[d][0],
+				dst_t[d][0],
+				inv[0][0][0] || inv[0][0][1] || inv[0][1][0] || inv[0][1][1],
+				inv[1][0][0] || inv[1][0][1] || inv[1][1][0] || inv[1][1][1],
+				-coarse_SD.indexer.template getOverlap<0>(),
+				coarse_SD.X() - 1 + coarse_SD.indexer.template getOverlap<0>(),
+				dst_home[d][0]
+			);
+			shift_off_bc(
+				dst_n[d][1],
+				dst_t[d][1],
+				inv[0][0][0] || inv[0][0][1] || inv[1][0][0] || inv[1][0][1],
+				inv[0][1][0] || inv[0][1][1] || inv[1][1][0] || inv[1][1][1],
+				-coarse_SD.indexer.template getOverlap<1>(),
+				coarse_SD.Y() - 1 + coarse_SD.indexer.template getOverlap<1>(),
+				dst_home[d][1]
+			);
+			shift_off_bc(
+				dst_n[d][2],
+				dst_t[d][2],
+				inv[0][0][0] || inv[0][1][0] || inv[1][0][0] || inv[1][1][0],
+				inv[0][0][1] || inv[0][1][1] || inv[1][0][1] || inv[1][1][1],
+				-coarse_SD.indexer.template getOverlap<2>(),
+				coarse_SD.Z() - 1 + coarse_SD.indexer.template getOverlap<2>(),
+				dst_home[d][2]
+			);
+
+			// residual scan: a shifted tuple still carrying a non-live cell
+			// (a physical BC thicker than one cell, or a mid-window
+			// straddle -- both invalid registrations, rejected statically
+			// by checkCouplingMapPattern at SimInit) collapses to the
+			// destination's mirrored home cell
+			bool residual = false;
+			for (int ibz = 0; ibz < 2 && ! residual; ibz++)
+				for (int iby = 0; iby < 2 && ! residual; iby++)
+					for (int ibx = 0; ibx < 2 && ! residual; ibx++) {
+						const auto mapgi = coarse_SD.map(dst_n[d][0][ibx], dst_n[d][1][iby], dst_n[d][2][ibz]);
+						residual = ! (BC::isFluid(mapgi) || mapgi == BC::GEO_AMR_INTERFACE || mapgi == BC::GEO_NOTHING);
+					}
+			if (residual) {
+				for (int a = 0; a < 3; a++) {
+					dst_n[d][a][0] = dst_home[d][a];
+					dst_n[d][a][1] = dst_home[d][a];
+					dst_t[d][a] = 0;
+				}
+			}
+		}
+
 		if (! u_init) {
 			u_init = true;
-			umin[0] = umax[0] = cnx[0];
-			umin[1] = umax[1] = cny[0];
-			umin[2] = umax[2] = cnz[0];
+			umin[0] = umax[0] = dst_n[d][0][0];
+			umin[1] = umax[1] = dst_n[d][1][0];
+			umin[2] = umax[2] = dst_n[d][2][0];
 		}
-		umin[0] = std::min(std::min(cnx[0], cnx[1]), umin[0]);
-		umax[0] = std::max(std::max(cnx[0], cnx[1]), umax[0]);
-		umin[1] = std::min(std::min(cny[0], cny[1]), umin[1]);
-		umax[1] = std::max(std::max(cny[0], cny[1]), umax[1]);
-		umin[2] = std::min(std::min(cnz[0], cnz[1]), umin[2]);
-		umax[2] = std::max(std::max(cnz[0], cnz[1]), umax[2]);
+		umin[0] = std::min(std::min(dst_n[d][0][0], dst_n[d][0][1]), umin[0]);
+		umax[0] = std::max(std::max(dst_n[d][0][0], dst_n[d][0][1]), umax[0]);
+		umin[1] = std::min(std::min(dst_n[d][1][0], dst_n[d][1][1]), umin[1]);
+		umax[1] = std::max(std::max(dst_n[d][1][0], dst_n[d][1][1]), umax[1]);
+		umin[2] = std::min(std::min(dst_n[d][2][0], dst_n[d][2][1]), umin[2]);
+		umax[2] = std::max(std::max(dst_n[d][2][0], dst_n[d][2][1]), umax[2]);
 	}
+	// group-span safety for the shared staging below: sibling destinations
+	// whose windows took opposite wall shifts (a physical BC cutting the
+	// group mid-window, the straddle class rejected at SimInit) can push a
+	// per-axis union span past the 3-cell staging capacity -- never fires at
+	// a valid registration (half-space BCs shift the whole face uniformly)
+	for (int a = 0; a < 3; a++)
+		if (umax[a] - umin[a] > 2) {
+			bool a_init = true;
+			for (int d = 0; d < 8; d++) {
+				if (! dst_in[d])
+					continue;
+				dst_n[d][a][0] = dst_home[d][a];
+				dst_n[d][a][1] = dst_home[d][a];
+				dst_t[d][a] = 0;
+				if (a_init) {
+					a_init = false;
+					umin[a] = umax[a] = dst_home[d][a];
+					continue;
+				}
+				umin[a] = dst_home[d][a] < umin[a] ? dst_home[d][a] : umin[a];
+				umax[a] = dst_home[d][a] > umax[a] ? dst_home[d][a] : umax[a];
+			}
+		}
 
 	// ---- Phase 2: shared source staging ----
 	// Read each coarse source cell of the group's union window ONCE (DF
@@ -1744,7 +1887,23 @@ __global__ void cudaAMR_FineToCoarse(
 	// one; centered windows round to the exact dyadic rationals
 	// {-1, 9, 9, -1}/16 per axis.
 	constexpr int F2C_STENCIL = 4;
-	const auto axis_window = [](idx f0, idx size_a, idx ov_a, idx* nodes, dreal* weights) -> int
+	const auto axis_weights = [](idx start, double t, int n, idx* nodes, dreal* weights) -> void
+	{
+		double w[F2C_STENCIL], wsum = 0;
+		for (int i = 0; i < n; i++) {
+			double wi = 1;
+			for (int j = 0; j < n; j++)
+				if (j != i)
+					wi *= (t - static_cast<double>(start + j)) / static_cast<double>(i - j);
+			w[i] = wi;
+			wsum += wi;
+		}
+		for (int i = 0; i < n; i++) {
+			nodes[i] = start + i;
+			weights[i] = static_cast<dreal>(w[i] / wsum);
+		}
+	};
+	const auto axis_window = [&axis_weights](idx f0, idx size_a, idx ov_a, idx* nodes, dreal* weights) -> int
 	{
 		const double t = static_cast<double>(f0) + 0.5;
 		const int extent = static_cast<int>(size_a + 2 * ov_a);
@@ -1764,19 +1923,7 @@ __global__ void cudaAMR_FineToCoarse(
 		const idx hi = size_a - 1 + ov_a - (n - 1);
 		idx start = f0 - 1;
 		start = start < lo ? lo : (start > hi ? hi : start);
-		double w[F2C_STENCIL], wsum = 0;
-		for (int i = 0; i < n; i++) {
-			double wi = 1;
-			for (int j = 0; j < n; j++)
-				if (j != i)
-					wi *= (t - static_cast<double>(start + j)) / static_cast<double>(i - j);
-			w[i] = wi;
-			wsum += wi;
-		}
-		for (int i = 0; i < n; i++) {
-			nodes[i] = start + i;
-			weights[i] = static_cast<dreal>(w[i] / wsum);
-		}
+		axis_weights(start, t, n, nodes, weights);
 		return n;
 	};
 	idx fnx[F2C_STENCIL], fny[F2C_STENCIL], fnz[F2C_STENCIL];
@@ -1784,6 +1931,42 @@ __global__ void cudaAMR_FineToCoarse(
 	const int nnx = axis_window(fx0, fine_SD.X(), ov.x(), fnx, fwx);
 	const int nny = axis_window(fy0, fine_SD.Y(), ov.y(), fny, fwy);
 	const int nnz = axis_window(fz0, fine_SD.Z(), ov.z(), fnz, fwz);
+
+	// thesis Sec. 7.3 wall guard, the fine-grid mirror of the C2F guard
+	// (Schönherr is silent on F2C-at-wall; applied symmetrically): a
+	// per-axis filter window holding a physically-tagged (non-live) fine
+	// cell at exactly one of its ends is shifted one cell away from that
+	// end, with the Lagrange weights re-evaluated at the FIXED evaluation
+	// point; live tags are GEO_FLUID, GEO_AMR_INTERFACE and GEO_NOTHING
+	// (fine blocks carry no BC rows in v1 -- createAMRBlocks resets the
+	// fine interior map to GEO_FLUID -- so the guard is inert on every
+	// registration the framework builds today and covers future fine-level
+	// BC tagging)
+	bool t_lo[3] = {false, false, false}, t_hi[3] = {false, false, false};
+	for (int bz = 0; bz < nnz; bz++)
+		for (int by = 0; by < nny; by++)
+			for (int bx = 0; bx < nnx; bx++) {
+				const auto mapgi = fine_SD.map(fnx[bx], fny[by], fnz[bz]);
+				if (BC::isFluid(mapgi) || mapgi == BC::GEO_AMR_INTERFACE || mapgi == BC::GEO_NOTHING)
+					continue;
+				t_lo[0] = t_lo[0] || bx == 0;
+				t_hi[0] = t_hi[0] || bx == nnx - 1;
+				t_lo[1] = t_lo[1] || by == 0;
+				t_hi[1] = t_hi[1] || by == nny - 1;
+				t_lo[2] = t_lo[2] || bz == 0;
+				t_hi[2] = t_hi[2] || bz == nnz - 1;
+			}
+	const auto shift_off_bc = [&axis_weights](idx* nodes, dreal* weights, int n, double t, bool taint_lo, bool taint_hi, idx hi_start) -> void
+	{
+		if (n < 2 || taint_lo == taint_hi)
+			return;	 // clean axis, degenerate window, or both ends tainted (no valid one-cell direction)
+		idx start = taint_hi ? nodes[0] - 1 : nodes[0] + 1;
+		start = start < 0 ? 0 : (start > hi_start ? hi_start : start);
+		axis_weights(start, t, n, nodes, weights);
+	};
+	shift_off_bc(fnx, fwx, nnx, static_cast<double>(fx0) + 0.5, t_lo[0], t_hi[0], fine_SD.X() - 1 + ov.x() - (nnx - 1));
+	shift_off_bc(fny, fwy, nny, static_cast<double>(fy0) + 0.5, t_lo[1], t_hi[1], fine_SD.Y() - 1 + ov.y() - (nny - 1));
+	shift_off_bc(fnz, fwz, nnz, static_cast<double>(fz0) + 0.5, t_lo[2], t_hi[2], fine_SD.Z() - 1 + ov.z() - (nnz - 1));
 
 	// per-direction weighted sums (the weights sum to one over the full
 	// stencil, so no normalization factor is needed afterwards)
