@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common_well.h"
+#include "common.h"
 #include "eq_well.h"
 
 template <typename TRAITS, typename LBM_EQ = D3Q27_EQ_WELL<TRAITS>>

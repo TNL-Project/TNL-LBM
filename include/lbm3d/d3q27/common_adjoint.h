@@ -13,6 +13,9 @@ struct D3Q27_COMMON_ADJOINT
 	using real = typename TRAITS::real;
 	using dreal = typename TRAITS::dreal;
 
+	// false: storage converters are identity (adjoint DFs stored as-is)
+	static constexpr bool is_well_conditioned = false;
+
 	template <typename LBM_KS>
 	__cuda_callable__ static void computeDensityAndVelocity(LBM_KS& KS)
 	{

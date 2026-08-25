@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common_well.h"
+#include "common.h"
 #include "eq_well.h"
 
 // improved BGK (SRT) model by Geier 2015 https://doi.org/10.1016/j.camwa.2015.05.001

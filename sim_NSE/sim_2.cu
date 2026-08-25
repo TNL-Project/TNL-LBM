@@ -525,6 +525,7 @@ void run(const std::string& adios_config, int RES, bool use_forcing, Scaling sca
 	//using COLL = D3Q27_CUM_SGS<TRAITS>;
 	//using COLL = D3Q27_CUM_FIX<TRAITS>;
 	//using COLL = D3Q27_CUM_WELL<TRAITS>;
+	//using COLL = D3Q27_CUM_WELL<TRAITS, D3Q27_EQ_INV_CUM_WELL<TRAITS>>;
 
 	using NSE_CONFIG = LBM_CONFIG<
 		TRAITS,
