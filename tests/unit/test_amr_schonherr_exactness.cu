@@ -36,6 +36,16 @@
  * per-TU compile-time switches of the kernel semantics and cannot share a
  * doctest binary with the default-branch build (ODR hazard on the kernel
  * template symbol); see the tests/CMakeLists.txt block.)
+ * - (T11) wall-attached C2F window transit (thesis Sec. 7.3): the fill
+ *   from a nominal source tuple covering a GEO_WALL row must come from
+ *   the wall-shifted window instead (the nearest complete source cell);
+ *   the constant-case locks are finiteness (the wall row is never read),
+ *   Test-1 DF-vs-equilibrium tolerance and 32-ulp cross-row agreement
+ *   against the interior control row (the |t| = 1.25 extrapolation
+ *   re-emerges a few ulps of the fit's cancellation noise, so the T10a
+ *   bitwise uniformity lock does not extend to wall rows), plus
+ *   CE-consistent linear exactness at both wall-adjacent destination
+ *   rows.
  *
  * Mock geometry for (T10a)-(T10c) mirrors the post-re-anchor production
  * band of the contract doc (docs/AMR-schonherr-ch7-target-contract.md
@@ -400,7 +410,7 @@ void poisonOutsideNominalBand(MockBlock& coarse)
 
 // launch the C2F kernel over [begin, end) in fine local coordinates (the
 // block-offset parameters map between the indexer frames)
-void launchCoarseToFine(MockBlock& fine, MockBlock& coarse, idx3d begin, idx3d end, bool coarse_even_iter)
+void launchCoarseToFineOff(MockBlock& fine, MockBlock& coarse, idx3d begin, idx3d end, bool coarse_even_iter, idx3d fine_off, idx3d coarse_off)
 {
 	const idx3d size = end - begin;
 	TNL::Backend::LaunchConfiguration launch_config;
@@ -418,10 +428,17 @@ void launchCoarseToFine(MockBlock& fine, MockBlock& coarse, idx3d begin, idx3d e
 		TAU_FINE,
 		TAU_COARSE,
 		coarse_even_iter,
-		idx3d{FINE_OFF, FINE_OFF, FINE_OFF},
-		idx3d{COARSE_OFF, COARSE_OFF, COARSE_OFF}
+		fine_off,
+		coarse_off
 	);
 	TNL::Backend::streamSynchronize(0);
+}
+
+void launchCoarseToFine(MockBlock& fine, MockBlock& coarse, idx3d begin, idx3d end, bool coarse_even_iter)
+{
+	launchCoarseToFineOff(
+		fine, coarse, begin, end, coarse_even_iter, idx3d{FINE_OFF, FINE_OFF, FINE_OFF}, idx3d{COARSE_OFF, COARSE_OFF, COARSE_OFF}
+	);
 }
 
 // the six production C2F destination rectangles of the post-re-anchor band
@@ -1266,6 +1283,187 @@ TEST_CASE("T10f fill census: every destination cell written exactly once per fil
 	}
 	CHECK(spill0 == 0);
 	CHECK(spill1 == 0);
+}
+
+// (T11) -- thesis Sec. 7.3 wall refinement: for destinations whose nominal
+// 2x2x2 source tuple covers a wall-tagged coarse row, the kernel must fill
+// from the wall-shifted window (the nearest complete source cell of the
+// thesis) instead of the nominal one. Mock geometry: the z anchor
+// fine_off.z() = 5 places fg = 3 and fg = 4 (coarse homes 1 and 2) at the
+// fine ghost rows z = -2 and z = -1, so the nominal z window {1, 2} covers
+// the GEO_WALL plane at coarse z = 1 (the wall-attached-registration case:
+// the footprint's halo row IS the wall); the guard must shift the z window
+// +1 to {2, 3} -- the ring and frozen-skin stand-ins -- evaluating at
+// t_rel = -1.25 (z = -2) / t_rel = -0.75 (z = -1), the |offset| = 1 thesis
+// extrapolation. z = 0 is a GEO_NOTHING dead zone, z = 3 a GEO_NOTHING skin
+// stand-in (live by the band's F2C refill); every coarse row with
+// z in {-2, -1, 0, 1} is NaN-poisoned AFTER the field seed, so a window not
+// shifted away from the wall lands NaN in the fill and fails the finiteness
+// rails. The interior control rows z in {0, 1} read the SAME window {2, 3}
+// at t_rel = {-0.25, +0.25} and anchor the within-noise cross-row
+// comparison below.
+// TOLERANCE NOTE: the T10a bitwise cross-cell uniformity lock does NOT
+// extend to the wall rows. The compact-moment fit's quadratic/product
+// coefficient sums cancel only up to FP rounding (residual
+// O(ulp(K,v,w))) on a non-constant-velocity source; at the interior
+// |t| <= 0.75 evaluation points the residual stays below the DF rounding
+// threshold (the T10a fills at |t| = 0.25 are bitwise-uniform), while at
+// the wall rows' |t| = 1.25 it crosses a few rounding thresholds --
+// measured: fills bitwise-identical rows-wide but for ~2 ulps isolated
+// directions at t = -1.25, and BITWISE-EXACT vs the host equilibrium for
+// a zero-velocity source. The asserted constant-field locks are instead:
+// finiteness (the wall row is never read), the Test-1 DF-vs-equilibrium
+// tolerance, and cross-row agreement against the interior control row
+// bounded at 32 ulps of the DF value. Rail (ii) (CE-linear exactness at
+// the Tests-8/9 tolerance class) is independent of this partitioning.
+TEST_CASE("T11 C2F wall-attached window transit (thesis Sec. 7.3): constant + CE-linear exactness with a GEO_WALL row")
+{
+	const idx3d WALL_FINE_OFF{9, 9, 5};
+	const idx3d DEST_LO{-2, -2, -2};
+	const idx3d DEST_HI{4, 4, 2};  // z rows {-2,-1,0,1}: wall rows (t_rel = {-1.25,-0.75}) + interior control rows (t_rel = {-0.25,+0.25})
+	const long DEST_CELLS = static_cast<long>(DEST_HI.x() - DEST_LO.x()) * (DEST_HI.y() - DEST_LO.y()) * (DEST_HI.z() - DEST_LO.z());
+	constexpr dreal SENTINEL = -777;
+
+	MockBlock coarse, fine;
+	coarse.allocate(COARSE_N);
+	fine.allocate(FINE_N);
+
+	// channel-like map: z = 0 dead zone, z = 1 the bottom wall plane, z = 3
+	// the F2C-refilled frozen skin (tagged GEO_NOTHING as in production)
+	for (idx x = -coarse.ov; x < coarse.size + coarse.ov; x++)
+		for (idx y = -coarse.ov; y < coarse.size + coarse.ov; y++) {
+			coarse.hmap(x, y, 0) = NSE_CONFIG::BC::GEO_NOTHING;
+			coarse.hmap(x, y, 1) = NSE_CONFIG::BC::GEO_WALL;
+			coarse.hmap(x, y, 3) = NSE_CONFIG::BC::GEO_NOTHING;
+		}
+	coarse.dmap = coarse.hmap;
+
+	// NaN-poison every dead/wall source row after the field seed below
+	const auto poisonDeadRows = [&coarse]() -> void {
+		for (idx x = -coarse.ov; x < coarse.size + coarse.ov; x++)
+			for (idx y = -coarse.ov; y < coarse.size + coarse.ov; y++)
+				for (idx z = -coarse.ov; z <= 1; z++)
+					poisonCellDFs(coarse, x, y, z);
+	};
+	// sentinel-fill every wall-adjacent destination cell
+	const auto poisonDest = [&fine, &DEST_LO, &DEST_HI]() -> void {
+		constexpr dreal SENT = -777;
+		for (idx z = DEST_LO.z(); z < DEST_HI.z(); z++)
+			for (idx y = DEST_LO.y(); y < DEST_HI.y(); y++)
+				for (idx x = DEST_LO.x(); x < DEST_HI.x(); x++)
+					for (int q = 0; q < 27; q++)
+						fine.hfs[df_cur](q, x, y, z) = SENT;
+	};
+
+	// (i) constant field: finite fill through the wall-shifted windows at
+	// the Test-1 DF-vs-equilibrium tolerance, with the wall rows agreeing
+	// to 32 ulps of the interior control row (the tolerance note above)
+	{
+		const dreal rho0 = 1.0, u0 = 0.05, v0 = -0.03, w0 = 0.02;
+		const std::array<dreal, 27> expected_eq = equilibriumOnHost(rho0, u0, v0, w0);
+		fillUniform(coarse, /*even_iter=*/false, rho0, u0, v0, w0);
+		poisonDeadRows();
+		coarse.copyToDevice();
+		poisonDest();
+		fine.copyToDevice();
+		launchCoarseToFineOff(fine, coarse, DEST_LO, DEST_HI, /*coarse_even_iter=*/false, WALL_FINE_OFF, idx3d{0, 0, 0});
+		fine.copyToHost();
+
+		long cells = 0, sentinel_left = 0, non_finite = 0, beyond_eq_tol = 0;
+		long beyond_row_tol = 0, non_uniform = 0;
+		double max_eq_err = 0, max_row_err = 0, max_row_epsk = 0;
+		constexpr double ROW_ULP_BOUND = 32;
+		for (idx z = DEST_LO.z(); z < DEST_HI.z(); z++)
+			for (idx y = DEST_LO.y(); y < DEST_HI.y(); y++)
+				for (idx x = DEST_LO.x(); x < DEST_HI.x(); x++) {
+					cells++;
+					const bool wall_row = z < 0;
+					for (int q = 0; q < 27; q++) {
+						const dreal actual = fine.hfs[df_cur](c2fWriteSlot(q), x, y, z);
+						if (actual == SENTINEL)
+							sentinel_left++;
+						if (! std::isfinite(actual))
+							non_finite++;
+						// interior control row z = +1 (same x,y: same source
+						// window, t_rel = +0.25) as the cross-row reference
+						if (wall_row) {
+							const dreal control = fine.hfs[df_cur](c2fWriteSlot(q), x, y, 1);
+							const double d = std::abs(static_cast<double>(actual) - control);
+							const double tol = ROW_ULP_BOUND * static_cast<double>(FLT_EPSILON) * std::abs(static_cast<double>(control));
+							if (d > tol)
+								beyond_row_tol++;
+							max_row_err = std::max(max_row_err, d);
+							max_row_epsk = std::max(max_row_epsk, d / (static_cast<double>(FLT_EPSILON) * std::abs(static_cast<double>(control))));
+							if (std::memcmp(&actual, &control, sizeof(dreal)) != 0)
+								non_uniform++;
+						}
+						if (! closeEnough(actual, expected_eq[q], 1e-6f, 1e-8f))
+							beyond_eq_tol++;
+						max_eq_err = std::max(max_eq_err, std::abs(static_cast<double>(actual) - expected_eq[q]));
+					}
+				}
+		INFO(fmt::format(
+			"T11 constant wall-shifted fill: {} destinations, max |DF - eq| = {:.3e}, max |fill - interior row| = {:.3e} ({:.1f} eps-k, {} "
+			"directions not bitwise-uniform)\n",
+			cells, max_eq_err, max_row_err, max_row_epsk, non_uniform
+		));
+		CHECK(cells == DEST_CELLS);
+		CHECK(sentinel_left == 0);
+		CHECK(non_finite == 0);
+		CHECK(beyond_eq_tol == 0);
+		CHECK(beyond_row_tol == 0);
+	}
+
+	// (ii) CE-consistent linear field: both wall-shifted destination rows
+	// recover the analytic field at their own centers (t_rel = -1.25 /
+	// -0.75 extrapolation variants of the shifted window)
+	{
+		const ExactLinearField field{};
+		fillFieldCE(coarse, /*even_iter=*/false, field);
+		poisonDeadRows();
+		coarse.copyToDevice();
+		poisonDest();
+		fine.copyToDevice();
+		launchCoarseToFineOff(fine, coarse, DEST_LO, DEST_HI, /*coarse_even_iter=*/false, WALL_FINE_OFF, idx3d{0, 0, 0});
+		fine.copyToHost();
+
+		constexpr dreal rtol = 1e-4f, atol = 1e-6f;
+		long cells = 0, bad = 0;
+		double max_rel_rho = 0, max_abs_u = 0;
+		for (idx z = DEST_LO.z(); z < DEST_HI.z(); z++)
+			for (idx y = DEST_LO.y(); y < DEST_HI.y(); y++)
+				for (idx x = DEST_LO.x(); x < DEST_HI.x(); x++) {
+					cells++;
+					dreal rho_m, u_m, v_m, w_m;
+					fineGhostMacros(fine, x, y, z, rho_m, u_m, v_m, w_m);
+					// destination center in coarse cell-center coordinates
+					const double X = (x + WALL_FINE_OFF.x()) * 0.5 - 0.25;
+					const double Y = (y + WALL_FINE_OFF.y()) * 0.5 - 0.25;
+					const double Z = (z + WALL_FINE_OFF.z()) * 0.5 - 0.25;
+					const std::array<double, 4> e = field.exact(X, Y, Z);
+					const bool finite = std::isfinite(rho_m) && std::isfinite(u_m) && std::isfinite(v_m) && std::isfinite(w_m);
+					const double rel_rho = std::abs(rho_m - e[0]) / e[0];
+					const double abs_du = std::max({std::abs(u_m - e[1]), std::abs(v_m - e[2]), std::abs(w_m - e[3])});
+					max_rel_rho = std::max(max_rel_rho, rel_rho);
+					max_abs_u = std::max(max_abs_u, abs_du);
+					const bool ok = finite && closeEnough(rho_m, e[0], rtol, atol) && abs_du <= atol + rtol * 0.03;
+					if (! ok) {
+						if (bad == 0)
+							INFO(fmt::format(
+								"  T11 first mismatch: cell=({},{},{}), finite={}, rho={:.9e} (expected {:.9e}), "
+								"u=({:.9e},{:.9e},{:.9e}) (expected {:.9e},{:.9e},{:.9e})\n",
+								x, y, z, finite, rho_m, e[0], u_m, v_m, w_m, e[1], e[2], e[3]
+							));
+						bad++;
+					}
+				}
+		INFO(fmt::format(
+			"T11 CE-linear wall-shifted fill: {} destinations, max rel rho err = {:.3e}, max abs vel err = {:.3e}, bad = {}\n",
+			cells, max_rel_rho, max_abs_u, bad
+		));
+		CHECK(cells == DEST_CELLS);
+		CHECK(bad == 0);
+	}
 }
 
 TEST_SUITE_END();
