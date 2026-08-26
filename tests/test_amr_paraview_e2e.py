@@ -35,13 +35,12 @@ EXPECTED_FIELDS = ("rho", "vx", "vy", "vz", "vtkGhostType")
 EXPECTED_LEVELS = 2
 EXPECTED_BLOCKS_PER_LEVEL = 1
 # per-level block cell counts: level 0 is the 64^3 global domain; level 1 is
-# block->local = 2*K - 2 = 62 rows/axis for the K = 32 res-1 footprint on the
-# Schönherr-ch7 branch (the T0' fine-interior re-anchor shifted the interior
-# one fine cell inward per face, plan §1.1 band map, commit 4 -- fix-forward
-# of the stale pre-reanchor 64**3-per-level pin, exposed by the refreshed
-# root capture; the OverlappingAMR writer emits block->local only, no
-# overlap rows, cf. tests/interface_seam_metric.py's reader note)
-EXPECTED_CELLS = {0: 64**3, 1: 62**3}  # 262144, 238328
+# the coarse footprint's fine-cell coverage = 64^3 (the writer emits the
+# interior plus the footprint-inner ghost rows and drops the outer hidden
+# storage ring, so the fine AMRBox covers exactly the REFINEDCELL footprint
+# and the reader's overlap-blanking leaves no interface-ring band -- see
+# OverlappingAMRWriter::emitted_range)
+EXPECTED_CELLS = {0: 64**3, 1: 64**3}  # 262144, 262144
 EXPECTED_REFINED_CELLS = 32**3  # coarse footprint [16, 48)^3
 # rho sanity bound: the sim initializes the analytical Taylor-Green density
 # profile initialized in sim_AMR.cu (on-branch commit 19b88d3), not rho == 1 — rho = 1 + 3*V0^2/16*(cos2kx+cos2ky)*
@@ -53,6 +52,7 @@ VX_ABS_MAX = 0.02
 # vtkDataSetAttributes::REFINEDCELL; the reader ORs in EXTERIORCELL (0x8) when
 # it blanks overlapped cells, so the loaded array contains 4|8=12, not plain 4
 REFINEDCELL_BIT = 0x4
+EXTERIORCELL_BIT = 0x8
 MIN_PNG_BYTES = 30 * 1024
 MIN_UNIQUE_COLORS = 64
 
@@ -113,13 +113,15 @@ def check_values(oamr):
             n_cells,
         )
         rho = np.asarray(data.CellData["rho"])
-        rho_err = float(np.abs(rho - 1.0).max())
+        ghost = np.asarray(data.CellData["vtkGhostType"])
+        # skip reader-hidden cells (blanked coarse interior, hidden fine ghost)
+        visible_mask = (ghost & 0x8) == 0
+        rho_err = float(np.abs(rho[visible_mask] - 1.0).max())
         report(
             rho_err <= RHO_TOLERANCE,
             f"level {level} rho within 1.0 +/- {RHO_TOLERANCE} (TG envelope)",
             f"max deviation {rho_err:.3e}",
         )
-        ghost = np.asarray(data.CellData["vtkGhostType"])
         if check_ghost == "refined":
             vx = np.asarray(data.CellData["vx"])
             vx_max = float(np.abs(vx).max())
@@ -136,10 +138,26 @@ def check_values(oamr):
                 f"level 0 REFINEDCELL (bit 0x4) count is {EXPECTED_REFINED_CELLS}",
                 n_refined,
             )
-        else:
+            # the reader's overlap-blanking must not exceed the writer's
+            # REFINEDCELL footprint: an EXTERIORCELL-only cell (0x8 without
+            # 0x4) renders as a 0.5-coarse-cell white band around the patch
+            # (the overhanging fine AMRBox over the hidden outer ghost ring
+            # blanked the coarse interface ring -- fixed by emitted_range)
+            n_blank_only = int(
+                np.count_nonzero(
+                    ((ghost & EXTERIORCELL_BIT) != 0) & ((ghost & REFINEDCELL_BIT) == 0)
+                )
+            )
             report(
-                int(np.count_nonzero(ghost)) == 0,
-                "level 1 vtkGhostType is 0 everywhere",
+                n_blank_only == 0,
+                "level 0 has no EXTERIORCELL-only cells (blanking == REFINEDCELL)",
+                n_blank_only,
+            )
+        else:
+            valid_tags = set(np.unique(ghost).tolist()) <= {0}
+            report(
+                valid_tags,
+                "level 1 vtkGhostType is 0 everywhere (all emitted rows cover the footprint)",
                 np.unique(ghost).tolist(),
             )
 
