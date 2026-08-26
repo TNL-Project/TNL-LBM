@@ -176,6 +176,22 @@ struct LBM_BLOCK
 	// assuming this value everywhere.
 	int storage_overlap = overlap_width;
 
+	// Per-axis overrides of the allocated overlap depth (-1 = use
+	// `storage_overlap` on that axis). A fine-level bounce-back wall on a
+	// footprint min face (State_AMR's fine_wall_masks, imposed e.g. by
+	// sim_AMR/sim_AMR_channel.cu) places its GEO_WALL row at local index -2
+	// of the walled axis with a GEO_NOTHING streaming buffer at -3 (on a
+	// max face at local+1 with the buffer at local+2): the AA-pattern
+	// neighbor reads are unclamped (kernels.h), so a processed wall cell
+	// needs one allocated row beyond it that the kernel never processes,
+	// i.e. a 3-deep overlap on the walled axis. A simulation sets the
+	// override AFTER createAMRBlocks and BEFORE execute() -- State::SimInit
+	// re-runs the allocation for all blocks, materializing the deeper
+	// overlap then.
+	int storage_overlap_x = -1;
+	int storage_overlap_y = -1;
+	int storage_overlap_z = -1;
+
 	int df_overlap_X()
 	{
 		return data.indexer.template getOverlap<0>();

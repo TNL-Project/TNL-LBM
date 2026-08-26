@@ -763,15 +763,18 @@ void LBM_BLOCK<CONFIG>::synchronizeMapDevice_start()
 template <typename CONFIG>
 void LBM_BLOCK<CONFIG>::allocateHostData()
 {
+	const int overlap_x = storage_overlap_x >= 0 ? storage_overlap_x : storage_overlap;
+	const int overlap_y = storage_overlap_y >= 0 ? storage_overlap_y : storage_overlap;
+	const int overlap_z = storage_overlap_z >= 0 ? storage_overlap_z : storage_overlap;
 	for (auto& hf : hfs) {
 		hf.setSizes(CONFIG::Q, global.x(), global.y(), global.z());
 #ifdef HAVE_MPI
 		if (local.x() != global.x())
-			hf.getOverlaps().template setSize<1>(storage_overlap);
+			hf.getOverlaps().template setSize<1>(overlap_x);
 		if (local.y() != global.y())
-			hf.getOverlaps().template setSize<2>(storage_overlap);
+			hf.getOverlaps().template setSize<2>(overlap_y);
 		if (local.z() != global.z())
-			hf.getOverlaps().template setSize<3>(storage_overlap);
+			hf.getOverlaps().template setSize<3>(overlap_z);
 		hf.template setDistribution<1>(offset.x(), offset.x() + local.x(), communicator);
 		hf.template setDistribution<2>(offset.y(), offset.y() + local.y(), communicator);
 		hf.template setDistribution<3>(offset.z(), offset.z() + local.z(), communicator);
@@ -782,11 +785,11 @@ void LBM_BLOCK<CONFIG>::allocateHostData()
 	hmap.setSizes(global.x(), global.y(), global.z());
 #ifdef HAVE_MPI
 	if (local.x() != global.x())
-		hmap.getOverlaps().template setSize<0>(storage_overlap);
+		hmap.getOverlaps().template setSize<0>(overlap_x);
 	if (local.y() != global.y())
-		hmap.getOverlaps().template setSize<1>(storage_overlap);
+		hmap.getOverlaps().template setSize<1>(overlap_y);
 	if (local.z() != global.z())
-		hmap.getOverlaps().template setSize<2>(storage_overlap);
+		hmap.getOverlaps().template setSize<2>(overlap_z);
 	hmap.template setDistribution<0>(offset.x(), offset.x() + local.x(), communicator);
 	hmap.template setDistribution<1>(offset.y(), offset.y() + local.y(), communicator);
 	hmap.template setDistribution<2>(offset.z(), offset.z() + local.z(), communicator);
@@ -796,11 +799,11 @@ void LBM_BLOCK<CONFIG>::allocateHostData()
 	hmacro.setSizes(CONFIG::MACRO::N, global.x(), global.y(), global.z());
 #ifdef HAVE_MPI
 	if (local.x() != global.x())
-		hmacro.getOverlaps().template setSize<1>(storage_overlap);
+		hmacro.getOverlaps().template setSize<1>(overlap_x);
 	if (local.y() != global.y())
-		hmacro.getOverlaps().template setSize<2>(storage_overlap);
+		hmacro.getOverlaps().template setSize<2>(overlap_y);
 	if (local.z() != global.z())
-		hmacro.getOverlaps().template setSize<3>(storage_overlap);
+		hmacro.getOverlaps().template setSize<3>(overlap_z);
 	hmacro.template setDistribution<1>(offset.x(), offset.x() + local.x(), communicator);
 	hmacro.template setDistribution<2>(offset.y(), offset.y() + local.y(), communicator);
 	hmacro.template setDistribution<3>(offset.z(), offset.z() + local.z(), communicator);
@@ -814,14 +817,17 @@ void LBM_BLOCK<CONFIG>::allocateDeviceData()
 {
 //#ifdef USE_CUDA
 #if 1
+	const int overlap_x = storage_overlap_x >= 0 ? storage_overlap_x : storage_overlap;
+	const int overlap_y = storage_overlap_y >= 0 ? storage_overlap_y : storage_overlap;
+	const int overlap_z = storage_overlap_z >= 0 ? storage_overlap_z : storage_overlap;
 	dmap.setSizes(global.x(), global.y(), global.z());
 	#ifdef HAVE_MPI
 	if (local.x() != global.x())
-		dmap.getOverlaps().template setSize<0>(storage_overlap);
+		dmap.getOverlaps().template setSize<0>(overlap_x);
 	if (local.y() != global.y())
-		dmap.getOverlaps().template setSize<1>(storage_overlap);
+		dmap.getOverlaps().template setSize<1>(overlap_y);
 	if (local.z() != global.z())
-		dmap.getOverlaps().template setSize<2>(storage_overlap);
+		dmap.getOverlaps().template setSize<2>(overlap_z);
 	dmap.template setDistribution<0>(offset.x(), offset.x() + local.x(), communicator);
 	dmap.template setDistribution<1>(offset.y(), offset.y() + local.y(), communicator);
 	dmap.template setDistribution<2>(offset.z(), offset.z() + local.z(), communicator);
@@ -832,11 +838,11 @@ void LBM_BLOCK<CONFIG>::allocateDeviceData()
 		df.setSizes(CONFIG::Q, global.x(), global.y(), global.z());
 	#ifdef HAVE_MPI
 		if (local.x() != global.x())
-			df.getOverlaps().template setSize<1>(storage_overlap);
+			df.getOverlaps().template setSize<1>(overlap_x);
 		if (local.y() != global.y())
-			df.getOverlaps().template setSize<2>(storage_overlap);
+			df.getOverlaps().template setSize<2>(overlap_y);
 		if (local.z() != global.z())
-			df.getOverlaps().template setSize<3>(storage_overlap);
+			df.getOverlaps().template setSize<3>(overlap_z);
 		df.template setDistribution<1>(offset.x(), offset.x() + local.x(), communicator);
 		df.template setDistribution<2>(offset.y(), offset.y() + local.y(), communicator);
 		df.template setDistribution<3>(offset.z(), offset.z() + local.z(), communicator);
@@ -847,11 +853,11 @@ void LBM_BLOCK<CONFIG>::allocateDeviceData()
 	dmacro.setSizes(CONFIG::MACRO::N, global.x(), global.y(), global.z());
 	#ifdef HAVE_MPI
 	if (local.x() != global.x())
-		dmacro.getOverlaps().template setSize<1>(storage_overlap);
+		dmacro.getOverlaps().template setSize<1>(overlap_x);
 	if (local.y() != global.y())
-		dmacro.getOverlaps().template setSize<2>(storage_overlap);
+		dmacro.getOverlaps().template setSize<2>(overlap_y);
 	if (local.z() != global.z())
-		dmacro.getOverlaps().template setSize<3>(storage_overlap);
+		dmacro.getOverlaps().template setSize<3>(overlap_z);
 	dmacro.template setDistribution<1>(offset.x(), offset.x() + local.x(), communicator);
 	dmacro.template setDistribution<2>(offset.y(), offset.y() + local.y(), communicator);
 	dmacro.template setDistribution<3>(offset.z(), offset.z() + local.z(), communicator);
