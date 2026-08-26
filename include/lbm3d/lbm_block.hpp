@@ -349,15 +349,25 @@ void LBM_BLOCK<CONFIG>::setEquilibrium(real rho, real vx, real vy, real vz)
 template <typename CONFIG>
 void LBM_BLOCK<CONFIG>::computeInitialMacro()
 {
+	// interior-only extent, identical to the pre-overload behavior
+	computeInitialMacro(idx3d{0, 0, 0}, idx3d{local.x(), local.y(), local.z()});
+}
+
+template <typename CONFIG>
+void LBM_BLOCK<CONFIG>::computeInitialMacro(const idx3d& begin, const idx3d& end)
+{
 	// extract variables and views for capturing in the lambda function
 	auto SD = data;
 
-	const idx3d begin = {0, 0, 0};
-	const idx3d end = {local.y(), local.z(), local.x()};
+	// the device pass iterates local indexer coordinates in (y, z, x)
+	// order; begin/end are x/y/z axis order and are swizzled into the
+	// loop's component order below
+	const idx3d begin_yzx{begin.y(), begin.z(), begin.x()};
+	const idx3d end_yzx{end.y(), end.z(), end.x()};
 
 	TNL::Algorithms::parallelFor<DeviceType>(
-		begin,
-		end,
+		begin_yzx,
+		end_yzx,
 		[SD] __cuda_callable__(idx3d yzx) mutable
 		{
 			const auto& [y, z, x] = yzx;

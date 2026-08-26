@@ -250,8 +250,7 @@ contract `docs/AMR-schonherr-ch7-target-contract.md`).
 - **Simulations**: `sim_AMR/sim_AMR.cu` (Taylor-Green 2-level AMR,
   `--convective-times N` long runs), `sim_AMR/sim_AMR_channel.cu` (Dirichlet
   developing-channel diagnostic, the B.7 artifact). Probe CLI on both:
-  `--write-dfs` (raw DF fields in VTKHDF) and `--out3d-iter-period N`
-  (per-iteration frame cadence).
+  `--out3d-iter-period N` (per-iteration frame cadence).
 - **Surfaces**: `include/lbm3d/amr_decomposition.h` (`createAMRBlocks` —
   footprint re-anchored one fine cell inward per face, gs ≥ 3 minimum;
   `markAMRInterface` — ring {halo c=−1 + reactivated surface shell c=0} tagged

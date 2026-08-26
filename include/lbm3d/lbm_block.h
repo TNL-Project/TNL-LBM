@@ -246,6 +246,14 @@ struct LBM_BLOCK
 	void resetMap(map_t geo_type);
 	void setEquilibrium(real rho, real vx, real vy, real vz);
 	void computeInitialMacro();
+	// compute macroscopic quantities from the stored device DFs over an
+	// arbitrary [begin, end) window of LOCAL (indexer) coordinates -- same
+	// device pass and math as the no-arg overload, just extent-parameterized
+	// (the no-arg overload delegates with the interior [0, local) extent).
+	// begin/end are in x/y/z axis order; the window may extend into the
+	// ghost rows (negative / >= local coordinates) as long as they are
+	// within the block's allocated overlap storage.
+	void computeInitialMacro(const idx3d& begin, const idx3d& end);
 
 	void allocateHostData();
 	void allocateDeviceData();
