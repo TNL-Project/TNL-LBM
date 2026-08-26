@@ -1797,6 +1797,289 @@ void test_footprint_min_size_validation()
 	);
 }
 
+// State_AMR subclass for the fine-level wall tests (Tests 10-11): the
+// setupBoundaries modes drive State_AMR::buildFineWallMasks into its three
+// contract lanes (partial wall, missing override, registered wall). The
+// coarse plane numbers below are the face-adjacent halo rows of the
+// [4,12)^3 fixture footprint (z-min: 3, x-max: 12); the fine-row tagging
+// of mode 3 keys on the coarse map exactly like the channel's
+// setupBoundaries and places the GEO_WALL row at local+1 with the
+// GEO_NOTHING streaming buffer at local+2 (the max-face band geometry).
+template <typename NSE>
+struct StateWall_AMR : StateLocal_AMR<NSE>
+{
+	using BC = typename NSE::BC;
+	using BLOCK_NSE = LBM_BLOCK<NSE>;
+	using idx = typename NSE::TRAITS::idx;
+
+	// 1 = PARTIAL z-min wall, 2 = FULL z-min wall without the overlap
+	// override, 3 = FULL x-max wall (the override is set by the test)
+	int wall_mode = 0;
+
+	template <typename... ARGS>
+	StateWall_AMR(ARGS&&... args)
+	: StateLocal_AMR<NSE>(std::forward<ARGS>(args)...)
+	{}
+
+	void setupBoundaries() override
+	{
+		// domain border layers GEO_NOTHING on every edge (the ghost-layer
+		// idiom of the channel sims): this fixture is non-periodic, so a
+		// plain-fluid edge cell would stream from outside the coarse
+		// block's zero-overlap storage (dmap bounds assert + kernel trap)
+		this->nse.setBoundaryX(0, BC::GEO_NOTHING);
+		this->nse.setBoundaryX(this->nse.lat.global.x() - 1, BC::GEO_NOTHING);
+		this->nse.setBoundaryY(0, BC::GEO_NOTHING);
+		this->nse.setBoundaryY(this->nse.lat.global.y() - 1, BC::GEO_NOTHING);
+		this->nse.setBoundaryZ(0, BC::GEO_NOTHING);
+		this->nse.setBoundaryZ(this->nse.lat.global.z() - 1, BC::GEO_NOTHING);
+		if (wall_mode == 1) {
+			// half of the z-min cross-section: coarse x in [4, 8)
+			for (idx x = 4; x < 8; x++)
+				for (idx y = 4; y < 12; y++)
+					this->nse.setMap(x, y, 3, BC::GEO_WALL);
+		}
+		else if (wall_mode == 2) {
+			this->nse.setBoundaryZ(3, BC::GEO_WALL);
+		}
+		else if (wall_mode == 3) {
+			// coarse wall plane on the x=12 face-adjacent halo row, spanning
+			// y,z in [1, global-1): its outermost row keeps a GEO_NOTHING
+			// backer at the domain border -- a wall cell sitting directly on
+			// the zero-overlap edge would still gather from outside the
+			// storage (the same idiom as the border layers above)
+			for (idx y = 1; y < this->nse.lat.global.y() - 1; y++)
+				for (idx z = 1; z < this->nse.lat.global.z() - 1; z++)
+					this->nse.setMap(12, y, z, BC::GEO_WALL);
+			for (auto& fine : this->nse.blocks) {
+				if (fine.level == 0)
+					continue;
+				for (idx y = fine.offset.y(); y < fine.offset.y() + fine.local.y(); y++)
+					for (idx z = fine.offset.z(); z < fine.offset.z() + fine.local.z(); z++) {
+						// wall column iff the face-adjacent coarse column is
+						// GEO_WALL on the parent level (floor(fine/2) is
+						// exact for the positive fine-global coordinates)
+						bool wall_column = false;
+						for (const auto& coarse : this->nse.blocks)
+							if (coarse.level == 0 && coarse.hmap(12, y / 2, z / 2) == BC::GEO_WALL)
+								wall_column = true;
+						if (! wall_column)
+							continue;
+						fine.hmap(fine.offset.x() + fine.local.x() + 1, y, z) = BC::GEO_WALL;
+						fine.hmap(fine.offset.x() + fine.local.x() + 2, y, z) = BC::GEO_NOTHING;
+					}
+			}
+		}
+	}
+
+	void resetDFs() override
+	{
+		if (wall_mode == 3) {
+			// full-stored-extent equilibrium on every block: the walled
+			// face's ghost band receives no coarse-to-fine fill, so its
+			// rows must hold a valid state from the start (the channel's
+			// setInitialCondition idiom; setEquilibrium covers the overlap
+			// rows); the sine IC of the sibling tests is interior-only
+			for (auto& block : this->nse.blocks)
+				block.setEquilibrium(1, 0, 0, 0);
+			this->nse.copyDFsToHost();
+		}
+		else
+			StateLocal_AMR<NSE>::resetDFs();
+	}
+};
+
+// Test 10 (fine-wall fail-fast rails): State_AMR::buildFineWallMasks must
+// REJECT a partial fine wall with a runtime_error naming block, face,
+// count, and the expected count (the launch window and the C2F fill are
+// face-wide decisions, a column-wise mixture has no defined contract), and
+// a full wall missing the per-axis storage override with a runtime_error
+// naming block, face, and the override to set (with only the 2-deep C2F
+// band, the GEO_NOTHING streaming-buffer row would lie outside the
+// allocated storage and the coupling patch would overwrite the wall
+// columns).
+void test_fine_wall_failfast()
+{
+	// partial z-min wall: coarse x in [4, 8) tagged on the z = 3 plane
+	// backs fine columns [9, 16) of the [9, 23) interior x range, i.e. 7 x
+	// 14 = 98 of the 196 z-min cross-section columns -- a partial wall
+	{
+		lat_t lat = makeLattice();
+		const std::string id = fmt::format("test_amr_subcycling_{}_wallpartial", pattern_name);
+		StateWall_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{false, false, false}, /*max_level=*/1);
+		if (! state.canCompute()) {
+			report(false, "Test 10 setup (partial): state.canCompute()");
+			return;
+		}
+		state.wall_mode = 1;
+		createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>("1 4 4 4 8 8 8"));
+		std::string message;
+		try {
+			state.SimInit();
+		}
+		catch (const std::runtime_error& e) {
+			message = e.what();
+		}
+		report(
+			message.find("PARTIAL fine-level wall") != std::string::npos && message.find("z-min") != std::string::npos
+				&& message.find("block 1") != std::string::npos && message.find("98 of 196") != std::string::npos,
+			fmt::format(
+				"Test 10 partial-wall rejection: SimInit throws the named error (block, face, count 98 of 196) -- {}",
+				message.empty() ? "no exception thrown" : fmt::format("threw: {}", message)
+			)
+		);
+	}
+
+	// full z-min wall but no storage_overlap_z = 3 override: the wall row
+	// is tagged but the GEO_NOTHING streaming-buffer row is unallocated
+	{
+		lat_t lat = makeLattice();
+		const std::string id = fmt::format("test_amr_subcycling_{}_wallnooverlap", pattern_name);
+		StateWall_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{false, false, false}, /*max_level=*/1);
+		if (! state.canCompute()) {
+			report(false, "Test 10 setup (missing override): state.canCompute()");
+			return;
+		}
+		state.wall_mode = 2;
+		createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>("1 4 4 4 8 8 8"));
+		std::string message;
+		try {
+			state.SimInit();
+		}
+		catch (const std::runtime_error& e) {
+			message = e.what();
+		}
+		report(
+			message.find("storage_overlap_z") != std::string::npos && message.find("z-min") != std::string::npos
+				&& message.find("the z-axis overlap is 2 (< 3)") != std::string::npos,
+			fmt::format(
+				"Test 10 missing-override rejection: SimInit throws the named error (block, face, storage_overlap_z) -- {}",
+				message.empty() ? "no exception thrown" : fmt::format("threw: {}", message)
+			)
+		);
+	}
+}
+
+// Test 11 (fine wall on a non-z face): a full x-max wall with
+// storage_overlap_x = 3 must be REGISTERED by buildFineWallMasks (exactly
+// the Right-face bit of fine_wall_masks), the launch windows must be
+// deepened to the GEO_WALL row at local+1 on x in both substeps while
+// keeping the nominal band extents on y/z, the x-max coupling patch must
+// carry an EMPTY fine destination (the BC-managed band is not a C2F
+// destination) while every other face keeps its full band, and a coupled
+// SimUpdate over this configuration must run cleanly (the deepened launch
+// processes the bounce-back row against the allocated buffer row).
+void test_fine_wall_maxface()
+{
+	using SyncDirection = TNL::Containers::SyncDirection;
+
+	lat_t lat = makeLattice();
+	const std::string id = fmt::format("test_amr_subcycling_{}_wallxmax", pattern_name);
+	StateWall_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{false, false, false}, /*max_level=*/1);
+	if (! state.canCompute()) {
+		report(false, "Test 11 setup: state.canCompute()");
+		return;
+	}
+	state.wall_mode = 3;
+	// [4,12)^3 footprint: the x = 12 plane is the x-max face-adjacent halo row
+	createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>("1 4 4 4 8 8 8"));
+	BLOCK* fine = state.nse.getBlocksAtLevel(1).front();
+	fine->storage_overlap_x = 3;
+	state.SimInit();
+	if (state.nse.terminate) {
+		report(false, "Test 11 setup: SimInit triggered the terminate flag");
+		return;
+	}
+
+	// the mask registers exactly the x-max (Right) bit of the six
+	const int right_bit = State_AMR<NSE_CONFIG>::fineWallFaceBit(SyncDirection::Right);
+	report(
+		state.fineWallMask(*fine) == (1 << right_bit),
+		fmt::format(
+			"Test 11 wall mask: exactly the x-max (Right) bit is registered (mask = {})", static_cast<int>(state.fineWallMask(*fine))
+		)
+	);
+
+	// launch window geometry: deepened to the wall row at local+1 = 15 on
+	// x in both substep classes; the y/z axes keep the nominal simulated
+	// band ([-1, local+1) substep 1) and interior ([0, local) substep 2)
+	// extents of a 14^3 fine interior with a 3-deep x overlap
+	const auto w1 = state.kernelLaunchWindow(*fine, 1);
+	report(
+		w1.first == idx3d{-1, -1, -1} && w1.second == idx3d{17, 16, 16},
+		fmt::format(
+			"Test 11 substep-1 window: [{},{},{}] + [{},{},{}] (expected [-1,-1,-1] + [17,16,16])",
+			w1.first.x(),
+			w1.first.y(),
+			w1.first.z(),
+			w1.second.x(),
+			w1.second.y(),
+			w1.second.z()
+		)
+	);
+	const auto w0 = state.kernelLaunchWindow(*fine, 0);
+	report(
+		w0.first == idx3d{0, 0, 0} && w0.second == idx3d{16, 14, 14},
+		fmt::format(
+			"Test 11 substep-2 window: [{},{},{}] + [{},{},{}] (expected [0,0,0] + [16,14,14])",
+			w0.first.x(),
+			w0.first.y(),
+			w0.first.z(),
+			w0.second.x(),
+			w0.second.y(),
+			w0.second.z()
+		)
+	);
+
+	// grid selection guard: the precomputed interior grid is sized by
+	// roundup(local) with zero slack, so a max-face-wall substep-2 window
+	// (begin {0,0,0} but size.x = local+2) MUST recompute the grid -- a
+	// begin-only fast-path check would silently skip the wall row
+	report(
+		! State_AMR<NSE_CONFIG>::isInteriorLaunchWindow(w0.first, w0.second, fine->local),
+		"Test 11 grid selection: the x-max-wall substep-2 window is NOT eligible for the precomputed interior grid"
+	);
+	report(
+		! State_AMR<NSE_CONFIG>::isInteriorLaunchWindow(w1.first, w1.second, fine->local),
+		"Test 11 grid selection: the widened substep-1 window is NOT eligible for the precomputed interior grid"
+	);
+	report(
+		State_AMR<NSE_CONFIG>::isInteriorLaunchWindow(idx3d{0, 0, 0}, fine->local, fine->local),
+		"Test 11 grid selection: the plain interior [0, local) window IS eligible for the precomputed grid"
+	);
+
+	// coupling patches: the x-max face's destination is emptied while the
+	// other five faces keep their full C2F bands
+	bool saw_right = false, right_empty = false, others_nonempty = true;
+	int n_patches = 0;
+	for (const auto& patch : state.couplings.front().patches) {
+		n_patches++;
+		if (patch.face == SyncDirection::Right) {
+			saw_right = true;
+			right_empty = patch.fine_size == idx3d{0, 14, 14};
+		}
+		else
+			others_nonempty = others_nonempty && patch.fine_size.x() > 0 && patch.fine_size.y() > 0 && patch.fine_size.z() > 0;
+	}
+	report(
+		saw_right && right_empty && others_nonempty && n_patches == 6,
+		fmt::format(
+			"Test 11 coupling patches: x-max destination is empty ({}), the other 5 faces keep their full bands ({})",
+			right_empty,
+			others_nonempty
+		)
+	);
+
+	// one coupled cycle over the deepened window (launch smoke: the
+	// bounce-back row is processed against the allocated buffer row)
+	state.updateKernelData();
+	state.SimUpdate();
+	report(
+		! state.nse.terminate && state.nse.iterations == 1,
+		"Test 11: one coupled SimUpdate over the x-max fine wall runs cleanly"
+	);
+}
+
 int main(int argc, char** argv)
 {
 	TNLMPI_INIT mpi(argc, argv);
@@ -1816,6 +2099,8 @@ int main(int argc, char** argv)
 	test_conservation_hidden_cell_exclusion();
 	test_skin_partition_geometry();
 	test_footprint_min_size_validation();
+	test_fine_wall_failfast();
+	test_fine_wall_maxface();
 
 	if (g_failures == 0) {
 		fmt::println("RESULT: all AMR subcycling tests passed");

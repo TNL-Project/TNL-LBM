@@ -2,6 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <map>
+#include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -232,7 +236,9 @@ struct State_AMR : State<NSE>
 	// the Schönherr-simulated-band substep-1 launch at fine levels
 	// integrates the inner ghost rows (collide+stream like interior
 	// fluid, their streaming source is the outer overlap row); all other
-	// launches pass 0 and cover the interior [0, local) only.
+	// launches pass 0 and cover the interior [0, local) only. An axis
+	// whose face is masked in fine_wall_masks is deepened to the fine
+	// wall's GEO_WALL row in BOTH launch classes (kernelLaunchWindow).
 	virtual void launchLBMKernelForLevel(int level, bool compute_macro, int ghost_layers);
 	// fill the ghost layer of every level-`fine_level` block from level
 	// `fine_level - 1` via `cudaAMR_CoarseToFine`, iterating the
@@ -273,6 +279,121 @@ struct State_AMR : State<NSE>
 		return block.level == 0 ? this->nse.lat.lbmViscosity() : block.lat_local.lbmViscosity();
 	}
 
+	// per-fine-block 6-bit mask of the fine-level bounce-back walls a
+	// simulation imposes on the footprint's faces (sim_AMR/sim_AMR_channel.cu
+	// imposes one on the z-min face): bit F set means the block holds its
+	// own GEO_WALL row one row OUTSIDE face F's C2F destination band (local
+	// index -2 on a min face / local+1 on a max face -- the wall link plane
+	// then coincides with the coarse wall's link plane), backed by a
+	// GEO_NOTHING streaming buffer one row further out (the AA pattern's
+	// unclamped neighbor reads, kernels.h, need one allocated row beyond
+	// any processed cell). The masked face is BC-managed end to end: it
+	// receives no coarse-to-fine fill (the destination is emptied in
+	// buildCouplings) and the fine kernel processes the wall row in every
+	// fine substep (kernelLaunchWindow). Filled by buildFineWallMasks at
+	// SimInit from the COARSE boundary map; keyed by block id, missing
+	// entries read as 0 (no fine wall).
+	std::map<int, std::uint8_t> fine_wall_masks;
+
+	// bit of a footprint face in fine_wall_masks, in the face order of
+	// buildCouplings' faces[] array (the two bits of one axis are adjacent,
+	// so bit / 2 is the face's normal axis)
+	static constexpr int fineWallFaceBit(TNL::Containers::SyncDirection face)
+	{
+		using SyncDirection = TNL::Containers::SyncDirection;
+		switch (face) {
+			case SyncDirection::Left:  // x-min
+				return 0;
+			case SyncDirection::Right:	// x-max
+				return 1;
+			case SyncDirection::Bottom:	 // y-min
+				return 2;
+			case SyncDirection::Top:  // y-max
+				return 3;
+			case SyncDirection::Back:  // z-min
+				return 4;
+			case SyncDirection::Front:	// z-max
+				return 5;
+			default:  // not a face normal (diagonal or None sync direction)
+				return -1;
+		}
+	}
+
+	// face names matching the bit order of fineWallFaceBit (the log lines
+	// and the fail-fast assertion messages)
+	static const char* fineWallFaceName(TNL::Containers::SyncDirection face)
+	{
+		using SyncDirection = TNL::Containers::SyncDirection;
+		switch (face) {
+			case SyncDirection::Left:
+				return "x-min";
+			case SyncDirection::Right:
+				return "x-max";
+			case SyncDirection::Bottom:
+				return "y-min";
+			case SyncDirection::Top:
+				return "y-max";
+			case SyncDirection::Back:
+				return "z-min";
+			case SyncDirection::Front:
+				return "z-max";
+			default:
+				return "unknown";
+		}
+	}
+
+	// the block's fine-wall mask (0 when the block carries no fine wall)
+	std::uint8_t fineWallMask(const BLOCK_NSE& block) const
+	{
+		const auto it = fine_wall_masks.find(block.id);
+		return it == fine_wall_masks.end() ? 0 : it->second;
+	}
+
+	// per-axis (begin, size) launch window of the block's cudaLBMKernel: an
+	// unmasked axis covers [-g, local+g) with g = min(ghost_layers,
+	// allocated overlap) -- the widened simulated-band extent of substep 1
+	// at g = 1, the interior-only extent of substep 2 at g = 0. An axis
+	// whose min face is masked in fine_wall_masks is deepened to the
+	// GEO_WALL row at local -2, an axis whose max face is masked to the
+	// GEO_WALL row at local+1 (the wall rows are processed in BOTH
+	// substeps: the bounce-back refreshes the wall's slots in each
+	// substep's frame; the GEO_NOTHING buffer row one row further out is
+	// never processed -- a processed cell's streaming gather reaches at
+	// most one row beyond the wall).
+	std::pair<idx3d, idx3d> kernelLaunchWindow(BLOCK_NSE& block, int ghost_layers) const
+	{
+		using SyncDirection = TNL::Containers::SyncDirection;
+		static constexpr SyncDirection min_face[3] = {SyncDirection::Left, SyncDirection::Bottom, SyncDirection::Back};
+		static constexpr SyncDirection max_face[3] = {SyncDirection::Right, SyncDirection::Top, SyncDirection::Front};
+		const std::uint8_t mask = fineWallMask(block);
+		const idx local[3] = {block.local.x(), block.local.y(), block.local.z()};
+		const idx ov[3] = {block.df_overlap_X(), block.df_overlap_Y(), block.df_overlap_Z()};
+		idx3d begin, size;
+		for (int a = 0; a < 3; a++) {
+			const idx g = std::min<idx>(ghost_layers, ov[a]);
+			begin[a] = (mask & (1 << fineWallFaceBit(min_face[a]))) ? idx(-2) : -g;
+			const idx end = (mask & (1 << fineWallFaceBit(max_face[a]))) ? local[a] + 2 : local[a] + g;
+			size[a] = end - begin[a];
+		}
+		return {begin, size};
+	}
+
+	// the interior [0, local) window is the only launch window the block's
+	// precomputed grid covers: that grid rounds `local` up to a whole number
+	// of blocks with zero slack, so any window extending past `local`
+	// (a widened substep-1 extent or a wall-deepened MAX face whose begin
+	// still starts at 0) would leave its outer rows unlaunched if the
+	// precomputed grid were reused
+	static bool isInteriorLaunchWindow(const idx3d& begin, const idx3d& size, const idx3d& local)
+	{
+		return begin.x() == 0 && begin.y() == 0 && begin.z() == 0 && size == local;
+	}
+
+	// derive fine_wall_masks from the COARSE boundary map (see SimInit for
+	// the ordering); hard-fails with std::runtime_error on a partial wall
+	// or on a wall without the per-axis storage override
+	void buildFineWallMasks();
+
 	// host-side reduction over all blocks: volume-weighted global mass and
 	// momentum plus per-level kinetic energy (see AfterSimUpdate); kept
 	// public like the other implementation details above so that unit tests
@@ -294,22 +415,19 @@ struct State_AMR : State<NSE>
 template <typename NSE>
 void State_AMR<NSE>::launchLBMKernelForLevel(int level, bool compute_macro, int ghost_layers)
 {
-	using idx = typename NSE::TRAITS::idx;
 	for (auto* block : this->nse.getBlocksAtLevel(level)) {
 		const auto direction = TNL::Containers::SyncDirection::None;
 		TNL::Backend::LaunchConfiguration launch_config;
 		launch_config.blockSize = block->computeData.at(direction).blockSize;
-		// widened extent: cover the inner overlap rows (bounded by the
+		// launch window: cover the inner overlap rows (bounded by the
 		// allocated overlap, which is 2 on refinement-level blocks); the
 		// kernel's neighbor clamps (kernels.h) then reach the outer
-		// overlap row as the streaming source, filled by the C2F transfer
-		const idx g_x = std::min<idx>(ghost_layers, block->df_overlap_X());
-		const idx g_y = std::min<idx>(ghost_layers, block->df_overlap_Y());
-		const idx g_z = std::min<idx>(ghost_layers, block->df_overlap_Z());
-		const idx3d begin{-g_x, -g_y, -g_z};
-		const idx3d size{block->local.x() + 2 * g_x, block->local.y() + 2 * g_y, block->local.z() + 2 * g_z};
-		launch_config.gridSize =
-			(g_x == 0 && g_y == 0 && g_z == 0) ? block->computeData.at(direction).gridSize : block->getCudaGridSize(size, launch_config.blockSize);
+		// overlap row as the streaming source, filled by the C2F transfer.
+		// An axis masked in fine_wall_masks is deepened to the fine wall's
+		// GEO_WALL row instead (see kernelLaunchWindow)
+		const auto [begin, size] = kernelLaunchWindow(*block, ghost_layers);
+		launch_config.gridSize = isInteriorLaunchWindow(begin, size, block->local) ? block->computeData.at(direction).gridSize
+																				   : block->getCudaGridSize(size, launch_config.blockSize);
 		TNL::Backend::launchKernelAsync(cudaLBMKernel<NSE>, launch_config, block->data, begin, begin + size, block->is_distributed(), compute_macro);
 	}
 	// synchronize the null-stream after all grids (same as the base driver)
@@ -352,6 +470,13 @@ void State_AMR<NSE>::SimInit()
 	// upload the updated map to the device (POSITION REQUIREMENT: after the
 	// base SimInit set the coarse boundary map - see the docstring)
 	markAMRInterface(this->nse);
+
+	// derive the fine-level wall masks AFTER the coarse boundary map is
+	// complete (the base SimInit's reset()->setupBoundaries();
+	// markAMRInterface above only re-tags GEO_FLUID cells, so the coarse
+	// wall planes the scan keys on survive) and BEFORE buildCouplings (the
+	// masks empty the masked faces' C2F destinations)
+	buildFineWallMasks();
 
 	// build the inter-level coupling descriptors consumed by the transfer
 	// launches in SimUpdate()
@@ -403,6 +528,145 @@ void State_AMR<NSE>::SimInit()
 		launchCoarseToFineTransfers(L);
 	}
 #endif
+}
+
+/**
+ * \brief Derive \ref fine_wall_masks from the COARSE boundary map.
+ *
+ * For each fine block and each of the footprint's six faces the block's
+ * interior cross-section columns are scanned (tangential fine-local
+ * indices in [0, local), coarse cross-coordinates floor(fine/2)): a
+ * column is "wall" iff the matching coarse column on the face-adjacent
+ * coarse plane (the halo row go_a - 1 on a min face / go_a + gs_a on a
+ * max face) is GEO_WALL on the parent level. The band geometry places
+ * the fine wall row one row OUTSIDE the face's C2F destination band, so
+ * the wall link plane coincides with the coarse wall's link plane (the
+ * fine rows themselves are tagged by the simulation's setupBoundaries).
+ *
+ * Fail-fast, no silent lanes:
+ * - a PARTIAL wall (count strictly between 0 and the full cross-section)
+ *   throws std::runtime_error naming block, face, count, and expected
+ *   count -- the launch window and the coarse-to-fine fill are face-wide
+ *   decisions, a column-wise mixture has no defined contract;
+ * - a full wall without the per-axis storage override (df_overlap < 3 on
+ *   the walled axis) throws std::runtime_error naming block, face, and
+ *   the override to set -- with a tagged wall row and only the 2-deep C2F
+ *   band allocated, the GEO_NOTHING streaming-buffer row would lie
+ *   outside the storage and the coupling patch would overwrite the wall
+ *   columns.
+ *
+ * Host-side only (coarse hmap reads); runs once per SimInit.
+ */
+template <typename NSE>
+void State_AMR<NSE>::buildFineWallMasks()
+{
+	using SyncDirection = TNL::Containers::SyncDirection;
+
+	fine_wall_masks.clear();
+
+	// (face, normal axis, min/max side) in the face order of
+	// fineWallFaceBit / buildCouplings' faces[] array
+	const struct FACE_SCAN
+	{
+		SyncDirection face;
+		int axis;
+		bool min_side;
+	} scan[6] = {
+		{SyncDirection::Left, 0, true},
+		{SyncDirection::Right, 0, false},
+		{SyncDirection::Bottom, 1, true},
+		{SyncDirection::Top, 1, false},
+		{SyncDirection::Back, 2, true},
+		{SyncDirection::Front, 2, false},
+	};
+
+	for (auto& fine : this->nse.blocks) {
+		if (fine.level == 0)
+			continue;
+		const std::vector<BLOCK_NSE*> parents = this->nse.getBlocksAtLevel(fine.level - 1);
+		// footprint origin/extent in parent-level cells (the same
+		// re-anchored registration as buildCouplings)
+		const idx3d& go = fine.global_offset;
+		const idx3d gs{(fine.local.x() + 2) / 2, (fine.local.y() + 2) / 2, (fine.local.z() + 2) / 2};
+		const idx go3[3] = {go.x(), go.y(), go.z()};
+		const idx gs3[3] = {gs.x(), gs.y(), gs.z()};
+		const idx off3[3] = {fine.offset.x(), fine.offset.y(), fine.offset.z()};
+		const idx loc3[3] = {fine.local.x(), fine.local.y(), fine.local.z()};
+		const idx ov3[3] = {fine.df_overlap_X(), fine.df_overlap_Y(), fine.df_overlap_Z()};
+
+		std::uint8_t mask = 0;
+		for (const FACE_SCAN& fs : scan) {
+			const int a = fs.axis;
+			const int b = (a + 1) % 3;
+			const int c = (a + 2) % 3;
+			// face-adjacent coarse plane: the halo row one coarse cell OUTSIDE the footprint
+			const idx plane = fs.min_side ? go3[a] - 1 : go3[a] + gs3[a];
+			const idx expected = loc3[b] * loc3[c];
+			idx count = 0;
+			for (idx ib = 0; ib < loc3[b]; ib++)
+				for (idx ic = 0; ic < loc3[c]; ic++) {
+					idx cg[3];
+					cg[a] = plane;
+					// floor(fine/2) is exact integer division here: the re-anchored fine-global
+					// coordinates are positive on level 1 (offset = 2*origin + 1)
+					cg[b] = (off3[b] + ib) / 2;
+					cg[c] = (off3[c] + ic) / 2;
+					for (BLOCK_NSE* coarse : parents) {
+						// bounds check first: a face-adjacent plane outside
+						// every parent block cannot carry a wall tag
+						if (cg[0] < coarse->offset.x() || cg[0] >= coarse->offset.x() + coarse->local.x() || cg[1] < coarse->offset.y()
+							|| cg[1] >= coarse->offset.y() + coarse->local.y() || cg[2] < coarse->offset.z()
+							|| cg[2] >= coarse->offset.z() + coarse->local.z())
+							continue;
+						if (coarse->hmap(cg[0], cg[1], cg[2]) == NSE::BC::GEO_WALL) {
+							count++;
+							break;	// one parent block owns the column (v1 single-block parent level)
+						}
+					}
+				}
+			if (count == 0)
+				continue;
+			if (count != expected) {
+				const std::string message = fmt::format(
+					"State_AMR: fine block {} has a PARTIAL fine-level wall on the {} face: {} of {} interior cross-section "
+					"columns are backed by GEO_WALL on the face-adjacent coarse plane (a fine wall must cover the full face "
+					"cross-section -- the launch window and the coarse-to-fine fill are face-wide decisions)",
+					fine.id,
+					fineWallFaceName(fs.face),
+					count,
+					expected
+				);
+				spdlog::error("{}", message);
+				throw std::runtime_error(message);
+			}
+			// a masked wall REQUIRES the 3-deep per-axis overlap on the
+			// walled axis (see LBM_BLOCK::storage_overlap_*): the GEO_WALL
+			// row sits one row outside the 2-deep C2F band and the
+			// GEO_NOTHING streaming buffer one row further out
+			if (ov3[a] < 3) {
+				const std::string message = fmt::format(
+					"State_AMR: fine block {} imposes its own GEO_WALL on the {} face but the {}-axis overlap is {} (< 3); set "
+					"storage_overlap_{} = 3 on the fine block after createAMRBlocks so the wall's GEO_NOTHING streaming-buffer "
+					"row is allocated",
+					fine.id,
+					fineWallFaceName(fs.face),
+					static_cast<char>('x' + a),
+					ov3[a],
+					static_cast<char>('x' + a)
+				);
+				spdlog::error("{}", message);
+				throw std::runtime_error(message);
+			}
+			mask |= std::uint8_t(1) << fineWallFaceBit(fs.face);
+			spdlog::info(
+				"State_AMR: fine block {} imposes its own GEO_WALL on the {} face; the face's coarse-to-fine fill is dropped",
+				fine.id,
+				fineWallFaceName(fs.face)
+			);
+		}
+		if (mask != 0)
+			fine_wall_masks[fine.id] = mask;
+	}
 }
 
 /**
@@ -600,6 +864,18 @@ void State_AMR<NSE>::buildCouplings()
 			const idx3d& go = fine->global_offset;
 			const idx3d gs{(fine->local.x() + 2) / 2, (fine->local.y() + 2) / 2, (fine->local.z() + 2) / 2};
 
+			// the C2F destination band is structurally TWO ghost rows deep
+			// per face (the simulated band of the cycle contract: one
+			// integrated inner row + one passive streaming-source row);
+			// deeper allocated overlap on an axis is a pure streaming
+			// buffer (e.g. the GEO_NOTHING row below a fine wall) and
+			// never carries destinations
+			const idx3d fov{std::min<idx>(fine->df_overlap_X(), 2), std::min<idx>(fine->df_overlap_Y(), 2), std::min<idx>(fine->df_overlap_Z(), 2)};
+			// faces masked in fine_wall_masks are BC-managed end to end
+			// (see buildFineWallMasks): their destination is emptied
+			// below, so no coarse-to-fine fill reaches them
+			const std::uint8_t fine_wall_mask = fineWallMask(*fine);
+
 			// the six faces of the footprint's RING in parent-level global
 			// coordinates (the disjoint ring partition of the Schönherr
 			// ch.7 band map, docs/AMR-schonherr-ch7-target-contract.md
@@ -678,7 +954,6 @@ void State_AMR<NSE>::buildCouplings()
 					// v1 single-block scope (nproc == 1 only) exactly one
 					// coarse block intersects each face, so every
 					// destination cell is still written exactly once.
-					const idx3d fov{fine->df_overlap_X(), fine->df_overlap_Y(), fine->df_overlap_Z()};
 					switch (f.face) {
 						case SyncDirection::Left:
 							patch.fine_origin = {-fov.x(), -fov.y(), -fov.z()};
@@ -708,6 +983,19 @@ void State_AMR<NSE>::buildCouplings()
 							patch.fine_origin = {0, 0, 0};
 							patch.fine_size = {0, 0, 0};
 							break;
+					}
+					// a face masked in fine_wall_masks receives NO
+					// coarse-to-fine fill: the wall row and its streaming
+					// buffer are BC-managed, and the first-fluid row's
+					// state is authored by the fine kernel every substep
+					// (a fill would clobber it with coarse-converted
+					// data). Empty destination: the zero face-normal
+					// extent makes the transfer launch's clip skip the
+					// patch
+					if (fine_wall_mask & (1 << fineWallFaceBit(f.face))) {
+						patch.fine_origin = {0, 0, 0};
+						patch.fine_size = {fine->local.x(), fine->local.y(), fine->local.z()};
+						patch.fine_size[fineWallFaceBit(f.face) / 2] = 0;
 					}
 					patch.face = f.face;
 					coupling.patches.push_back(patch);
@@ -1356,7 +1644,9 @@ void State_AMR<NSE>::SimUpdate()
 		// inner ghost rows are INTEGRATED by the kernel (collide + stream
 		// like the interior fluid, GEO_FLUID by resetMap); their streaming
 		// source is the outer overlap row, filled by the cycle-end C2F
-		// transfer (step 5 below)
+		// transfer (step 5 below). On a face masked in fine_wall_masks
+		// the extent is deepened to the fine wall's GEO_WALL row instead
+		// (see kernelLaunchWindow)
 		launchLBMKernelForLevel(L, compute_macro, /*ghost_layers=*/1);
 
 	#ifdef HAVE_MPI
@@ -1376,7 +1666,9 @@ void State_AMR<NSE>::SimUpdate()
 		// step 2: fine substep 2 of 2 -- interior-only extent: the
 		// boundary data of this substep is substep 1's UPDATED inner ghost
 		// rows (the other AB frame), so no fill and no ghost integration
-		// is needed here
+		// is needed here. On a face masked in fine_wall_masks the extent
+		// still covers the GEO_WALL row (the bounce-back refreshes the
+		// wall's slots in every substep's frame)
 		launchLBMKernelForLevel(L, compute_macro, /*ghost_layers=*/0);
 
 	#ifdef HAVE_MPI
