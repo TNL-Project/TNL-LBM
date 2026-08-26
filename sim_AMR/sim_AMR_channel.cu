@@ -32,6 +32,28 @@
 //   x=23/40, y=3/12, z=9/10 collision-active fluid), so the mean flux passes
 //   through the footprint's x-min/x-max skin faces (B-off: ring-F2C +
 //   full-footprint interior; B-on: skin rect faces only).
+// - fine-level wall BC (2026-08-25): the fine block additionally imposes
+//   its OWN bounce-back wall on every footprint face whose face-adjacent
+//   coarse halo row is GEO_WALL (in this channel only the z-min face: the
+//   footprint's z-min halo row IS the bottom wall plane), so both levels
+//   hold the no-slip plane at the same location. The mechanism is
+//   face-generic over all six faces: cell-centered bounce-back puts the
+//   wall link plane halfway between the wall cell center and the first
+//   fluid cell center, so the GEO_WALL row sits one row OUTSIDE the
+//   face's C2F destination band (local index -2 on a min face: with
+//   offset_z = 2*(R+1)+1 the row local -2 is centered 0.25 coarse dx =
+//   0.5 fine dx below the z = R+1 plane; local+1 on a max face), the
+//   GEO_NOTHING streaming buffer sits one row further out (local -3 /
+//   local+2; mandatory under the AA pattern -- kernels.h does not clamp
+//   neighbor reads), and the row just inside the band is the first fluid
+//   row. A walled face receives no coarse-to-fine fill
+//   (State_AMR::buildCouplings), the fine kernel processes the wall row
+//   in both substeps (State_AMR::kernelLaunchWindow), and the per-axis
+//   storage override (storage_overlap_x/y/z) deepens the walled axis'
+//   overlap to 3 rows for the buffer (set before execute(); SimInit's
+//   re-allocation materializes it). State_AMR::buildFineWallMasks derives
+//   the wall mask from the same coarse rows at SimInit and hard-fails on
+//   a partial wall or a missing override.
 //
 // Physics: lattice inflow velocity U_lb = 0.1 (uniform inflow), lattice
 // viscosity 0.005 on the coarse level (doubles to 0.01 on the fine level by
@@ -121,10 +143,98 @@ struct StateLocal_AMR_Channel : State_AMR<NSE>
 		nse.setBoundaryX(0, BC::GEO_NOTHING);						   // left edge
 		nse.setBoundaryX(nse.lat.global.x() - 1, BC::GEO_NOTHING);	   // right edge
 		// y planes are intentionally untouched: periodic tangent direction
+
+		// fine-level bounce-back walls (the face-generic mechanism of the
+		// header comment): on every footprint face whose face-adjacent
+		// coarse row is GEO_WALL the fine block imposes its own wall --
+		// the GEO_WALL row lands one row OUTSIDE the face's C2F
+		// destination band (local -2 on a min face / local+1 on a max
+		// face) with the GEO_NOTHING streaming buffer one row further out
+		// (the LBM::setBoundary* helpers are level-0-only, so the fine
+		// rows are tagged directly; only the fine-interior tangential
+		// columns are tagged, the ghost columns of the wall row stay
+		// fluid and coupling-driven like the rest of the ghost band).
+		// State_AMR::buildFineWallMasks re-derives the wall mask from the
+		// same coarse rows at SimInit (hard-failing on a partial wall),
+		// so this tagging and the mask scan key on the same columns.
+		for (auto& fine : nse.blocks) {
+			if (fine.level == 0)
+				continue;
+			const idx3d& go = fine.global_offset;  // footprint origin in parent-level cells
+			const idx3d gs{(fine.local.x() + 2) / 2, (fine.local.y() + 2) / 2, (fine.local.z() + 2) / 2};
+			// (face name, face-normal axis, min/max side): the wall link
+			// plane coincides with the coarse wall's link plane on either
+			// side by the band registration (see the header comment)
+			const struct FACE
+			{
+				const char* name;
+				char axis_name;
+				int axis;
+				bool min_side;
+			} faces[6] = {
+				{"x-min", 'x', 0, true},
+				{"x-max", 'x', 0, false},
+				{"y-min", 'y', 1, true},
+				{"y-max", 'y', 1, false},
+				{"z-min", 'z', 2, true},
+				{"z-max", 'z', 2, false},
+			};
+			for (const FACE& f : faces) {
+				const int a = f.axis;
+				const int b = (a + 1) % 3, c = (a + 2) % 3;
+				const idx wall = f.min_side ? idx(-2) : fine.local[a] + 1;
+				const idx buffer = f.min_side ? idx(-3) : fine.local[a] + 2;
+				const idx plane = f.min_side ? go[a] - 1 : go[a] + gs[a];
+				idx n_wall = 0;
+				for (idx ib = 0; ib < fine.local[b]; ib++)
+					for (idx ic = 0; ic < fine.local[c]; ic++) {
+						idx3d fg{0, 0, 0};
+						fg[b] = fine.offset[b] + ib;
+						fg[c] = fine.offset[c] + ic;
+						// the column's wall tag follows the COARSE map on
+						// the face-adjacent plane (floor(fine/2) is exact
+						// for the positive re-anchored fine-global coords)
+						idx3d cg{0, 0, 0};
+						cg[a] = plane;
+						cg[b] = fg[b] / 2;
+						cg[c] = fg[c] / 2;
+						bool wall_column = false;
+						for (const auto& coarse : nse.blocks)
+							if (coarse.level == 0 && cg[0] >= coarse.offset.x() && cg[0] < coarse.offset.x() + coarse.local.x()
+								&& cg[1] >= coarse.offset.y() && cg[1] < coarse.offset.y() + coarse.local.y()
+								&& cg[2] >= coarse.offset.z() && cg[2] < coarse.offset.z() + coarse.local.z()
+								&& coarse.hmap(cg[0], cg[1], cg[2]) == BC::GEO_WALL)
+								wall_column = true;
+						if (! wall_column)
+							continue;
+						fg[a] = fine.offset[a] + wall;
+						fine.hmap(fg[0], fg[1], fg[2]) = BC::GEO_WALL;
+						fg[a] = fine.offset[a] + buffer;
+						fine.hmap(fg[0], fg[1], fg[2]) = BC::GEO_NOTHING;
+						n_wall++;
+					}
+				if (n_wall > 0)
+					spdlog::info(
+						"fine block {}: tagged {} {} columns with GEO_WALL (local {}={}) backed by GEO_NOTHING (local {}={})",
+						fine.id,
+						n_wall,
+						f.name,
+						f.axis_name,
+						wall,
+						f.axis_name,
+						buffer
+					);
+			}
+		}
 	}
 
 	// uniform-flow initial condition at rest: rho = 1, u = 0 on all blocks;
-	// the inflow BC then develops the channel flow from t = 0
+	// the inflow BC then develops the channel flow from t = 0. Fine blocks
+	// initialize the FULL stored extent (including the ghost band): on the
+	// wall face the ghost rows receive no coarse-to-fine fill (see the
+	// header comment), so they must hold a valid state from the start;
+	// level-0 blocks keep the interior-only loop (their ghost rows are
+	// managed by the exterior boundary conditions)
 	void setInitialCondition()
 	{
 		for (auto& block : nse.blocks) {
@@ -133,8 +243,11 @@ struct StateLocal_AMR_Channel : State_AMR<NSE>
 #else
 			auto local_df = block.dfs[0].getView();
 #endif
-			const idx3d begin = {0, 0, 0};
-			const idx3d end = {block.local.y(), block.local.z(), block.local.x()};
+			const int ov_x = block.level == 0 ? 0 : local_df.template getOverlap<1>();
+			const int ov_y = block.level == 0 ? 0 : local_df.template getOverlap<2>();
+			const int ov_z = block.level == 0 ? 0 : local_df.template getOverlap<3>();
+			const idx3d begin = {-ov_y, -ov_z, -ov_x};
+			const idx3d end = {block.local.y() + ov_y, block.local.z() + ov_z, block.local.x() + ov_x};
 			TNL::Algorithms::parallelFor<DeviceType>(
 				begin,
 				end,
@@ -243,15 +356,30 @@ void sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 1, int
 	if (out3d_iter_period > 0)
 		state.cnt[OUT3D].period = out3d_iter_period * PHYS_DT / 2;
 
-	// AMR setup before execute: allocate, set the coarse boundary map, create
-	// the fine block, tag the interface cells, initialize all levels;
-	// State_AMR::SimInit re-applies the map/interface setup internally
+	// AMR setup before execute: allocate, create the fine block, deepen its
+	// z overlap for the wall buffer, and initialize all levels. There is NO
+	// sim-level markAMRInterface call: State::SimInit->reset() first clears
+	// every map (resetMap) and only then runs setupBoundaries(), so an
+	// interface tagging issued here runs before any boundary exists --
+	// resetMap() wipes it and State_AMR::SimInit's own markAMRInterface
+	// call re-derives the correct (wall-aware) set afterwards. The
+	// re-invocation is safe by construction: the function only re-tags
+	// GEO_FLUID cells, the direction bitmask OR-accumulates the same
+	// footprint bits, and allocateInterfaceDirArray's nullptr guard
+	// prevents reallocation (verified in amr_decomposition.h), i.e.
+	// markAMRInterface is idempotent and the deleted call was dead work
 	state.nse.allocateHostData();
 	state.nse.allocateDeviceData();
 	state.nse.iterations = 0;
 	if (max_level > 0) {
 		createAMRBlocks(state.nse, parseAMRConfig<NSE>(amr_config));
-		markAMRInterface(state.nse);
+		// deepen the fine blocks' z overlap by one row: the fine wall's
+		// GEO_WALL row at local z=-2 needs the GEO_NOTHING streaming buffer
+		// at local z=-3 (see the header comment; SimInit's re-allocation
+		// materializes the deeper overlap)
+		for (auto& block : state.nse.blocks)
+			if (block.level > 0)
+				block.storage_overlap_z = 3;
 	}
 	state.setInitialCondition();
 
@@ -262,6 +390,7 @@ template <typename TRAITS = TraitsSP>
 void run(const std::string& adios_config, int resolution, int max_level = 1, float lattice_viscosity = -1.0f, float phys_final_time = -1.0f, bool write_dfs = false, int out3d_iter_period = 0)
 {
 	using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
+	//using COLL = D3Q27_CUM_WELL<TRAITS, D3Q27_EQ_INV_CUM_WELL<TRAITS>>;
 
 	using NSE_CONFIG = LBM_CONFIG<
 		TRAITS,
