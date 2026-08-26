@@ -104,7 +104,6 @@ void sim(
 	float lattice_viscosity_override = -1.0f,
 	float phys_final_time = 0.5f,
 	float convective_times = 0.0f,
-	bool write_dfs = false,
 	int out3d_iter_period = 0,
 	bool rest_ic = false
 )
@@ -136,7 +135,6 @@ void sim(
 
 	const std::string state_id = fmt::format("sim_AMR_res{:02d}_np{:03d}", RESOLUTION, TNL::MPI::GetSize(MPI_COMM_WORLD));
 	StateLocal_AMR<NSE> state(state_id, MPI_COMM_WORLD, lat, adios_config, max_level);
-	state.amr_write_dfs = write_dfs;
 
 	if (! state.canCompute())
 		return;
@@ -197,7 +195,6 @@ void run(
 	float lattice_viscosity = -1.0f,
 	float phys_final_time = 0.5f,
 	float convective_times = 0.0f,
-	bool write_dfs = false,
 	int out3d_iter_period = 0,
 	bool rest_ic = false
 )
@@ -215,7 +212,7 @@ void run(
 		D3Q27_BC_All,
 		D3Q27_MACRO_Default<TRAITS>>;
 
-	sim<NSE_CONFIG>(adios_config, resolution, max_level, lattice_viscosity, phys_final_time, convective_times, write_dfs, out3d_iter_period, rest_ic);
+	sim<NSE_CONFIG>(adios_config, resolution, max_level, lattice_viscosity, phys_final_time, convective_times, out3d_iter_period, rest_ic);
 }
 
 int main(int argc, char** argv)
@@ -238,7 +235,6 @@ int main(int argc, char** argv)
 		.scan<'f', float>()
 		.default_value(0.0f)
 		.nargs(1);
-	program.add_argument("--write-dfs").help("write raw df_cur fields f00..f{Q-1} into the VTKHDF frames (debug)").default_value(false).implicit_value(true);
 	program.add_argument("--out3d-iter-period")
 		.help(
 			"write the OUT3D macroscopic frame every N fine iterations, independent of the time-based cadence "
@@ -265,7 +261,6 @@ int main(int argc, char** argv)
 	const auto lattice_viscosity = program.get<float>("--lattice-viscosity");
 	const auto phys_final_time = program.get<float>("--phys-final-time");
 	const auto convective_times = program.get<float>("--convective-times");
-	const auto write_dfs = program.get<bool>("--write-dfs");
 	const auto out3d_iter_period = program.get<int>("--out3d-iter-period");
 	const auto rest_ic = program.get<bool>("--rest-ic");
 
@@ -280,7 +275,7 @@ int main(int argc, char** argv)
 
 	// SP only (2026-08-18): the DP branch doubled the device-code
 	// instantiation cost of this TU (build-time investigation)
-	run<TraitsSP>(adios_config, resolution, max_level, lattice_viscosity, phys_final_time, convective_times, write_dfs, out3d_iter_period, rest_ic);
+	run<TraitsSP>(adios_config, resolution, max_level, lattice_viscosity, phys_final_time, convective_times, out3d_iter_period, rest_ic);
 
 	return 0;
 }

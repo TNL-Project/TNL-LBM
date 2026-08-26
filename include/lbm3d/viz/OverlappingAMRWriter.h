@@ -35,7 +35,6 @@
  *     │       ├── vy             (dataset, double[sum of cells])
  *     │       ├── vz             (dataset, double[sum of cells])
  *     │       ├── map            (dataset, int32[sum of cells], BC::GEO_* tags)
- *     │       └── f00..f{Q-1}    (optional datasets, double[sum of cells])
  *     │       └── vtkGhostType   (dataset, uint8[sum of cells])  <- REQUIRED, 0=visible / 4=REFINEDCELL
  *     └── Level1/                       (group, same structure)
  * ```
@@ -67,7 +66,11 @@
  * - single MPI rank only (throws otherwise),
  * - no temporal `Steps/` metadata (the `time` argument is reserved for v2),
  * - the writer only copies device macros to the host (`copyMacroToHost`);
- *   it does NOT recompute macroscopic quantities. When
+ *   it does NOT recompute macroscopic quantities. On the finest level the
+ *   footprint-covering ghost rows carry kernel-computed macros: the widened
+ *   fine substep (ghost_layers = 1) computes dmacro on the inner ghost rows,
+ *   so those rows lag the interior by exactly one fine substep; rows beyond
+ *   the footprint are not emitted (see \ref emitted_range). When
  *   `MACRO::compute_in_each_iteration == false` (e.g. D3Q27_MACRO_Default),
  *   the emitted values are whatever is currently stored in `hmacro` -
  *   recomputation before output is the caller's responsibility (Wave 4).
@@ -96,7 +99,7 @@ public:
 	 *         when any HDF5 operation fails.
 	 */
 	template <typename CONFIG>
-	static void write(const std::string& filename, const LBM<CONFIG>& lbm, real time, bool write_dfs = false);
+	static void write(const std::string& filename, const LBM<CONFIG>& lbm, real time);
 
 private:
 	// vtkGhostType cell visibility tags (vtkDataSetAttributes::CellGhostTypes)

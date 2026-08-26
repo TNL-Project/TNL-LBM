@@ -2,7 +2,7 @@
 """
 Interface seam metric for TNL-LBM AMR verification.
 
-Face-mean signed delta of rho/f00/f05/f06 between a fine-level row and the
+Face-mean signed delta of rho between a fine-level row and the
 paired coarse-level row at the x-min face of the AMR interface (the "seam"),
 evaluated per output cycle from a series of per-iteration VTKHDF
 OverlappingAMR frames.
@@ -38,7 +38,7 @@ Usage:
       [--fine-row N] [--coarse-row N] [--fine-face LO:HI]
       [--coarse-face LO:HI] [--max-cycle N] [--baseline FILE] [--atol TOL]
 
-Output: a CSV block `cycle,rho,f00,f05,f06` with one row per frame at %.10e
+Output: a CSV block `cycle,rho` with one row per frame at %.10e
 precision (11 significant digits, enough for ulp-level comparison), plus a
 `post3to{N}` row with the post-formation mean over cycles 3..N (the bias
 reduction pinned by the Schönherr-ch7 plan). With --baseline, the series is
@@ -54,8 +54,8 @@ import sys
 import h5py
 import numpy as np
 
-FIELDS = ("rho", "f00", "f05", "f06")
-CSV_HEADER = "cycle,rho,f00,f05,f06"
+FIELDS = ("rho",)
+CSV_HEADER = "cycle,rho"
 
 
 def read_vtkhdf_levels(path: str) -> dict[int, dict[str, np.ndarray]]:
@@ -235,7 +235,7 @@ def main() -> int:
         try:
             levels_by_cycle.append(read_vtkhdf_levels(path))
         except KeyError as exc:
-            print(f"ERROR: {exc} (the f-fields require --write-dfs simulation output)")
+            print(f"ERROR: {exc}")
             return 1
         cycles.append(cyc)
 
