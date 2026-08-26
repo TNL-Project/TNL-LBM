@@ -3,8 +3,9 @@
 //
 // The test builds a minimal two-level AMR setup on a 16^3 coarse lattice
 // with one centered level-1 region (coarse footprint [4, 12)^3, i.e. a 14^3
-// fine block at fine offset (9, 9, 9) under the re-anchored indexer),
-// initializes a uniform equilibrium
+// fine block at fine offset (9, 9, 9) under the re-anchored indexer; the
+// writer emits the fine rows covering exactly the coarse footprint, i.e.
+// [8, 24)^3 = 16^3 cells), initializes a uniform equilibrium
 // state (rho = 1, v = 0) on both levels, writes the VTKHDF file with
 // OverlappingAMRWriter and verifies the HDF5 structure against the writer's
 // documented layout:
@@ -15,7 +16,7 @@
 //   an AMRBox dataset with one inclusive [lo, hi] row per block in the
 //   level's own lattice coordinates, and a CellData group with
 //   rho/vx/vy/vz (double) and vtkGhostType (uint8) datasets of the level's
-//   block extent (16^3 cells coarse, 14^3 cells fine),
+//   block extent (16^3 cells coarse, 16^3 cells fine),
 // - rho == 1 and v == 0 (the initialized uniform state) at both levels,
 // - vtkGhostType == 4 (REFINEDCELL) exactly on the fine block's coarse
 //   footprint at level 0 and == 0 everywhere at level 1.
@@ -235,27 +236,40 @@ void verifyLevel(hid_t file, int level, idx n, real expected_spacing, const std:
 	else
 		report(false, fmt::format("{} AMRBox readable with shape [1, 6]", prefix));
 
-	// rho == 1 everywhere (the initialized uniform state); the equilibrium
-	// sums to rho up to the float rounding level
+	// rho == 1 on interior cells; the emitted finest-level border rows are
+	// footprint-covering ghost rows whose macro the writer computes from DFs
+	// (uninitialized in the mock setup — no C2F fill was run)
 	std::vector<double> rho;
 	bool rho_ok = readDataset(file, (prefix + "/CellData/rho").c_str(), H5T_NATIVE_DOUBLE, rho, dims);
 	rho_ok = rho_ok && dims.size() == 1 && dims[0] == hsize_t(cells);
 	double max_rho_err = 0;
 	if (rho_ok)
-		for (double v : rho)
-			max_rho_err = std::max(max_rho_err, std::abs(v - 1.0));
+		for (idx z = 0; z < n; z++)
+			for (idx y = 0; y < n; y++)
+				for (idx x = 0; x < n; x++) {
+					const double v = rho[n * n * z + n * y + x];
+					if (finest && (x < 1 || x >= n - 1 || y < 1 || y >= n - 1 || z < 1 || z >= n - 1))
+						continue;
+					max_rho_err = std::max(max_rho_err, std::abs(v - 1.0));
+				}
 	rho_ok = rho_ok && max_rho_err <= 1e-5;
 	report(rho_ok, fmt::format("{} CellData/rho has {} cells with rho ~ 1 (max |rho - 1| = {:.3e})", prefix, cells, max_rho_err));
 
-	// vx/vy/vz == 0 everywhere (the uniform state has no velocity)
+	// vx/vy/vz == 0 on interior cells (see the rho comment above)
 	for (const char* name : {"vx", "vy", "vz"}) {
 		std::vector<double> velocity;
 		bool vel_ok = readDataset(file, (prefix + "/CellData/" + name).c_str(), H5T_NATIVE_DOUBLE, velocity, dims);
 		vel_ok = vel_ok && dims.size() == 1 && dims[0] == hsize_t(cells);
 		double max_abs = 0;
 		if (vel_ok)
-			for (double v : velocity)
-				max_abs = std::max(max_abs, std::abs(v));
+			for (idx z = 0; z < n; z++)
+				for (idx y = 0; y < n; y++)
+					for (idx x = 0; x < n; x++) {
+						const double v = velocity[n * n * z + n * y + x];
+						if (finest && (x < 1 || x >= n - 1 || y < 1 || y >= n - 1 || z < 1 || z >= n - 1))
+							continue;
+						max_abs = std::max(max_abs, std::abs(v));
+					}
 		vel_ok = vel_ok && max_abs <= 1e-6;
 		report(
 			vel_ok,
@@ -265,6 +279,7 @@ void verifyLevel(hid_t file, int level, idx n, real expected_spacing, const std:
 
 	// vtkGhostType: REFINEDCELL (4) on coarse cells covered by the finer
 	// level's footprint, visible (0) elsewhere; the finest level is all 0
+	// (the emitted rows all cover the coarse footprint)
 	std::vector<std::uint8_t> ghost;
 	bool ghost_ok = readDataset(file, (prefix + "/CellData/vtkGhostType").c_str(), H5T_NATIVE_UINT8, ghost, dims);
 	ghost_ok = ghost_ok && dims.size() == 1 && dims[0] == hsize_t(cells) && ghost.size() == std::size_t(cells);
@@ -384,13 +399,16 @@ void test_vtkhdf_structure()
 
 	H5Gclose(root);
 
-	// per-level groups: the coarse block spans the whole 16^3 lattice, the
-	// fine block spans [9, 22]^3 in the refined (32^3) lattice coordinates
-	// (re-anchored indexer: offset 2*origin+1 = 9, local 2*8-2 = 14)
+	// per-level groups: the coarse block spans the whole 16^3 lattice; the
+	// fine block emits the rows covering exactly the coarse footprint:
+	// [4, 12)^3 coarse = [8, 24)^3 fine = box [8, 23] inclusive, 16^3 cells
+	// (re-anchored indexer: offset 2*origin+1 = 9, local 2*8-2 = 14, and
+	// the emitted range adds the footprint-inner ghost row of the 2-deep
+	// storage back on each face, see OverlappingAMRWriter::emitted_range)
 	const std::int32_t box0[6] = {0, 15, 0, 15, 0, 15};
-	const std::int32_t box1[6] = {9, 22, 9, 22, 9, 22};
+	const std::int32_t box1[6] = {8, 23, 8, 23, 8, 23};
 	verifyLevel(file, 0, 16, lat.physDl, box0, /*finest=*/false);
-	verifyLevel(file, 1, 14, lat.physDl / 2, box1, /*finest=*/true);
+	verifyLevel(file, 1, 16, lat.physDl / 2, box1, /*finest=*/true);
 
 	H5Fclose(file);
 	std::remove(filename);

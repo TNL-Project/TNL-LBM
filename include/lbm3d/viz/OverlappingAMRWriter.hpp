@@ -155,6 +155,22 @@ void OverlappingAMRWriter<TRAITS>::write_dataset_u8(hid_t loc, const char* name,
 }
 
 template <typename TRAITS>
+void OverlappingAMRWriter<TRAITS>::emitted_range(const idx3d& local, const idx3d& overlap, idx3d& e_lo, idx3d& e_hi)
+{
+	for (int a = 0; a < 3; a++) {
+		const idx o = overlap[a];
+		const idx ext = local[a] + 2 * o;
+		// storage rows beyond the footprint coverage [offset - 1, offset +
+		// local + 1) (with overlap 2: exactly one outer row per face) are
+		// dropped -- emitting them would overhang the fine AMRBox into the
+		// coarse interface ring that the reader then blanks, while the
+		// covering fine rows would be HIDDENCELL
+		e_lo[a] = o > 1 ? o - 1 : 0;
+		e_hi[a] = o > 1 ? o + local[a] + 1 : ext;
+	}
+}
+
+template <typename TRAITS>
 template <typename CONFIG>
 void OverlappingAMRWriter<TRAITS>::write(const std::string& filename, const LBM<CONFIG>& lbm, [[maybe_unused]] real time, bool write_dfs)
 {
@@ -185,11 +201,11 @@ void OverlappingAMRWriter<TRAITS>::write(const std::string& filename, const LBM<
 	for (const BLOCK& block : lbm.blocks)
 		const_cast<BLOCK&>(block).copyMapToHost();
 
-	// refresh the host mirrors of the distribution functions only when the
-	// raw-DF debug fields are requested (27 fields per frame per level)
-	if (write_dfs)
-		for (const BLOCK& block : lbm.blocks)
-			const_cast<BLOCK&>(block).copyDFsToHost();
+	// refresh the host mirrors of the distribution functions (needed for
+	// macro computation on ghost cells whose macro arrays are not updated
+	// by the simulation kernel — the C2F fill writes DFs, not macros)
+	for (const BLOCK& block : lbm.blocks)
+		const_cast<BLOCK&>(block).copyDFsToHost();
 
 	hid_t file = H5Fcreate(filename.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
 	if (file < 0)
@@ -232,12 +248,22 @@ void OverlappingAMRWriter<TRAITS>::write(const std::string& filename, const LBM<
 		write_attr_f64x3(level_group, "Spacing", spacing);
 
 		// AMRBox: one inclusive [lo,hi] box per block in the level's own
-		// lattice coordinates, row = {lo_x, hi_x, lo_y, hi_y, lo_z, hi_z}
+		// lattice coordinates, row = {lo_x, hi_x, lo_y, hi_y, lo_z, hi_z}.
+		// Fine-level blocks include the ghost rows inside the parent
+		// footprint coverage (C2F-filled, valid after each cycle) so the
+		// box covers exactly the footprint's fine cells -- the reader
+		// blanks coarser cells overlapped by this box, which then
+		// reproduces the REFINEDCELL footprint with no interface-ring band.
 		std::vector<std::int32_t> amr_box;
 		amr_box.reserve(blocks.size() * 6);
 		for (const BLOCK* block : blocks) {
-			const idx3d lo = block->offset;
-			const idx3d hi = block->offset + block->local - 1;
+			const idx3d ovl{
+				const_cast<BLOCK*>(block)->df_overlap_X(), const_cast<BLOCK*>(block)->df_overlap_Y(), const_cast<BLOCK*>(block)->df_overlap_Z()
+			};
+			idx3d e_lo, e_hi;
+			emitted_range(block->local, ovl, e_lo, e_hi);
+			const idx3d lo = block->offset - ovl + e_lo;
+			const idx3d hi = block->offset - ovl + e_hi - 1;
 			amr_box.push_back(static_cast<std::int32_t>(lo.x()));
 			amr_box.push_back(static_cast<std::int32_t>(hi.x()));
 			amr_box.push_back(static_cast<std::int32_t>(lo.y()));
@@ -255,24 +281,83 @@ void OverlappingAMRWriter<TRAITS>::write(const std::string& filename, const LBM<
 			throw std::runtime_error(fmt::format("OverlappingAMRWriter: H5Gcreate2 failed for group '{}/CellData' in '{}'", level_name, filename));
 		}
 
-		// total number of cells at this level (sum over all blocks)
+		// total number of cells at this level (sum over all blocks'
+		// emitted ranges, see \ref emitted_range)
 		std::size_t total_cells = 0;
-		for (const BLOCK* block : blocks)
-			total_cells +=
-				static_cast<std::size_t>(block->local.x()) * static_cast<std::size_t>(block->local.y()) * static_cast<std::size_t>(block->local.z());
+		for (const BLOCK* block : blocks) {
+			const idx3d ovl{
+				const_cast<BLOCK*>(block)->df_overlap_X(), const_cast<BLOCK*>(block)->df_overlap_Y(), const_cast<BLOCK*>(block)->df_overlap_Z()
+			};
+			idx3d e_lo, e_hi;
+			emitted_range(block->local, ovl, e_lo, e_hi);
+			const idx3d e_ext = e_hi - e_lo;
+			total_cells += static_cast<std::size_t>(e_ext.x()) * static_cast<std::size_t>(e_ext.y()) * static_cast<std::size_t>(e_ext.z());
+		}
 
 		// concatenated scalar fields, cell order z*ny*nx + y*nx + x (x fastest)
+		// for ghost cells (outside the interior) the macro arrays are not
+		// updated by the simulation kernel — compute from DFs directly
 		std::vector<double> buffer;
 		buffer.reserve(total_cells);
 		for (const auto& [quantity, name] : variables) {
 			buffer.clear();
-			for (const BLOCK* block : blocks)
-				for (idx z = 0; z < block->local.z(); z++)
-					for (idx y = 0; y < block->local.y(); y++)
-						for (idx x = 0; x < block->local.x(); x++)
-							buffer.push_back(
-								static_cast<double>(block->hmacro(quantity, block->offset.x() + x, block->offset.y() + y, block->offset.z() + z))
-							);
+			for (const BLOCK* block : blocks) {
+				const idx3d ovl{
+					const_cast<BLOCK*>(block)->df_overlap_X(), const_cast<BLOCK*>(block)->df_overlap_Y(), const_cast<BLOCK*>(block)->df_overlap_Z()
+				};
+				const idx3d ext = block->local + idx3d{2 * ovl.x(), 2 * ovl.y(), 2 * ovl.z()};
+				idx3d e_lo, e_hi;
+				emitted_range(block->local, ovl, e_lo, e_hi);
+				for (idx z = e_lo.z(); z < e_hi.z(); z++)
+					for (idx y = e_lo.y(); y < e_hi.y(); y++)
+						for (idx x = e_lo.x(); x < e_hi.x(); x++) {
+							const idx gx = block->offset.x() - ovl.x() + x;
+							const idx gy = block->offset.y() - ovl.y() + y;
+							const idx gz = block->offset.z() - ovl.z() + z;
+							const bool is_ghost =
+								(x < ovl.x() || x >= ext.x() - ovl.x() || y < ovl.y() || y >= ext.y() - ovl.y() || z < ovl.z()
+								 || z >= ext.z() - ovl.z());
+							double val;
+							if (is_ghost) {
+								// compute macro from DFs: rho = sum f, v = sum c*f / rho
+								double rho = 0, vx = 0, vy = 0, vz = 0;
+								for (int q = 0; q < CONFIG::Q; q++) {
+									const double fq = static_cast<double>(block->hfs[df_cur](q, gx, gy, gz));
+									rho += fq;
+								}
+								if (rho > 0) {
+									// D3Q27 velocity components via the vel_cx/cy/cz tables
+									static constexpr signed char vcx[27] = {0,	1, -1, 0, 0, 0, 0,	1, -1, 1, -1, 1, -1, 1,
+																			-1, 0, 0,  0, 0, 1, -1, 1, -1, 1, -1, 1, -1};
+									static constexpr signed char vcy[27] = {0, 0, 0,  1, -1, 0, 0,	1, -1, -1, 1, 0,  0, 0,
+																			0, 1, -1, 1, -1, 1, -1, 1, -1, -1, 1, -1, 1};
+									static constexpr signed char vcz[27] = {0, 0, 0,  0,  0, 1, -1, 0,	0, 0, 0,  1,  -1, -1,
+																			1, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1};
+									for (int q = 0; q < CONFIG::Q; q++) {
+										const double fq = static_cast<double>(block->hfs[df_cur](q, gx, gy, gz));
+										vx += vcx[q] * fq;
+										vy += vcy[q] * fq;
+										vz += vcz[q] * fq;
+									}
+									vx /= rho;
+									vy /= rho;
+									vz /= rho;
+								}
+								if (quantity == MACRO::e_rho)
+									val = rho;
+								else if (quantity == MACRO::e_vx)
+									val = vx;
+								else if (quantity == MACRO::e_vy)
+									val = vy;
+								else
+									val = vz;
+							}
+							else {
+								val = static_cast<double>(block->hmacro(quantity, gx, gy, gz));
+							}
+							buffer.push_back(val);
+						}
+			}
 			write_dataset_f64(cell_data, name, buffer.data(), buffer.size());
 		}
 
@@ -280,13 +365,21 @@ void OverlappingAMRWriter<TRAITS>::write(const std::string& filename, const LBM<
 		// ParaView; values are the BC::GEO_* enum) -- always written
 		std::vector<std::int32_t> map_buffer;
 		map_buffer.reserve(total_cells);
-		for (const BLOCK* block : blocks)
-			for (idx z = 0; z < block->local.z(); z++)
-				for (idx y = 0; y < block->local.y(); y++)
-					for (idx x = 0; x < block->local.x(); x++)
+		for (const BLOCK* block : blocks) {
+			const idx3d ovl{
+				const_cast<BLOCK*>(block)->df_overlap_X(), const_cast<BLOCK*>(block)->df_overlap_Y(), const_cast<BLOCK*>(block)->df_overlap_Z()
+			};
+			idx3d e_lo, e_hi;
+			emitted_range(block->local, ovl, e_lo, e_hi);
+			for (idx z = e_lo.z(); z < e_hi.z(); z++)
+				for (idx y = e_lo.y(); y < e_hi.y(); y++)
+					for (idx x = e_lo.x(); x < e_hi.x(); x++)
 						map_buffer.push_back(
-							static_cast<std::int32_t>(block->hmap(block->offset.x() + x, block->offset.y() + y, block->offset.z() + z))
+							static_cast<std::int32_t>(
+								block->hmap(block->offset.x() - ovl.x() + x, block->offset.y() - ovl.y() + y, block->offset.z() - ovl.z() + z)
+							)
 						);
+		}
 		write_dataset_i32(cell_data, "map", map_buffer.data(), map_buffer.size(), 1);
 
 		// raw distribution functions (only when requested): one f64
@@ -296,13 +389,23 @@ void OverlappingAMRWriter<TRAITS>::write(const std::string& filename, const LBM<
 		if (write_dfs)
 			for (int q = 0; q < CONFIG::Q; q++) {
 				buffer.clear();
-				for (const BLOCK* block : blocks)
-					for (idx z = 0; z < block->local.z(); z++)
-						for (idx y = 0; y < block->local.y(); y++)
-							for (idx x = 0; x < block->local.x(); x++)
+				for (const BLOCK* block : blocks) {
+					const idx3d ovl{
+						const_cast<BLOCK*>(block)->df_overlap_X(),
+						const_cast<BLOCK*>(block)->df_overlap_Y(),
+						const_cast<BLOCK*>(block)->df_overlap_Z()
+					};
+					idx3d e_lo, e_hi;
+					emitted_range(block->local, ovl, e_lo, e_hi);
+					for (idx z = e_lo.z(); z < e_hi.z(); z++)
+						for (idx y = e_lo.y(); y < e_hi.y(); y++)
+							for (idx x = e_lo.x(); x < e_hi.x(); x++)
 								buffer.push_back(
-									static_cast<double>(block->hfs[df_cur](q, block->offset.x() + x, block->offset.y() + y, block->offset.z() + z))
+									static_cast<double>(block->hfs[df_cur](
+										q, block->offset.x() - ovl.x() + x, block->offset.y() - ovl.y() + y, block->offset.z() - ovl.z() + z
+									))
 								);
+				}
 				const std::string name = fmt::format("f{:02d}", q);
 				write_dataset_f64(cell_data, name.c_str(), buffer.data(), buffer.size());
 			}
@@ -315,11 +418,33 @@ void OverlappingAMRWriter<TRAITS>::write(const std::string& filename, const LBM<
 		std::vector<std::uint8_t> ghost;
 		ghost.reserve(total_cells);
 		for (const BLOCK* block : blocks) {
-			for (idx z = 0; z < block->local.z(); z++)
-				for (idx y = 0; y < block->local.y(); y++)
-					for (idx x = 0; x < block->local.x(); x++) {
-						const idx3d cell{block->offset.x() + x, block->offset.y() + y, block->offset.z() + z};
+			const idx3d ovl{
+				const_cast<BLOCK*>(block)->df_overlap_X(), const_cast<BLOCK*>(block)->df_overlap_Y(), const_cast<BLOCK*>(block)->df_overlap_Z()
+			};
+			const idx3d ext = block->local + idx3d{2 * ovl.x(), 2 * ovl.y(), 2 * ovl.z()};
+			idx3d e_lo, e_hi;
+			emitted_range(block->local, ovl, e_lo, e_hi);
+			for (idx z = e_lo.z(); z < e_hi.z(); z++)
+				for (idx y = e_lo.y(); y < e_hi.y(); y++)
+					for (idx x = e_lo.x(); x < e_hi.x(); x++) {
+						const idx3d cell{block->offset.x() - ovl.x() + x, block->offset.y() - ovl.y() + y, block->offset.z() - ovl.z() + z};
 						std::uint8_t tag = vtk_visible;
+						const bool is_ghost =
+							(x < ovl.x() || x >= ext.x() - ovl.x() || y < ovl.y() || y >= ext.y() - ovl.y() || z < ovl.z() || z >= ext.z() - ovl.z());
+						if (is_ghost) {
+							// ghost rows within the coarse footprint [offset-1, offset+local+1)
+							// in fine coords are valid C2F data — visible; rows beyond the
+							// footprint are no longer emitted (see \ref emitted_range), but
+							// keep the classification so the tag stays honest if the emitted
+							// range is ever widened
+							const idx3d fp_lo = block->offset - idx3d{1, 1, 1};
+							const idx3d fp_hi = block->offset + block->local + idx3d{1, 1, 1};
+							if (cell.x() >= fp_lo.x() && cell.x() < fp_hi.x() && cell.y() >= fp_lo.y() && cell.y() < fp_hi.y()
+								&& cell.z() >= fp_lo.z() && cell.z() < fp_hi.z())
+								tag = vtk_visible;
+							else
+								tag = vtk_hidden_cell;
+						}
 						for (const BLOCK& fine : lbm.blocks) {
 							if (fine.level != level + 1)
 								continue;

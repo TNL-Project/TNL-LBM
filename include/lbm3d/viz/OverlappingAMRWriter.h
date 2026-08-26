@@ -43,9 +43,14 @@
  * Layout notes:
  * - AMRBox rows are INCLUSIVE [lo,hi] boxes in the level's OWN lattice
  *   coordinates, stored as `{lo_x, hi_x, lo_y, hi_y, lo_z, hi_z}` per block.
- *   Blocks at any level carry their `offset`/`local` in that level's lattice
- *   (fine blocks use `offset = ratio * origin_coarse`), so both are used
- *   directly.
+ *   The box of a refinement-level block spans the interior PLUS the ghost
+ *   rows inside the parent footprint coverage `[offset - 1, offset + local + 1)`
+ *   (their C2F-filled values are valid), i.e. exactly the parent-level
+ *   footprint's fine cells; ghost rows beyond the footprint are dropped.
+ *   The reader blanks every coarser cell overlapped by a finer AMRBox, so
+ *   an overhanging box would blank the coarse interface ring whose covering
+ *   fine rows are HIDDENCELL -- a 0.5-coarse-cell white band around the
+ *   patch (see \ref emitted_range).
  * - The reader computes refinement ratios from the per-level Spacing
  *   attributes; there are intentionally NO RefinementRatios, per-block
  *   Origin/Spacing or Dimensions datasets.
@@ -98,6 +103,23 @@ private:
 	static constexpr std::uint8_t vtk_visible = 0;		 // normal cell
 	static constexpr std::uint8_t vtk_refined_cell = 4;	 // REFINEDCELL (refined, covered by a finer level)
 	static constexpr std::uint8_t vtk_hidden_cell = 8;	 // HIDDENCELL
+
+	/**
+	 * \brief Emitted-cell range of one block in the block's extended storage
+	 * coordinates `[0, ext)` with `ext = local + 2 * overlap` per axis.
+	 *
+	 * The range is the block interior plus the ghost rows that lie inside
+	 * the parent-footprint coverage `[offset - 1, offset + local + 1)` in
+	 * the block's global lattice coordinates (ghost rows beyond the
+	 * footprint are storage-only and carry no coupling-valid data). For a
+	 * refinement-level block (storage overlap 2) it drops exactly one
+	 * outer row per face; for level-0 blocks (no overlap) it is the full
+	 * storage. The resulting fine AMRBox is `[offset - 1, offset + local]`
+	 * inclusive, exactly the parent footprint's fine cells, so the
+	 * reader's overlap-blanking of the coarser level reproduces the
+	 * writer's REFINEDCELL footprint exactly (no interface-ring band).
+	 */
+	static void emitted_range(const idx3d& local, const idx3d& overlap, idx3d& e_lo, idx3d& e_hi);
 
 	// low-level HDF5 helpers - each throws std::runtime_error on failure
 	static void write_attr_i64x2(hid_t loc, const char* name, const std::int64_t value[2]);
