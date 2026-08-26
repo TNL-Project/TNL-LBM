@@ -805,6 +805,48 @@ void LBM_BLOCK<CONFIG>::setEquilibrium(real rho, real vx, real vy, real vz)
 }
 
 template <typename CONFIG>
+void LBM_BLOCK<CONFIG>::computeInitialMacro()
+{
+	// interior-only extent, identical to the pre-overload behavior
+	computeInitialMacro(idx3d{0, 0, 0}, idx3d{local.x(), local.y(), local.z()});
+}
+
+template <typename CONFIG>
+void LBM_BLOCK<CONFIG>::computeInitialMacro(const idx3d& begin, const idx3d& end)
+{
+	// extract variables and views for capturing in the lambda function
+	auto SD = data;
+
+	// the device pass iterates local indexer coordinates in (y, z, x)
+	// order; begin/end are x/y/z axis order and are swizzled into the
+	// loop's component order below
+	const idx3d begin_yzx{begin.y(), begin.z(), begin.x()};
+	const idx3d end_yzx{end.y(), end.z(), end.x()};
+
+	TNL::Algorithms::parallelFor<DeviceType>(
+		begin_yzx,
+		end_yzx,
+		[SD] __cuda_callable__(idx3d yzx) mutable
+		{
+			const auto& [y, z, x] = yzx;
+			typename CONFIG::template KernelStruct<dreal> KS;
+#ifdef AA_PATTERN
+			for (int i = 0; i < CONFIG::Q; i++)
+				KS.f[i] = SD.df(df_cur, opposite_direction(i), x, y, z);
+#else
+			for (int i = 0; i < CONFIG::Q; i++)
+				KS.f[i] = SD.df(df_cur, i, x, y, z);
+#endif
+
+			CONFIG::MACRO::copyQuantities(SD, KS, x, y, z);
+			CONFIG::MACRO::zeroForcesInKS(KS);
+			CONFIG::COLL::computeDensityAndVelocity(KS);
+			CONFIG::MACRO::outputMacro(SD, KS, x, y, z);
+		}
+	);
+}
+
+template <typename CONFIG>
 bool LBM_BLOCK<CONFIG>::isLocalIndex(idx x, idx y, idx z) const
 {
 	return x >= offset.x() && x < offset.x() + local.x() && y >= offset.y() && y < offset.y() + local.y() && z >= offset.z()
