@@ -159,10 +159,6 @@ struct State_AMR : State<NSE>
 	using idx3d = typename TRAITS::idx3d;
 	using lat_t = typename Base::lat_t;
 
-	// output switches (CLI-set): write the raw df_cur fields f00..f{Q-1}
-	// into the VTKHDF frames alongside macros and the map (2026-08-18)
-	bool amr_write_dfs = false;
-
 	/**
 	 * \brief Host-side descriptor of all coarse-fine interfaces between one
 	 * pair of consecutive levels.
@@ -527,6 +523,22 @@ void State_AMR<NSE>::SimInit()
 		this->nse.updateKernelDataForLevel(L, 0);
 		launchCoarseToFineTransfers(L);
 	}
+
+	// seed the ghost-row macros from the SimInit C2F fill: frame 0000 is
+	// emitted before any kernel ran, and computeInitialMacro covers only the
+	// interior [0, local), so without this the fine ghost rows would carry
+	// the zero-init dmacro in the t=0 snapshot. Recompute the SAME window
+	// the cycle-0 substep-1 kernel will use (ghost_layers = 1), which yields
+	// identical macros from the C2F-seeded DFs with no physics run; the
+	// interior macros are recomputed identically too. fine_wall_masks is
+	// already built, so masked-wall faces carry their GEO_WALL row in the
+	// window consistently.
+	for (auto& block : this->nse.blocks) {
+		if (block.level == 0)
+			continue;
+		const auto [begin, size] = kernelLaunchWindow(block, /*ghost_layers=*/1);
+		block.computeInitialMacro(begin, begin + size);
+	}
 #endif
 }
 
@@ -726,7 +738,7 @@ void State_AMR<NSE>::write3D_AMR(real time, int cycle)
 	for (auto& block : this->nse.blocks)
 		block.copyMacroToHost();
 
-	OverlappingAMRWriter<TRAITS>::write(fname, this->nse, time, this->amr_write_dfs);
+	OverlappingAMRWriter<TRAITS>::write(fname, this->nse, time);
 }
 
 /**

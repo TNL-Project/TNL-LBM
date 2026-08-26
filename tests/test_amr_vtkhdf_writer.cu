@@ -65,6 +65,7 @@ constexpr const char* pattern_name = "AB";
 #endif
 
 using idx = typename TRAITS::idx;
+using idx3d = typename TRAITS::idx3d;
 using real = typename TRAITS::real;
 using point_t = typename TRAITS::point_t;
 using lat_t = Lattice<3, real, idx>;
@@ -236,9 +237,8 @@ void verifyLevel(hid_t file, int level, idx n, real expected_spacing, const std:
 	else
 		report(false, fmt::format("{} AMRBox readable with shape [1, 6]", prefix));
 
-	// rho == 1 on interior cells; the emitted finest-level border rows are
-	// footprint-covering ghost rows whose macro the writer computes from DFs
-	// (uninitialized in the mock setup — no C2F fill was run)
+	// rho == 1 on ALL emitted cells, including the finest-level border rows
+	// (footprint-covering ghost rows filled above with the equilibrium macro)
 	std::vector<double> rho;
 	bool rho_ok = readDataset(file, (prefix + "/CellData/rho").c_str(), H5T_NATIVE_DOUBLE, rho, dims);
 	rho_ok = rho_ok && dims.size() == 1 && dims[0] == hsize_t(cells);
@@ -248,14 +248,12 @@ void verifyLevel(hid_t file, int level, idx n, real expected_spacing, const std:
 			for (idx y = 0; y < n; y++)
 				for (idx x = 0; x < n; x++) {
 					const double v = rho[n * n * z + n * y + x];
-					if (finest && (x < 1 || x >= n - 1 || y < 1 || y >= n - 1 || z < 1 || z >= n - 1))
-						continue;
 					max_rho_err = std::max(max_rho_err, std::abs(v - 1.0));
 				}
 	rho_ok = rho_ok && max_rho_err <= 1e-5;
 	report(rho_ok, fmt::format("{} CellData/rho has {} cells with rho ~ 1 (max |rho - 1| = {:.3e})", prefix, cells, max_rho_err));
 
-	// vx/vy/vz == 0 on interior cells (see the rho comment above)
+	// vx/vy/vz == 0 on all emitted cells (see the rho comment above)
 	for (const char* name : {"vx", "vy", "vz"}) {
 		std::vector<double> velocity;
 		bool vel_ok = readDataset(file, (prefix + "/CellData/" + name).c_str(), H5T_NATIVE_DOUBLE, velocity, dims);
@@ -266,8 +264,6 @@ void verifyLevel(hid_t file, int level, idx n, real expected_spacing, const std:
 				for (idx y = 0; y < n; y++)
 					for (idx x = 0; x < n; x++) {
 						const double v = velocity[n * n * z + n * y + x];
-						if (finest && (x < 1 || x >= n - 1 || y < 1 || y >= n - 1 || z < 1 || z >= n - 1))
-							continue;
 						max_abs = std::max(max_abs, std::abs(v));
 					}
 		vel_ok = vel_ok && max_abs <= 1e-6;
@@ -339,6 +335,27 @@ void test_vtkhdf_structure()
 		block.setEquilibrium(1, 0, 0, 0);
 		block.computeInitialMacro();
 		block.copyMacroToHost();
+	}
+
+	// fill the FULL stored extent -- including the footprint-covering ghost
+	// rows that \ref emitted_range emits -- with the equilibrium macro values
+	// (rho = 1, v = 0). The real simulation kernel would compute dmacro on
+	// those inner ghost rows in the widened fine substep, but the mock never
+	// runs the kernel, so without this fill the writer would read
+	// uninitialized macro on the emitted border rows. copyMacroToDevice
+	// round-trips the fill through the device array so the writer's later
+	// copyMacroToHost (hmacro = dmacro) re-reads rho = 1 / v = 0 everywhere.
+	for (auto& block : lbm.blocks) {
+		const idx3d ovl{block.df_overlap_X(), block.df_overlap_Y(), block.df_overlap_Z()};
+		for (idx gz = block.offset.z() - ovl.z(); gz < block.offset.z() + block.local.z() + ovl.z(); gz++)
+			for (idx gy = block.offset.y() - ovl.y(); gy < block.offset.y() + block.local.y() + ovl.y(); gy++)
+				for (idx gx = block.offset.x() - ovl.x(); gx < block.offset.x() + block.local.x() + ovl.x(); gx++) {
+					block.hmacro(NSE_CONFIG::MACRO::e_rho, gx, gy, gz) = 1;
+					block.hmacro(NSE_CONFIG::MACRO::e_vx, gx, gy, gz) = 0;
+					block.hmacro(NSE_CONFIG::MACRO::e_vy, gx, gy, gz) = 0;
+					block.hmacro(NSE_CONFIG::MACRO::e_vz, gx, gy, gz) = 0;
+				}
+		block.copyMacroToDevice();
 	}
 
 	try {
