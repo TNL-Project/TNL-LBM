@@ -216,6 +216,13 @@ std::string levelStateString(const STATE& state, const BLOCK& block, int level)
 // block (df_cur/df_out = data.dfs[0]/[1] compared against the physical
 // arrays dfs[0]/dfs[1]); under AA (single array, DFMAX == 1) it is
 // data.even_iter.
+//
+// For events at level >= 1 the parent_* fields carry the parity of the
+// level-(level-1) block at the call site (at max_level == 1 that block is
+// level 0, the same evidence as coarse_cur/coarse_even); next_parent_substep
+// snapshots the write-side next-substep index the fine-to-coarse parity
+// argument derives from (level-0 parents: the post-incremented global
+// iterations clock; finer parents: the level's cumulative totalSubstepCount).
 template <typename NSE>
 struct StateSchedule_AMR : StateLocal_AMR<NSE>
 {
@@ -243,10 +250,17 @@ struct StateSchedule_AMR : StateLocal_AMR<NSE>
 		const void* fine_cur = nullptr;	   // fine block's data.dfs[0] (df_cur) at the call site
 		const void* fine_out = nullptr;	   // fine block's data.dfs[1] (df_out) at the call site
 		const void* coarse_cur = nullptr;  // level-0 block's data.dfs[0] (df_cur) at the call site
+		const void* parent_cur = nullptr;  // level-(level-1) block's data.dfs[0] at the call site (level >= 1 events)
+		const void* parent_out = nullptr;  // level-(level-1) block's data.dfs[1] at the call site (level >= 1 events)
 #elif defined(AA_PATTERN)
 		bool fine_even = false;
 		bool coarse_even = false;
+		bool parent_even = false;
 #endif
+		// f2c events only: the write-side next-substep index sampled at the
+		// call site (the expression launchFineToCoarseTransfersInterior's
+		// parity argument derives from); -1 on every other event
+		int next_parent_substep = -1;
 	};
 	std::vector<Event> events;
 
@@ -256,21 +270,31 @@ struct StateSchedule_AMR : StateLocal_AMR<NSE>
 		e.stage = stage;
 		e.level = level;
 		e.ghost_layers = ghost_layers;
-		// the fixture has exactly one block per level and max_level == 1,
-		// so the coarse side of every transfer is the level-0 block
+		// the fixture has exactly one block per level, so the coarse side of
+		// every level-1 transfer is the level-0 block and the coarse side of
+		// a level >= 2 event is the level-(level-1) block
 		BLOCK_NSE* fine = level > 0 ? this->nse.getBlocksAtLevel(level).front() : nullptr;
 		BLOCK_NSE* coarse = this->nse.getBlocksAtLevel(0).front();
+		BLOCK_NSE* parent = level > 0 ? this->nse.getBlocksAtLevel(level - 1).front() : nullptr;
 #ifdef AB_PATTERN
 		if (fine != nullptr) {
 			e.fine_cur = fine->data.dfs[0];
 			e.fine_out = fine->data.dfs[1];
 		}
+		if (parent != nullptr) {
+			e.parent_cur = parent->data.dfs[0];
+			e.parent_out = parent->data.dfs[1];
+		}
 		e.coarse_cur = coarse->data.dfs[0];
 #elif defined(AA_PATTERN)
 		if (fine != nullptr)
 			e.fine_even = fine->data.even_iter;
+		if (parent != nullptr)
+			e.parent_even = parent->data.even_iter;
 		e.coarse_even = coarse->data.even_iter;
 #endif
+		if (stage == Stage::f2c && level > 0)
+			e.next_parent_substep = level > 1 ? this->nse.totalSubstepCount[level - 1] : this->nse.iterations;
 		events.push_back(e);
 	}
 
