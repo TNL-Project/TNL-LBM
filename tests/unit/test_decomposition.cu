@@ -20,6 +20,29 @@
  * With a single MPI rank the block owns the full global lattice, all
  * neighbor IDs are -1 (self-match or wall), and data.periodic must match
  * the input.
+ *
+ * ## AMR region->block geometry conversion helpers (amr_decomposition.h)
+ *
+ * Pure per-component integer math, no GPU fixture: the region file is
+ * specified in level-0 coordinates for EVERY level, while createAMRBlocks
+ * stores the block origin in the immediate PARENT frame and sizes the
+ * re-anchored fine interior. The cases below pin the conversion formulas
+ *
+ *   parent-frame origin:  go     = origin >> (level - 1)
+ *   fine offset:          offset = 2 * (origin >> (level - 1)) + 1
+ *   fine interior local:  local  = 2 * (size >> (level - 1)) - 2
+ *
+ * The (level - 1) shift is exact by the phase-1 alignment check
+ * (origin/size must be multiples of 2^(level-1)); odd components are only
+ * expressible at level 1, where the shift is 0. The level-1 battery asserts
+ * the helpers reproduce the pre-refactor formulas bit-for-bit (go =
+ * origin, offset = 2*origin + 1, local = 2*size - 2) -- the
+ * bit-identity-by-construction evidence of the parent-frame normalization
+ * refactor. End-to-end level-1 construction through createAMRBlocks is
+ * covered by the gate mocks (test_amr_subcycling / test_amr_coupling
+ * fixtures), so it is not duplicated here; levels >= 2 cannot be created
+ * end-to-end while the level>1 guard is active, so their coverage is the
+ * hand-computed conversion values below.
  */
 
 #include <map>
@@ -47,6 +70,7 @@
 
 #include "lbm3d/lbm_block.h"
 #include "lbm3d/lattice_decomposition.h"
+#include "lbm3d/amr_decomposition.h"
 
 using TRAITS = Traits<float, double, int>;
 using COLL = D2Q9_SRT<TRAITS>;
@@ -588,5 +612,78 @@ TEST_CASE("decomposeLattice_D3Q27: multi-rank 2x2x2 np8")
 }
 
 #endif	// HAVE_MPI
+
+// one row of the hand-computed conversion table: region file values (level-0
+// coordinates) -> expected per-component helper results
+struct AMRConversionCase
+{
+	idx3d origin;
+	idx3d size;
+	idx3d parent_origin;  // amrParentFrameOrigin per component
+	idx3d fine_offset;	  // amrFineOffset per component
+	idx3d fine_local;	  // amrFineLocal per component
+};
+
+static void checkAMRConversionCase(const AMRConversionCase& c, int level)
+{
+	for (int a = 0; a < 3; a++) {
+		CHECK(amrParentFrameOrigin(c.origin[a], level) == c.parent_origin[a]);
+		CHECK(amrFineOffset(c.origin[a], level) == c.fine_offset[a]);
+		CHECK(amrFineLocal(c.size[a], level) == c.fine_local[a]);
+	}
+}
+
+TEST_CASE("amr conversion helpers: level-1 identity with the pre-refactor formulas")
+{
+	// compile-time pins (the helpers are constexpr)
+	static_assert(amrParentFrameOrigin(7, 1) == 7);
+	static_assert(amrFineOffset(7, 1) == 15);
+	static_assert(amrFineLocal(7, 1) == 12);
+
+	// origins/sizes including odd values, which are only legal at level 1
+	// (the level-1 alignment multiplier is 1); at level 1 the >> 0 shift is
+	// the identity and the helpers must equal the pre-refactor formulas
+	const idx origins[] = {0, 1, 2, 3, 5, 7, 24, 33, 100, 201};
+	const idx sizes[] = {3, 4, 5, 6, 7, 8, 15, 16, 31, 64};
+	for (idx o : origins) {
+		CHECK(amrParentFrameOrigin(o, 1) == o);
+		CHECK(amrFineOffset(o, 1) == 2 * o + 1);
+	}
+	for (idx s : sizes)
+		CHECK(amrFineLocal(s, 1) == 2 * s - 2);
+}
+
+TEST_CASE("amr conversion helpers: level-2 parent-frame values")
+{
+	// hand-computed with the level-2 parent shift 2^(level-1) = 2:
+	// parent = origin >> 1, offset = 2*parent + 1, local = 2*(size >> 1) - 2
+	static_assert(amrParentFrameOrigin(24, 2) == 12);
+	static_assert(amrFineOffset(24, 2) == 25);
+	static_assert(amrFineLocal(16, 2) == 14);
+
+	const AMRConversionCase cases[] = {
+		{{24, 8, 4}, {16, 8, 8}, {12, 4, 2}, {25, 9, 5}, {14, 6, 6}},
+		{{0, 6, 10}, {4, 6, 12}, {0, 3, 5}, {1, 7, 11}, {2, 4, 10}},
+		{{2, 34, 100}, {10, 6, 4}, {1, 17, 50}, {3, 35, 101}, {8, 4, 2}},
+	};
+	for (const AMRConversionCase& c : cases)
+		checkAMRConversionCase(c, 2);
+}
+
+TEST_CASE("amr conversion helpers: level-3 parent-frame values incl. zero components")
+{
+	// hand-computed with the level-3 parent shift 2^(level-1) = 4
+	static_assert(amrParentFrameOrigin(40, 3) == 10);
+	static_assert(amrFineOffset(40, 3) == 21);
+	static_assert(amrFineLocal(24, 3) == 10);
+
+	const AMRConversionCase cases[] = {
+		{{40, 16, 8}, {24, 16, 8}, {10, 4, 2}, {21, 9, 5}, {10, 6, 2}},
+		{{0, 48, 32}, {32, 8, 16}, {0, 12, 8}, {1, 25, 17}, {14, 2, 6}},
+		{{0, 0, 0}, {8, 8, 8}, {0, 0, 0}, {1, 1, 1}, {2, 2, 2}},
+	};
+	for (const AMRConversionCase& c : cases)
+		checkAMRConversionCase(c, 3);
+}
 
 TEST_SUITE_END();

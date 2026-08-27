@@ -19,15 +19,37 @@
  * \brief Static AMR region declaration, validation and block instantiation.
  *
  * An \ref AMR_Region is a rectangular fine-lattice region specified in
- * coarsest-level (level-0) cell coordinates. With the standard 2:1
- * refinement ratio, each coarse cell of the region becomes 2x2x2 fine cells.
- * The fine block's interior does NOT span the whole requested footprint:
- * under the re-anchored band registration (Schönherr-ch7 ruling) the
- * outermost requested-footprint row becomes a coarse-authoritative ring row
- * (simulated), the covered, F2C-refilled destination row starts one coarse
- * row inside, and the fine-authoritative full coverage is the footprint
- * inset by 1 coarse row per face -- `offset_fine = 2 * origin_coarse + 1`,
- * `local_fine = 2 * size_coarse - 2` per axis.
+ * coarsest-level (level-0) cell coordinates. The region file uses level-0
+ * coordinates for EVERY refinement level (user-facing stability: existing
+ * 1-level configs stay valid when deeper nesting is enabled). With the
+ * standard 2:1 refinement ratio, each parent-level cell of the region
+ * becomes 2x2x2 fine cells. The fine block's interior does NOT span the
+ * whole requested footprint: under the re-anchored band registration
+ * (Schönherr-ch7 ruling) the outermost requested-footprint row becomes a
+ * coarse-authoritative ring row (simulated), the covered, F2C-refilled
+ * destination row starts one coarse row inside, and the fine-authoritative
+ * full coverage is the footprint inset by 1 coarse row per face.
+ *
+ * Frame semantics (pinned by the parent-frame normalization): the block's
+ * `global_offset` stores the footprint origin in the immediate PARENT
+ * level's global coordinates, which is how every consumer
+ * (`markAMRInterface`, `State_AMR::buildCouplings`, `buildFineWallMasks`,
+ * `checkCouplingMapPattern`, `isShadowedBySameLevelBlock`,
+ * `OverlappingAMRWriter`) already reads it. The level-0 region values are
+ * converted per component by amrParentFrameOrigin / amrFineOffset /
+ * amrFineLocal:
+ *
+ *   global_offset = origin_coarse >> (level - 1)
+ *   offset_fine   = 2 * (origin_coarse >> (level - 1)) + 1
+ *   local_fine    = 2 * (size_coarse >> (level - 1)) - 2
+ *   global_fine   = (1 << level) * lbm.lat.global   (fine-lattice global size)
+ *
+ * Each (level - 1) shift is exact division by 2^(level-1), guaranteed by
+ * the phase-1 alignment check (region origin/size must be multiples of
+ * 2^(level-1)). At level 1 the shift is 0 and the block fields equal the
+ * historical formulas (origin_coarse; 2*origin+1; 2*size-2) bit-for-bit --
+ * under the old code the parent-frame reading was only LATENTLY correct
+ * because level 1's parent frame IS the level-0 frame.
  *
  * The region format parsed by \ref parseAMRConfig is one region per line:
  *
@@ -42,8 +64,9 @@
  * - overlapping regions are not merged.
  *
  * Coupling between levels (Wave 3, `amr_coupling.h`) locates interfaces from
- * `block.global_offset` (parent-level coordinates of the block origin) and
- * `block.lat_local` (per-level lattice parameters scaled by `initLevelLattice`).
+ * `block.global_offset` (the block origin in the immediate parent level's
+ * coordinates) and `block.lat_local` (per-level lattice parameters scaled by
+ * `initLevelLattice`).
  */
 
 template <typename CONFIG>
@@ -56,6 +79,40 @@ struct AMR_Region
 	idx3d size_coarse;	  // extent in coarse cells (each becomes 2^3 = 8 fine cells)
 	int level;			  // refinement level (must be > 0)
 };
+
+// Per-component conversions from a region's level-0 coordinates to the
+// block's parent-frame origin and re-anchored fine interior geometry (the
+// formulas pinned in the file header comment above). The >> (level - 1)
+// shift is exact division by 2^(level-1): createAMRBlocks phase 1 rejects
+// origins/sizes that are not multiples of 2^(level-1), and phase 2 applies
+// these helpers only to values that passed that check. At level 1 the shift
+// is 0, so all three helpers reduce to the historical formulas bit-for-bit
+// (a level-1 block's parent frame IS the level-0 frame).
+
+// footprint origin in the immediate parent level's global coordinates
+// (this is what block.global_offset stores; every coupling consumer reads
+// global_offset in the parent frame)
+template <typename idx>
+constexpr idx amrParentFrameOrigin(idx origin_coarse, int level)
+{
+	return origin_coarse >> (level - 1);
+}
+
+// fine-level global offset of the block interior, re-anchored one fine cell
+// inward per footprint face (Schönherr-ch7 band registration)
+template <typename idx>
+constexpr idx amrFineOffset(idx origin_coarse, int level)
+{
+	return 2 * (origin_coarse >> (level - 1)) + 1;
+}
+
+// fine-level interior extent: 2 fine cells per parent-level footprint cell,
+// inset one fine cell per face
+template <typename idx>
+constexpr idx amrFineLocal(idx size_coarse, int level)
+{
+	return 2 * (size_coarse >> (level - 1)) - 2;
+}
 
 /**
  * \brief Parse a text configuration of AMR refinement regions.
@@ -124,12 +181,15 @@ std::vector<AMR_Region<CONFIG>> parseAMRConfig(const std::string& config)
  * row becomes a coarse-authoritative ring row (simulated); the covered,
  * F2C-refilled destination row starts one coarse row inside; fine-authoritative
  * full coverage = footprint inset 1 coarse row per face. Concretely
- * `offset_fine = ratio * origin_coarse + 1` and
- * `local_fine = ratio * size_coarse - 2` per axis, so physical cell positions
- * (a fine-global-coordinate property) and every band row's (home, t) storage
- * parity are invariant under the shift -- the old local index equals the new
- * one plus one. The total extent requested from the allocator is restored to
- * `ratio * size + 2` per axis once the ghost overlap is 2 deep.
+ * `offset_fine = 2 * (origin_coarse >> (level - 1)) + 1` and
+ * `local_fine = 2 * (size_coarse >> (level - 1)) - 2` per axis (amrFineOffset
+ * / amrFineLocal; level 1: `2 * origin + 1` / `2 * size - 2`), so physical
+ * cell positions (a fine-global-coordinate property) and every band row's
+ * (home, t) storage parity are invariant under the shift -- the old local
+ * index equals the new one plus one. The fine-frame `global` stays
+ * `(1 << level) * lbm.lat.global` and the stored extent per axis is
+ * `2 * (size_coarse >> (level - 1)) + 2` once the ghost overlap is 2 deep
+ * (level 1: `2 * size + 2`, unchanged from before the re-anchor).
  */
 template <typename CONFIG>
 void createAMRBlocks(LBM<CONFIG>& lbm, const std::vector<AMR_Region<CONFIG>>& regions)
@@ -266,8 +326,20 @@ void createAMRBlocks(LBM<CONFIG>& lbm, const std::vector<AMR_Region<CONFIG>>& re
 		// positions are a fine-global-coordinate property (invariant under
 		// the anchor shift: old local index = new local index + 1), and every
 		// band row keeps its storage parity.
-		const idx3d local_fine{ratio * region.size_coarse.x() - 2, ratio * region.size_coarse.y() - 2, ratio * region.size_coarse.z() - 2};
-		const idx3d offset_fine{ratio * region.origin_coarse.x() + 1, ratio * region.origin_coarse.y() + 1, ratio * region.origin_coarse.z() + 1};
+		// The amrFineLocal / amrFineOffset helpers implement the level-general
+		// form: 2 * (component >> (level - 1)) then - 2 / + 1 per axis; the >>
+		// shift is exact by the phase-1 alignment check and is the identity at
+		// level 1, where these equal the historical formulas bit-for-bit.
+		const idx3d local_fine{
+			amrFineLocal(region.size_coarse.x(), region.level),
+			amrFineLocal(region.size_coarse.y(), region.level),
+			amrFineLocal(region.size_coarse.z(), region.level)
+		};
+		const idx3d offset_fine{
+			amrFineOffset(region.origin_coarse.x(), region.level),
+			amrFineOffset(region.origin_coarse.y(), region.level),
+			amrFineOffset(region.origin_coarse.z(), region.level)
+		};
 		// the block lives on the refined lattice, so its `global` is the refined coarsest-level size;
 		// block arrays are sized by `global` and must cover [offset, offset + local) in fine coordinates
 		const idx3d global_fine{ratio * lbm.lat.global.x(), ratio * lbm.lat.global.y(), ratio * lbm.lat.global.z()};
@@ -279,7 +351,12 @@ void createAMRBlocks(LBM<CONFIG>& lbm, const std::vector<AMR_Region<CONFIG>>& re
 
 		// AMR bookkeeping: the ctor defaults global_offset to offset (fine coords), but the
 		// interface coupling (Wave 3) matches interfaces in PARENT-level coordinates
-		block.global_offset = region.origin_coarse;
+		// (amrParentFrameOrigin: identical to origin_coarse at level 1)
+		block.global_offset = idx3d{
+			amrParentFrameOrigin(region.origin_coarse.x(), region.level),
+			amrParentFrameOrigin(region.origin_coarse.y(), region.level),
+			amrParentFrameOrigin(region.origin_coarse.z(), region.level)
+		};
 
 		// per-region physical origin: initLevelLattice already set
 		// lat_local.physOrigin to the correct fine-level global origin
@@ -395,9 +472,10 @@ void allocateInterfaceDirArray(LBM_BLOCK<CONFIG>& block)
  * Every fine block's footprint is projected onto its parent level as the
  * rectangle [global_offset, global_offset + (local + 2)/2) in parent-level
  * coordinates (global_offset is the parent-level origin set by
- * createAMRBlocks, consecutive levels always have a 2:1 ratio; the +2
+ * createAMRBlocks, consecutive levels always have a 2:1 ratio; (local + 2)/2
+ * is exactly the footprint extent in parent cells at every level -- the +2
  * recovers the inset interior under the re-anchored indexer, local =
- * 2*size - 2). Two populations are tagged:
+ * 2*size - 2 at level 1). Two populations are tagged:
  *
  * - **Interface ring**: every parent-level cell within Chebyshev distance 1
  *   of the rectangle but outside it (the halo row c=-1), PLUS the
@@ -449,8 +527,9 @@ void markAMRInterface(LBM<CONFIG>& lbm)
 			continue;
 		const idx3d origin = fine.global_offset;
 		// fine footprint extent in parent-level cells (2:1 ratio): under the
-		// re-anchored indexer the interior is local = 2*size - 2 (inset one
-		// fine cell per face), so the footprint is (local + 2)/2, exact
+		// re-anchored indexer the interior is inset one fine cell per face
+		// (local = 2*size - 2 at level 1), so the footprint is (local + 2)/2,
+		// exact
 		const idx3d size{(fine.local.x() + 2) / 2, (fine.local.y() + 2) / 2, (fine.local.z() + 2) / 2};
 		const int parent_level = fine.level - 1;
 		int marked_fine = 0;
