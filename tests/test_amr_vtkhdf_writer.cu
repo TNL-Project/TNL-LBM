@@ -30,6 +30,17 @@
 // from tests/CMakeLists.txt); the writer itself is pattern-agnostic (it
 // reads only the macroscopic quantities, which both patterns produce
 // identically from an equilibrium state). Everything is single-rank.
+//
+// NESTING (the amr-nlevel-nesting plan's commit D): a second test pins the
+// writer's per-level structure on a 3-level telescoping chain (levels
+// 0..3): per-level block grouping, spacing = physDl/2^level, AMRBox extents
+// covering exactly each level's own footprint, and the vtkGhostType census
+// -- REFINEDCELL on exactly the cells covered by the DIRECT level-below
+// footprint at every level (the 2-level idiom generalized). STDOUT
+// CONTRACT: the bit-identity harness pins this suite's full normalized
+// stdout against the pre-nesting manifest (sec. 7.5), so the nesting
+// census runs silent on success (a LogMute keeps the second LBM ctor and
+// writer call off the stream) and loud on failure.
 
 #include <algorithm>
 #include <cmath>
@@ -41,6 +52,8 @@
 #include <fmt/core.h>
 
 #include <hdf5.h>
+
+#include <spdlog/spdlog.h>
 
 #include "lbm3d/core.h"
 #include "lbm3d/amr_decomposition.h"
@@ -83,9 +96,8 @@ void report(bool ok, const std::string& what)
 }
 
 // 16^3 box in physical units (same lattice as test_amr_subcycling.cu)
-lat_t makeLattice()
+lat_t makeLattice(int N = 16)
 {
-	const int N = 16;
 	const real LBM_VISCOSITY = 0.005;
 	const real PHYS_HEIGHT = 0.41;
 	const real PHYS_VISCOSITY = 1.5e-5;
@@ -431,6 +443,266 @@ void test_vtkhdf_structure()
 	std::remove(filename);
 }
 
+// Nesting census (the amr-nlevel-nesting plan's commit D): the writer on a
+// 3-level telescoping chain (levels 0..3, one block per level), pinning per
+// level the block grouping, the halved spacing, the AMRBox extents covering
+// exactly the level's own footprint and the vtkGhostType census --
+// REFINEDCELL on exactly the cells covered by the DIRECT level-below
+// footprint at every level (the 2-level idiom generalized; the grandparent
+// pairing would leave the intermediate levels' sets empty). Stdout contract
+// (file header): silent on success, FAIL + nonzero on failure.
+
+// RAII guard that mutes the default logger for the lifetime of the guard:
+// the nesting census constructs a second LBM (whose ctor repeats the
+// lattice info lines of the first setup -- pinned in this suite's stdout
+// exactly once) and a second writer call
+struct LogMute
+{
+	spdlog::level::level_enum saved;
+
+	LogMute()
+	: saved(spdlog::default_logger()->level())
+	{
+		spdlog::set_level(spdlog::level::off);
+	}
+
+	LogMute(const LogMute&) = delete;
+	LogMute& operator=(const LogMute&) = delete;
+
+	~LogMute()
+	{
+		spdlog::set_level(saved);
+	}
+};
+
+// the 3-level telescoping chain of test_amr_nesting.cu's three_level_chain
+// (duplicated so the suites stay independent): every level has exactly one
+// block; the REFINEDCELL extents below follow from the same parent-frame
+// conversions the nesting binary pins
+constexpr const char* nesting_writer_chain = "1 8 1 4 12 30 12\n"
+											 "2 38 4 16 16 120 16\n"
+											 "3 164 16 64 16 480 16";
+
+// per-level AMRBox extents (inclusive [lo, hi] in the level's own lattice
+// coordinates) of the chain on a 32^3 level-0 domain -- hand-computed from
+// the re-anchored indexer (offset = 2*(origin >> (level-1)) + 1, local =
+// 2*(size >> (level-1)) - 2, emitted box [offset-1, offset+local])
+const std::int32_t nesting_boxes[4][6] = {
+	{0, 31, 0, 31, 0, 31},		// level 0: the full 32^3 domain
+	{16, 39, 2, 61, 8, 31},		// level 1: footprint [16,40)x[2,62)x[8,32)
+	{38, 53, 4, 123, 16, 31},	// level 2: footprint [38,54)x[4,124)x[16,32)
+	{82, 89, 8, 247, 32, 39},	// level 3: footprint [82,90)x[8,248)x[32,40)
+};
+
+// per-level REFINEDCELL extents: the DIRECT level-below footprint in the
+// level's own lattice coordinates ([go, go + gs) with go = the child
+// block's global_offset and gs = (local + 2)/2); level 3 has no finer
+// level and is all-visible
+const idx nesting_refined_lo[3][3] = {{8, 1, 4}, {19, 2, 8}, {41, 4, 16}};
+const idx nesting_refined_hi[3][3] = {{20, 31, 16}, {27, 62, 16}, {45, 124, 20}};
+
+// expected vtkGhostType of a cell at the given level of the nesting chain
+std::uint8_t expectedGhostNested(int level, idx x, idx y, idx z)
+{
+	if (level >= 3)
+		return 0;
+	const bool covered = x >= nesting_refined_lo[level][0] && x < nesting_refined_hi[level][0] && y >= nesting_refined_lo[level][1]
+					  && y < nesting_refined_hi[level][1] && z >= nesting_refined_lo[level][2] && z < nesting_refined_hi[level][2];
+	return covered ? 4 : 0;
+}
+
+void test_vtkhdf_nesting_structure()
+{
+	bool ok = true;
+	std::string failure;
+	{
+		LogMute mute;
+		const char* filename = "test_amr_nesting.vtkhdf";
+		// a stale file from a previous failed run must not pass as a fresh write
+		std::remove(filename);
+
+		lat_t lat = makeLattice(32);
+		LBM<NSE_CONFIG> lbm(MPI_COMM_WORLD, lat, /*periodic_lattice=*/false, /*max_level=*/3);
+		lbm.allocateHostData();
+		lbm.allocateDeviceData();
+		createAMRBlocks(lbm, parseAMRConfig<NSE_CONFIG>(nesting_writer_chain));
+		if (lbm.blocks.size() != 4) {
+			ok = false;
+			failure = fmt::format("expected 4 blocks (1 per level), got {}", lbm.blocks.size());
+		}
+		if (ok) {
+			// uniform equilibrium macro state on all blocks, filled over the
+			// FULL stored extent including the footprint-covering ghost rows
+			// (the mock never runs the kernel; the existing test's idiom)
+			for (auto& block : lbm.blocks) {
+				block.setEquilibrium(1, 0, 0, 0);
+				block.computeInitialMacro();
+				block.copyMacroToHost();
+			}
+			for (auto& block : lbm.blocks) {
+				const idx3d ovl{block.df_overlap_X(), block.df_overlap_Y(), block.df_overlap_Z()};
+				for (idx gz = block.offset.z() - ovl.z(); gz < block.offset.z() + block.local.z() + ovl.z(); gz++)
+					for (idx gy = block.offset.y() - ovl.y(); gy < block.offset.y() + block.local.y() + ovl.y(); gy++)
+						for (idx gx = block.offset.x() - ovl.x(); gx < block.offset.x() + block.local.x() + ovl.x(); gx++) {
+							block.hmacro(NSE_CONFIG::MACRO::e_rho, gx, gy, gz) = 1;
+							block.hmacro(NSE_CONFIG::MACRO::e_vx, gx, gy, gz) = 0;
+							block.hmacro(NSE_CONFIG::MACRO::e_vy, gx, gy, gz) = 0;
+							block.hmacro(NSE_CONFIG::MACRO::e_vz, gx, gy, gz) = 0;
+						}
+				block.copyMacroToDevice();
+			}
+			try {
+				OverlappingAMRWriter<TRAITS>::write(filename, lbm, 0.0);
+			}
+			catch (const std::exception& e) {
+				ok = false;
+				failure = fmt::format("writer threw an exception: {}", e.what());
+			}
+		}
+		if (ok) {
+			hid_t file = H5Fopen(filename, H5F_ACC_RDONLY, H5P_DEFAULT);
+			if (file < 0) {
+				ok = false;
+				failure = "H5Fopen failed";
+			}
+			else {
+				const double base_spacing = static_cast<double>(lat.physDl);
+				for (int level = 0; level < 4 && ok; level++) {
+					const std::string prefix = fmt::format("/VTKHDF/Level{}", level);
+					// per-level block grouping: one AMRBox row per level
+					std::int32_t expected_box[6];
+					for (int i = 0; i < 6; i++)
+						expected_box[i] = nesting_boxes[level][i];
+					const idx nx = expected_box[1] - expected_box[0] + 1;
+					const idx ny = expected_box[3] - expected_box[2] + 1;
+					const idx nz = expected_box[5] - expected_box[4] + 1;
+					const idx cells = nx * ny * nz;
+
+					hid_t group = H5Gopen2(file, prefix.c_str(), H5P_DEFAULT);
+					if (group < 0) {
+						ok = false;
+						failure = fmt::format("group {} missing", prefix);
+						break;
+					}
+					double spacing[3] = {0, 0, 0};
+					double expected_spacing = base_spacing / static_cast<double>(1 << level);
+					bool spacing_ok = readAttrF64x3(group, "Spacing", spacing);
+					for (double s : spacing)
+						spacing_ok = spacing_ok && (s == expected_spacing);
+					H5Gclose(group);
+					if (! spacing_ok) {
+						ok = false;
+						failure = fmt::format("{} attribute Spacing != {}", prefix, expected_spacing);
+						break;
+					}
+
+					std::vector<hsize_t> dims;
+					std::vector<std::int32_t> amr_box;
+					bool box_ok = readDataset(file, (prefix + "/AMRBox").c_str(), H5T_NATIVE_INT32, amr_box, dims);
+					box_ok = box_ok && dims.size() == 2 && dims[0] == 1 && dims[1] == 6 && amr_box.size() == 6;
+					if (box_ok)
+						for (int i = 0; i < 6; i++)
+							box_ok = box_ok && (amr_box[i] == expected_box[i]);
+					if (! box_ok) {
+						ok = false;
+						const std::string actual = amr_box.size() == 6
+													 ? fmt::format("[{},{},{},{},{},{}]", amr_box[0], amr_box[1], amr_box[2], amr_box[3], amr_box[4], amr_box[5])
+													 : std::string("n/a");
+						failure = fmt::format("{} AMRBox (actual size {}, first row {})", prefix, amr_box.size(), actual);
+						break;
+					}
+
+					// macro content: rho == 1, v == 0 on every emitted cell
+					std::vector<double> rho;
+					bool rho_ok = readDataset(file, (prefix + "/CellData/rho").c_str(), H5T_NATIVE_DOUBLE, rho, dims);
+					rho_ok = rho_ok && dims.size() == 1 && dims[0] == hsize_t(cells);
+					double max_rho_err = 0;
+					if (rho_ok)
+						for (idx i = 0; i < cells; i++)
+							max_rho_err = std::max(max_rho_err, std::abs(rho[i] - 1.0));
+					if (! rho_ok || max_rho_err > 1e-5) {
+						ok = false;
+						failure = fmt::format("{} CellData/rho deviates ({} cells, max |rho-1| = {:.3e})", prefix, dims.size() ? dims[0] : 0, max_rho_err);
+						break;
+					}
+					for (const char* name : {"vx", "vy", "vz"}) {
+						std::vector<double> velocity;
+						bool vel_ok = readDataset(file, (prefix + "/CellData/" + name).c_str(), H5T_NATIVE_DOUBLE, velocity, dims);
+						vel_ok = vel_ok && dims.size() == 1 && dims[0] == hsize_t(cells);
+						double max_abs = 0;
+						if (vel_ok)
+							for (idx i = 0; i < cells; i++)
+								max_abs = std::max(max_abs, std::abs(velocity[i]));
+						if (! vel_ok || max_abs > 1e-6) {
+							ok = false;
+							failure = fmt::format("{} CellData/{} deviates (max |{}| = {:.3e})", prefix, name, name, max_abs);
+							break;
+						}
+					}
+					if (! ok)
+						break;
+
+					// the geometry map: present everywhere and all-fluid on
+					// this mock (no boundary tagging is performed)
+					std::vector<std::int32_t> map_values;
+					bool map_ok = readDataset(file, (prefix + "/CellData/map").c_str(), H5T_NATIVE_INT32, map_values, dims);
+					// (written as a 2-D [cells, 1] dataset by write_dataset_i32)
+					map_ok = map_ok && dims.size() == 2 && dims[0] == hsize_t(cells) && dims[1] == 1;
+					idx map_bad = 0;
+					if (map_ok)
+						for (idx i = 0; i < cells; i++)
+							if (map_values[i] != 0) {
+								map_bad++;
+								break;
+							}
+					if (! map_ok || map_bad > 0) {
+						ok = false;
+						failure = fmt::format("{} CellData/map: {} cells, {} non-fluid tags", prefix, dims.size() ? dims[0] : 0, map_bad);
+						break;
+					}
+
+					// vtkGhostType census: REFINEDCELL (4) on exactly the cells
+					// covered by the DIRECT level-below footprint
+					std::vector<std::uint8_t> ghost;
+					bool ghost_ok = readDataset(file, (prefix + "/CellData/vtkGhostType").c_str(), H5T_NATIVE_UINT8, ghost, dims);
+					ghost_ok = ghost_ok && dims.size() == 1 && dims[0] == hsize_t(cells) && ghost.size() == std::size_t(cells);
+					idx mismatches = 0;
+					idx tagged = 0;
+					if (ghost_ok)
+						for (idx z = 0; z < nz; z++)
+							for (idx y = 0; y < ny; y++)
+								for (idx x = 0; x < nx; x++) {
+									const std::uint8_t actual = ghost[nx * ny * z + nx * y + x];
+									const std::uint8_t expected = expectedGhostNested(level, expected_box[0] + x, expected_box[2] + y, expected_box[4] + z);
+									if (actual == 4)
+										tagged++;
+									if (actual != expected) {
+										if (mismatches == 0)
+											failure = fmt::format(
+												"{} vtkGhostType: first mismatch at cell ({},{},{}), actual = {}, expected = {}",
+												prefix, expected_box[0] + x, expected_box[2] + y, expected_box[4] + z, actual, expected
+											);
+										mismatches++;
+									}
+								}
+					if (! ghost_ok || mismatches > 0) {
+						ok = false;
+						if (mismatches == 0)
+							failure = fmt::format("{} CellData/vtkGhostType unreadable (dims {})", prefix, dims.size() ? dims[0] : 0);
+						else
+							failure = fmt::format("{}: {} cells", failure, mismatches);
+						break;
+					}
+				}
+				H5Fclose(file);
+			}
+		}
+		std::remove(filename);
+	}
+	if (! ok)
+		report(false, fmt::format("nesting vtkhdf census: {}", failure.empty() ? "setup failed" : failure));
+}
+
 int main(int argc, char** argv)
 {
 	TNLMPI_INIT mpi(argc, argv);
@@ -443,6 +715,9 @@ int main(int argc, char** argv)
 	fmt::println("VTKHDF OverlappingAMR writer unit test (streaming pattern: {})", pattern_name);
 
 	test_vtkhdf_structure();
+	// nesting census (plan commit D; silent on success, see the stdout
+	// contract in the file header)
+	test_vtkhdf_nesting_structure();
 
 	if (g_failures == 0) {
 		fmt::println("RESULT: all VTKHDF writer tests passed");

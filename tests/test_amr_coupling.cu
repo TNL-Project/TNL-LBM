@@ -37,6 +37,25 @@
 // strategy-independent machinery (storability guard, Defect-2 allowed-GEO
 // store guards, frame-orientation stores) is locked once by the shared
 // tests and not duplicated per strategy.
+//
+// NESTING (the amr-nlevel-nesting plan's commit D): the tail of this file
+// pins the coupling at multi-level depth through the REAL schedule (the
+// StateSchedule_AMR spy and mock fixtures of tests/amr_test_fixture.h
+// driving SimInit/SimUpdate on the 3-level telescoping chains of
+// tests/test_amr_nesting.cu): a per-pair transfer census (launches,
+// absolute substep counters and parities at every call site), a live-source
+// ordering lock proving the mid-cycle fill sources the parent's live
+// post-substep-A state, and a kernel-level composition lock proving the
+// two C2F (resp. F2C) hops compose numerically. Those checks reuse the
+// shared fixture header, so this suite's own lattice/config/report aliases
+// were dropped in favor of theirs (identical definitions).
+//
+// STDOUT CONTRACT OF THE NESTING LOCKS: the bit-identity harness
+// (tests/regression/test_amr_bitidentity.py, plan sec. 7.5) pins this
+// suite's full normalized stdout digest against the pre-nesting manifest,
+// and SIM battery artifacts must stay byte-reproducible. The nesting locks
+// below therefore run SILENT on success: failures print a FAIL line through
+// report() and flip the exit code, success adds zero bytes to the stream.
 
 #include <algorithm>
 #include <array>
@@ -47,26 +66,9 @@
 
 #include <fmt/core.h>
 
-#include "lbm3d/core.h"
+#include "amr_test_fixture.h"
+
 #include "lbm3d/d3q27/amr_coupling.h"
-
-using TRAITS = TraitsSP;
-using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
-using NSE_CONFIG = LBM_CONFIG<
-	TRAITS,
-	D3Q27_KernelStruct,
-	NSE_Data_ConstInflow<TRAITS>,
-	COLL,
-	typename COLL::EQ,
-	D3Q27_STREAMING<TRAITS>,
-	D3Q27_BC_All,
-	D3Q27_MACRO_Default<TRAITS>>;
-
-#ifdef AA_PATTERN
-constexpr const char* pattern_name = "AA";
-#else
-constexpr const char* pattern_name = "AB";
-#endif
 
 // T15 (commit 14, plan row 15): the F2C strategy this TU pins -- the
 // Schönherr transfer is the default since the commit-15 / T17 flip (the
@@ -79,9 +81,6 @@ constexpr const char* f2c_strategy_name = "F2C_SCHONHERR arm";
 constexpr const char* f2c_strategy_name = "Lagrava (opt-out) branch";
 #endif
 
-using idx = typename TRAITS::idx;
-using idx3d = typename TRAITS::idx3d;
-using dreal = typename TRAITS::dreal;
 using DATA = typename NSE_CONFIG::DATA;
 using LBM_KS = typename NSE_CONFIG::template KernelStruct<dreal>;
 
@@ -98,6 +97,10 @@ constexpr idx OV = 1;
 // for real (they are not 1)
 constexpr dreal TAU_COARSE = 3 * 0.05f + 0.5f;
 constexpr dreal TAU_FINE = 3 * 0.10f + 0.5f;
+// relaxation time one level deeper (nu_lb doubles per refinement level:
+// 0.20 at level 2) -- used by the level-1 <- level-2 hop of the two-hop
+// F2C composition lock (Test 21)
+constexpr dreal TAU_LEVEL2 = 3 * 0.20f + 0.5f;
 
 // D3Q27 velocity set c_q matching the direction enum in defs.h
 // (zzz, pzz, mzz, ...): p = +1, m = -1, z = 0 per (x, y, z) component
@@ -130,18 +133,6 @@ constexpr int VELOCITY[27][3] = {
 	{1, -1, -1},  // pmm
 	{-1, 1, 1},	  // mpp
 };
-
-int g_failures = 0;
-
-void report(bool ok, const std::string& what)
-{
-	if (ok)
-		fmt::println("PASS: {}", what);
-	else {
-		fmt::println("FAIL: {}", what);
-		g_failures++;
-	}
-}
 
 // reference equilibrium computed on the host with the same COLL::setEquilibrium
 // implementation that the coupling kernels use on the device
@@ -397,7 +388,18 @@ void launchCoarseToFine(MockBlock& fine, MockBlock& coarse, idx3d begin, idx3d e
 	TNL::Backend::streamSynchronize(0);
 }
 
-void launchFineToCoarse(MockBlock& coarse, MockBlock& fine, idx3d begin, idx3d end, idx3d fine_off, idx3d coarse_off, bool fine_even_iter, bool coarse_even_iter)
+void launchFineToCoarse(
+	MockBlock& coarse,
+	MockBlock& fine,
+	idx3d begin,
+	idx3d end,
+	idx3d fine_off,
+	idx3d coarse_off,
+	bool fine_even_iter,
+	bool coarse_even_iter,
+	dreal coarse_tau = TAU_COARSE,
+	dreal fine_tau = TAU_FINE
+)
 {
 	const idx3d size = end - begin;
 	TNL::Backend::LaunchConfiguration launch_config;
@@ -412,8 +414,8 @@ void launchFineToCoarse(MockBlock& coarse, MockBlock& fine, idx3d begin, idx3d e
 		fine.data,
 		begin,
 		end,
-		TAU_COARSE,
-		TAU_FINE,
+		coarse_tau,
+		fine_tau,
 		fine_even_iter,
 		coarse_even_iter,
 		fine_off,
@@ -2324,8 +2326,766 @@ void test_f2c_skin_edge2pair_clamp_exactness()
 #endif	// F2C_SCHONHERR
 }
 
-int main()
+// NESTING locks (the amr-nlevel-nesting plan's commit D): multi-level
+// coupling coverage through the REAL State_AMR schedule and through direct
+// two-hop kernel launches. Stdout contract (see the file header): silent
+// on success, FAIL + nonzero exit on failure.
+
+// quiet-on-success check (the suite's full stdout digest is pinned by the
+// bit-identity manifest, sec. 7.5 -- success must add zero bytes)
+void check(bool ok, const std::string& what)
 {
+	if (! ok)
+		report(false, what);
+}
+
+// stdout nuller for the State-driven nesting locks: the State ctor
+// installs its own spdlog "main" logger (include/lbm_common/logging.h)
+// and starts emitting [info]/[warning] lines from the construction on --
+// all of which must stay off this suite's manifest-pinned stdout. The
+// fd-level dup2 covers C stdio, iostreams and the logger indiscriminately
+// (a logger-level toggle would arrive too late: init_logging runs before
+// the ctor's first info lines). Held only while the State machinery runs;
+// the FAIL/report lines print after dtor restores fd 1.
+struct StdoutNull
+{
+	int saved_fd = -1;
+	int null_fd = -1;
+
+	StdoutNull()
+	{
+		std::fflush(stdout);
+		saved_fd = ::dup(STDOUT_FILENO);
+		null_fd = ::open("/dev/null", O_WRONLY);
+		if (null_fd >= 0)
+			::dup2(null_fd, STDOUT_FILENO);
+	}
+
+	StdoutNull(const StdoutNull&) = delete;
+	StdoutNull& operator=(const StdoutNull&) = delete;
+
+	~StdoutNull()
+	{
+		std::fflush(stdout);
+		if (saved_fd >= 0)
+			::dup2(saved_fd, STDOUT_FILENO);
+		if (saved_fd >= 0)
+			::close(saved_fd);
+		if (null_fd >= 0)
+			::close(null_fd);
+	}
+};
+
+// the valid telescoping 3-level chain with gaps >= 4 on every face,
+// duplicated from the three_level_interior_chain of test_amr_nesting.cu
+// (kept in sync by hand -- this suite must not depend on the other
+// binary's source): every destination band of every fine level receives a
+// full coarse-to-fine fill each cycle
+constexpr const char* nesting_interior_chain = "1 8 8 8 12 12 12\n"
+											   "2 40 40 40 16 16 16\n"
+											   "3 176 176 176 32 32 32";
+
+// rotation of the parity evidence the spy captured at one call site,
+// reduced to the 0/1 form the expected tables use (the same reduction as
+// checkCycleEvents of test_amr_nesting.cu, duplicated to keep the binaries
+// independent): AB compares the captured df_cur pointer against the two
+// physical arrays, AA reduces the captured even_iter flag
+int eventRotation(const BLOCK& block, const void* captured_cur, bool captured_even)
+{
+#ifdef AB_PATTERN
+	static_cast<void>(captured_even);
+	if (captured_cur == block.dfs[0].getData())
+		return 0;
+	if (captured_cur == block.dfs[1].getData())
+		return 1;
+	return -1;
+#elif defined(AA_PATTERN)
+	static_cast<void>(block);
+	static_cast<void>(captured_cur);
+	return captured_even ? 1 : 0;
+#endif
+}
+
+// the fixture's spy under a second recording channel: the write-side
+// next-substep index of every fine-to-coarse launch is already captured in
+// StateSchedule_AMR::Event::next_parent_substep; this subclass adds the
+// same absolute counter snapshot at every coarse-to-fine call site (the
+// read-side anchor of the fill)
+template <typename NSE>
+struct StateTransferCensus_AMR : StateSchedule_AMR<NSE>
+{
+	using Sched = StateSchedule_AMR<NSE>;
+
+	template <typename... ARGS>
+	StateTransferCensus_AMR(ARGS&&... args)
+	: Sched(std::forward<ARGS>(args)...)
+	{}
+
+	// (fine_level, parent's completed-substep counter at the call site),
+	// one entry per c2f launch in launch order
+	std::vector<std::pair<int, int>> c2f_substeps;
+
+	void launchCoarseToFineTransfers(int fine_level) override
+	{
+		c2f_substeps.emplace_back(
+			fine_level,
+			fine_level > 1 ? this->nse.totalSubstepCount[fine_level - 1] : static_cast<int>(this->nse.iterations)
+		);
+		Sched::launchCoarseToFineTransfers(fine_level);
+	}
+};
+
+// one expected transfer launch of the census: kind, fine side level, the
+// parent level's absolute completed-substep counter at the call site (the
+// write-side next-substep index for f2c, the read-side anchor for c2f),
+// the parent's rotation at the call site (TR_CLOCK resolves to the level-0
+// rotation of the asserted cycle), the fine block's rotation at the call site
+struct ExpectedTransfer
+{
+	bool f2c;
+	int level;
+	int parent_counter;
+	int parent_rot;
+	int fine_rot;
+};
+
+constexpr int TR_CLOCK = -2;
+
+// the per-cycle transfer subset of the advancePair expansion at max_level
+// == 3 (the census rows of the plan's sec. 3.4 table specialized to
+// launches only; cycle k is 1-based and the pattern is cycle-invariant in
+// rotations because every level performs an even 2^L substeps per cycle):
+// f2c(L -> L-1) fires once per level-(L-1) substep (mid-sync at parity 1,
+// end-sync at parity 0), c2f(L) mid-cycle fills the band of the finer
+// pair #2 from the parent's LIVE post-substep-A state (parent rotation 0
+// with exactly one parent substep completed), and the cycle-end cascade
+// re-arms + refills level-ascending c2f(1), c2f(2), c2f(3)
+std::vector<ExpectedTransfer> expectedTransfers(int k)
+{
+	const int c1 = 2 * (k - 1);	 // level-1 counter at the start of cycle k
+	const int c2 = 4 * (k - 1);	 // level-2 counter at the start of cycle k
+	return {
+		{true, 3, c2 + 1, 0, 1},  // f2c(3->2) mid-sync of L2 pair #1 (write-side next parity 1)
+		{false, 3, c2 + 1, 0, 0}, // c2f(3): L3 band for pair #2 -- L2's live post-substep-A state
+		{true, 3, c2 + 2, 1, 1},  // f2c(3->2) end-sync of L2 pair #1 (next parity 0)
+		{true, 2, c1 + 1, 0, 1},  // f2c(2->1) mid-sync of the L1 pair (next parity 1)
+		{false, 2, c1 + 1, 0, 0}, // c2f(2): L2 band for its pair #2 -- L1's live post-substep-A state
+		{true, 3, c2 + 3, 0, 1},  // f2c(3->2) mid-sync of L2 pair #2 (next parity 1)
+		{false, 3, c2 + 3, 0, 0}, // c2f(3): L3 band for pair #2 of pair #2 -- post-substep-A state again
+		{true, 3, c2 + 4, 1, 1},  // f2c(3->2) end-sync of L2 pair #2 (next parity 0)
+		{true, 2, c1 + 2, 1, 1},  // f2c(2->1) end-sync of the L1 pair (next parity 0)
+		{true, 1, k, TR_CLOCK, 1},	 // f2c(1->0) end-sync (write side = the global clock of cycle k)
+		{false, 1, k, TR_CLOCK, 0},	 // c2f(1): L1 band of the next cycle -- L0's fresh post-step frame
+		{false, 2, 2 * k, 0, 0},	 // c2f(2): L2 band of the next cycle (level-ascending cascade)
+		{false, 3, 4 * k, 0, 0},	 // c2f(3): L3 band of the next cycle
+	};
+}
+
+// Test 19: 2-hop transfer census on the 3-level chain -- per level pair,
+// the actual c2f/f2c launches of one full cycle with absolute substep
+// counters and parent/fine rotations at every call site, locked over 3
+// consecutive cycles (counter values advance by 2^L per cycle)
+void test_two_hop_transfer_census()
+{
+	using St = StateSchedule_AMR<NSE_CONFIG>::Stage;
+	bool setup_ok = true;
+	bool ok = true;
+	bool still_running = true;
+	std::string failure;
+	{
+		// all State-driven work under the stdout nuller (see StdoutNull);
+		// the census verdicts are reported after fd 1 is restored
+		StdoutNull quiet;
+		lat_t lat = makeLattice(32);
+		const std::string id = fmt::format("test_amr_coupling_{}_xfercensus", pattern_name);
+		StateTransferCensus_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", TRAITS::bool3d{true, true, true}, 3);
+		if (! state.canCompute()) {
+			setup_ok = false;
+			failure = "state.canCompute()";
+		}
+		std::string message;
+		if (setup_ok) {
+			try {
+				createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>(nesting_interior_chain));
+				state.SimInit();
+			}
+			catch (const std::runtime_error& e) {
+				message = e.what();
+			}
+			if (! message.empty() || state.nse.terminate) {
+				setup_ok = false;
+				failure = fmt::format(
+					"chain creation and SimInit ({}; terminate = {})",
+					message.empty() ? "no exception" : fmt::format("threw: {}", message),
+					state.nse.terminate
+				);
+			}
+		}
+		if (setup_ok) {
+			// SimInit's level-ascending initial-fill cascade is pinned by the
+			// nesting binary's init lock; drop it so cycle 1 starts at index 0
+			state.events.clear();
+			state.c2f_substeps.clear();
+
+			for (int k = 1; k <= 3 && ok; k++) {
+				const std::size_t base_events = state.events.size();
+				const std::size_t base_c2f = state.c2f_substeps.size();
+				state.updateKernelData();
+				state.SimUpdate();
+				if (state.nse.terminate) {
+					failure = fmt::format("cycle {}: SimUpdate set the terminate flag", k);
+					ok = false;
+					break;
+				}
+				const int clock_rot = (k - 1) % 2;
+				const std::vector<ExpectedTransfer> want = expectedTransfers(k);
+				std::size_t t = 0;	// index into want
+				std::size_t c = 0;	// c2f count this cycle
+				for (std::size_t i = base_events; i < state.events.size() && ok; i++) {
+					const auto& evt = state.events[i];
+					if (evt.stage == St::kernel)
+						continue;
+					if (t >= want.size()) {
+						failure = fmt::format("cycle {}: more transfer launches than the {} expected", k, want.size());
+						ok = false;
+						break;
+					}
+					const ExpectedTransfer& w = want[t];
+					const bool is_f2c = evt.stage == St::f2c;
+					if (is_f2c != w.f2c || evt.level != w.level) {
+						failure = fmt::format(
+							"cycle {} transfer {}: expected {} L{}, recorded {} L{}",
+							k,
+							t + 1,
+							w.f2c ? "f2c" : "c2f",
+							w.level,
+							is_f2c ? "f2c" : "c2f",
+							evt.level
+						);
+						ok = false;
+						break;
+					}
+					// absolute substep counter at the call site (a missing
+					// probe entry reads as -1 and fails the comparison below)
+					const int recorded_counter =
+						is_f2c ? evt.next_parent_substep : (base_c2f + c < state.c2f_substeps.size() ? state.c2f_substeps[base_c2f + c].second : -1);
+					if (recorded_counter != w.parent_counter) {
+						failure = fmt::format(
+							"cycle {} transfer {} ({} L{} -> L{}): parent counter {} != {} (absolute substep anchor)",
+							k,
+							t + 1,
+							is_f2c ? "f2c" : "c2f",
+							w.level,
+							w.level - 1,
+							recorded_counter,
+							w.parent_counter
+						);
+						ok = false;
+						break;
+					}
+					// rotations at the call site
+					BLOCK* fine = state.nse.getBlocksAtLevel(w.level).front();
+					BLOCK* parent = state.nse.getBlocksAtLevel(w.level - 1).front();
+					const void* fine_cur = nullptr;
+					const void* parent_cur = nullptr;
+					bool fine_even = false, parent_even = false;
+#ifdef AB_PATTERN
+					fine_cur = evt.fine_cur;
+					parent_cur = evt.parent_cur;
+#elif defined(AA_PATTERN)
+					fine_even = evt.fine_even;
+					parent_even = evt.parent_even;
+#endif
+					const int expected_parent_rot = w.parent_rot == TR_CLOCK ? clock_rot : w.parent_rot;
+					const int recorded_parent_rot = eventRotation(*parent, parent_cur, parent_even);
+					const int recorded_fine_rot = eventRotation(*fine, fine_cur, fine_even);
+					if (recorded_parent_rot != expected_parent_rot) {
+						failure = fmt::format(
+							"cycle {} transfer {} ({} L{} -> L{}): parent (L{}) rotation {} != {}",
+							k,
+							t + 1,
+							is_f2c ? "f2c" : "c2f",
+							w.level,
+							w.level - 1,
+							w.level - 1,
+							recorded_parent_rot,
+							expected_parent_rot
+						);
+						ok = false;
+						break;
+					}
+					if (recorded_fine_rot != w.fine_rot) {
+						failure = fmt::format(
+							"cycle {} transfer {} ({} L{} -> L{}): fine rotation {} != {}",
+							k,
+							t + 1,
+							is_f2c ? "f2c" : "c2f",
+							w.level,
+							w.level - 1,
+							recorded_fine_rot,
+							w.fine_rot
+						);
+						ok = false;
+						break;
+					}
+					if (! is_f2c)
+						c++;
+					t++;
+				}
+				if (ok && t != want.size()) {
+					failure = fmt::format("cycle {}: recorded {} transfer launches, expected {}", k, t, want.size());
+					ok = false;
+				}
+				if (ok && c != 6) {
+					failure = fmt::format("cycle {}: recorded {} c2f launches, expected 6", k, c);
+					ok = false;
+				}
+			}
+			still_running = ! state.nse.terminate;
+		}
+	}
+	if (! setup_ok) {
+		check(false, fmt::format("Test 19 2-hop transfer census setup: {}", failure));
+		return;
+	}
+	check(
+		ok,
+		fmt::format(
+			"Test 19 2-hop transfer census: 3 cycles match the per-pair expansion{}",
+			failure.empty() ? "" : fmt::format(" -- first failure: {}", failure)
+		)
+	);
+	check(still_running, "Test 19 2-hop transfer census: no termination during the census run");
+}
+
+// sentinel payload of the Test-20 ordering lock: a uniform equilibrium
+// state distinct from anything the schedule can produce itself (binary
+// fractions so the equilibrium is exact in SP)
+constexpr dreal SENT_RHO = dreal(3.25);
+constexpr dreal SENT_VX = dreal(0.125);
+
+// spy that proves the mid-cycle coarse-to-fine fill of the level-2 band
+// sources the level-1 block's LIVE post-substep-A state: right after the
+// widened level-1 substep (substep A) returns, ALL of the level-1 block's
+// DF storage (every frame) is overwritten with the sentinel equilibrium,
+// and the level-2 destination complement is snapshotted immediately after
+// the following coarse-to-fine fill, before any later launch integrates or
+// re-arms it
+template <typename NSE>
+struct StateSentinel_AMR : StateSchedule_AMR<NSE>
+{
+	using Sched = StateSchedule_AMR<NSE>;
+	using BLOCK_NSE = typename Sched::BLOCK_NSE;
+
+	template <typename... ARGS>
+	StateSentinel_AMR(ARGS&&... args)
+	: Sched(std::forward<ARGS>(args)...)
+	{}
+
+	bool injected = false;
+	bool captured = false;
+	FineGhostScan band;
+
+	void injectSentinel(BLOCK_NSE& block)
+	{
+		const std::array<dreal, 27> eq = equilibriumOnHost(SENT_RHO, SENT_VX, 0, 0);
+		const idx3d ovl{block.df_overlap_X(), block.df_overlap_Y(), block.df_overlap_Z()};
+		for (uint8_t dfty = 0; dfty < DFMAX; dfty++)
+			for (idx z = block.offset.z() - ovl.z(); z < block.offset.z() + block.local.z() + ovl.z(); z++)
+				for (idx y = block.offset.y() - ovl.y(); y < block.offset.y() + block.local.y() + ovl.y(); y++)
+					for (idx x = block.offset.x() - ovl.x(); x < block.offset.x() + block.local.x() + ovl.x(); x++)
+						for (int q = 0; q < NSE::Q; q++)
+							block.hfs[dfty](q, x, y, z) = eq[q];
+		// per-block upload only: the other blocks' host mirrors are stale
+		// and must not clobber their device state
+		block.copyDFsToDevice();
+	}
+
+	void launchLBMKernelForLevel(int level, bool compute_macro, int ghost_layers) override
+	{
+		Sched::launchLBMKernelForLevel(level, compute_macro, ghost_layers);
+		if (! injected && level == 1 && ghost_layers == 1) {
+			injectSentinel(*this->nse.getBlocksAtLevel(1).front());
+			injected = true;
+		}
+	}
+
+	void launchCoarseToFineTransfers(int fine_level) override
+	{
+		Sched::launchCoarseToFineTransfers(fine_level);
+		if (injected && ! captured && fine_level == 2) {
+			this->nse.copyDFsToHost();
+			band = captureFineGhost(*this->nse.getBlocksAtLevel(2).front());
+			captured = true;
+		}
+	}
+};
+
+// direction whose coarse-to-fine storage slot is s (the inverse of
+// c2fWriteSlot; opposite_direction is self-inverse, so the same call maps
+// direction -> slot in both patterns): AB stores direction q in slot q,
+// AA stores it in slot opposite(q)
+int c2fSlotDirection(int s)
+{
+	return c2fWriteSlot(s);
+}
+
+// Test 20: mid-cycle fill sources the LIVE post-substep-A state -- with
+// the sentinel planted into level 1 right after its widened substep, the
+// whole level-2 destination complement (both ghost rows of every face)
+// must carry the sentinel equilibrium after the mid-cycle fill; a fill
+// sourcing ANY earlier frame (the pre-substep state, the initial
+// condition, the other array) shows the sine-IC content instead
+void test_midcycle_fill_live_source()
+{
+	bool setup_ok = true;
+	bool injected = false;
+	bool captured = false;
+	bool still_running = true;
+	FineGhostScan band;
+	std::string failure;
+	{
+		// all State-driven work under the stdout nuller (see StdoutNull)
+		StdoutNull quiet;
+		lat_t lat = makeLattice(32);
+		const std::string id = fmt::format("test_amr_coupling_{}_livesource", pattern_name);
+		// the top two levels of the census chain (max_level = 2)
+		StateSentinel_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", TRAITS::bool3d{true, true, true}, 2);
+		if (! state.canCompute()) {
+			setup_ok = false;
+			failure = "state.canCompute()";
+		}
+		std::string message;
+		if (setup_ok) {
+			try {
+				createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>("1 8 8 8 12 12 12\n2 40 40 40 16 16 16"));
+				state.SimInit();
+			}
+			catch (const std::runtime_error& e) {
+				message = e.what();
+			}
+			if (! message.empty() || state.nse.terminate) {
+				setup_ok = false;
+				failure = fmt::format("chain creation and SimInit ({}; terminate = {})", message.empty() ? "no exception" : message, state.nse.terminate);
+			}
+		}
+		if (setup_ok) {
+			// one cycle: substep A at level 1 triggers the sentinel
+			// injection, the mid-cycle coarse-to-fine fill of the level-2
+			// band must consume it
+			state.events.clear();
+			state.updateKernelData();
+			state.SimUpdate();
+			injected = state.injected;
+			captured = state.captured;
+			still_running = ! state.nse.terminate;
+			if (state.captured)
+				band = state.band;
+		}
+	}
+	if (! setup_ok) {
+		check(false, fmt::format("Test 20 live-source setup: {}", failure));
+		return;
+	}
+	check(injected, "Test 20 live-source: sentinel was injected after the widened level-1 substep");
+	check(captured, "Test 20 live-source: the level-2 band was snapshotted after the mid-cycle fill");
+	if (! captured)
+		return;
+
+	const std::array<dreal, 27> eq = equilibriumOnHost(SENT_RHO, SENT_VX, 0, 0);
+	// FineGhostScan records one (coordinate, value) entry per (direction,
+	// destination cell) pair -- the scan lists every destination cell once
+	// per direction in direction-major order
+	const std::size_t cells = band.coords.size() / NSE_CONFIG::Q;
+	check(cells > 0, "Test 20 live-source: the destination complement snapshot is non-empty");
+	std::size_t bad = 0;
+	double max_err = 0;
+	for (int s = 0; s < NSE_CONFIG::Q; s++) {
+		const dreal expected = eq[c2fSlotDirection(s)];
+		for (std::size_t j = 0; j < cells; j++) {
+			const dreal actual = band.frame0[s * cells + j];
+			if (! closeEnough(actual, expected, 1e-6, 1e-8)) {
+				if (bad == 0) {
+					fmt::println(
+						"  first mismatch: slot {}, cell ({},{},{}), actual = {:.9e}, expected = {:.9e}",
+						s, band.coords[j].x(), band.coords[j].y(), band.coords[j].z(), actual, expected
+					);
+				}
+				bad++;
+			}
+			max_err = std::max<double>(max_err, std::abs(actual - expected));
+		}
+	}
+	check(
+		bad == 0,
+		fmt::format(
+			"Test 20 live-source: the mid-cycle fill of the level-2 band carries the live post-substep-A state "
+			"(sentinel equilibrium in every destination cell, direction and depth row; {} mismatches of {}, max |err| = {:.3e})",
+			bad, NSE_CONFIG::Q * cells, max_err
+		)
+	);
+	check(still_running, "Test 20 live-source: no termination during the probe cycle");
+}
+
+// fill the whole stored extent of `block` with the equilibrium of the
+// global linear marker rho = scale * (x + off) + NEST_RHO0 (one consistent
+// field across the level chain: scale 1 at level 0, 1/2 at level 1, 1/4 at
+// level 2 when off is the block's fine-global offset), EVERY array and
+// parity orientation carrying the same values: unlike fillMarkerNested no
+// wrong-array sentinel is planted -- the window/parity traps are Test 5's
+// job, the composition constants of Test 21 are this lock's discriminator
+void fillMarkerScaled(MockBlock& block, dreal scale, idx off)
+{
+	for (idx z = -block.ov; z < block.size + block.ov; z++)
+		for (idx y = -block.ov; y < block.size + block.ov; y++)
+			for (idx x = -block.ov; x < block.size + block.ov; x++) {
+				const dreal rho = scale * static_cast<dreal>(x + off) + NEST_RHO0;
+				const std::array<dreal, 27> eq = equilibriumOnHost(rho, NEST_VX, 0, 0);
+				for (uint8_t dfty = 0; dfty < DFMAX; dfty++)
+					for (int q = 0; q < 27; q++)
+						block.hfs[dfty](q, x, y, z) = eq[q];
+			}
+}
+
+// fine-global offset of the second-hop block of Test 21: fine2 is the 2:1
+// refinement of the fine1 cells at fine1-global [9, 17), so its offset in
+// its own (twice-fine) global coordinates is 2 * 9 = 18 and the hop-2
+// fill's x-min window reaches into fine1 indexer cells {-1, 0, 1} -- the
+// outer ghost row written by hop 1 plus the two interior rows
+constexpr idx NEST2_FINE_OFF = 18;
+
+// rho moment of an arbitrary cell of a MockBlock's arrays, reading the
+// physical array and parity orientation the two-hop composition put in
+// charge at that point (AB reads the swapped-to-source array naturally, AA
+// reads the single array with the twisted consumer orientation)
+	dreal composedSourceRho(const MockBlock& block, idx x, idx y, idx z)
+{
+#ifdef AB_PATTERN
+	// after the pointer-slot swap, the hop-2 kernel's df_out-slot source is
+	// the physical dfs[0]: hop-1 product rows hold the fill, interior rows
+	// the pristine marker -- both in natural orientation in dfs[0]
+	dreal rho = 0;
+	for (int q = 0; q < 27; q++)
+		rho += block.hfs[0](q, x, y, z);
+	return rho;
+#elif defined(AA_PATTERN)
+	// ghost rows carry the hop-1 fill and the interior rows were re-armed
+	// above, all in the twisted orientation of the spatial consumer
+	return rhoMomentFilled(block, true, x, y, z);
+#endif
+}
+
+// Test 21: two-hop kernel composition -- direct `cudaAMR_CoarseToFine`
+// (both hops) and `cudaAMR_FineToCoarse` (F2C_SCHONHERR arm) launches over
+// three nested mock blocks prove the transfers COMPOSE numerically: the
+// level-2 ghost rows carry the doubled interpolation (the fill of the
+// fill), not a single-hop or wrong-frame value:
+//
+// - hop 1 fills fine1's x-min ghost rows from the level-0 marker
+//   (production ghost-face extent); the product is then put in charge of
+//   the hop-2 source slot the same way the production rotation does (AB:
+//   the fill wrote the dest df_cur slot -- physical dfs[0] -- so the two
+//   pointer slots are swapped, leaving the just-filled frame as the next
+//   df_out source; AA: the single array stores the fill twisted for the
+//   spatial consumer, so the interior rows are re-armed to the same
+//   twisted orientation and the hop-2 parity argument reads twisted).
+// - hop 2 fills fine2's x-min ghost rows from fine1: the outer row reads
+//   the hop-1-written outer row of fine1, so the level-2 value is exactly
+//   the composition -- the analytic numbers below pin it:
+//     L0 marker:   rho(c)  = c + 4            (coarse indexer c)
+//     L1 ghost:    fx=-2 -> 6.75,  fx=-1 -> 7.25   (hop-1 fill result)
+//     L1 interior: rho(g)  = 0.5 * (g + 8) + 4
+//     L2 fx=-2 (fg=16): 0.25*L1[-1] + 0.75*L1[0] = 0.25*7.25 + 0.75*8.0 = 7.8125
+//        (a hop that ignored the hop-1 product and read the pristine
+//         marker value 7.5 at L1[-1] would give 7.875 -- 0.0625 apart)
+//     L2 fx=-1 (fg=17): 0.75*L1[0] + 0.25*L1[1] = 0.75*8.0 + 0.25*8.5 = 8.125
+//   (window arithmetic per correctC2Frho: c0 = floor_div2(fg)-1+(fg&1),
+//    weight 0.25/0.75)
+void test_two_hop_kernel_composition()
+{
+	MockBlock coarse, fine1, fine2;
+	coarse.allocate(NEST_N, NEST_OV);
+	fine1.allocate(NEST_N, NEST_OV);
+	fine2.allocate(NEST_N, NEST_OV);
+	fillMarkerScaled(coarse, 1.0, 0);
+	fillMarkerScaled(fine1, 0.5, NEST_FINE_OFF);
+	fillMarkerScaled(fine2, 0.25, NEST2_FINE_OFF);
+	coarse.copyToDevice();
+	fine1.copyToDevice();
+	fine2.copyToDevice();
+
+	const idx3d off0{0, 0, 0};
+	const idx3d off1{NEST_FINE_OFF, NEST_FINE_OFF, NEST_FINE_OFF};
+	const idx3d off2{NEST2_FINE_OFF, NEST2_FINE_OFF, NEST2_FINE_OFF};
+
+	// ----- coarse-to-fine composition -----
+	// hop 1: production x-min ghost-face fill of fine1 from coarse
+	launchCoarseToFine(fine1, coarse, {-2, -2, -2}, {0, 18, 18}, off1, off0, /*coarse_even_iter=*/false);
+
+	// refresh the host mirrors BEFORE any further host-side rewrite so the
+	// hop-1 product is visible there (and any re-upload cannot clobber it)
+	fine1.copyToHost();
+
+	// put the hop-1 product into the hop-2 source slot (see the header
+	// comment of this test): under AB the fill wrote fine1's df_cur slot
+	// (physical dfs[0]); the next fill sources the df_out slot, so the two
+	// pointer slots are swapped -- exactly what the production rotation
+	// does in place at every substep boundary
+	bool hop2_source_even = false;
+#ifdef AB_PATTERN
+	std::swap(fine1.data.dfs[0], fine1.data.dfs[1]);
+#elif defined(AA_PATTERN)
+	hop2_source_even = true;
+	// re-arm the interior rows of fine1 to the twisted orientation of the
+	// filled ghost rows (the interior currently reads as the natural
+	// orientation of the plain hfs fill; the ghost rows just filled by
+	// hop 1 already carry the twisted storage)
+	{
+		MockBlock& b = fine1;
+		for (idx z = 0; z < b.size; z++)
+			for (idx y = 0; y < b.size; y++)
+				for (idx x = 0; x < b.size; x++) {
+					const dreal rho = dreal(0.5) * static_cast<dreal>(x + NEST_FINE_OFF) + NEST_RHO0;
+					const std::array<dreal, 27> eq = equilibriumOnHost(rho, NEST_VX, 0, 0);
+					for (int q = 0; q < 27; q++)
+						b.hfs[df_cur](opposite_direction(q), x, y, z) = eq[q];
+				}
+		fine1.copyToDevice();
+	}
+#endif
+
+	// hop 2: the same fill one level deeper
+	launchCoarseToFine(fine2, fine1, {-2, -2, -2}, {0, 18, 18}, off2, off1, hop2_source_even);
+	fine2.copyToHost();
+
+	double max_err = 0;
+	idx bad = 0;
+	for (const idx gxx : {-2, -1}) {
+		const dreal rho_e = (gxx == -2) ? dreal(7.8125) : dreal(8.125);
+		const std::array<dreal, 27> eq = equilibriumOnHost(rho_e, NEST_VX, 0, 0);
+		// independent replica through the recorded hop-1 state: ghost row
+		// -1 carries the hop-1 product, interior rows the pristine marker
+		const dreal rho_replica =
+			(gxx == -2)
+				? dreal(0.25) * composedSourceRho(fine1, -1, 0, 0) + dreal(0.75) * composedSourceRho(fine1, 0, 0, 0)
+				: dreal(0.75) * composedSourceRho(fine1, 0, 0, 0) + dreal(0.25) * composedSourceRho(fine1, 1, 0, 0);
+		max_err = 0;
+		bad = 0;
+		for (idx z = 0; z < NEST_N; z++)
+			for (idx y = 0; y < NEST_N; y++)
+				for (int q = 0; q < 27; q++) {
+					const dreal actual = fine2.hfs[df_cur](c2fWriteSlot(q), gxx, y, z);
+					if (! closeEnough(actual, eq[q], 1e-5, 1e-6))
+						bad++;
+					max_err = std::max<double>(max_err, std::abs(actual - eq[q]));
+				}
+		check(
+			bad == 0 && closeEnough(rho_replica, rho_e, 1e-5, 1e-6),
+			fmt::format(
+				"Test 21 two-hop C2F composition: fine2 ghost x={} carries the doubled interpolation rho = {:.9e} "
+				"(replica {:.9e}; all cells/DFs, max |err| = {:.3e})",
+				gxx, static_cast<double>(rho_e), static_cast<double>(rho_replica), max_err
+			)
+		);
+	}
+
+	// ----- fine-to-coarse composition (own-8 mean-of-mean chain) -----
+#ifdef AB_PATTERN
+	// restore the identity pointer slots before the F2C half (the C2F
+	// composition above swapped them to emulate the production rotation;
+	// hop B's F2C read/write both land in the df_out slot and must not
+	// inherit the swap)
+	std::swap(fine1.data.dfs[0], fine1.data.dfs[1]);
+#endif	// AB_PATTERN
+#ifdef F2C_SCHONHERR
+	// re-establish the pristine marker state for the F2C direction
+	fillMarkerScaled(fine1, 0.5, NEST_FINE_OFF);
+	fillMarkerScaled(fine2, 0.25, NEST2_FINE_OFF);
+	fine1.copyToDevice();
+	fine2.copyToDevice();
+
+	// hop A: F2C fine2 -> fine1 onto the x = 4 subcell plane of the
+	// level-0 cell (6,6,6) (fine1 indexer x maps to fine1-global x+8,
+	// parent cell (x+8)/2); destination cells tagged like the production
+	// coupling ring
+	tagCouplingCells(fine1, {4, 4, 4}, {5, 6, 6});
+	// hop A is a level-1 <- level-2 transfer: the relaxation-time pair of
+	// the two blocks is (0.8, 1.1), not the (0.65, 0.8) level-0/level-1
+	// pair of the other tests
+	launchFineToCoarse(fine1, fine2, {4, 4, 4}, {5, 6, 6}, off2, off1, /*fine_even_iter=*/false, /*coarse_even_iter=*/false, TAU_FINE, TAU_LEVEL2);
+	// hop A product: each destination's rho moment is the own-8 subcell
+	// mean d0 of the fine2 marker (the F2C_SCHONHERR mean-density transfer
+	// pinned by Test 4a): rho = 0.25*(x+18)+4 means over the two
+	// x-subcells {6,7} to 10.125 (the y/z average preserves the x-only
+	// marker). Asserted on MOMENTS only: the sigma-form transfer also
+	// carries the non-equilibrium content of the input gradient, so the
+	// per-DF values are not plain equilibrium (the own-8 density d0 is
+	// this lock's semantic)
+	const dreal rho_hopA = dreal(10.125);
+	max_err = 0;
+	bad = 0;
+	// NOTE: copyToHost refreshes the mirrors for the assertion; copyToDevice
+	// must NOT run before hop B (it would clobber nothing -- the mirrors
+	// now equal the device -- but the device state is what hop B reads)
+	fine1.copyToHost();
+	for (const idx z : {4, 5})
+		for (const idx y : {4, 5}) {
+			const dreal rho_c = f2cWrittenRho(fine1, /*next_coarse_even_iter=*/false, 4, y, z);
+			const double err = std::abs(static_cast<double>(rho_c) - static_cast<double>(rho_hopA));
+			max_err = std::max<double>(max_err, err);
+			if (err > 1e-5)
+				bad++;
+		}
+	check(
+		bad == 0,
+		fmt::format(
+			"Test 21 two-hop F2C composition (hop A): fine1 x=4 subcells hold the own-8 mean d0 = {:.6e} [{}] (max |err| = {:.3e})",
+			rho_hopA, f2c_strategy_name, max_err
+		)
+	);
+
+	// hop B: F2C fine1 -> coarse at the level-0 cell (6,6,6), reading the
+	// hop-A product on its x = 4 subcells and the pristine marker on x = 5
+	tagCouplingCells(coarse, {6, 6, 6}, {7, 7, 7});
+	launchFineToCoarse(coarse, fine1, {6, 6, 6}, {7, 7, 7}, off1, off0, /*fine_even_iter=*/false, /*coarse_even_iter=*/false);
+	// mean-of-mean expectation: (4 * 10.125 + 4 * rho_L1(5)) / 8 with
+	// rho_L1(5) = 0.5*(5+8)+4 = 10.5 -- a hop that ignored the hop-A
+	// product would read 4 * 10.0 instead, pinning (4*10+4*10.5)/8 = 10.25
+	// (0.0625 apart from the composition value)
+	const dreal rho_hopB = dreal(10.3125);
+	coarse.copyToHost();
+	const dreal rho_c6 = f2cWrittenRho(coarse, /*next_coarse_even_iter=*/false, 6, 6, 6);
+	check(
+		closeEnough(rho_c6, rho_hopB, 1e-5, 1e-6),
+		fmt::format(
+			"Test 21 two-hop F2C composition (hop B): coarse cell (6,6,6) holds the mean-of-mean d0 = {:.6e} [{}] "
+			"(single-hop expectation 10.25 is 0.0625 away; actual {:.9e})",
+			rho_hopB, f2c_strategy_name, static_cast<double>(rho_c6)
+		)
+	);
+#endif	// F2C_SCHONHERR -- the two-hop F2C mean-of-mean chain pins the
+		// own-8 transfer's semantics; the Lagrava (opt-out) projection of
+		// the same non-polynomial pattern differs from the own-8 mean by
+		// construction (its 4x4x4 window spans the hop-written kink), so
+		// the chain runs on the Schönherr arm only
+}
+
+int main(int argc, char** argv)
+{
+	// silent MPI bootstrap: TNLMPI_INIT (TNL::MPI::ScopedInitializer) would
+	// print the selectGPU "Rank 0: ... / Environment: ..." lines to stdout,
+	// which the bit-identity manifest (sec. 7.5) pins absent in THIS suite;
+	// the nesting locks below need MPI only for the single-rank State ctor
+	// (the GPU is the default device 0, matching the manifest's recording)
+	int mpi_provided = 0;
+	MPI_Init_thread(&argc, &argv, MPI_THREAD_SINGLE, &mpi_provided);
+
+	if (TNL::MPI::GetSize(MPI_COMM_WORLD) != 1) {
+		fmt::println("RESULT: AMR coupling tests are single-rank only (nproc = {})", TNL::MPI::GetSize(MPI_COMM_WORLD));
+		MPI_Finalize();
+		return 1;
+	}
+
 	fmt::println("AMR coupling kernel unit tests (streaming pattern: {})", pattern_name);
 
 	test_uniform_coarse_to_fine();
@@ -2353,6 +3113,13 @@ int main()
 	test_cm_exactness_nominal();
 #endif	// CM semantics active
 
+	// nesting locks (plan commit D; silent on success, see the stdout
+	// contract in the file header)
+	test_two_hop_transfer_census();
+	test_midcycle_fill_live_source();
+	test_two_hop_kernel_composition();
+
+	MPI_Finalize();
 	if (g_failures == 0) {
 		fmt::println("RESULT: all AMR coupling tests passed");
 		return 0;
