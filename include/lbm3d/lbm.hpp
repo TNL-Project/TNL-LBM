@@ -44,6 +44,10 @@ LBM<CONFIG>::LBM(const TNL::MPI::Comm& communicator, lat_t lat, const bool3d& pe
 	// is also responsible for maintaining level_block_counts
 	this->max_level = max_level;
 	level_block_counts = std::vector<int>(max_level + 1, 0);
+	// per-level substep counters of the AMR subcycling start at zero (the
+	// restart-parity argument of the member comment); State_AMR's advancePair
+	// recursion is their only writer
+	totalSubstepCount = std::vector<int>(max_level + 1, 0);
 }
 
 template <typename CONFIG>
