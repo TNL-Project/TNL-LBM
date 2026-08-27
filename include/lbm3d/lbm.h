@@ -40,6 +40,19 @@ struct LBM
 	int max_level = 0;
 	std::vector<int> level_block_counts;
 
+	// AMR subcycling: cumulative per-level substep counters, one per
+	// refinement level (level 0 advances on the global `iterations` clock
+	// instead, so totalSubstepCount[0] is never consumed). The counters drive
+	// the parity/rotation argument of updateKernelDataForLevel and the
+	// write-side parity of the fine-to-coarse launches; a counter holds the
+	// level's COMPLETED-substep count, i.e. the index of its next substep
+	// (post-increment semantics mirroring how the global `iterations` clock
+	// relates to the next level-0 step). Reset only on construction/restart:
+	// every coarse cycle adds 2^L substeps at level L (an even count), so the
+	// parity/rotation state is cycle-invariant and a restart at a cycle
+	// boundary with zeroed counters is parity-consistent by induction.
+	std::vector<int> totalSubstepCount;
+
 #ifdef HAVE_MPI
 	// synchronization methods
 	void synchronizeDFsAndMacroDevice(uint8_t dftype, bool sync_macro);
