@@ -1,8 +1,8 @@
 // Unit tests for the multi-level nesting validation in createAMRBlocks
 // (include/lbm3d/amr_decomposition.h, the amr-nlevel-nesting plan's V-suite
 // replacing the level > 1 reject) and for block creation on 3-level nested
-// region chains. Creation-level only: NO SimUpdate runs on nested
-// configurations (the schedule recursion is the following commit's scope).
+// region chains, and for the advancePair schedule recursion of State_AMR
+// (include/lbm3d/amr_state.h) running SimUpdate on nested configurations.
 //
 // - test_vsuite_reject_corpus: one createAMRBlocks call per invalid class of
 //   the V-suite (V5 ascending file order, V6 parent existence/uniqueness,
@@ -34,6 +34,18 @@
 //   full-map equality per parent block against the same reference, ring-free
 //   tagging on the wall-shared faces (halo rows land in the parent block's
 //   ghost zone and must be clipped away), and re-invocation idempotency.
+// - test_two_level_schedule_census / test_three_level_schedule_census: the
+//   advancePair schedule recursion (amr-nlevel-nesting commit C) observed
+//   through the StateSchedule_AMR spy of the shared fixture on nested
+//   mocks: the per-cycle event expansion of the plan's sec. 3.4 table at
+//   max_level == 2 and its one-level-deeper expansion at max_level == 3,
+//   with per-event rotation locks (AB df-pointer identity / AA even_iter),
+//   the {true, false} next-substep parity alternation at the mid/end f2c
+//   sites, and the cumulative per-level substep counters 2^L per cycle.
+// - test_three_level_conservation_smoke: plotting-free 20-cycle run of the
+//   3-level chain: conservation stats stay finite (no NaN) and internally
+//   consistent with the GEO_NOTHING-excluding reference, with the global
+//   mass stable.
 //
 // The streaming pattern is selected at compile time (AB_PATTERN/AA_PATTERN
 // from tests/CMakeLists.txt), everything is single-rank. Shared fixture
@@ -295,6 +307,16 @@ void test_vsuite_reject_corpus()
 constexpr const char* three_level_chain = "1 8 1 4 12 30 12\n"
 										  "2 38 4 16 16 120 16\n"
 										  "3 164 16 64 16 480 16";
+
+// conservation-smoke chain: telescoping with gaps >= 3 on EVERY face, so all
+// six coarse-to-fine destination bands of every level receive a fill (the
+// commit-B chain above shares wall-candidate faces whose destinations clip
+// empty against the parent interior pre-wall-machinery -- those bands keep
+// their all-zero initial state and sink rho to NaN in a few cycles, a
+// geometry-bound effect unrelated to the nested schedule the smoke must pin)
+constexpr const char* three_level_interior_chain = "1 8 8 8 12 12 12\n"
+												   "2 40 40 40 16 16 16\n"
+												   "3 176 176 176 32 32 32";
 
 void test_vsuite_gap2_warning()
 {
@@ -688,6 +710,456 @@ void test_three_level_mark_census()
 	);
 }
 
+// Schedule census on nested mocks (the advancePair recursion's event
+// expansion; plan sec. 3.2-3.4).
+
+using St = StateSchedule_AMR<NSE_CONFIG>::Stage;
+
+// one row of the per-cycle expected schedule: the launch kind and level, the
+// kernel extent class (kernels only), the expected DF rotation of the
+// event-level block and of its parent-level block at the call site (-1 = do
+// not assert, CLOCK = the level-0 global clock, alternating per cycle), and
+// for f2c events the expected write-side next-substep parity (CLOCK =
+// (iterations % 2) == 1 with the post-incremented clock); f2c rows carry an
+// additional ordinal slot (unused, see checkCycleEvents)
+struct ExpectedEvent
+{
+	St stage;
+	int level;
+	int ghost_layers;
+	int fine_rot;
+	int parent_rot;
+	int f2c_next_parity;
+};
+
+constexpr int EVT_NA = -1;	  // field not asserted
+constexpr int EVT_CLOCK = -2; // level-0 global clock value at this cycle
+
+// the 2-level per-cycle expansion (plan sec. 3.4, s_1 = s_2 = 0 at cycle 0;
+// rotations repeat every cycle because each level's per-cycle substep count
+// 2^L is even and updateKernelDataForLevel is an absolute mod-2 setter)
+const ExpectedEvent table_max2[13] = {
+	{St::kernel, 1, 1, 0, EVT_CLOCK},
+	{St::kernel, 2, 1, 0, 0},
+	{St::kernel, 2, 0, 1, 0},
+	{St::f2c, 2, 0, 1, 0, 1},
+	{St::c2f, 2, 0, 0, 0},
+	{St::kernel, 1, 0, 1, EVT_CLOCK},
+	{St::kernel, 2, 1, 0, 1},
+	{St::kernel, 2, 0, 1, 1},
+	{St::f2c, 2, 0, 1, 1, 0},
+	{St::kernel, 0, 0, EVT_NA, EVT_NA},
+	{St::f2c, 1, 0, 1, EVT_CLOCK, EVT_CLOCK},
+	{St::c2f, 1, 0, 0, EVT_CLOCK},
+	{St::c2f, 2, 0, 0, 0},
+};
+
+// the 3-level per-cycle expansion (advancePair(1) containing two
+// advancePair(2) invocations, each containing two advancePair(3)
+// invocations): 15 kernel launches (1+2+4+8 substeps per level), 7 f2c and
+// 6 c2f launches per cycle
+const ExpectedEvent table_max3[28] = {
+	{St::kernel, 1, 1, 0, EVT_CLOCK},
+	{St::kernel, 2, 1, 0, 0},
+	{St::kernel, 3, 1, 0, 0},
+	{St::kernel, 3, 0, 1, 0},
+	{St::f2c, 3, 0, 1, 0, 1},
+	{St::c2f, 3, 0, 0, 0},
+	{St::kernel, 2, 0, 1, 0},
+	{St::kernel, 3, 1, 0, 1},
+	{St::kernel, 3, 0, 1, 1},
+	{St::f2c, 3, 0, 1, 1, 0},
+	{St::f2c, 2, 0, 1, 0, 1},
+	{St::c2f, 2, 0, 0, 0},
+	{St::kernel, 1, 0, 1, EVT_CLOCK},
+	{St::kernel, 2, 1, 0, 1},
+	{St::kernel, 3, 1, 0, 0},
+	{St::kernel, 3, 0, 1, 0},
+	{St::f2c, 3, 0, 1, 0, 1},
+	{St::c2f, 3, 0, 0, 0},
+	{St::kernel, 2, 0, 1, 1},
+	{St::kernel, 3, 1, 0, 1},
+	{St::kernel, 3, 0, 1, 1},
+	{St::f2c, 3, 0, 1, 1, 0},
+	{St::f2c, 2, 0, 1, 1, 0},
+	{St::kernel, 0, 0, EVT_NA, EVT_NA},
+	{St::f2c, 1, 0, 1, EVT_CLOCK, EVT_CLOCK},
+	{St::c2f, 1, 0, 0, EVT_CLOCK},
+	{St::c2f, 2, 0, 0, 0},
+	{St::c2f, 3, 0, 0, 0},
+};
+
+const char* stageName(St stage)
+{
+	switch (stage) {
+		case St::kernel:
+			return "kernel";
+		case St::c2f:
+			return "c2f";
+		case St::f2c:
+			return "f2c";
+	}
+	return "?";
+}
+
+// rotation state of the parity evidence the spy captured at one call site,
+// reduced to the 0/1 form the expected tables use (AB: which physical array
+// the captured df_cur pointer aliases; AA: the captured even_iter flag)
+int capturedRotation(const BLOCK& block, const void* captured_cur, bool captured_even)
+{
+#ifdef AB_PATTERN
+	static_cast<void>(captured_even);
+	if (captured_cur == block.dfs[0].getData())
+		return 0;
+	if (captured_cur == block.dfs[1].getData())
+		return 1;
+	return -1;
+#elif defined(AA_PATTERN)
+	static_cast<void>(block);
+	static_cast<void>(captured_cur);
+	return captured_even ? 1 : 0;
+#endif
+}
+
+// assert one 1-based cycle of the census against the table: events between
+// [base, base + table_size) of the spy log; clock_rot is the level-0 block's
+// rotation for this cycle ((cycle - 1) % 2 under the updateKernelData +
+// SimUpdate driver), and next_parity EVT_CLOCK resolves to (cycle % 2) == 1
+// because SimUpdate post-increments `iterations` before the f2c launch
+bool checkCycleEvents(
+	StateSchedule_AMR<NSE_CONFIG>& state,
+	int cycle,
+	const ExpectedEvent* table,
+	std::size_t table_size,
+	std::size_t base,
+	std::string& failure
+)
+{
+	using Evt = StateSchedule_AMR<NSE_CONFIG>::Event;
+	const int clock_rot = (cycle - 1) % 2;
+	if (state.events.size() != base + table_size) {
+		failure = fmt::format("expected {} events, recorded {}", table_size, state.events.size() - base);
+		return false;
+	}
+	BLOCK* level0 = state.nse.getBlocksAtLevel(0).front();
+	// 1-based ordinal of the f2c launches per coupling inside this cycle: the
+	// j-th f2c at coupling (L -> L-1) fires when the parent's cumulative
+	// counter reads 2^(L-1)*(cycle-1) + j (once per parent substep)
+	int f2c_ordinal[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+	for (std::size_t i = 0; i < table_size; i++) {
+		const ExpectedEvent& want = table[i];
+		const Evt& evt = state.events[base + i];
+		if (evt.stage != want.stage || evt.level != want.level) {
+			failure = fmt::format(
+				"event {}: expected {} L{}, recorded {} L{}", i + 1, stageName(want.stage), want.level, stageName(evt.stage), evt.level
+			);
+			return false;
+		}
+		if (want.stage == St::kernel && evt.ghost_layers != want.ghost_layers) {
+			failure = fmt::format("event {} (kernel L{}): ghost_layers {} != {}", i + 1, want.level, evt.ghost_layers, want.ghost_layers);
+			return false;
+		}
+		BLOCK* block = want.level > 0 ? state.nse.getBlocksAtLevel(want.level).front() : nullptr;
+		BLOCK* parent = want.level > 0 ? state.nse.getBlocksAtLevel(want.level - 1).front() : nullptr;
+		const void* fine_cur = nullptr;
+		const void* parent_cur = nullptr;
+		bool fine_even = false, parent_even = false;
+#ifdef AB_PATTERN
+		fine_cur = evt.fine_cur;
+		parent_cur = evt.parent_cur;
+#elif defined(AA_PATTERN)
+		fine_even = evt.fine_even;
+		parent_even = evt.parent_even;
+#endif
+		if (want.stage == St::kernel && want.level == 0) {
+			// the level-0 step is driven by the global updateKernelData
+			// clock (set before SimUpdate) and must not be re-armed by any
+			// fine-level preparation
+#ifdef AB_PATTERN
+			if (evt.coarse_cur != (clock_rot == 0 ? level0->dfs[0].getData() : level0->dfs[1].getData())) {
+				failure = fmt::format("event {} (kernel L0): level-0 rotation does not match the global clock of cycle {}", i + 1, cycle);
+				return false;
+			}
+#elif defined(AA_PATTERN)
+			if (evt.coarse_even != (clock_rot == 1)) {
+				failure = fmt::format("event {} (kernel L0): level-0 even_iter does not match the global clock of cycle {}", i + 1, cycle);
+				return false;
+			}
+#endif
+		}
+		if (block != nullptr && want.fine_rot != EVT_NA) {
+			const int expected_rot = want.fine_rot == EVT_CLOCK ? clock_rot : want.fine_rot;
+			const int recorded_rot = capturedRotation(*block, fine_cur, fine_even);
+			if (recorded_rot != expected_rot) {
+				failure = fmt::format(
+					"event {} ({} L{}): level rotation mismatch (expected {}, recorded {})",
+					i + 1,
+					stageName(want.stage),
+					want.level,
+					expected_rot,
+					recorded_rot
+				);
+				return false;
+			}
+		}
+		if (parent != nullptr && want.parent_rot != EVT_NA) {
+			const int expected_rot = want.parent_rot == EVT_CLOCK ? clock_rot : want.parent_rot;
+			const int recorded_rot = capturedRotation(*parent, parent_cur, parent_even);
+			if (recorded_rot != expected_rot) {
+				failure = fmt::format(
+					"event {} ({} L{}): parent (L{}) rotation mismatch (expected {}, recorded {})",
+					i + 1,
+					stageName(want.stage),
+					want.level,
+					want.level - 1,
+					expected_rot,
+					recorded_rot
+				);
+				return false;
+			}
+		}
+		if (want.stage == St::f2c) {
+			// EVT_CLOCK: the f2c(1 -> 0) write side is the post-incremented
+			// global clock of THIS cycle (SimUpdate already incremented
+			// `iterations` to `cycle`)
+			const bool expected_parity = want.f2c_next_parity == EVT_CLOCK ? (cycle % 2) == 1 : want.f2c_next_parity == 1;
+			const bool recorded_parity = (evt.next_parent_substep % 2) == 1;
+			if (evt.next_parent_substep < 0 || recorded_parity != expected_parity) {
+				failure = fmt::format(
+					"event {} (f2c L{} -> L{}): write-side next-substep parity mismatch (recorded index {}, parity {})",
+					i + 1,
+					want.level,
+					want.level - 1,
+					evt.next_parent_substep,
+					recorded_parity
+				);
+				return false;
+			}
+			f2c_ordinal[want.level]++;
+			const int expected_abs =
+				want.level > 1 ? (1 << (want.level - 1)) * (cycle - 1) + f2c_ordinal[want.level] : cycle;
+			if (evt.next_parent_substep != expected_abs) {
+				failure = fmt::format(
+					"event {} (f2c L{} -> L{}): write-side next-substep index {} != {} (cumulative L{} counter)",
+					i + 1,
+					want.level,
+					want.level - 1,
+					evt.next_parent_substep,
+					expected_abs,
+					want.level - 1
+				);
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+// driver shared by the 2-level and 3-level census: SimInit's level-ascending
+// initial-fill cascade, then 3 full cycles each asserted against the table
+// and the cumulative per-level counters
+void checkScheduleCensus(int max_level, const char* regions, const char* label, const ExpectedEvent* table, std::size_t table_size)
+{
+	using St = StateSchedule_AMR<NSE_CONFIG>::Stage;
+	lat_t lat = makeLattice(32);
+	const std::string id = fmt::format("test_amr_nesting_{}_census{}", pattern_name, max_level);
+	StateSchedule_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, max_level);
+	if (! state.canCompute()) {
+		report(false, fmt::format("{} setup: state.canCompute()", label));
+		return;
+	}
+	std::string message;
+	try {
+		createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>(regions));
+		state.SimInit();
+	}
+	catch (const std::runtime_error& e) {
+		message = e.what();
+	}
+	report(
+		message.empty() && ! state.nse.terminate,
+		fmt::format("{} setup: chain creation and SimInit ({})", label, message.empty() ? "no exception" : fmt::format("threw: {}", message))
+	);
+	if (! message.empty() || state.nse.terminate)
+		return;
+
+	// SimInit's initial fill: one c2f launch per level, level-ascending, each
+	// launched at substep counter 0 (the cycle-0 anchor of the pair schedule;
+	// the fill targets the substep-0 rotation exactly as at every cycle end)
+	bool init_ok = state.events.size() == static_cast<std::size_t>(max_level);
+	for (int L = 1; L <= max_level && init_ok; L++) {
+		const auto& evt = state.events[L - 1];
+		BLOCK* block = state.nse.getBlocksAtLevel(L).front();
+		init_ok = evt.stage == St::c2f && evt.level == L;
+#ifdef AB_PATTERN
+		init_ok = init_ok && evt.fine_cur == block->dfs[0].getData();
+#elif defined(AA_PATTERN)
+		init_ok = init_ok && evt.fine_even == false;
+#endif
+	}
+	report(init_ok, fmt::format("{} SimInit: level-ascending initial c2f cascade ({} events, all at rotation 0)", label, state.events.size()));
+	state.events.clear();
+
+	bool cycles_ok = true;
+	std::string failure;
+	for (int cycle = 1; cycle <= 3 && cycles_ok; cycle++) {
+		const std::size_t base = state.events.size();
+		state.updateKernelData();
+		state.SimUpdate();
+		if (state.nse.terminate) {
+			failure = "SimUpdate set the terminate flag";
+			cycles_ok = false;
+			break;
+		}
+		if (! checkCycleEvents(state, cycle, table, table_size, base, failure))
+			cycles_ok = false;
+		// cumulative per-level substep counters: exactly 2^L substeps per
+		// cycle at level L
+		for (int L = 1; L <= max_level && cycles_ok; L++) {
+			const int expected_count = cycle * (1 << L);
+			if (state.nse.totalSubstepCount[L] != expected_count) {
+				failure = fmt::format(
+					"cycle {}: totalSubstepCount[{}] = {} != {} (2^L per cycle)", cycle, L, state.nse.totalSubstepCount[L], expected_count
+				);
+				cycles_ok = false;
+			}
+		}
+	}
+	report(
+		cycles_ok && state.nse.iterations == 3,
+		fmt::format(
+			"{}: 3 cycles match the {}-event advancePair expansion per cycle (rotations, f2c next-parity/indices, counters){}",
+			label,
+			table_size,
+			failure.empty() ? "" : fmt::format(" -- first failure: {}", failure)
+		)
+	);
+	report(! state.nse.terminate, fmt::format("{}: no termination during the census run", label));
+}
+
+void test_two_level_schedule_census()
+{
+	// the top two levels of the validated chain (same geometry family as the
+	// 3-level census, max_level 2)
+	checkScheduleCensus(2, "1 8 1 4 12 30 12\n2 38 4 16 16 120 16", "2-level census", table_max2, 13);
+}
+
+void test_three_level_schedule_census()
+{
+	checkScheduleCensus(3, three_level_chain, "3-level census", table_max3, 28);
+}
+
+// 3-level conservation smoke (plotting-free): 20 coupled cycles on a
+// telescoping 3-level chain whose faces are all coarse-to-fine-fillable
+// (three_level_interior_chain); the conservation stats must stay finite (no
+// NaN), internally consistent with the GEO_NOTHING-excluding host reference,
+// and the global mass stable across cycles
+void test_three_level_conservation_smoke()
+{
+	lat_t lat = makeLattice(32);
+	const std::string id = fmt::format("test_amr_nesting_{}_smoke", pattern_name);
+	StateSchedule_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/3);
+	if (! state.canCompute()) {
+		report(false, "3-level conservation smoke setup: state.canCompute()");
+		return;
+	}
+	std::string message;
+	try {
+		createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>(three_level_interior_chain));
+		state.SimInit();
+	}
+	catch (const std::runtime_error& e) {
+		message = e.what();
+	}
+	report(
+		message.empty() && ! state.nse.terminate,
+		fmt::format(
+			"3-level conservation smoke setup: chain creation and SimInit ({})",
+			message.empty() ? "no exception" : fmt::format("threw: {}", message)
+		)
+	);
+	if (! message.empty() || state.nse.terminate)
+		return;
+
+	// force macroscopic output inside every kernel so the per-level macros
+	// of the cycle-end snapshot are fresh on all 4 levels (the subcycling
+	// tests' OUT3DCUT idiom)
+	state.cnt[OUT3DCUT].period = 1e-30;
+
+	double drift_final = 0;
+	double mass_earliest = -1;
+	bool finite_ok = true;
+	bool consistent_ok = true;
+	bool stable_ok = true;
+	std::string failure;
+	for (int iter = 1; iter <= 20 && ! state.nse.terminate; iter++) {
+		state.updateKernelData();
+		state.SimUpdate();
+		if (iter % 5 != 0)
+			continue;
+
+		const AMRConservationStats s = state.computeConservationStats();
+		const RefStats ref = computeReferenceStats(state);
+		const double mass = s.total_mass;
+		if (mass_earliest < 0)
+			mass_earliest = mass;
+
+		if (! std::isfinite(mass) || ! std::isfinite(s.total_momentum_x) || ! std::isfinite(s.total_momentum_y)
+			|| ! std::isfinite(s.total_momentum_z) || s.per_level_kinetic_energy.size() != 4) {
+			finite_ok = false;
+			failure = fmt::format("cycle {}: non-finite conservation entry (mass {:.6e})", iter, mass);
+			break;
+		}
+		for (int L = 0; L <= 3; L++)
+			if (! std::isfinite(s.per_level_kinetic_energy[L]) || s.per_level_kinetic_energy[L] < 0) {
+				finite_ok = false;
+				failure = fmt::format("cycle {}: non-finite/negative level-{} kinetic energy {:.6e}", iter, L, s.per_level_kinetic_energy[L]);
+			}
+		if (! finite_ok)
+			break;
+
+		// internal consistency with the host-side GEO_NOTHING-excluding
+		// reference (the nesting metric's hidden-cell exclusion at 3 levels)
+		if (! closeRel(mass, ref.mass) || ! closeRel(s.total_momentum_x, ref.mx) || ! closeRel(s.total_momentum_y, ref.my)
+			|| ! closeRel(s.total_momentum_z, ref.mz)) {
+			consistent_ok = false;
+			failure = fmt::format("cycle {}: metric {:.6e} deviates from the reference {:.6e}", iter, mass, ref.mass);
+			break;
+		}
+		// the drift bound: periodic box, no in- or outflow; every band of
+		// the interior chain is coarse-to-fine-filled each cycle, so the
+		// mass must stay stable -- the 5% bound over cycles 5 -> 20 is
+		// pre-registered generous, the observed drift is printed below
+		const double drift = std::abs(mass - mass_earliest) / mass_earliest;
+		if (iter == 20) {
+			drift_final = drift;
+			if (drift > 5e-2) {
+				stable_ok = false;
+				failure = fmt::format("mass drift {:.6e} over cycles 5 -> 20 exceeds the 5e-2 bound", drift);
+			}
+		}
+	}
+	report(
+		finite_ok,
+		fmt::format(
+			"3-level conservation smoke: all conservation entries finite (no NaN) over 20 cycles{}",
+			failure.empty() && finite_ok ? "" : fmt::format(" -- {}", failure)
+		)
+	);
+	report(
+		consistent_ok,
+		fmt::format(
+			"3-level conservation smoke: nested metric matches the GEO_NOTHING-excluding reference at every checkpoint{}",
+			failure.empty() && consistent_ok ? "" : fmt::format(" -- {}", failure)
+		)
+	);
+	report(
+		stable_ok && mass_earliest > 0,
+		fmt::format("3-level conservation smoke: global mass stable over 20 coupled cycles (relative drift {:.6e} over cycles 5 -> 20)", drift_final)
+	);
+	report(state.nse.iterations == 20 && ! state.nse.terminate, "3-level conservation smoke: 20 coupled cycles, no termination");
+}
+
 int main(int argc, char** argv)
 {
 	TNLMPI_INIT mpi(argc, argv);
@@ -704,6 +1176,9 @@ int main(int argc, char** argv)
 	test_vsuite_sep2_warning();
 	test_three_level_creation();
 	test_three_level_mark_census();
+	test_two_level_schedule_census();
+	test_three_level_schedule_census();
+	test_three_level_conservation_smoke();
 
 	if (g_failures == 0) {
 		fmt::println("RESULT: all AMR nesting tests passed");
