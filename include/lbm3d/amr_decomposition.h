@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <map>
 #include <sstream>
@@ -57,9 +58,33 @@
  *
  * Lines beginning with '#' are comments and blank lines are skipped.
  *
- * v1 scope (static single-hop refinement):
- * - every region must have `level == 1` (level-0 blocks are created only by
- *   the LBM constructors, and multi-level nesting is future work),
+ * Multi-level nesting (the amr-nlevel-nesting plan): regions at level >= 2
+ * nest inside a unique earlier level-(level-1) region; createAMRBlocks'
+ * phase-1 validation enforces the V-suite on the parent-frame projections
+ * (all conversions use the amrParentFrameOrigin / amrFineOffset /
+ * amrFineLocal helpers and are exact divisions by the V4 alignment check):
+ * - V1-V4: level bounds, positive size and footprint gs >= 3 measured in
+ *   PARENT-level cells, containment in the parent-level global lattice,
+ *   origin/size multiples of 2^(level-1) (all reduce to the historical
+ *   level-1 checks bit-for-bit at level 1),
+ * - V5: the containing parent region must be listed earlier in the file
+ *   (level-ascending block creation order),
+ * - V6: exactly one level-(level-1) region fully contains the child's
+ *   footprint (orphan / ambiguous parent),
+ * - V7: per-face telescoping gap >= 2 parent-level cells, except a
+ *   wall-shared face which must align exactly with the parent's footprint
+ *   edge (gap 1 is rejected; gap 2 accepted with a warning below the
+ *   recommended 3),
+ * - V8: same-level footprints pairwise separated by >= 2 parent-level
+ *   cells (Chebyshev separation; exactly 2 accepted with a warning),
+ * - V9: positive parent-frame origin (>= 1 parent-level cell) so the
+ *   re-anchored block's interface halo row stays inside the parent
+ *   lattice storage,
+ * - V10: a gap-0 (wall-shared) face at level >= 3 requires the parent's
+ *   matching face to be gap-0 too (wall-shared chain); at level 2 the
+ *   chain bottoms out at the level-1 parent's face, whose wall backing
+ *   keeps the existing sim-side wall contract (map-checked at SimInit by
+ *   State_AMR::buildFineWallMasks),
  * - a region is stored on a single MPI rank (`lbm.nproc` must be 1),
  * - overlapping regions are not merged.
  *
@@ -205,6 +230,25 @@ void createAMRBlocks(LBM<CONFIG>& lbm, const std::vector<AMR_Region<CONFIG>>& re
 		throw std::runtime_error(message);
 	}
 
+	// face names in the canonical (min, max) per-axis order used by the
+	// V-suite messages below (x-min, x-max, y-min, y-max, z-min, z-max)
+	static constexpr const char* amr_face_names[6] = {"x-min", "x-max", "y-min", "y-max", "z-min", "z-max"};
+
+	// per-region nesting record of the phase-1 validation, needed by the V10
+	// wall-shared chain: a level-L region's gap-0 face is chain-legal only
+	// when the parent's matching face is gap-0 too, which requires the
+	// parent's per-face insets at the child's validation time (available
+	// then because V5 mandates level-ascending file order); level-1 regions
+	// have all faces marked wall-shared (the sim-side wall contract:
+	// any of them may be backed by a level-0 wall plane per the existing
+	// channel geometry, map-checked at SimInit)
+	struct RegionNesting
+	{
+		std::array<idx, 6> gap{-1, -1, -1, -1, -1, -1};
+		std::array<bool, 6> wall_shared{false, false, false, false, false, false};
+	};
+	std::vector<RegionNesting> nesting_info(regions.size());
+
 	// ---------------------------------------------------------------------------
 	// phase 1: validate ALL regions (read-only) before creating ANY block
 	// ---------------------------------------------------------------------------
@@ -251,37 +295,38 @@ void createAMRBlocks(LBM<CONFIG>& lbm, const std::vector<AMR_Region<CONFIG>>& re
 		// (local 2 for gs = 2) would also put the F2C sources of the
 		// destination cell into the C2F fill rows (the own-8 subcells under
 		// the F2C_SCHONHERR transfer default; the Lagrava opt-out's 4-node
-		// window would additionally underflow the storage extent)
-		if (region.size_coarse.x() < 3)
+		// window would additionally underflow the storage extent). At level
+		// >= 2 the footprint is measured in PARENT-level cells (an exact
+		// division by the alignment check below), which reduces to the
+		// historical coarse-cell count at level 1.
+		const auto reject_thin_axis = [&](const char* axis_name, idx footprint_cells)
+		{
 			reject(
 				fmt::format(
-					"AMR footprint size below the 3-coarse-cell minimum required by the interface band structure (distinct c=0 ring and c=1 "
-					"destination rows) on axis X (got {})",
-					region.size_coarse.x()
+					"AMR footprint size below the 3-{}-cell minimum required by the interface band structure (distinct c=0 ring and c=1 "
+					"destination rows) on axis {} (got {})",
+					region.level == 1 ? "coarse" : "parent",
+					axis_name,
+					footprint_cells
 				)
 			);
-		if (region.size_coarse.y() < 3)
-			reject(
-				fmt::format(
-					"AMR footprint size below the 3-coarse-cell minimum required by the interface band structure (distinct c=0 ring and c=1 "
-					"destination rows) on axis Y (got {})",
-					region.size_coarse.y()
-				)
-			);
-		if (region.size_coarse.z() < 3)
-			reject(
-				fmt::format(
-					"AMR footprint size below the 3-coarse-cell minimum required by the interface band structure (distinct c=0 ring and c=1 "
-					"destination rows) on axis Z (got {})",
-					region.size_coarse.z()
-				)
-			);
+		};
+		if (amrParentFrameOrigin(region.size_coarse.x(), region.level) < 3)
+			reject_thin_axis("X", amrParentFrameOrigin(region.size_coarse.x(), region.level));
+		if (amrParentFrameOrigin(region.size_coarse.y(), region.level) < 3)
+			reject_thin_axis("Y", amrParentFrameOrigin(region.size_coarse.y(), region.level));
+		if (amrParentFrameOrigin(region.size_coarse.z(), region.level) < 3)
+			reject_thin_axis("Z", amrParentFrameOrigin(region.size_coarse.z(), region.level));
 
-		// nesting: the region must be fully contained in the coarsest-level global domain
+		// nesting: the region's footprint must be fully contained in the
+		// parent-level global lattice (re-expressed in the parent frame at
+		// level >= 2 with the exact divisions above); at level 1 this is the
+		// historical coarsest-level-domain containment, bit-for-bit
+		const idx domain_factor = idx(1) << (region.level - 1);
 		if (region.origin_coarse.x() < 0 || region.origin_coarse.y() < 0 || region.origin_coarse.z() < 0
-			|| region.origin_coarse.x() + region.size_coarse.x() > lbm.lat.global.x()
-			|| region.origin_coarse.y() + region.size_coarse.y() > lbm.lat.global.y()
-			|| region.origin_coarse.z() + region.size_coarse.z() > lbm.lat.global.z())
+			|| amrParentFrameOrigin(region.origin_coarse.x() + region.size_coarse.x(), region.level) > domain_factor * lbm.lat.global.x()
+			|| amrParentFrameOrigin(region.origin_coarse.y() + region.size_coarse.y(), region.level) > domain_factor * lbm.lat.global.y()
+			|| amrParentFrameOrigin(region.origin_coarse.z() + region.size_coarse.z(), region.level) > domain_factor * lbm.lat.global.z())
 			reject(
 				fmt::format(
 					"region extends beyond the global coarsest-level domain [{},{},{}]", lbm.lat.global.x(), lbm.lat.global.y(), lbm.lat.global.z()
@@ -295,9 +340,242 @@ void createAMRBlocks(LBM<CONFIG>& lbm, const std::vector<AMR_Region<CONFIG>>& re
 			|| region.size_coarse.x() % alignment != 0 || region.size_coarse.y() % alignment != 0 || region.size_coarse.z() % alignment != 0)
 			reject(fmt::format("region origin and size must be multiples of {} (parent-level coarse cells)", alignment));
 
-		// v1 scope guard: static single-hop refinement only (modernize to multi-level nesting in future)
-		if (region.level > 1)
-			reject("only a single refinement level (level == 1) is supported");
+		// V9 (origin positivity): the re-anchored band registration places
+		// the block's interface halo row one parent-level cell outside its
+		// footprint, so the footprint must start at least one parent-level
+		// cell into the parent lattice on every axis -- an origin of 0
+		// parent-level cells would put the c=-1 ring row outside the
+		// fine-lattice storage (and leave no C2F source row on that face)
+		if (amrParentFrameOrigin(region.origin_coarse.x(), region.level) < 1)
+			reject(
+				"footprint origin resolves to 0 parent-level cells on axis X (must be at least 1): the interface halo row one parent "
+				"cell outside the footprint would lie outside the parent lattice storage"
+			);
+		if (amrParentFrameOrigin(region.origin_coarse.y(), region.level) < 1)
+			reject(
+				"footprint origin resolves to 0 parent-level cells on axis Y (must be at least 1): the interface halo row one parent "
+				"cell outside the footprint would lie outside the parent lattice storage"
+			);
+		if (amrParentFrameOrigin(region.origin_coarse.z(), region.level) < 1)
+			reject(
+				"footprint origin resolves to 0 parent-level cells on axis Z (must be at least 1): the interface halo row one parent "
+				"cell outside the footprint would lie outside the parent lattice storage"
+			);
+
+		// the region's footprint projected onto the parent lattice
+		// [cf_begin, cf_end) in parent-level cells (exact divisions by the
+		// alignment check); shared by the V8 sibling scan and the V5-V10
+		// nesting checks below
+		const idx3d cf_begin{
+			amrParentFrameOrigin(region.origin_coarse.x(), region.level),
+			amrParentFrameOrigin(region.origin_coarse.y(), region.level),
+			amrParentFrameOrigin(region.origin_coarse.z(), region.level)
+		};
+		const idx3d cf_end{
+			amrParentFrameOrigin(region.origin_coarse.x() + region.size_coarse.x(), region.level),
+			amrParentFrameOrigin(region.origin_coarse.y() + region.size_coarse.y(), region.level),
+			amrParentFrameOrigin(region.origin_coarse.z() + region.size_coarse.z(), region.level)
+		};
+
+		// V8 (sibling separation): same-level footprints must be pairwise
+		// separated by at least 2 parent-level cells (Chebyshev separation
+		// of the footprint rects in the parent frame) so that one
+		// footprint's 1-cell interface halo never reaches into the other;
+		// exactly 2 is accepted with a warning (at that distance the
+		// fine-to-coarse transfer windows read coupling-authored interface
+		// cells instead of plain fluid). Compared against earlier regions
+		// only -- later ones check back against this one.
+		for (std::size_t j = 0; j < i; j++) {
+			const AMR_Region<CONFIG>& sibling = regions[j];
+			if (sibling.level != region.level)
+				continue;
+			const idx3d sb_begin{
+				amrParentFrameOrigin(sibling.origin_coarse.x(), region.level),
+				amrParentFrameOrigin(sibling.origin_coarse.y(), region.level),
+				amrParentFrameOrigin(sibling.origin_coarse.z(), region.level)
+			};
+			const idx3d sb_end{
+				amrParentFrameOrigin(sibling.origin_coarse.x() + sibling.size_coarse.x(), region.level),
+				amrParentFrameOrigin(sibling.origin_coarse.y() + sibling.size_coarse.y(), region.level),
+				amrParentFrameOrigin(sibling.origin_coarse.z() + sibling.size_coarse.z(), region.level)
+			};
+			// per-axis rect separation (negative when the axes overlap);
+			// Chebyshev separation of the two footprints is the max
+			const idx sep_x = std::max(cf_begin.x() - sb_end.x(), sb_begin.x() - cf_end.x());
+			const idx sep_y = std::max(cf_begin.y() - sb_end.y(), sb_begin.y() - cf_end.y());
+			const idx sep_z = std::max(cf_begin.z() - sb_end.z(), sb_begin.z() - cf_end.z());
+			const idx separation = std::max({sep_x, sep_y, sep_z, idx(0)});
+			if (separation < 2)
+				reject(
+					fmt::format(
+						"same-level footprints must be separated by at least 2 parent-level cells (Chebyshev separation to level-{} region "
+						"#{} is {} parent-level cells; one footprint's interface halo must not reach into the other footprint)",
+						region.level,
+						j,
+						separation
+					)
+				);
+			if (separation == 2)
+				spdlog::warn(
+					"createAMRBlocks: region #{} (level {}, origin [{},{},{}], size [{},{},{}]): same-level footprints separated by exactly 2 "
+					"parent-level cells (region #{}), below the recommended 3; the fine-to-coarse transfer windows will read "
+					"coupling-authored interface cells instead of plain fluid",
+					i,
+					region.level,
+					region.origin_coarse.x(),
+					region.origin_coarse.y(),
+					region.origin_coarse.z(),
+					region.size_coarse.x(),
+					region.size_coarse.y(),
+					region.size_coarse.z(),
+					j
+				);
+		}
+
+		// V5-V10 nesting checks (level >= 2): the footprint must nest inside
+		// exactly one parent region; level-1 regions have the level-0 domain
+		// as parent (the containment above) and their wall-candidate faces
+		// defer to the existing sim-side wall contract (map-checked at
+		// SimInit by State_AMR::buildFineWallMasks)
+		if (region.level >= 2) {
+			// V6 (parent existence & uniqueness): collect the level-(level-1)
+			// regions whose footprint fully contains the child's, with
+			// coincident edges allowed (the edge coincidence is the
+			// wall-shared face adjudicated by V7/V10 below)
+			std::vector<int> parents;
+			for (std::size_t j = 0; j < regions.size(); j++) {
+				const AMR_Region<CONFIG>& parent = regions[j];
+				if (parent.level != region.level - 1)
+					continue;
+				// the parent region's footprint on the same (level-1 of the
+				// child) lattice spans twice its own parent-frame extent
+				const idx3d pf_begin{
+					2 * amrParentFrameOrigin(parent.origin_coarse.x(), region.level - 1),
+					2 * amrParentFrameOrigin(parent.origin_coarse.y(), region.level - 1),
+					2 * amrParentFrameOrigin(parent.origin_coarse.z(), region.level - 1)
+				};
+				const idx3d pf_end{
+					2 * amrParentFrameOrigin(parent.origin_coarse.x() + parent.size_coarse.x(), region.level - 1),
+					2 * amrParentFrameOrigin(parent.origin_coarse.y() + parent.size_coarse.y(), region.level - 1),
+					2 * amrParentFrameOrigin(parent.origin_coarse.z() + parent.size_coarse.z(), region.level - 1)
+				};
+				const bool contains = pf_begin.x() <= cf_begin.x() && cf_end.x() <= pf_end.x() && pf_begin.y() <= cf_begin.y()
+								   && cf_end.y() <= pf_end.y() && pf_begin.z() <= cf_begin.z() && cf_end.z() <= pf_end.z();
+				if (contains)
+					parents.push_back(static_cast<int>(j));
+			}
+			if (parents.empty())
+				reject(
+					fmt::format(
+						"no level-{} region fully contains this footprint (nested refinement requires exactly one containing parent region)",
+						region.level - 1
+					)
+				);
+			if (parents.size() > 1)
+				reject(
+					fmt::format(
+						"footprint is fully contained in {} level-{} regions (#{}, #{}); nested refinement requires exactly one containing "
+						"parent region",
+						parents.size(),
+						region.level - 1,
+						parents.front(),
+						parents[1]
+					)
+				);
+
+			const int parent_index = parents.front();
+			const AMR_Region<CONFIG>& parent = regions[parent_index];
+
+			// V5 (ascending file order): block creation follows the file
+			// order, so a level cannot exist before its parent
+			if (parent_index >= static_cast<int>(i))
+				reject(
+					fmt::format(
+						"the unique containing level-{} region #{} appears later in the config; a level-{} region's parent must be listed "
+						"earlier so that blocks are created level-ascending",
+						region.level - 1,
+						parent_index,
+						region.level
+					)
+				);
+
+			// per-face telescoping gap from the parent's footprint edge in
+			// parent-level cells: 0 = the wall-shared (wall-candidate) face
+			// of the wall chain, >= 2 = the valid interior inset (the
+			// user-decided hard floor), >= 3 = the recommended inset
+			const idx gap_min[3] = {
+				cf_begin.x() - 2 * amrParentFrameOrigin(parent.origin_coarse.x(), region.level - 1),
+				cf_begin.y() - 2 * amrParentFrameOrigin(parent.origin_coarse.y(), region.level - 1),
+				cf_begin.z() - 2 * amrParentFrameOrigin(parent.origin_coarse.z(), region.level - 1)
+			};
+			const idx gap_max[3] = {
+				2 * amrParentFrameOrigin(parent.origin_coarse.x() + parent.size_coarse.x(), region.level - 1) - cf_end.x(),
+				2 * amrParentFrameOrigin(parent.origin_coarse.y() + parent.size_coarse.y(), region.level - 1) - cf_end.y(),
+				2 * amrParentFrameOrigin(parent.origin_coarse.z() + parent.size_coarse.z(), region.level - 1) - cf_end.z()
+			};
+			for (int face = 0; face < 6; face++) {
+				const int axis = face / 2;
+				const idx gap = (face % 2 == 0) ? gap_min[axis] : gap_max[axis];
+				nesting_info[i].gap[face] = gap;
+				nesting_info[i].wall_shared[face] = gap == 0;
+				if (gap == 0) {
+					// V10 (wall-shared chain): a gap-0 face at level >= 3
+					// requires the parent's matching face to be wall-shared
+					// too; the level-2 chain bottoms out at the level-1
+					// parent's face (deferred to the sim-side wall contract)
+					if (parent.level >= 2 && ! nesting_info[parent_index].wall_shared[face])
+						reject(
+							fmt::format(
+								"{} face aligns with the parent's footprint edge (wall-shared candidate) but parent region #{}'s {} face is "
+								"inset {} parent-level cells from its own parent; gap-0 alignment is legal only down a chain of wall-shared "
+								"faces reaching level 1",
+								amr_face_names[face],
+								parent_index,
+								amr_face_names[face],
+								nesting_info[parent_index].gap[face]
+							)
+						);
+				}
+				else if (gap < 2)
+					// V7 (telescoping gap): the hard floor is 2 parent-level
+					// cells (one halo cell plus one plain-fluid cell of
+					// clearance inside the parent's interior)
+					reject(
+						fmt::format(
+							"telescoping gap below the 2-parent-cell minimum on the {} face (got {} parent-level cells; a non-wall face must "
+							"sit at least 2 parent cells inside the parent footprint, a wall-shared face must align exactly with the parent's "
+							"footprint edge)",
+							amr_face_names[face],
+							gap
+						)
+					);
+				else if (gap < 3)
+					// advisory tier of the telescoping gap (user decision):
+					// valid, but the parent's F2C transfer windows on that
+					// face read coupling-authored ring/skin cells instead of
+					// plain fluid -- louder than silent, weaker than invalid
+					spdlog::warn(
+						"createAMRBlocks: region #{} (level {}, origin [{},{},{}], size [{},{},{}]): telescoping gap of 2 parent-level cells "
+						"on the {} face is below the recommended 3; the parent's fine-to-coarse transfer windows will read "
+						"coupling-authored ring/skin cells instead of plain fluid",
+						i,
+						region.level,
+						region.origin_coarse.x(),
+						region.origin_coarse.y(),
+						region.origin_coarse.z(),
+						region.size_coarse.x(),
+						region.size_coarse.y(),
+						region.size_coarse.z(),
+						amr_face_names[face]
+					);
+			}
+		}
+		else {
+			// level-1 faces defer to the existing sim-side wall contract:
+			// any of them may be backed by a level-0 wall plane, which the
+			// SimInit machinery (buildFineWallMasks) map-checks
+			nesting_info[i].wall_shared.fill(true);
+		}
 	}
 
 	// ---------------------------------------------------------------------------
@@ -603,7 +881,13 @@ void markAMRInterface(LBM<CONFIG>& lbm)
 
 						allocateInterfaceDirArray(coarse);
 						auto& arrays = amrInterfaceDirRegistry<CONFIG>().at(&coarse);
-						arrays.host[coarse.data.indexer.getStorageIndex(x, y, z)] |= mask;
+						// the kernel indexer takes BLOCK-LOCAL storage
+						// coordinates (the [x, y, z) loop iterates global
+						// parent-level cells): subtract the block's global
+						// offset (the bias is zero for level-0 parents,
+						// which pre-nesting configs indeed are, and required
+						// once a level >= 1 block parents a nested child)
+						arrays.host[coarse.data.indexer.getStorageIndex(x - coarse.offset.x(), y - coarse.offset.y(), z - coarse.offset.z())] |= mask;
 
 						if (! already_interface) {
 							coarse.setMap(x, y, z, BC::GEO_AMR_INTERFACE);
