@@ -55,6 +55,12 @@
 //   frozen rows behind the parent's upward fine-to-coarse window, the three
 //   silent-lane misconfigurations throw named errors, and the F2C_LAGRAVA
 //   opt-out is hard-guarded against nested wall-sharing.
+// - test_five_level_channel_chain_creation: the commit-F 5-level channel
+//   chain (sim_AMR/amr_chain_solver.h's derivation at R = 1, locked here as
+//   the five_level_channel_chain fixture constant): createAMRBlocks accepts
+//   the derived chain on the 64 x 16 x 16 channel lattice, blocks 0..4 with
+//   one block per level, exact parent-frame global_offset / fine offset /
+//   fine local per level, zero advisory warnings.
 //
 // The streaming pattern is selected at compile time (AB_PATTERN/AA_PATTERN
 // from tests/CMakeLists.txt), everything is single-rank. Shared fixture
@@ -1603,6 +1609,98 @@ void test_wall_chain_lagrava_guard()
 #endif
 }
 
+// the commit-F 5-level channel chain at R = 1 (the regression lock of
+// sim_AMR/amr_chain_solver.h's derivation: level 1 is the 2-level channel's
+// anchor footprint, levels 2..4 telescope with insets >= 3 parent-level
+// cells on every non-wall face and a gap-0 wall-shared z-min face per hop,
+// holding every level's z-min face on the level-0 wall-candidate lane
+// z = R+1; the level-0 domain is the channel's 64 x 16 x 16 lattice)
+constexpr const char* five_level_channel_chain = "1 24 4 2 16 8 8\n"
+												  "2 102 22 8 52 20 26\n"
+												  "3 420 100 32 184 56 92\n"
+												  "4 1704 424 128 688 176 344";
+
+void test_five_level_channel_chain_creation()
+{
+	// the channel lattice at R = 1 (the chain is channel-specific: the
+	// level-1 anchor footprint and every nested containment bound key on
+	// this level-0 domain)
+	lat_t lat;
+	lat.global = typename lat_t::CoordinatesType(64, 16, 16);
+	lat.physOrigin = point_t{0., 0., 0.};
+	lat.physDl = 0.041 / 16;
+	lat.physDt = 0.005 / 1.5e-5 * lat.physDl * lat.physDl;
+	lat.physViscosity = 1.5e-5;
+
+	const std::string id = fmt::format("test_amr_nesting_{}_channel5", pattern_name);
+	StateLocal_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{false, true, false}, /*max_level=*/4);
+	if (! state.canCompute()) {
+		report(false, "5-level channel chain setup: state.canCompute()");
+		return;
+	}
+
+	LogCapture capture;
+	std::string message;
+	try {
+		createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>(five_level_channel_chain));
+	}
+	catch (const std::runtime_error& e) {
+		message = e.what();
+	}
+	report(
+		message.empty(),
+		fmt::format(
+			"5-level channel chain: the derived chain (blocks 0..4, every z-min face wall-chained to level 1) passes the full "
+			"V-suite ({})",
+			message.empty() ? "no exception" : fmt::format("threw: {}", message)
+		)
+	);
+	if (! message.empty())
+		return;
+
+	// level-0 blocks are created by the LBM constructor and are intentionally
+	// not accounted in level_block_counts[0] (see test_three_level_creation)
+	const std::vector<int> counts = state.nse.level_block_counts;
+	report(
+		state.nse.blocks.size() == 5 && counts == std::vector<int>({0, 1, 1, 1, 1}),
+		fmt::format("5-level channel chain: block census -- {} blocks (one per level 0..4)", state.nse.blocks.size())
+	);
+
+	// hand-computed block geometry of five_level_channel_chain (amrParentFrameOrigin
+	// / amrFineOffset / amrFineLocal per component)
+	const std::vector<ChainBlockExpectation> expectations = {
+		{1, {24, 4, 2}, {49, 9, 5}, {30, 14, 14}},
+		{2, {51, 11, 4}, {103, 23, 9}, {50, 18, 24}},
+		{3, {105, 25, 8}, {211, 51, 17}, {90, 26, 44}},
+		{4, {213, 53, 16}, {427, 107, 33}, {170, 42, 84}},
+	};
+	bool geometry_ok = true;
+	for (const ChainBlockExpectation& expected : expectations) {
+		const std::vector<BLOCK*> blocks = state.nse.getBlocksAtLevel(expected.level);
+		if (blocks.size() != 1) {
+			geometry_ok = false;
+			report(false, fmt::format("5-level channel chain: expected exactly one level-{} block (got {})", expected.level, blocks.size()));
+			continue;
+		}
+		const BLOCK* fine = blocks.front();
+		geometry_ok = geometry_ok && fine->global_offset == expected.global_offset && fine->offset == expected.offset
+				   && fine->local == expected.local;
+	}
+	report(
+		geometry_ok,
+		"5-level channel chain: every fine block carries the chain solver's exact parent-frame global_offset, re-anchored "
+		"fine offset and fine local"
+	);
+
+	report(
+		capture.sink->warnings.empty(),
+		fmt::format(
+			"5-level channel chain: zero V-suite warnings emitted (every inset lands in the no-warning tier; got {})",
+			capture.sink->warnings.size()
+		)
+	);
+}
+
 int main(int argc, char** argv)
 {
 	TNLMPI_INIT mpi(argc, argv);
@@ -1626,6 +1724,7 @@ int main(int argc, char** argv)
 	test_wall_pedestal_prisms();
 	test_wall_chain_failfast();
 	test_wall_chain_lagrava_guard();
+	test_five_level_channel_chain_creation();
 
 	if (g_failures == 0) {
 		fmt::println("RESULT: all AMR nesting tests passed");
