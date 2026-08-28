@@ -3,6 +3,7 @@
 **Updated:** 2026-09-13
 **Branch:** main
 
+
 ## OVERVIEW
 
 TNL-LBM is a C++/CUDA header-only Lattice Boltzmann Method (LBM) framework built on top of the Template Numerical Library (TNL).
@@ -24,7 +25,7 @@ with optional Python bindings via nanobind and distributed execution through CUD
 ├── sim_NSE/             # 3D Navier-Stokes example simulations
 ├── sim_NSE_ADE/         # 3D NSE + advection-diffusion examples
 ├── sim_adjoint/         # 3D Adjoint-based sensitivity examples
-├── sim_AMR/             # 2-level AMR example simulations (Taylor-Green + developing channel)
+├── sim_AMR/             # AMR example simulations (Taylor-Green + developing channel, nested 2-level..5-level modes)
 ├── sim_2D/              # 2D example simulations
 ├── pytnl_lbm/           # Python extension module
 ├── tests/               # pytest unit, regression & integration suites + subproject test
@@ -178,11 +179,13 @@ pytest --build-dir build-ab
 # Python bindings (after build)
 PYTHONPATH=build/pytnl_lbm python -c "import pytnl_lbm"
 
-# AMR gate: build + run the 7 AMR test targets (needs a CUDA GPU)
+# AMR gate: build + run the 10 AMR test targets (needs a CUDA GPU)
 ./tests/run-amr-tests.sh
 # 2-level AMR example simulations (Taylor-Green; --convective-times 20 for the long decision-table run)
 ./build/sim_AMR/sim_AMR --resolution 1
 ./build/sim_AMR/sim_AMR_channel --resolution 1
+# Nested wall-attached channel with the windbreak rod array (5 lattice levels):
+./build/sim_AMR/sim_AMR_channel --resolution 1 --max-level 4
 
 # Spell-check (CI lint job)
 typos --color always --sort
@@ -311,28 +314,45 @@ one translation unit via the explicit
   `lbm_fma_rn` outflow arithmetic. `test_cpp_units` cannot catch any of
   this (its bitwise identity is in-binary, one compilation context).
 
-## AMR (STATIC 2:1 REFINEMENT — SCHÖNHERR-CH7 BAND)
+## AMR (STATIC 2:1 REFINEMENT — SCHÖNHERR-CH7 BAND, N-LEVEL NESTING)
 
-Static, cell-centered, volumetric AMR — one refinement level, single MPI rank,
-single GPU, D3Q27, CUDA-only coupling kernels. The coupling is the
-Schönherr-2015 ch.7 target-band conversion landed on this branch (16 commits;
-internals doc `docs/AMR-for-LBM-implementation.md`, normative band/cycle
-contract `docs/AMR-schonherr-ch7-target-contract.md`).
+Static, cell-centered, volumetric AMR — nested 2:1 refinement levels
+(`max_level` ≤ 4, i.e. five lattice levels on the realized windbreak target),
+single MPI rank, single GPU, D3Q27, CUDA-only coupling kernels. The coupling is
+the Schönherr-2015 ch.7 target-band conversion landed on this branch (16
+commits), generalized from one fine level to N-level nesting by the
+amr-nlevel-nesting arc (commits A–G): parent-frame `global_offset`, the V1–V10
+creation suite (+ V9 advisory), the `advancePair` Berger–Colella recursion, and
+the parent-keyed wall chain with R4 wall-pedestal prisms (internals doc
+`docs/AMR-for-LBM-implementation.md`, multi-level chapter §13; normative
+band/cycle contract `docs/AMR-schonherr-ch7-target-contract.md`, per-pair
+nesting addendum §11).
 
 - **Simulations**: `sim_AMR/sim_AMR.cu` (Taylor-Green 2-level AMR,
   `--convective-times N` long runs), `sim_AMR/sim_AMR_channel.cu` (Dirichlet
-  developing-channel diagnostic, the B.7 artifact). Probe CLI on both:
-  `--out3d-iter-period N` (per-iteration frame cadence).
+  developing-channel diagnostic, the B.7 artifact; `--max-level 2..4` opts into
+  the nested wall-attached chain, with the windbreak rod array stamped on the
+  finest level by default — `--no-windbreak` and the
+  `--windbreak-{diameter,pitch,height,row-spacing}` knobs steer it, and
+  `--max-level 2..3` need `--no-windbreak` or tuned knobs with the default rod
+  geometry). Probe CLI on both: `--out3d-iter-period N` (per-iteration frame
+  cadence).
 - **Surfaces**: `include/lbm3d/amr_decomposition.h` (`createAMRBlocks` —
-  footprint re-anchored one fine cell inward per face, gs ≥ 3 minimum;
+  footprint re-anchored one fine cell inward per face, gs ≥ 3 minimum, V1–V10
+  nesting validation, parent-frame `global_offset` normalization;
   `markAMRInterface` — ring {halo c=−1 + reactivated surface shell c=0} tagged
   `GEO_AMR_INTERFACE`, footprint-depth ≥ 1 cells frozen `GEO_NOTHING`),
-  `include/lbm3d/amr_state.h` (`State_AMR` driver: `SimUpdate` simulated-band
-  cycle, `buildCouplings` vertex-straddling patches, SimInit map-pattern
-  assertion),
+  `include/lbm3d/amr_state.h` (`State_AMR` driver: `SimUpdate` = the
+  `advancePair` pair recursion with cumulative per-level substep counters,
+  `buildCouplings` vertex-straddling patches + R4 wall-pedestal prisms,
+  `buildFineWallMasks` wall chain, SimInit map-pattern assertion),
   `include/lbm3d/d3q27/amr_coupling.h` (`cudaAMR_CoarseToFine`,
-  `cudaAMR_FineToCoarse`), `include/lbm3d/viz/OverlappingAMRWriter.{h,hpp}`.
-- **Schönherr cycle with simulated band** (per cycle, per level): fine substep 1
+  `cudaAMR_FineToCoarse`), `include/lbm3d/viz/OverlappingAMRWriter.{h,hpp}`,
+  `sim_AMR/amr_chain_solver.h` (nested footprint derivation),
+  `sim_AMR/amr_windbreak.h` (windbreak rod layout/stamping).
+- **Schönherr cycle with simulated band** (per adjacent level pair; the
+  `max_level == 1` reduction is byte-frozen by the bit-identity harness): fine
+  substep 1
   (**widened extent [−1, local+1)** — the inner ghost rows are INTEGRATED,
   collide+stream like interior fluid, sourcing the outer ghost row) → fine substep 2
   (interior-only; its boundary data is substep 1's updated inner rows in the
@@ -342,7 +362,10 @@ contract `docs/AMR-schonherr-ch7-target-contract.md`).
   is removed as dead traffic). Converted 2026-08-23 per the contract's fork row
   (c) trigger (T16 null verdict); the conversion-era six-step passive band is
   superseded. H9 and the BVP refill are hard-removed; F2C and C2F touch
-  disjoint sets. Checkpoint restart does not carry across the band registration.
+  disjoint sets. Nesting: pairs recurse (level L runs 2^L substeps per coarse
+  step), F2C once per parent substep, C2F once per pair plus the cycle-end
+  level-ascending cascade. Checkpoint restart does not carry across the band
+  registration.
 - **Strategy surfaces** (`sim_AMR/CMakeLists.txt`): C2F default is the σ-form
   compact-moment (σ = 1/2; `TNL_LBM_C2F_STRATEGY=C2F_LAGRANGE` opts back to the
   3rd-order Lagrange). The carve pre-pass was hard-removed on 2026-08-23 —
@@ -357,20 +380,13 @@ contract `docs/AMR-schonherr-ch7-target-contract.md`).
   at SimInit (the R4 pedestal depth 3 covers only the Schönherr own-8 window).
   Pre-flip build caches keep the
   old empty strategy — re-default with `cmake -B build -S . -UTNL_LBM_F2C_STRATEGY`.
-- **AMR gate** (fully pytest-native; the shell launchers were retired):
-  `pytest tests/unit/test_amr_units.py tests/integration/test_amr_paraview.py`
-  runs the 10 AMR targets — the 4 gate TEST_SUITEs
-  (`amr_coupling`/`amr_subcycling`/`amr_vtkhdf_writer`/`amr_nesting`) × {ab,aa}
-  of the consolidated `test_amr_units_{ab,aa` binaries via doctest
-  `--test-suite=` + the 2 ParaView e2e arms (skipped when pvpython is absent);
-  all suites were ported to doctest together with the
-  `test_amr_f2c_schonherr_{ab,aa}` drivers.
-  10/10 at HEAD. Bit-identity evidence harness:
+- **AMR gate**: `tests/run-amr-tests.sh` builds and runs the 10 AMR targets
+  (coupling/subcycling/vtkhdf/nesting mocks × {ab,aa} + ParaView E2E + the E2E
+  nesting arm); 10/10 at HEAD. Bit-identity evidence harness:
   `tests/regression/test_amr_bitidentity.py` — verify mode compares every
   `max_level == 1` artifact against the committed
   `tests/regression/amr_ref/manifest.json` (11/11 at HEAD; re-record ONLY from
-  a trusted pre-change tree; its mock-suite artifacts drive the consolidated
-  binaries per-suite).
+  a trusted pre-change tree).
   pytest sides: `tests/unit/test_cpp_units.py` (AMR doctest suites),
   `tests/unit/test_amr_f2c_schonherr.py`.
 - **Measured verdict (recorded, not repaired)**: the conversion was an
@@ -384,6 +400,13 @@ contract `docs/AMR-schonherr-ch7-target-contract.md`).
   Probe tools: `tests/interface_seam_metric.py` (`--fine-row 0 --coarse-row 16`
   = the re-paired pairing of contract §5), `tests/between_metric.py`
   (footprint window re-pinned 33/62).
+- **Multi-level status (shipped, windbreak target achieved)**: the R = 1 chain
+  realizes 5 wall-chained lattice levels 0..4 (L4 spans 86×22×43 parent cells;
+  the level-4 y fine span is 44, not 48 — the telescoping budget deviation,
+  hard floors pass) with the rod array on the finest map (3 rods, 2+1
+  half-pitch stagger, 1440 cells); pre-registered mass/KE tables for the
+  no-rod chain and the rod run are recorded in the commit `6ae4a61`/`5214b01`
+  bodies and in doc §13.5.
 
 ## NOTES
 
