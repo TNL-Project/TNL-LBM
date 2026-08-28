@@ -310,8 +310,10 @@ struct State_AMR : State<NSE>
 	// receives no coarse-to-fine fill (the destination is emptied in
 	// buildCouplings) and the fine kernel processes the wall row in every
 	// fine substep (kernelLaunchWindow). Filled by buildFineWallMasks at
-	// SimInit from the COARSE boundary map; keyed by block id, missing
-	// entries read as 0 (no fine wall).
+	// SimInit from the IMMEDIATE PARENT level's boundary map (the wall
+	// chain: a nested wall-shared face is backed by the parent's own fine
+	// wall row, plan sec. 5.1); keyed by block id, missing entries read as
+	// 0 (no fine wall).
 	std::map<int, std::uint8_t> fine_wall_masks;
 
 	// bit of a footprint face in fine_wall_masks, in the face order of
@@ -413,6 +415,21 @@ struct State_AMR : State<NSE>
 	// or on a wall without the per-axis storage override
 	void buildFineWallMasks();
 
+	// R4 wall-pedestal prisms of one fine block (the plan's sec. 5.3 refill
+	// mechanism): on a wall-shared face of a NESTED block (level >= 2) the
+	// parent's own-8 upward fine-to-coarse window reads the footprint's
+	// frozen rows at face-normal depths {2,3} below the depth-1 skin
+	// (relative rows {1,2} of the wall pedestal), which are never authored
+	// by the standard transfers -- the prisms are the extra F2C destination
+	// rectangles covering exactly those rows. Returns the disjoint
+	// parent-frame [begin, end) prism rectangles ([go+2, go+4) on the
+	// face-normal axis of a masked min face, clamped by the opposite face's
+	// structures; twice-inset tangents [go+2, go+gs-2) on both tangent
+	// axes), empty for level-1 blocks (their parent's level-0 lattice has
+	// no upward transfer to feed) and for axes with no twice-inset tangent
+	// range (a thin footprint carries no unreachable deep core at all)
+	static std::vector<std::pair<idx3d, idx3d>> wallPedestalPrismRects(const BLOCK_NSE& fine, std::uint8_t mask);
+
 	// host-side reduction over all blocks: volume-weighted global mass and
 	// momentum plus per-level kinetic energy (see AfterSimUpdate); kept
 	// public like the other implementation details above so that unit tests
@@ -497,6 +514,31 @@ void State_AMR<NSE>::SimInit()
 	// masks empty the masked faces' C2F destinations)
 	buildFineWallMasks();
 
+#ifdef F2C_LAGRAVA
+	// strategy coupling guard (the plan's sec. 5.4 v1 ruling): the
+	// F2C_LAGRAVA filter reads a 4-node window one fine cell deeper than
+	// F2C_SCHONHERR's own-8, so a nested wall-shared face's 3-row pedestal
+	// (the depth-{1,2,3} destination set of the R4 prisms) underflows it by
+	// one row -- the parent's upward fine-to-coarse window would then read
+	// a never-written deep-core cell. Nested wall sharing therefore
+	// requires the F2C_SCHONHERR default; non-nested (level-1-only) wall
+	// runs under the Lagrava opt-out are unaffected
+	for (const auto& block : this->nse.blocks)
+		if (block.level >= 2 && fineWallMask(block) != 0) {
+			const std::string message = fmt::format(
+				"State_AMR: wall-shared nesting requires F2C_SCHONHERR: fine block {} at level {} carries wall-shared faces "
+				"(fine_wall_masks = {}), but the active fine-to-coarse strategy is F2C_LAGRAVA, whose 4-node window underflows "
+				"the wall pedestal's 3-row depth and would read a never-written deep-core cell; rebuild with "
+				"-DTNL_LBM_F2C_STRATEGY=F2C_SCHONHERR or remove the nested wall-shared face",
+				block.id,
+				block.level,
+				static_cast<int>(fineWallMask(block))
+			);
+			spdlog::error("{}", message);
+			throw std::runtime_error(message);
+		}
+#endif
+
 	// build the inter-level coupling descriptors consumed by the transfer
 	// launches in SimUpdate()
 	buildCouplings();
@@ -569,17 +611,34 @@ void State_AMR<NSE>::SimInit()
 }
 
 /**
- * \brief Derive \ref fine_wall_masks from the COARSE boundary map.
+ * \brief Derive \ref fine_wall_masks from the IMMEDIATE PARENT's boundary
+ * map (the wall-chain resolution rule of the amr-nlevel-nesting plan, sec.
+ * 5.1: key on the parent level's map, never the level-0 map at depth).
  *
  * For each fine block and each of the footprint's six faces the block's
  * interior cross-section columns are scanned (tangential fine-local
- * indices in [0, local), coarse cross-coordinates floor(fine/2)): a
- * column is "wall" iff the matching coarse column on the face-adjacent
- * coarse plane (the halo row go_a - 1 on a min face / go_a + gs_a on a
- * max face) is GEO_WALL on the parent level. The band geometry places
- * the fine wall row one row OUTSIDE the face's C2F destination band, so
- * the wall link plane coincides with the coarse wall's link plane (the
- * fine rows themselves are tagged by the simulation's setupBoundaries).
+ * indices in [0, local), parent-frame cross-coordinates floor(fine/2)): a
+ * column is "wall" iff the matching parent-level column on the
+ * face-adjacent parent plane (the halo row go_a - 1 on a min face /
+ * go_a + gs_a on a max face) is GEO_WALL. The band geometry places the
+ * fine wall row one row OUTSIDE the face's C2F destination band, so the
+ * wall link plane coincides with the parent wall's link plane at every
+ * level (the fine rows themselves are tagged by the simulation's
+ * setupBoundaries).
+ *
+ * The parent-plane scan is a SINGLE division-by-2 hop from the block's own
+ * fine-global coordinates (the Commit-A parent-frame normalization makes
+ * the re-anchored offset positive at every level, so floor(fine/2) is
+ * exact at any depth) against the parent's STORAGE extent
+ * [offset - ov, offset + local + ov): on a wall-shared nested face the
+ * backing wall lives on the parent's OWN fine wall row at parent-local -2
+ * (min face) / local+1 (max face), inside the overlap-extended host-map
+ * storage but outside the interior clip, so the scan must not be clipped
+ * to the interior (at level 1 the parent planes lie inside the level-0
+ * interior and the storage-extent bounds reduce to the historical scan
+ * column-for-column). Blocks are visited in creation order, which is
+ * level-ascending by V5: the parent's own map is fully tagged before any
+ * deeper level's scan reads it.
  *
  * Fail-fast, no silent lanes:
  * - a PARTIAL wall (count strictly between 0 and the full cross-section)
@@ -591,9 +650,15 @@ void State_AMR<NSE>::SimInit()
  *   the override to set -- with a tagged wall row and only the 2-deep C2F
  *   band allocated, the GEO_NOTHING streaming-buffer row would lie
  *   outside the storage and the coupling patch would overwrite the wall
- *   columns.
+ *   columns;
+ * - a fine block whose own wall row of a face carries GEO_WALL tags
+ *   WITHOUT any wall backing on the parent hop (count == 0) throws
+ *   std::runtime_error naming block and face: the mask machinery would
+ *   silently leave the face unmasked while its wall row is BC-affected;
+ *   the wall chain is broken at exactly this level and the unhandled wall
+ *   columns are a mass source.
  *
- * Host-side only (coarse hmap reads); runs once per SimInit.
+ * Host-side only (parent-level hmap reads); runs once per SimInit.
  */
 template <typename NSE>
 void State_AMR<NSE>::buildFineWallMasks()
@@ -637,7 +702,7 @@ void State_AMR<NSE>::buildFineWallMasks()
 			const int a = fs.axis;
 			const int b = (a + 1) % 3;
 			const int c = (a + 2) % 3;
-			// face-adjacent coarse plane: the halo row one coarse cell OUTSIDE the footprint
+			// face-adjacent parent plane: the halo row one coarse cell OUTSIDE the footprint
 			const idx plane = fs.min_side ? go3[a] - 1 : go3[a] + gs3[a];
 			const idx expected = loc3[b] * loc3[c];
 			idx count = 0;
@@ -645,16 +710,33 @@ void State_AMR<NSE>::buildFineWallMasks()
 				for (idx ic = 0; ic < loc3[c]; ic++) {
 					idx cg[3];
 					cg[a] = plane;
-					// floor(fine/2) is exact integer division here: the re-anchored fine-global
-					// coordinates are positive on level 1 (offset = 2*origin + 1)
+					// floor(fine/2) is exact integer division at every level:
+					// the re-anchored fine-global coordinates of the parent-frame
+					// normalization are positive on all levels (offset = 2 *
+					// (origin >> (level - 1)) + 1, amrFineOffset) -- a single
+					// hop into the parent frame, no 2^(L-1) chain arithmetic
 					cg[b] = (off3[b] + ib) / 2;
 					cg[c] = (off3[c] + ic) / 2;
 					for (BLOCK_NSE* coarse : parents) {
-						// bounds check first: a face-adjacent plane outside
-						// every parent block cannot carry a wall tag
-						if (cg[0] < coarse->offset.x() || cg[0] >= coarse->offset.x() + coarse->local.x() || cg[1] < coarse->offset.y()
-							|| cg[1] >= coarse->offset.y() + coarse->local.y() || cg[2] < coarse->offset.z()
-							|| cg[2] >= coarse->offset.z() + coarse->local.z())
+						// bounds check first against the parent's STORAGE
+						// extent [offset - ov, offset + local + ov), not the
+						// interior clip: on a wall-shared nested face the
+						// parent's own fine wall row (parent-local -2 /
+						// local+1) carries the backing tag inside the
+						// overlap-extended host-map storage (at level 1 the
+						// parent planes lie inside the level-0 interior and
+						// this admits exactly the historical column set)
+						const idx cbeg[3] = {
+							coarse->offset.x() - coarse->df_overlap_X(),
+							coarse->offset.y() - coarse->df_overlap_Y(),
+							coarse->offset.z() - coarse->df_overlap_Z()
+						};
+						const idx cend[3] = {
+							coarse->offset.x() + coarse->local.x() + coarse->df_overlap_X(),
+							coarse->offset.y() + coarse->local.y() + coarse->df_overlap_Y(),
+							coarse->offset.z() + coarse->local.z() + coarse->df_overlap_Z()
+						};
+						if (cg[0] < cbeg[0] || cg[0] >= cend[0] || cg[1] < cbeg[1] || cg[1] >= cend[1] || cg[2] < cbeg[2] || cg[2] >= cend[2])
 							continue;
 						if (coarse->hmap(cg[0], cg[1], cg[2]) == NSE::BC::GEO_WALL) {
 							count++;
@@ -662,8 +744,42 @@ void State_AMR<NSE>::buildFineWallMasks()
 						}
 					}
 				}
-			if (count == 0)
+			if (count == 0) {
+				// no parent wall on this hop: a fine-level wall the mask
+				// machinery cannot see has no defined contract -- if the
+				// block's own wall row of this face carries GEO_WALL tags
+				// the wall chain is silently broken here (the face would
+				// stay unmasked while the wall row is BC-affected: unfilled,
+				// unlaunched wall columns are a mass source). A plain-fluid
+				// own row is the ordinary no-wall lane and continues
+				// silently
+				const idx own_row = fs.min_side ? off3[a] - 2 : off3[a] + loc3[a] + 1;
+				idx own_wall = 0;
+				for (idx ib = 0; ib < loc3[b]; ib++)
+					for (idx ic = 0; ic < loc3[c]; ic++) {
+						idx fg[3];
+						fg[a] = own_row;
+						fg[b] = off3[b] + ib;
+						fg[c] = off3[c] + ic;
+						if (fine.hmap(fg[0], fg[1], fg[2]) == NSE::BC::GEO_WALL)
+							own_wall++;
+					}
+				if (own_wall > 0) {
+					const std::string message = fmt::format(
+						"State_AMR: fine block {} has GEO_WALL tags on its own {} wall row but no wall backing on the parent level "
+						"(0 of {} face-adjacent parent columns are GEO_WALL): a fine wall the mask machinery cannot see silently "
+						"breaks the wall chain (the face stays unmasked, its wall columns receive no coarse-to-fine fill and the "
+						"launch windows do not cover them -- a mass-source error); tag the parent level's wall row or remove the "
+						"fine wall tags",
+						fine.id,
+						fineWallFaceName(fs.face),
+						expected
+					);
+					spdlog::error("{}", message);
+					throw std::runtime_error(message);
+				}
 				continue;
+			}
 			if (count != expected) {
 				const std::string message = fmt::format(
 					"State_AMR: fine block {} has a PARTIAL fine-level wall on the {} face: {} of {} interior cross-section "
@@ -705,6 +821,61 @@ void State_AMR<NSE>::buildFineWallMasks()
 		if (mask != 0)
 			fine_wall_masks[fine.id] = mask;
 	}
+}
+
+template <typename NSE>
+std::vector<std::pair<typename State_AMR<NSE>::idx3d, typename State_AMR<NSE>::idx3d>>
+State_AMR<NSE>::wallPedestalPrismRects(const BLOCK_NSE& fine, std::uint8_t mask)
+{
+	std::vector<std::pair<idx3d, idx3d>> prisms;
+	if (fine.level < 2 || mask == 0)
+		return prisms;
+
+	const idx3d& go = fine.global_offset;
+	const idx3d gs{(fine.local.x() + 2) / 2, (fine.local.y() + 2) / 2, (fine.local.z() + 2) / 2};
+
+	for (int a = 0; a < 3; a++) {
+		const int b = (a + 1) % 3;
+		const int c = (a + 2) % 3;
+		// pedestal rows on the face-normal axis: face-normal depths {2,3}
+		// (relative rows {1,2} behind the depth-1 skin), clamped into the
+		// deep band [go+2, go+gs-2) so they never re-author the opposite
+		// face's skin or either ring row; the min-side and max-side ranges
+		// of one axis are merged when both faces are wall-shared on a thin
+		// axis (the authorings are identical F2C projections, but the
+		// rectangles must stay disjoint for the census)
+		const bool min_masked = (mask & (std::uint8_t(1) << (2 * a))) != 0;
+		const bool max_masked = (mask & (std::uint8_t(1) << (2 * a + 1))) != 0;
+		idx p_begin = 0, p_end = 0;
+		if (min_masked && max_masked) {
+			p_begin = go[a] + 2;
+			p_end = go[a] + gs[a] - 2;
+		}
+		else if (min_masked) {
+			p_begin = go[a] + 2;
+			p_end = std::min(go[a] + 4, go[a] + gs[a] - 2);
+		}
+		else if (max_masked) {
+			p_begin = std::max(go[a] + gs[a] - 4, go[a] + 2);
+			p_end = go[a] + gs[a] - 2;
+		}
+		else
+			continue;
+		idx3d begin{0, 0, 0}, end{0, 0, 0};
+		begin[a] = p_begin;
+		end[a] = p_end;
+		// twice-inset tangents (the wall-face tangent rectangle idiom):
+		// empty on any axis whose footprint is too thin to carry a deep
+		// core -- such a prism must not be emitted at all
+		for (int t : {b, c}) {
+			begin[t] = go[t] + 2;
+			end[t] = go[t] + gs[t] - 2;
+		}
+		if (begin.x() >= end.x() || begin.y() >= end.y() || begin.z() >= end.z())
+			continue;
+		prisms.emplace_back(begin, end);
+	}
+	return prisms;
 }
 
 /**
@@ -820,7 +991,7 @@ auto State_AMR<NSE>::computeConservationStats() -> AMRConservationStats
 				const double vy = b.hmacro(MACRO::e_vy, x, y, z);
 				const double vz = b.hmacro(MACRO::e_vz, x, y, z);
 
-// forLocalLatticeSites is OpenMP-parallel: accumulate atomically
+			// forLocalLatticeSites is OpenMP-parallel: accumulate atomically
 #pragma omp atomic update
 				s.total_mass += rho * volume_factor;
 #pragma omp atomic update
@@ -1131,6 +1302,42 @@ void State_AMR<NSE>::buildCouplings()
 					coupling.interior_fine_block_ids.push_back(fine->id);
 				}
 			}
+
+			// R4 wall-pedestal prisms (the plan's sec. 5.3 refill mechanism,
+			// nested wall-shared faces only -- the helper returns nothing on
+			// level-1 blocks, so the single-fine-level regression contract
+			// keeps its exact interior-patch census): the frozen rows at
+			// face-normal depths {2,3} below the depth-1 skin become F2C
+			// destinations, disjoint from the six skins above, so the
+			// parent's own-8 upward fine-to-coarse window never reads a
+			// never-written deep-core cell
+			for (const auto& [prism_begin, prism_end] : wallPedestalPrismRects(*fine, fine_wall_mask)) {
+				for (auto* coarse : this->nse.getBlocksAtLevel(coarse_level)) {
+					// same clipping / bookkeeping idiom as the skins above
+					const idx3d pbegin{
+						std::max(prism_begin.x(), coarse->offset.x()),
+						std::max(prism_begin.y(), coarse->offset.y()),
+						std::max(prism_begin.z(), coarse->offset.z())
+					};
+					const idx3d pend{
+						std::min(prism_end.x(), coarse->offset.x() + coarse->local.x()),
+						std::min(prism_end.y(), coarse->offset.y() + coarse->local.y()),
+						std::min(prism_end.z(), coarse->offset.z() + coarse->local.z())
+					};
+					if (pbegin.x() >= pend.x() || pbegin.y() >= pend.y() || pbegin.z() >= pend.z())
+						continue;
+
+					AMR_InterfacePatch<NSE> patch;
+					patch.coarse_origin = {pbegin.x() - coarse->offset.x(), pbegin.y() - coarse->offset.y(), pbegin.z() - coarse->offset.z()};
+					patch.coarse_size = {pend.x() - pbegin.x(), pend.y() - pbegin.y(), pend.z() - pbegin.z()};
+					patch.fine_origin = {2 * pbegin.x() - fine->offset.x(), 2 * pbegin.y() - fine->offset.y(), 2 * pbegin.z() - fine->offset.z()};
+					patch.fine_size = {2 * patch.coarse_size.x(), 2 * patch.coarse_size.y(), 2 * patch.coarse_size.z()};
+					patch.face = SyncDirection::None;
+					coupling.interior_patches.push_back(patch);
+					coupling.interior_coarse_block_ids.push_back(coarse->id);
+					coupling.interior_fine_block_ids.push_back(fine->id);
+				}
+			}
 		}
 
 		couplings.push_back(std::move(coupling));
@@ -1160,7 +1367,10 @@ void State_AMR<NSE>::buildCouplings()
  *   it onto the {c = 0 ring, c = 1 skin} pair exactly as in the kernel;
  * - (b) every fine-to-coarse (interior patch) destination cell is
  *   `GEO_NOTHING` at EXACTLY footprint surface-depth 1 (c = 1 / c =
- *   gs-2).
+ *   gs-2), or, on a nested wall-shared face, one of the R4 wall-pedestal
+ *   prism cells at face-normal depths {2,3} (the plan's sec. 5.3 refill
+ *   mechanism; the depth set is {1} normally, {1,2,3} on the pedestal
+ *   rows).
  *
  * Returns false on the first violation (the offending cell is logged);
  * the caller (SimInit) sets the terminate flag on false.
@@ -1342,7 +1552,11 @@ bool State_AMR<NSE>::checkCouplingMapPattern()
 		}
 
 		// (b) F2C interior patches: every destination cell must be frozen
-		// GEO_NOTHING at exactly footprint surface-depth 1 (c=1 / c=gs-2)
+		// GEO_NOTHING at exactly footprint surface-depth 1 (c=1 / c=gs-2),
+		// except the R4 wall-pedestal prism cells of a nested wall-shared face,
+		// which sit at face-normal depths {2,3} (plan sec. 5.3: the face-
+		// specific depth set is {1} normally, {1,2,3} on the pedestal rows;
+		// every destination stays frozen)
 		for (std::size_t i = 0; i < coupling.interior_patches.size(); i++) {
 			const AMR_InterfacePatch<NSE>& patch = coupling.interior_patches[i];
 			BLOCK_NSE* fine = findBlockById(coupling.fine_level, coupling.interior_fine_block_ids[i]);
@@ -1351,6 +1565,10 @@ bool State_AMR<NSE>::checkCouplingMapPattern()
 				return false;
 			const idx3d& go = fine->global_offset;
 			const idx3d gs{(fine->local.x() + 2) / 2, (fine->local.y() + 2) / 2, (fine->local.z() + 2) / 2};
+			// the prism set this coupling was built with (empty on level-1
+			// blocks and unmasked faces): pedestal destinations may sit deeper
+			// than 1 exactly inside these rectangles
+			const auto prisms = wallPedestalPrismRects(*fine, fineWallMask(*fine));
 			for (idx x = patch.coarse_origin.x(); x < patch.coarse_origin.x() + patch.coarse_size.x(); x++)
 				for (idx y = patch.coarse_origin.y(); y < patch.coarse_origin.y() + patch.coarse_size.y(); y++)
 					for (idx z = patch.coarse_origin.z(); z < patch.coarse_origin.z() + patch.coarse_size.z(); z++) {
@@ -1361,10 +1579,17 @@ bool State_AMR<NSE>::checkCouplingMapPattern()
 							std::min(std::min(gx - go.x(), go.x() + gs.x() - 1 - gx), std::min(gy - go.y(), go.y() + gs.y() - 1 - gy)),
 							std::min(gz - go.z(), go.z() + gs.z() - 1 - gz)
 						);
-						if (coarse->hmap(gx, gy, gz) != NSE::BC::GEO_NOTHING || depth != 1) {
+						bool depth_ok = depth == 1;
+						if (! depth_ok)
+							for (const auto& [pbegin, pend] : prisms)
+								if (gx >= pbegin.x() && gx < pend.x() && gy >= pbegin.y() && gy < pend.y() && gz >= pbegin.z() && gz < pend.z()) {
+									depth_ok = true;
+									break;
+								}
+						if (coarse->hmap(gx, gy, gz) != NSE::BC::GEO_NOTHING || ! depth_ok) {
 							spdlog::error(
 								"checkCouplingMapPattern: F2C destination ({},{},{}) of an interior patch is not a depth-1 frozen cell "
-								"(tag {}, depth {})",
+								"or an R4 wall-pedestal cell (tag {}, depth {})",
 								gx,
 								gy,
 								gz,

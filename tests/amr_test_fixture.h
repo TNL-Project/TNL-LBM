@@ -510,3 +510,71 @@ bool closeRel(double a, double b)
 {
 	return std::abs(a - b) <= 1e-6 * std::max({1.0, std::abs(a), std::abs(b)});
 }
+
+// Wall-chain tagging fixture (the amr-nlevel-nesting plan's commit E wall
+// tests): sim_AMR_channel's setupBoundaries idiom generalized to a nested
+// wall-shared chain. The single-level channel tags the fine wall row over the
+// fine-INTERIOR tangential columns only; a nested wall-shared face can
+// project beyond the parent's interior tangent (pinned spans include the
+// parent's ghost columns), so the fine wall rows here are tagged over the
+// full stored tangent extent [--2, local+2) -- the same rows the widened
+// substep-1 launch processes. All tagging keys on the z-min wall chain of
+// three_level_chain; switches are per level so the fail-fast tests can break
+// the chain at exactly one hop.
+template <typename NSE>
+struct StateWallChain_AMR : StateSchedule_AMR<NSE>
+{
+	using BC = typename NSE::BC;
+	using BLOCK_NSE = LBM_BLOCK<NSE>;
+	using idx_t = typename NSE::TRAITS::idx;
+	using idx3d_t = typename NSE::TRAITS::idx3d;
+
+	// tag the level-1 blocks' z-min face-adjacent level-0 plane rectangle
+	// (plane at go.z - 1 over the footprint tangential cross-section in
+	// level-0 coordinates)
+	bool tag_level0_wall = false;
+	// tag each fine block's own z-min wall row at local z = -2 over the full
+	// stored tangents, backed by the GEO_NOTHING streaming buffer at local
+	// z = -3 (written only when the z overlap actually allocates that row)
+	bool tag_fine_wall[8] = {};
+	// truncate the level-1 block's own wall row in x so a deeper level's
+	// mask scan sees a column-wise mixture (the partial-parent fail-fast
+	// case; the bound covers only fine columns [9, 15) of the level-1
+	// interior x range, missing most of the level-2 projection [19, 26])
+	bool tag_level1_wall_partial = false;
+
+	template <typename... ARGS>
+	StateWallChain_AMR(ARGS&&... args)
+	: StateSchedule_AMR<NSE>(std::forward<ARGS>(args)...)
+	{}
+
+	void setupBoundaries() override
+	{
+		if (tag_level0_wall) {
+			for (auto* fine : this->nse.getBlocksAtLevel(1)) {
+				const idx3d_t& go = fine->global_offset;
+				const idx3d_t gs{(fine->local.x() + 2) / 2, (fine->local.y() + 2) / 2, (fine->local.z() + 2) / 2};
+				for (auto* coarse : this->nse.getBlocksAtLevel(0))
+					for (idx_t gx = go.x(); gx < go.x() + gs.x(); gx++)
+						for (idx_t gy = go.y(); gy < go.y() + gs.y(); gy++)
+							if (gx >= coarse->offset.x() && gx < coarse->offset.x() + coarse->local.x() && gy >= coarse->offset.y()
+								&& gy < coarse->offset.y() + coarse->local.y() && go.z() - 1 >= coarse->offset.z()
+								&& go.z() - 1 < coarse->offset.z() + coarse->local.z())
+								coarse->hmap(gx, gy, go.z() - 1) = BC::GEO_WALL;
+			}
+		}
+		for (auto& fine : this->nse.blocks) {
+			if (fine.level <= 0 || fine.level >= 8 || ! tag_fine_wall[fine.level])
+				continue;
+			idx_t x_end = fine.local.x() + 2;
+			if (fine.level == 1 && tag_level1_wall_partial)
+				x_end = 6;
+			for (idx_t x = -2; x < x_end; x++)
+				for (idx_t y = -2; y < fine.local.y() + 2; y++) {
+					fine.hmap(fine.offset.x() + x, fine.offset.y() + y, fine.offset.z() - 2) = BC::GEO_WALL;
+					if (fine.df_overlap_Z() >= 3)
+						fine.hmap(fine.offset.x() + x, fine.offset.y() + y, fine.offset.z() - 3) = BC::GEO_NOTHING;
+				}
+		}
+	}
+};
