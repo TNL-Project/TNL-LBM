@@ -40,9 +40,9 @@
  * bit-identity-by-construction evidence of the parent-frame normalization
  * refactor. End-to-end level-1 construction through createAMRBlocks is
  * covered by the gate mocks (test_amr_subcycling / test_amr_coupling
- * fixtures), so it is not duplicated here; levels >= 2 cannot be created
- * end-to-end while the level>1 guard is active, so their coverage is the
- * hand-computed conversion values below.
+ * fixtures) and levels >= 2 by the test_amr_nesting suites (the level>1
+ * guard was replaced by the nesting V-suite), so it is not duplicated
+ * here; their coverage here is the hand-computed conversion values below.
  */
 
 #include <map>
