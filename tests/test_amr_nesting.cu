@@ -61,6 +61,14 @@
 //   the derived chain on the 64 x 16 x 16 channel lattice, blocks 0..4 with
 //   one block per level, exact parent-frame global_offset / fine offset /
 //   fine local per level, zero advisory warnings.
+// - test_windbreak_rod_census: the commit-G windbreak rod array
+//   (sim_AMR/amr_windbreak.h's layout and stamping, the same helper
+//   sim_AMR_channel rides) on the 5-level chain's level-4 block: the
+//   staggered two-row census matches the analytic cross-section integral
+//   (per-layer disc cells times the rod height), the array keeps its face
+//   clearances, no face wall row is touched (the buildFineWallMasks census
+//   is unchanged), no parent block sees a rod cell, and the layout
+//   guardrails reject the forbidden classes with named errors.
 //
 // The streaming pattern is selected at compile time (AB_PATTERN/AA_PATTERN
 // from tests/CMakeLists.txt), everything is single-rank. Shared fixture
@@ -77,6 +85,7 @@
 #include <spdlog/spdlog.h>
 
 #include "amr_test_fixture.h"
+#include "../sim_AMR/amr_windbreak.h"
 
 using BC = typename NSE_CONFIG::BC;
 
@@ -1701,6 +1710,261 @@ void test_five_level_channel_chain_creation()
 	);
 }
 
+// the commit-G windbreak rod array (sim_AMR/amr_windbreak.h's layout and
+// stamping, the same helper sim_AMR_channel rides) on the
+// five_level_channel_chain level-4 block: the staggered two-row census
+// matches the analytic cross-section integral (per-layer disc cells times
+// the rod height, summed over the z rows the same way the tagging writes
+// them), the array keeps its clearance to every footprint face except the
+// wall plane it stands on, the 12 face wall rows stay fluid so the
+// buildFineWallMasks census is unchanged (rods are interior obstacles, not
+// face walls), and no parent block sees a rod cell (plan sec. 9 locked
+// item 1). The layout guardrails reject the forbidden classes with named
+// errors.
+void test_windbreak_rod_census()
+{
+	// the channel lattice at R = 1 (the five_level_channel_chain fixture)
+	lat_t lat;
+	lat.global = typename lat_t::CoordinatesType(64, 16, 16);
+	lat.physOrigin = point_t{0., 0., 0.};
+	lat.physDl = 0.041 / 16;
+	lat.physDt = 0.005 / 1.5e-5 * lat.physDl * lat.physDl;
+	lat.physViscosity = 1.5e-5;
+
+	const std::string id = fmt::format("test_amr_nesting_{}_windbreak", pattern_name);
+	StateLocal_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{false, true, false}, /*max_level=*/4);
+	if (! state.canCompute()) {
+		report(false, "windbreak rod census setup: state.canCompute()");
+		return;
+	}
+	state.nse.allocateHostData();
+	state.nse.allocateDeviceData();
+	std::string message;
+	try {
+		createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>(five_level_channel_chain));
+	}
+	catch (const std::runtime_error& e) {
+		message = e.what();
+	}
+	report(
+		message.empty(),
+		fmt::format(
+			"windbreak rod census setup: the 5-level chain validates ({})",
+			message.empty() ? "no exception" : fmt::format("threw: {}", message)
+		)
+	);
+	if (! message.empty())
+		return;
+
+	// all-FLUID maps on every block (the marker's starting point; the
+	// level-4 block is the layout's only target)
+	for (auto& block : state.nse.blocks)
+		block.resetMap(BC::GEO_FLUID);
+
+	BLOCK* l4 = state.nse.getBlocksAtLevel(4).front();
+
+	// the sim's defaults (d = 4, pitch = 16, height = 40, row spacing = 34)
+	const WindbreakRodParams params;
+	WindbreakLayout layout;
+	try {
+		layout = deriveWindbreakLayout(l4->local.x(), l4->local.y(), l4->local.z(), params);
+	}
+	catch (const std::runtime_error& e) {
+		message = e.what();
+	}
+	report(
+		message.empty(),
+		fmt::format(
+			"windbreak layout: derives on the level-4 footprint ({}x{}x{}) ({})",
+			l4->local.x(),
+			l4->local.y(),
+			l4->local.z(),
+			message.empty() ? "no exception" : fmt::format("threw: {}", message)
+		)
+	);
+	if (! message.empty())
+		return;
+
+	// the locked layout expectation: row 1 at x = 32 with y axes {13, 29},
+	// row 2 staggered to (66, 21); the 12-cell disc of d = 4; the analytic
+	// census 3 rods * 12 cells/layer * 40 rows
+	const bool layout_ok = layout.rods.size() == 3 && layout.disc.size() == 12 && layout.cells_per_rod == 480
+						&& layout.cells_total == 1440 && layout.rods[0].axis_x == 32 && layout.rods[0].axis_y == 13
+						&& layout.rods[0].row == 1 && layout.rods[1].axis_x == 32 && layout.rods[1].axis_y == 29
+						&& layout.rods[1].row == 1 && layout.rods[2].axis_x == 66 && layout.rods[2].axis_y == 21
+						&& layout.rods[2].row == 2;
+	report(
+		layout_ok,
+		fmt::format(
+			"windbreak layout: two staggered rows at the hand-computed axes (32,13) + (32,29) and (66,21), the 12-cell "
+			"d = 4 disc, analytic census 3 * 12 * 40 = {} cells",
+			layout.cells_total
+		)
+	);
+
+	// stamp with the same helper the sim calls
+	stampWindbreak(
+		layout,
+		[&](idx x, idx y, idx z)
+		{
+			l4->hmap(l4->offset.x() + x, l4->offset.y() + y, l4->offset.z() + z) = BC::GEO_WALL;
+		}
+	);
+
+	// total census over the ring-inclusive window [-1, local+1)^3: the count
+	// equals the analytic cross-section integral exactly (integer counts)
+	long wall_total = 0;
+	idx min_x = l4->local.x(), max_x = -1000, min_y = l4->local.y(), max_y = -1000, min_z = l4->local.z(), max_z = -1000;
+	for (idx z = -1; z < l4->local.z() + 1; z++)
+		for (idx y = -1; y < l4->local.y() + 1; y++)
+			for (idx x = -1; x < l4->local.x() + 1; x++)
+				if (l4->hmap(l4->offset.x() + x, l4->offset.y() + y, l4->offset.z() + z) == BC::GEO_WALL) {
+					wall_total++;
+					min_x = std::min(min_x, x);
+					max_x = std::max(max_x, x);
+					min_y = std::min(min_y, y);
+					max_y = std::max(max_y, y);
+					min_z = std::min(min_z, z);
+					max_z = std::max(max_z, z);
+				}
+	report(
+		wall_total == layout.cells_total,
+		fmt::format(
+			"windbreak census: {} tagged rod cells match the analytic cross-section integral {} (12-cell disc * 40 rows * "
+			"3 rods)",
+			wall_total,
+			layout.cells_total
+		)
+	);
+
+	// per-rod census inside each rod's disc window (the rods are disjoint by
+	// pitch/row spacing >= diameter, so every window holds exactly its rod)
+	bool per_rod_ok = true;
+	for (const WindbreakRod& rod : layout.rods) {
+		long count = 0;
+		for (idx z = layout.z_first; z < layout.z_first + params.height; z++)
+			for (idx y = rod.axis_y - params.diameter; y <= rod.axis_y + params.diameter; y++)
+				for (idx x = rod.axis_x - params.diameter; x <= rod.axis_x + params.diameter; x++)
+					if (l4->hmap(l4->offset.x() + x, l4->offset.y() + y, l4->offset.z() + z) == BC::GEO_WALL)
+						count++;
+		per_rod_ok = per_rod_ok && count == layout.cells_per_rod;
+	}
+	report(per_rod_ok, "windbreak census: every rod's window census matches the per-rod analytic count (12 * 40 = 480)");
+
+	// the clearance rule on the observed tagged window: >= 8 cells off the x
+	// faces, >= 4 off the y faces, the base sits on the wall row (z = -1)
+	// and the top keeps >= 4 cells below the z-max face
+	const bool clearance_ok = min_x >= 8 && max_x <= l4->local.x() - 1 - 8 && min_y >= params.clearance
+						   && max_y <= l4->local.y() - 1 - params.clearance && min_z == layout.z_first
+						   && max_z <= l4->local.z() - 1 - params.clearance;
+	report(
+		clearance_ok,
+		fmt::format(
+			"windbreak clearance: tagged window x [{}, {}], y [{}, {}], z [{}, {}] keeps the face margins (>= 8 on x, "
+			">= 4 elsewhere; the wall plane is the only face the rods touch)",
+			min_x,
+			max_x,
+			min_y,
+			max_y,
+			min_z,
+			max_z
+		)
+	);
+
+	// wall-chain masks unchanged: the 12 face wall rows (local -2 on a min
+	// face, local+1 on a max face -- the planes State_AMR::buildFineWallMasks
+	// keys on) carry no tagged cell after the stamping
+	bool wall_rows_fluid = true;
+	for (int a = 0; a < 3; a++) {
+		const int b = (a + 1) % 3, c = (a + 2) % 3;
+		for (const idx plane : {idx(-2), idx(l4->local[a] + 1)})
+			for (idx ib = -2; ib < l4->local[b] + 2; ib++)
+				for (idx ic = -2; ic < l4->local[c] + 2; ic++) {
+					idx3d loc{0, 0, 0};
+					loc[a] = plane;
+					loc[b] = ib;
+					loc[c] = ic;
+					if (l4->hmap(l4->offset.x() + loc.x(), l4->offset.y() + loc.y(), l4->offset.z() + loc.z()) == BC::GEO_WALL)
+						wall_rows_fluid = false;
+				}
+	}
+	report(
+		wall_rows_fluid,
+		"windbreak wall rows: the stamping touched no face wall row (the local -2 / local+1 planes stay fluid, so "
+		"buildFineWallMasks' census is unchanged -- rods are interior obstacles, not face walls)"
+	);
+
+	// no rod cell outside the finest level's map (locked item 1: the parents
+	// treat the rod columns as plain fluid)
+	bool parents_fluid = true;
+	for (const auto& block : state.nse.blocks) {
+		if (block.id == l4->id)
+			continue;
+		for (idx x = block.offset.x(); x < block.offset.x() + block.local.x(); x++)
+			for (idx y = block.offset.y(); y < block.offset.y() + block.local.y(); y++)
+				for (idx z = block.offset.z(); z < block.offset.z() + block.local.z(); z++)
+					if (block.hmap(x, y, z) == BC::GEO_WALL)
+						parents_fluid = false;
+	}
+	report(parents_fluid, "windbreak parents: not a single rod cell outside the finest level's map (locked item 1)");
+
+	// guardrail rails: the forbidden classes die with named errors
+	{
+		WindbreakRodParams bad;
+		bad.diameter = 2;
+		message.clear();
+		try {
+			deriveWindbreakLayout(l4->local.x(), l4->local.y(), l4->local.z(), bad);
+		}
+		catch (const std::runtime_error& e) {
+			message = e.what();
+		}
+		report(
+			message.find("below the 3-cell minimum") != std::string::npos,
+			fmt::format(
+				"windbreak guardrail: diameter 2 is rejected ({})",
+				message.empty() ? "no exception thrown" : fmt::format("threw: {}", message)
+			)
+		);
+	}
+	{
+		// a footprint too narrow for the staggered second row
+		message.clear();
+		try {
+			deriveWindbreakLayout(170, 18, 84, params);
+		}
+		catch (const std::runtime_error& e) {
+			message = e.what();
+		}
+		report(
+			message.find("stagger") != std::string::npos,
+			fmt::format(
+				"windbreak guardrail: a y span too narrow for the staggered second row is rejected ({})",
+				message.empty() ? "no exception thrown" : fmt::format("threw: {}", message)
+			)
+		);
+	}
+	{
+		// a height that would leave no clearance below the footprint top
+		WindbreakRodParams tall;
+		tall.height = 82;
+		message.clear();
+		try {
+			deriveWindbreakLayout(l4->local.x(), l4->local.y(), l4->local.z(), tall);
+		}
+		catch (const std::runtime_error& e) {
+			message = e.what();
+		}
+		report(
+			message.find("partial-height") != std::string::npos,
+			fmt::format(
+				"windbreak guardrail: a non-partial height is rejected ({})",
+				message.empty() ? "no exception thrown" : fmt::format("threw: {}", message)
+			)
+		);
+	}
+}
+
 int main(int argc, char** argv)
 {
 	TNLMPI_INIT mpi(argc, argv);
@@ -1725,6 +1989,7 @@ int main(int argc, char** argv)
 	test_wall_chain_failfast();
 	test_wall_chain_lagrava_guard();
 	test_five_level_channel_chain_creation();
+	test_windbreak_rod_census();
 
 	if (g_failures == 0) {
 		fmt::println("RESULT: all AMR nesting tests passed");

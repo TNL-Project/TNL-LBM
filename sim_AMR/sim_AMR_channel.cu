@@ -5,6 +5,7 @@
 #include "lbm3d/amr_state.h"
 
 #include "amr_chain_solver.h"
+#include "amr_windbreak.h"
 
 // 2-level AMR developing-channel diagnostic (Experiment B, task B.7 artifact):
 // Dirichlet inflow/outflow channel with the refinement patch placed in the
@@ -85,6 +86,29 @@
 // footprints are derived by the footprint-chain solver in amr_chain_solver.h
 // (the derived region spec is logged), never hand-written; --max-level 4 is
 // the target five lattice levels 0..4.
+//
+// Windbreak mode (commit G of the amr-nlevel-nesting plan; the user-locked
+// windbreak geometry of plan sec. 9): in nested mode a staggered two-row
+// array of thin vertical cylindrical rods is GEO_WALL-stamped on the FINEST
+// level's map only (every parent treats the rod columns as plain fluid --
+// locked item 1), standing on the bottom wall plane (the base row rides the
+// wall-chain machinery's simulated-band row at local z = -1, flush against
+// the wall row at local z = -2) and stopping below the footprint top
+// (partial height). Two rows in x staggered by half a pitch in y: row 1 at
+// local lattice x = 32, row 2 at x = 32 + 34 (~2d + wake room), both rows
+// centered in the footprint's y span with the +pitch/2 stagger; the rod
+// cells keep >= 8 cells off the footprint's x faces and >= 4 cells off
+// every other face except the wall plane. Defaults in finest-level cells:
+// diameter 4 (the symmetric 12-cell stair-step disc), pitch 16, height 40
+// (partial: under half of the 86-cell level-4 z span), row spacing 34 --
+// all four CLI-tunable (--windbreak-diameter/--windbreak-pitch/
+// --windbreak-height/--windbreak-row-spacing; a diameter below 3 is
+// rejected at CLI parse). The stamping rides amr_windbreak.h's integer
+// layout helper -- the same arithmetic the rod-map census test locks -- and
+// runs AFTER the wall-chain tagging below. Enabled by default in nested
+// mode; --no-windbreak reproduces the commit-F no-rod run bit-for-bit.
+// Conservation stats count the constant GEO_WALL rod cells as a documented
+// constant offset (plan sec. 9 locked item 5).
 
 template <typename NSE>
 struct StateLocal_AMR_Channel : State_AMR<NSE>
@@ -106,6 +130,13 @@ struct StateLocal_AMR_Channel : State_AMR<NSE>
 	// problem parameters (set before execute(), consumed by the init/BC hooks)
 	dreal phys_inflow_velocity = 0;	 // [m/s] uniform inflow velocity
 	idx res = 1;					 // resolution factor R (coarse cells per 0.041m/16)
+	// windbreak rod array (commit G, the header comment): when set, the
+	// staggered two-row array is GEO_WALL-stamped on the FINEST level's map
+	// in setupBoundaries after the wall-chain tagging (nested mode only;
+	// the layout helper validates the guardrails and throws on a fit
+	// violation before any tagging happens)
+	bool windbreak = false;
+	WindbreakRodParams windbreak_params;
 
 	StateLocal_AMR_Channel(
 		const std::string& id,
@@ -251,6 +282,30 @@ struct StateLocal_AMR_Channel : State_AMR<NSE>
 					);
 			}
 		}
+
+		// windbreak rod array on the FINEST level only (the header comment):
+		// GEO_WALL-stamped AFTER the wall-chain tagging (rods are interior
+		// obstacles that stand on the bottom wall plane and never share a
+		// face row with the wall machinery; amr_windbreak.h holds the layout
+		// arithmetic shared with the rod-map census test, so the sim and the
+		// test stamp the same cells by construction). Every parent level
+		// keeps the rod columns as plain fluid (locked item 1).
+		if (windbreak) {
+			for (auto& fine : nse.blocks) {
+				if (fine.level != nse.max_level)
+					continue;
+				const WindbreakLayout layout =
+					deriveWindbreakLayout(fine.local.x(), fine.local.y(), fine.local.z(), windbreak_params);
+				stampWindbreak(
+					layout,
+					[&](idx x, idx y, idx z)
+					{
+						fine.hmap(fine.offset.x() + x, fine.offset.y() + y, fine.offset.z() + z) = BC::GEO_WALL;
+					}
+				);
+				logWindbreakLayout(layout, fine.id);
+			}
+		}
 	}
 
 	// uniform-flow initial condition at rest: rho = 1, u = 0 on all blocks;
@@ -320,7 +375,16 @@ struct StateLocal_AMR_Channel : State_AMR<NSE>
 };
 
 template <typename NSE>
-void sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 1, int max_level = 1, float lattice_viscosity_override = -1.0f, float phys_final_time = -1.0f, int out3d_iter_period = 0)
+void sim(
+	const std::string& adios_config = "adios2.xml",
+	int RESOLUTION = 1,
+	int max_level = 1,
+	float lattice_viscosity_override = -1.0f,
+	float phys_final_time = -1.0f,
+	int out3d_iter_period = 0,
+	bool no_windbreak = false,
+	const WindbreakRodParams& windbreak_params = {}
+)
 {
 	using idx = typename NSE::TRAITS::idx;
 	using real = typename NSE::TRAITS::real;
@@ -366,6 +430,11 @@ void sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 1, int
 
 	state.phys_inflow_velocity = PHYS_INFLOW;
 	state.res = R;
+	// the windbreak rod array exists only in nested mode and only on the
+	// finest level (the header comment); --no-windbreak reproduces the
+	// commit-F no-rod run bit-for-bit
+	state.windbreak = max_level >= 2 && ! no_windbreak;
+	state.windbreak_params = windbreak_params;
 
 	spdlog::info("developing channel: U_lb = {:e}, Re_H = {:e}, PHYS_DT = {:e}", LBM_INFLOW, REYNOLDS, PHYS_DT);
 
@@ -416,7 +485,16 @@ void sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 1, int
 }
 
 template <typename TRAITS = TraitsSP>
-void run(const std::string& adios_config, int resolution, int max_level = 1, float lattice_viscosity = -1.0f, float phys_final_time = -1.0f, int out3d_iter_period = 0)
+void run(
+	const std::string& adios_config,
+	int resolution,
+	int max_level = 1,
+	float lattice_viscosity = -1.0f,
+	float phys_final_time = -1.0f,
+	int out3d_iter_period = 0,
+	bool no_windbreak = false,
+	const WindbreakRodParams& windbreak_params = {}
+)
 {
 	using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
 	//using COLL = D3Q27_CUM_WELL<TRAITS, D3Q27_EQ_INV_CUM_WELL<TRAITS>>;
@@ -431,7 +509,7 @@ void run(const std::string& adios_config, int resolution, int max_level = 1, flo
 		D3Q27_BC_All,
 		D3Q27_MACRO_Default<TRAITS>>;
 
-	sim<NSE_CONFIG>(adios_config, resolution, max_level, lattice_viscosity, phys_final_time, out3d_iter_period);
+	sim<NSE_CONFIG>(adios_config, resolution, max_level, lattice_viscosity, phys_final_time, out3d_iter_period, no_windbreak, windbreak_params);
 }
 
 int main(int argc, char** argv)
@@ -465,6 +543,35 @@ int main(int argc, char** argv)
 		.scan<'i', int>()
 		.default_value(0)
 		.nargs(1);
+	program.add_argument("--no-windbreak")
+		.help(
+			"disable the windbreak rod array in nested mode (the staggered two-row cylinder array is stamped on the "
+			"finest level by default when --max-level 2..4; reproduces the commit-F no-rod run; no effect at "
+			"--max-level 0..1)"
+		)
+		.default_value(false)
+		.implicit_value(true)
+		.nargs(0);
+	program.add_argument("--windbreak-diameter")
+		.help("rod disc diameter in finest-level cells (>= 3; even gives the symmetric stair-step disc)")
+		.scan<'i', int>()
+		.default_value(4)
+		.nargs(1);
+	program.add_argument("--windbreak-pitch")
+		.help("rod spacing along y within a row in finest-level cells (even, >= the diameter; the second row staggers by half a pitch)")
+		.scan<'i', int>()
+		.default_value(16)
+		.nargs(1);
+	program.add_argument("--windbreak-height")
+		.help("rod height in finest-level cells above the wall plane (partial: keeps >= 4 cells of clearance below the footprint top)")
+		.scan<'i', int>()
+		.default_value(40)
+		.nargs(1);
+	program.add_argument("--windbreak-row-spacing")
+		.help("streamwise spacing of row 2 behind row 1 in finest-level cells (>= the diameter; default ~2d + wake room)")
+		.scan<'i', int>()
+		.default_value(34)
+		.nargs(1);
 
 	try {
 		program.parse_args(argc, argv);
@@ -481,6 +588,7 @@ int main(int argc, char** argv)
 	const auto lattice_viscosity = program.get<float>("--lattice-viscosity");
 	const auto phys_final_time = program.get<float>("--phys-final-time");
 	const auto out3d_iter_period = program.get<int>("--out3d-iter-period");
+	const auto no_windbreak = program.get<bool>("--no-windbreak");
 
 	if (resolution < 1) {
 		fmt::println(stderr, "CLI error: resolution must be at least 1");
@@ -495,9 +603,34 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
+	// windbreak rod geometry in finest-level cells (the header comment);
+	// the full footprint-fit validation runs in deriveWindbreakLayout at
+	// SimInit, the cross-section floor is rejected here at CLI parse
+	WindbreakRodParams windbreak_params;
+	windbreak_params.diameter = program.get<int>("--windbreak-diameter");
+	windbreak_params.pitch = program.get<int>("--windbreak-pitch");
+	windbreak_params.height = program.get<int>("--windbreak-height");
+	windbreak_params.row_spacing = program.get<int>("--windbreak-row-spacing");
+	if (windbreak_params.diameter < 3) {
+		fmt::println(stderr, "CLI error: windbreak-diameter must be at least 3 finest-level cells (bounce-back needs a solid disc blob)");
+		return 1;
+	}
+	if (windbreak_params.pitch % 2 != 0 || windbreak_params.pitch < windbreak_params.diameter) {
+		fmt::println(stderr, "CLI error: windbreak-pitch must be even and at least the windbreak-diameter");
+		return 1;
+	}
+	if (windbreak_params.height < 1) {
+		fmt::println(stderr, "CLI error: windbreak-height must be positive");
+		return 1;
+	}
+	if (windbreak_params.row_spacing < windbreak_params.diameter) {
+		fmt::println(stderr, "CLI error: windbreak-row-spacing must be at least the windbreak-diameter (the two rows must not merge)");
+		return 1;
+	}
+
 	// SP only (2026-08-18): the DP branch doubled the device-code
 	// instantiation cost of this TU (build-time investigation)
-	run<TraitsSP>(adios_config, resolution, max_level, lattice_viscosity, phys_final_time, out3d_iter_period);
+	run<TraitsSP>(adios_config, resolution, max_level, lattice_viscosity, phys_final_time, out3d_iter_period, no_windbreak, windbreak_params);
 
 	return 0;
 }
