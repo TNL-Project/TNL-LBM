@@ -46,6 +46,15 @@
 //   3-level chain: conservation stats stay finite (no NaN) and internally
 //   consistent with the GEO_NOTHING-excluding reference, with the global
 //   mass stable.
+// - test_wall_chain_masks / test_wall_pedestal_prisms /
+//   test_wall_chain_failfast / test_wall_chain_lagrava_guard: the commit-E
+//   wall chain (plan sec. 5 Tests 12--14 + the sec. 5.4 strategy guard): the
+//   fine wall masks derive from the immediate parent's map at every level
+//   (the 3-level all-z-min wall-shared stack), the launch windows deepen to
+//   the wall row on every level, the R4 wall-pedestal prisms author the deep
+//   frozen rows behind the parent's upward fine-to-coarse window, the three
+//   silent-lane misconfigurations throw named errors, and the F2C_LAGRAVA
+//   opt-out is hard-guarded against nested wall-sharing.
 //
 // The streaming pattern is selected at compile time (AB_PATTERN/AA_PATTERN
 // from tests/CMakeLists.txt), everything is single-rank. Shared fixture
@@ -1160,6 +1169,440 @@ void test_three_level_conservation_smoke()
 	report(state.nse.iterations == 20 && ! state.nse.terminate, "3-level conservation smoke: 20 coupled cycles, no termination");
 }
 
+// Commit E wall-chain tests (plan sec. 5 + sec. 5.5 Tests 12--14): the wall
+// masks derive from the IMMEDIATE PARENT's map at every level (plan sec. 5.1),
+// the wall-shared faces keep their empty coarse-to-fine destinations with the
+// launch windows deepened to the wall row, the R4 wall-pedestal prisms author
+// the deep frozen rows the parent's own-8 upward fine-to-coarse window reads
+// (plan sec. 5.3), and the fail-fast rails reject every silent lane. The
+// geometry is three_level_chain with all z-min faces wall-backed down to a
+// level-0 plane (the StateWallChain_AMR fixture).
+
+// shared wall-chain setup: the 3-level telescoping chain with the z-min wall
+// chain tagged at every level (plus the level-0 backing plane) and the 3-deep
+// z overlap on every fine block; SimInit must pass untouched
+void setupWallChain(StateWallChain_AMR<NSE_CONFIG>& state, const char* label)
+{
+	state.tag_level0_wall = true;
+	state.tag_fine_wall[1] = state.tag_fine_wall[2] = state.tag_fine_wall[3] = true;
+	std::string message;
+	try {
+		createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>(three_level_chain));
+		for (auto& block : state.nse.blocks)
+			if (block.level > 0)
+				block.storage_overlap_z = 3;
+		state.SimInit();
+	}
+	catch (const std::runtime_error& e) {
+		message = e.what();
+	}
+	report(
+		message.empty() && ! state.nse.terminate,
+		fmt::format("{} setup: chain, wall tagging and SimInit ({})", label, message.empty() ? "no exception" : fmt::format("threw: {}", message))
+	);
+}
+
+// Test 12 (nested mask census): the fine_wall_masks bit 4 is set on the blocks
+// at levels 1, 2 and 3, derived through BOTH parent hops; no z-min
+// coarse-to-fine destination survives on any coupling; the z launch windows
+// deepen to the wall row at local -2 on all three levels
+void test_wall_chain_masks()
+{
+#if defined(F2C_LAGRAVA)
+	report(
+		true,
+		"wall chain: masks census is a default-strategy (F2C_SCHONHERR) resident -- under F2C_LAGRAVA the wall chain is "
+		"guard-rejected at SimInit (see the Lagrava guard test)"
+	);
+	return;
+#endif
+	using SyncDirection = TNL::Containers::SyncDirection;
+
+	lat_t lat = makeLattice(32);
+	const std::string id = fmt::format("test_amr_nesting_{}_wallchain", pattern_name);
+	StateWallChain_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/3);
+	if (! state.canCompute()) {
+		report(false, "wall-chain masks setup: state.canCompute()");
+		return;
+	}
+	setupWallChain(state, "wall-chain masks");
+	if (state.nse.terminate)
+		return;
+
+	// (a) mask census: exactly the z-min bit at every fine level -- level 1
+	// backed by the level-0 plane, levels 2 and 3 backed by the parent's own
+	// wall row one coarse cell outside the projected footprint edge
+	const int zmin_bit = State_AMR<NSE_CONFIG>::fineWallFaceBit(SyncDirection::Back);
+	for (int L = 1; L <= 3; L++) {
+		BLOCK* fine = state.nse.getBlocksAtLevel(L).front();
+		report(
+			state.fineWallMask(*fine) == (1 << zmin_bit),
+			fmt::format(
+				"wall chain: level-{} fine_wall_masks == {{z-min: 1, else: 0}} (mask = {})", L, static_cast<int>(state.fineWallMask(*fine))
+			)
+		);
+	}
+
+	// launch census: the wall-row deepening is observable on both substep
+	// classes at every level (z begin -2, extents local+2 / local+3 while the
+	// other axes keep the nominal simulated-band / interior windows)
+	for (int L = 1; L <= 3; L++) {
+		BLOCK* fine = state.nse.getBlocksAtLevel(L).front();
+		const auto w1 = state.kernelLaunchWindow(*fine, 1);
+		const auto w0 = state.kernelLaunchWindow(*fine, 0);
+		report(
+			w1.first.z() == -2 && w1.second.z() == fine->local.z() + 3 && w1.first.x() == -1 && w1.first.y() == -1 && w0.first.z() == -2
+				&& w0.second.z() == fine->local.z() + 2 && w0.first.x() == 0 && w0.first.y() == 0,
+			fmt::format(
+				"wall chain: level-{} launch windows deepen to the GEO_WALL row at local z=-2 on both substeps "
+				"(widened [{},{},{}] + [{},{},{}], interior [{},{},{}] + [{},{},{}])",
+				L,
+				w1.first.x(),
+				w1.first.y(),
+				w1.first.z(),
+				w1.second.x(),
+				w1.second.y(),
+				w1.second.z(),
+				w0.first.x(),
+				w0.first.y(),
+				w0.first.z(),
+				w0.second.x(),
+				w0.second.y(),
+				w0.second.z()
+			)
+		);
+	}
+
+	// destination census: every z-min coarse-to-fine destination of every
+	// coupling is dropped (masked faces are BC-managed end to end)
+	bool zmin_destinations_empty = true;
+	for (const auto& coupling : state.couplings)
+		for (const auto& patch : coupling.patches)
+			if (patch.face == SyncDirection::Back && patch.fine_size.z() != 0)
+				zmin_destinations_empty = false;
+	report(zmin_destinations_empty, "wall chain: no coupling carries a coarse-to-fine fill on any z-min (wall-shared) face");
+
+	// nested channel smoke (plan sec. 8 row E): 3 coupled cycles over the
+	// wall chain run cleanly -- the deepened launches process every level's
+	// wall row without termination, and the conservation stats stay finite
+	for (int cycle = 0; cycle < 3 && ! state.nse.terminate; cycle++) {
+		state.updateKernelData();
+		state.SimUpdate();
+	}
+	report(
+		state.nse.iterations == 3 && ! state.nse.terminate,
+		"wall chain: 3 coupled cycles over the wall chain, no termination (the deepened launches process every wall row)"
+	);
+	const AMRConservationStats stats = state.computeConservationStats();
+	bool finite = std::isfinite(stats.total_mass) && std::isfinite(stats.total_momentum_x) && std::isfinite(stats.total_momentum_y)
+			   && std::isfinite(stats.total_momentum_z) && stats.per_level_kinetic_energy.size() == 4;
+	for (int L = 0; L <= 3 && finite; L++)
+		finite = finite && std::isfinite(stats.per_level_kinetic_energy[L]);
+	report(finite, "wall chain: conservation entries finite after 3 cycles over the wall chain");
+}
+
+// Test 14 (R4 census) + the census invariants of plan sec. 5: the (1,2)
+// coupling carries the standard 6 depth-1 skins plus exactly 1 R4 prism on
+// the z-min face at relative rows {1,2} beyond the skin; the (2,3) coupling
+// carries no prism (the level-3 footprint's twice-inset tangents are empty on
+// its gs = 4 axes -- it has no unreachable deep core at all); every interior
+// destination cell is frozen GEO_NOTHING at a covered depth and no window
+// touches the never-written deep core beyond the pedestal
+void test_wall_pedestal_prisms()
+{
+#if defined(F2C_LAGRAVA)
+	report(
+		true,
+		"R4 pedestal: census is a default-strategy (F2C_SCHONHERR) resident -- under F2C_LAGRAVA the wall chain is "
+		"guard-rejected at SimInit (see the Lagrava guard test)"
+	);
+	return;
+#endif
+	lat_t lat = makeLattice(32);
+	const std::string id = fmt::format("test_amr_nesting_{}_wallprism", pattern_name);
+	StateWallChain_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/3);
+	if (! state.canCompute()) {
+		report(false, "wall-prism census setup: state.canCompute()");
+		return;
+	}
+	setupWallChain(state, "wall-prism census");
+	if (state.nse.terminate)
+		return;
+
+	BLOCK* l1 = state.nse.getBlocksAtLevel(1).front();
+	BLOCK* l2 = state.nse.getBlocksAtLevel(2).front();
+	const idx3d& go2 = l2->global_offset;
+	const idx3d gs2{(l2->local.x() + 2) / 2, (l2->local.y() + 2) / 2, (l2->local.z() + 2) / 2};
+
+	// hand-computed pedestal geometry of three_level_chain's level-2 block
+	// (footprint {19,2,8} + {8,60,8} in level-1 cells): twice-inset
+	// tangents [21, 25) x [4, 60), normal rows z in {10, 11} (the relative
+	// rows {1,2} of the wall pedestal behind the standard skin at z = 9),
+	// expressed in the parent's indexer frame
+	const idx3d prism_begin{go2.x() + 2 - l1->offset.x(), go2.y() + 2 - l1->offset.y(), go2.z() + 2 - l1->offset.z()};
+	const idx3d prism_size{gs2.x() - 4, gs2.y() - 4, 2};
+	const auto& c12 = state.couplings[1];
+	int prisms_found = 0;
+	bool skin_zmin_present = false;
+	for (const auto& patch : c12.interior_patches) {
+		if (patch.coarse_origin == prism_begin && patch.coarse_size == prism_size)
+			prisms_found++;
+		if (patch.coarse_origin.z() == prism_begin.z() - 1 && patch.coarse_size.z() == 1)
+			skin_zmin_present = true;
+	}
+	report(
+		c12.interior_patches.size() == 7 && prisms_found == 1,
+		fmt::format(
+			"R4 pedestal: the (1,2) coupling carries the 6 depth-1 skins plus exactly 1 z-min prism at relative rows "
+			"{{1,2}} ({} interior patches, {} prisms)",
+			c12.interior_patches.size(),
+			prisms_found
+		)
+	);
+	report(skin_zmin_present, "R4 pedestal: the standard z-min depth-1 skin is untouched (disjoint from the prism)");
+
+	// the (2,3) coupling: the level-3 footprint (gs = 4 on x and z) has no
+	// twice-inset tangent and no deep core, so it needs and gets no prism
+	const auto& c23 = state.couplings[2];
+	report(
+		c23.interior_patches.size() == 2,
+		fmt::format(
+			"R4 pedestal: the (2,3) coupling carries no prism on the thin level-3 footprint "
+			"(gs x/z = 4 -- empty twice-inset tangents; {} interior patches)",
+			c23.interior_patches.size()
+		)
+	);
+
+	// census invariant (d): enumerate every interior-destination cell of
+	// both nested couplings: frozen GEO_NOTHING on the parent map, at a
+	// depth covered by the {1} skins or the {1,2,3} pedestal of the z-min
+	// wall face, and nothing deeper (the never-written deep core stays
+	// untouched)
+	const auto depth_of = [](idx gx, idx gy, idx gz, const idx3d& go, const idx3d& gs) -> idx
+	{
+		return std::min(
+			std::min(std::min(gx - go.x(), go.x() + gs.x() - 1 - gx), std::min(gy - go.y(), go.y() + gs.y() - 1 - gy)),
+			std::min(gz - go.z(), go.z() + gs.z() - 1 - gz)
+		);
+	};
+	bool tags_ok = true;
+	bool depths_ok = true;
+	bool pedestal_cover = true;
+	for (std::size_t c = 1; c < state.couplings.size(); c++) {
+		const auto& coupling = state.couplings[c];
+		BLOCK* fine = state.nse.getBlocksAtLevel(static_cast<int>(c) + 1).front();
+		BLOCK* parent = state.nse.getBlocksAtLevel(static_cast<int>(c)).front();
+		const idx3d& go = fine->global_offset;
+		const idx3d gs{(fine->local.x() + 2) / 2, (fine->local.y() + 2) / 2, (fine->local.z() + 2) / 2};
+		for (const auto& patch : coupling.interior_patches)
+			for (idx x = patch.coarse_origin.x(); x < patch.coarse_origin.x() + patch.coarse_size.x(); x++)
+				for (idx y = patch.coarse_origin.y(); y < patch.coarse_origin.y() + patch.coarse_size.y(); y++)
+					for (idx z = patch.coarse_origin.z(); z < patch.coarse_origin.z() + patch.coarse_size.z(); z++) {
+						const idx gx = parent->offset.x() + x, gy = parent->offset.y() + y, gz = parent->offset.z() + z;
+						if (parent->hmap(gx, gy, gz) != BC::GEO_NOTHING)
+							tags_ok = false;
+						const idx depth = depth_of(gx, gy, gz, go, gs);
+						// depth 1 everywhere else, {1,2,3} in z on the
+						// level-2 wall-shared z-min face
+						const idx max_depth = c == 1 ? 3 : 1;
+						if (depth < 1 || depth > max_depth)
+							depths_ok = false;
+					}
+		if (c == 1) {
+			// coverage: every frozen cell of the pedestal rows with
+			// twice-inset x/y is an interior-destination cell
+			for (idx gx = go.x() + 2; gx < go.x() + gs.x() - 2; gx++)
+				for (idx gy = go.y() + 2; gy < go.y() + gs.y() - 2; gy++)
+					for (idx gz = go.z() + 2; gz < go.z() + 4; gz++) {
+						if (parent->hmap(gx, gy, gz) != BC::GEO_NOTHING) {
+							pedestal_cover = false;
+							continue;
+						}
+						bool authored = false;
+						for (const auto& patch : coupling.interior_patches)
+							if (gx - parent->offset.x() >= patch.coarse_origin.x()
+								&& gx - parent->offset.x() < patch.coarse_origin.x() + patch.coarse_size.x()
+								&& gy - parent->offset.y() >= patch.coarse_origin.y()
+								&& gy - parent->offset.y() < patch.coarse_origin.y() + patch.coarse_size.y()
+								&& gz - parent->offset.z() >= patch.coarse_origin.z()
+								&& gz - parent->offset.z() < patch.coarse_origin.z() + patch.coarse_size.z())
+								authored = true;
+						if (! authored)
+							pedestal_cover = false;
+					}
+		}
+	}
+	report(tags_ok, "R4 census (d): every interior destination cell of the nested couplings is frozen GEO_NOTHING");
+	report(depths_ok, "R4 census (d): destinations sit at depth {1} everywhere except the z-min pedestal {1,2,3} (no deeper cell touched)");
+	report(pedestal_cover, "R4 census (d): the deep frozen rows the parent's upward own-8 window reads are fully F2C-authored");
+}
+
+// Test 13 (fail-fast): the three silent lanes of the wall chain each die
+// with a named throw -- a partial parent wall at level 2, a level-2 block
+// missing the storage_overlap_z = 3 override, and a wall-shared face whose
+// own wall row is tagged but the parent level holds no wall (the unbacked
+// gap-0 lane)
+void test_wall_chain_failfast()
+{
+#if defined(F2C_LAGRAVA)
+	report(
+		true,
+		"wall fail-fast: the three wall-chain rails are default-strategy (F2C_SCHONHERR) residents -- under F2C_LAGRAVA the "
+		"guard fires first at SimInit (see the Lagrava guard test)"
+	);
+	return;
+#endif
+	// (i) partial parent wall at level 2: the level-1 block's own wall row
+	// is truncated in x, so the level-2 scan sees backed and unbacked
+	// columns on the same face
+	{
+		lat_t lat = makeLattice(32);
+		const std::string id = fmt::format("test_amr_nesting_{}_wallpartial", pattern_name);
+		StateWallChain_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/3);
+		if (! state.canCompute()) {
+			report(false, "wall fail-fast (i) setup: state.canCompute()");
+			return;
+		}
+		state.tag_level0_wall = true;
+		state.tag_fine_wall[1] = state.tag_fine_wall[2] = state.tag_fine_wall[3] = true;
+		state.tag_level1_wall_partial = true;
+		std::string message;
+		try {
+			createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>(three_level_chain));
+			for (auto& block : state.nse.blocks)
+				if (block.level > 0)
+					block.storage_overlap_z = 3;
+			state.SimInit();
+		}
+		catch (const std::runtime_error& e) {
+			message = e.what();
+		}
+		report(
+			message.find("PARTIAL fine-level wall") != std::string::npos && message.find("z-min") != std::string::npos
+				&& message.find("block 2") != std::string::npos,
+			fmt::format(
+				"wall fail-fast (i): partial parent wall at level 2 throws the named error (block, face, counts) -- {}",
+				message.empty() ? "no exception thrown" : fmt::format("threw: {}", message)
+			)
+		);
+	}
+
+	// (ii) full wall chain but the level-2 block misses the
+	// storage_overlap_z = 3 override (its GEO_NOTHING streaming buffer row
+	// would lie outside the allocated storage)
+	{
+		lat_t lat = makeLattice(32);
+		const std::string id = fmt::format("test_amr_nesting_{}_wallnooverlap", pattern_name);
+		StateWallChain_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/3);
+		if (! state.canCompute()) {
+			report(false, "wall fail-fast (ii) setup: state.canCompute()");
+			return;
+		}
+		state.tag_level0_wall = true;
+		state.tag_fine_wall[1] = state.tag_fine_wall[2] = state.tag_fine_wall[3] = true;
+		std::string message;
+		try {
+			createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>(three_level_chain));
+			for (auto& block : state.nse.blocks)
+				if (block.level == 1 || block.level == 3)
+					block.storage_overlap_z = 3;
+			state.SimInit();
+		}
+		catch (const std::runtime_error& e) {
+			message = e.what();
+		}
+		report(
+			message.find("the z-axis overlap is 2 (< 3)") != std::string::npos && message.find("storage_overlap_z") != std::string::npos
+				&& message.find("z-min") != std::string::npos && message.find("block 2") != std::string::npos,
+			fmt::format(
+				"wall fail-fast (ii): missing storage_overlap_z = 3 at level 2 throws the named error -- {}",
+				message.empty() ? "no exception thrown" : fmt::format("threw: {}", message)
+			)
+		);
+	}
+
+	// (iii) unbacked gap-0 face: only the level-2 block's own wall row is
+	// tagged (no level-0 plane, no level-1 row); the parent hop then holds
+	// no wall and the configuration must die instead of silently dropping
+	// the wall chain
+	{
+		lat_t lat = makeLattice(32);
+		const std::string id = fmt::format("test_amr_nesting_{}_wallunbacked", pattern_name);
+		StateWallChain_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/3);
+		if (! state.canCompute()) {
+			report(false, "wall fail-fast (iii) setup: state.canCompute()");
+			return;
+		}
+		state.tag_fine_wall[2] = true;
+		std::string message;
+		try {
+			createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>(three_level_chain));
+			for (auto& block : state.nse.blocks)
+				if (block.level > 0)
+					block.storage_overlap_z = 3;
+			state.SimInit();
+		}
+		catch (const std::runtime_error& e) {
+			message = e.what();
+		}
+		report(
+			message.find("has GEO_WALL tags on its own z-min wall row but no wall backing on the parent level") != std::string::npos
+				&& message.find("block 2") != std::string::npos,
+			fmt::format(
+				"wall fail-fast (iii): wall-shared face without parent wall backing throws the named error -- {}",
+				message.empty() ? "no exception thrown" : fmt::format("threw: {}", message)
+			)
+		);
+	}
+}
+
+// Test (c) (strategy coupling guard, plan sec. 5.4): nested wall-shared faces
+// + the F2C_LAGRAVA fine-to-coarse strategy (whose 4-node window underflows
+// the 3-row wall pedestal) must hard-error at SimInit naming the required
+// strategy. The guard is compiled only under the F2C_LAGRAVA define (the
+// binaries build green under either strategy, mirroring the strategy-split
+// idiom of test_amr_coupling.cu); under the default F2C_SCHONHERR build the
+// guard is inactive and the wall chain initializes cleanly (asserted by the
+// mask census above)
+void test_wall_chain_lagrava_guard()
+{
+#if defined(F2C_LAGRAVA)
+	lat_t lat = makeLattice(32);
+	const std::string id = fmt::format("test_amr_nesting_{}_wallguard", pattern_name);
+	StateWallChain_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/3);
+	if (! state.canCompute()) {
+		report(false, "Lagrava guard setup: state.canCompute()");
+		return;
+	}
+	state.tag_level0_wall = true;
+	state.tag_fine_wall[1] = state.tag_fine_wall[2] = state.tag_fine_wall[3] = true;
+	std::string message;
+	try {
+		createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>(three_level_chain));
+		for (auto& block : state.nse.blocks)
+			if (block.level > 0)
+				block.storage_overlap_z = 3;
+		state.SimInit();
+	}
+	catch (const std::runtime_error& e) {
+		message = e.what();
+	}
+	report(
+		message.find("wall-shared nesting requires F2C_SCHONHERR") != std::string::npos && message.find("F2C_LAGRAVA") != std::string::npos,
+		fmt::format(
+			"Lagrava guard: nested wall-shared faces under F2C_LAGRAVA hard-error at SimInit naming the strategy -- {}",
+			message.empty() ? "no exception thrown" : fmt::format("threw: {}", message)
+		)
+	);
+#else
+	report(
+		true,
+		"Lagrava guard: default F2C_SCHONHERR build -- the guard is compiled out and the wall chain SimInit runs green "
+		"(see the wall-chain mask census); the F2C_LAGRAVA arm is exercised by a strategy-flipped binary"
+	);
+#endif
+}
+
 int main(int argc, char** argv)
 {
 	TNLMPI_INIT mpi(argc, argv);
@@ -1179,6 +1622,10 @@ int main(int argc, char** argv)
 	test_two_level_schedule_census();
 	test_three_level_schedule_census();
 	test_three_level_conservation_smoke();
+	test_wall_chain_masks();
+	test_wall_pedestal_prisms();
+	test_wall_chain_failfast();
+	test_wall_chain_lagrava_guard();
 
 	if (g_failures == 0) {
 		fmt::println("RESULT: all AMR nesting tests passed");
