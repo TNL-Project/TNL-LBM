@@ -4,6 +4,8 @@
 #include "lbm3d/core.h"
 #include "lbm3d/amr_state.h"
 
+#include "amr_chain_solver.h"
+
 // 2-level AMR developing-channel diagnostic (Experiment B, task B.7 artifact):
 // Dirichlet inflow/outflow channel with the refinement patch placed in the
 // developing-flow region so that the mean flux passes through the patch's
@@ -71,6 +73,18 @@
 // series is emitted by the untracked helper driver
 // .omo/b67/sim_channel_ref_vtkhdf.cu (byte-copy + the P0.3-established two
 // deltas), NOT by editing the production writer guard.
+//
+// Nested mode (commit F of the amr-nlevel-nesting plan, opt-in via
+// --max-level 2..4; the default --max-level 1 channel is byte-identical to
+// the 2-level config above): levels 2..max_level telescope inside the
+// level-1 footprint, every level wall-attached to the bottom plane (the V10
+// wall chain 0..max_level: each z-min footprint face aligns gap-0 with its
+// parent's edge on the same level-0 wall-candidate lane z = R+1, every other
+// face insets >= 3 parent-level cells per hop -- the no-warning tier; the
+// z-min face is exempt, so the z budget carries only the z-max inset). The
+// footprints are derived by the footprint-chain solver in amr_chain_solver.h
+// (the derived region spec is logged), never hand-written; --max-level 4 is
+// the target five lattice levels 0..4.
 
 template <typename NSE>
 struct StateLocal_AMR_Channel : State_AMR<NSE>
@@ -146,7 +160,7 @@ struct StateLocal_AMR_Channel : State_AMR<NSE>
 
 		// fine-level bounce-back walls (the face-generic mechanism of the
 		// header comment): on every footprint face whose face-adjacent
-		// coarse row is GEO_WALL the fine block imposes its own wall --
+		// parent-level row is GEO_WALL the fine block imposes its own wall --
 		// the GEO_WALL row lands one row OUTSIDE the face's C2F
 		// destination band (local -2 on a min face / local+1 on a max
 		// face) with the GEO_NOTHING streaming buffer one row further out
@@ -191,18 +205,29 @@ struct StateLocal_AMR_Channel : State_AMR<NSE>
 						idx3d fg{0, 0, 0};
 						fg[b] = fine.offset[b] + ib;
 						fg[c] = fine.offset[c] + ic;
-						// the column's wall tag follows the COARSE map on
-						// the face-adjacent plane (floor(fine/2) is exact
-						// for the positive re-anchored fine-global coords)
+						// the column's wall tag follows the IMMEDIATE
+						// PARENT level's map on the face-adjacent plane
+						// (floor(fine/2) is exact for the positive
+						// re-anchored fine-global coords; on a wall-shared
+						// nested face the backing row is the parent's own
+						// fine wall row at parent-local -2 / local+1, so
+						// the scan admits the parent's overlap-extended
+						// storage extent -- mirrors
+						// State_AMR::buildFineWallMasks; at level 1 the
+						// parent planes lie inside the level-0 interior,
+						// so this admits exactly the historical column set)
 						idx3d cg{0, 0, 0};
 						cg[a] = plane;
 						cg[b] = fg[b] / 2;
 						cg[c] = fg[c] / 2;
 						bool wall_column = false;
-						for (const auto& coarse : nse.blocks)
-							if (coarse.level == 0 && cg[0] >= coarse.offset.x() && cg[0] < coarse.offset.x() + coarse.local.x()
-								&& cg[1] >= coarse.offset.y() && cg[1] < coarse.offset.y() + coarse.local.y()
-								&& cg[2] >= coarse.offset.z() && cg[2] < coarse.offset.z() + coarse.local.z()
+						for (auto& coarse : nse.blocks)
+							if (coarse.level == fine.level - 1 && cg[0] >= coarse.offset.x() - coarse.df_overlap_X()
+								&& cg[0] < coarse.offset.x() + coarse.local.x() + coarse.df_overlap_X()
+								&& cg[1] >= coarse.offset.y() - coarse.df_overlap_Y()
+								&& cg[1] < coarse.offset.y() + coarse.local.y() + coarse.df_overlap_Y()
+								&& cg[2] >= coarse.offset.z() - coarse.df_overlap_Z()
+								&& cg[2] < coarse.offset.z() + coarse.local.z() + coarse.df_overlap_Z()
 								&& coarse.hmap(cg[0], cg[1], cg[2]) == BC::GEO_WALL)
 								wall_column = true;
 						if (! wall_column)
@@ -325,8 +350,13 @@ void sim(const std::string& adios_config = "adios2.xml", int RESOLUTION = 1, int
 
 	// one level-1 slab in the mid-channel developing region (coarse cells);
 	// the z-min face is attached to the bottom wall plane (the footprint's
-	// z-min halo row IS the wall row z = R -- thesis §7.3 wall refinement)
-	const std::string amr_config = fmt::format("1 {} {} {} {} {} {}", 24 * R, 4 * R, R + 1, 16 * R, 8 * R, 8 * R);
+	// z-min halo row IS the wall row z = R -- thesis §7.3 wall refinement).
+	// The default max_level == 1 string is byte-frozen (the bit-identity
+	// regression arm). The nested mode (--max-level 2..4) derives the
+	// deeper wall-attached chain with the footprint-chain solver
+	// (amr_chain_solver.h; the derived spec is logged)
+	const std::string amr_config = max_level >= 2 ? deriveAMRChannelChain(R, max_level).region_config
+												  : fmt::format("1 {} {} {} {} {} {}", 24 * R, 4 * R, R + 1, 16 * R, 8 * R, 8 * R);
 
 	const std::string state_id = fmt::format("sim_AMR_channel_res{:02d}_np{:03d}", RESOLUTION, TNL::MPI::GetSize(MPI_COMM_WORLD));
 	StateLocal_AMR_Channel<NSE> state(state_id, MPI_COMM_WORLD, lat, adios_config, max_level);
@@ -412,7 +442,14 @@ int main(int argc, char** argv)
 	program.add_description("2-level AMR developing-channel diagnostic (B.7): inflow/outflow channel, refinement slab in the developing region.");
 	program.add_argument("--adios-config").help("path to ADIOS2 configuration file").default_value(std::string("adios2.xml")).nargs(1);
 	program.add_argument("--resolution").help("resolution of the lattice").scan<'i', int>().default_value(1).nargs(1);
-	program.add_argument("--max-level").help("maximum AMR refinement level (0 = uniform)").scan<'i', int>().default_value(1).nargs(1);
+	program.add_argument("--max-level")
+		.help(
+			"maximum AMR refinement level: 0 = uniform reference, 1 = the default 2-level channel (one wall-attached slab), "
+			"2..4 = the derived nested wall-attached chain of that depth (4 = five lattice levels 0..4)"
+		)
+		.scan<'i', int>()
+		.default_value(1)
+		.nargs(1);
 	program.add_argument("--lattice-viscosity")
 		.help("override lattice viscosity [dx^2/dt] (for uniform reference runs)")
 		.scan<'f', float>()
@@ -447,6 +484,10 @@ int main(int argc, char** argv)
 
 	if (resolution < 1) {
 		fmt::println(stderr, "CLI error: resolution must be at least 1");
+		return 1;
+	}
+	if (max_level < 0 || max_level > 4) {
+		fmt::println(stderr, "CLI error: max-level must be in 0..4 (the nested wall-attached chain is derived up to five lattice levels 0..4)");
 		return 1;
 	}
 	if (out3d_iter_period < 0) {
