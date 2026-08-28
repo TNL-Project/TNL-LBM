@@ -504,6 +504,20 @@ void LBM<CONFIG>::updateKernelDataForLevel(int level, int substep)
 }
 
 template <typename CONFIG>
+double LBM<CONFIG>::totalLatticeUpdatesPerIteration() const
+{
+	// level 0: the whole global lattice advances once per iteration (matches
+	// the historical GLUPS basis on every non-AMR configuration)
+	double updates = (double) lat.global.x() * lat.global.y() * lat.global.z();
+	// fine levels: each block's interior advances once per substep, 2^level
+	// substeps per coarse iteration (State_AMR::advancePair)
+	for (const auto& block : blocks)
+		if (block.level > 0)
+			updates += (double) block.local.x() * block.local.y() * block.local.z() * (double) (1 << block.level);
+	return updates;
+}
+
+template <typename CONFIG>
 template <typename F>
 void LBM<CONFIG>::forLocalLatticeSites(F f)
 {

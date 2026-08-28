@@ -1609,7 +1609,9 @@ void State<NSE>::AfterSimUpdate()
 
 				// to avoid numerical errors - split LUPS computation in two parts
 				double LUPS = (nse.iterations - glups_prev_iterations) / timediff;
-				LUPS *= nse.lat.global.x() * nse.lat.global.y() * nse.lat.global.z();
+				// multi-level basis: the level-0 global lattice plus every fine
+				// block's interior once per substep (2^level per coarse iteration)
+				LUPS *= nse.totalLatticeUpdatesPerIteration();
 
 				// save prev time and iterations
 				glups_prev_time = now;
@@ -1658,9 +1660,11 @@ void State<NSE>::AfterSimFinished()
 				timer_wait_computation.getRealTime(),
 				timer_wait_io.getRealTime()
 			);
-			const double avgLUPS = nse.lat.global.x() * nse.lat.global.y() * nse.lat.global.z()
-								 * (iterations / (timer_SimUpdate.getRealTime() + timer_AfterSimUpdate.getRealTime()));
-			const double computeLUPS = nse.lat.global.x() * nse.lat.global.y() * nse.lat.global.z() * (iterations / timer_compute.getRealTime());
+			// multi-level basis of totalLatticeUpdatesPerIteration(): all
+			// levels' sites, fine levels weighted by their substep counts
+			const double updates_per_iteration = nse.totalLatticeUpdatesPerIteration();
+			const double avgLUPS = updates_per_iteration * (iterations / (timer_SimUpdate.getRealTime() + timer_AfterSimUpdate.getRealTime()));
+			const double computeLUPS = updates_per_iteration * (iterations / timer_compute.getRealTime());
 			spdlog::info(
 				"final GLUPS: average (based on SimInit + SimUpdate + AfterSimUpdate time): {:.3f}, based on compute time: {:.3f}",
 				avgLUPS * 1e-9,

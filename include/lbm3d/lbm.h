@@ -131,6 +131,15 @@ struct LBM
 	// not the global `iterations`
 	void updateKernelDataForLevel(int level, int substep);
 
+	// lattice-update census of one (coarse) iteration -- the GLUPS basis:
+	// the level-0 global lattice updated once (the historical basis,
+	// MPI-global by construction) plus every fine block's interior once per
+	// substep it advances (a level-L block runs 2^L substeps per coarse
+	// iteration under the AMR subcycling of State_AMR::advancePair). Fine
+	// blocks live on the rank that owns them (AMR is single-rank in v1), and
+	// non-AMR runs keep the historical basis exactly (no blocks at level > 0).
+	double totalLatticeUpdatesPerIteration() const;
+
 	template <typename F>
 	void forLocalLatticeSites(F f);
 
