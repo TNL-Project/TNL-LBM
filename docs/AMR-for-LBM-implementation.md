@@ -345,7 +345,7 @@ Full out-of-tree builds with the variant applied; same sim_AMR run; same between
 - **Two-way coupling via frozen hidden cells**: the depth-1 c=1 skin cells under the fine footprint are frozen as `GEO_NOTHING` (no stream/collide) and receive the strategy-selected fine state via the interior F2C once per cycle end (§4.2, §5 step 4 — the Schönherr σ=2 transfer by default since commit 15, the Lagrava 4×4×4 filtered average under the `F2C_LAGRAVA` opt-out; the deep c≥2 core stays frozen-unwritten). This eliminates both the one-way clamp (§9.2) and — after the converted band registration — the C2F shadow injection at valid faces (§9.2.1 closing note): the ring cell streams from a frozen fine-injected neighbor (not a diverging shadow), and the C2F kernel's nominal windows read simulated cells only. **Verified correct for AB_PATTERN** (the `defs.h` default, used by sim_AMR). **AA_PATTERN has a deferred defect — see §10.1 and the D.4 revisit record in §9.3 (2026-08-16).** Milestone quantification by era: 220,737 bracket violations at cycle 10 vs the corrected baseline 605,583 (−63.6 %) under the 2026-08-16 acceptance rows (§9.1, D.5); on the converted HEAD (33/62 re-pinned bracket, 2026-08-22) the series sits far below the old-code window early and exits it upward from cycle ~5 — the era-consistent FAIL class of §8.2, not a physics verdict; the conversion-era conservation/KE verdict is the measured decision table at the "Interface density bias" ¶.
 - **Static refinement only**: regions fixed at SimInit; no dynamic adaptation.
 - **Single-rank, single-GPU**: fine blocks have no same-level MPI neighbors; coupling kernels are CUDA-only.
-- **Multi-level nesting (target 5 levels)**: implemented by the amr-nlevel-nesting plan (commits A–C, 2026-08-27) — the v1 `level > 1` reject is REPLACED by the nesting validation V-suite (V1–V10: ascending file order, unique containment, telescoping gaps, sibling separation, wall-shared chains) in `createAMRBlocks`; `block.global_offset` is normalized to the immediate parent frame (`amrParentFrameOrigin/amrFineOffset/amrFineLocal`, exact divisions); the schedule is the `advancePair` Berger–Colella pair recursion driven by per-level cumulative substep counters (`LBM::totalSubstepCount`), bit-identical at `max_level == 1` (the census table of §5 is the `max_level == 1` reduction); `markAMRInterface`'s cell-tagging rule needed no change (verified per-pair, incl. across the parent-frame offset conversion; the commit-B fix was confined to its dir-array indexing); the `checkCouplingMapPattern` rails were re-anchored to the same frame. Residual v1-scope pins: single MPI rank, single GPU, 2:1 ratio, adjacent-pair couplings only; wall-shared faces at level ≥ 2 are implemented at commit E (the wall chain keys on the immediate parent's map in the parent frame, the R4 wall-pedestal prisms author the frozen rows behind the parent's upward own-8 window, and nested wall sharing is hard-guarded against the `F2C_LAGRAVA` opt-out).
+- **Multi-level nesting (target 5 levels)**: implemented by the amr-nlevel-nesting plan (commits A–G, 2026-08-27/28; the full multi-level chapter is §13) — the v1 `level > 1` reject is REPLACED by the nesting validation V-suite (V1–V10: ascending file order, unique containment, telescoping gaps, sibling separation, wall-shared chains) in `createAMRBlocks`; `block.global_offset` is normalized to the immediate parent frame (`amrParentFrameOrigin/amrFineOffset/amrFineLocal`, exact divisions); the schedule is the `advancePair` Berger–Colella pair recursion driven by per-level cumulative substep counters (`LBM::totalSubstepCount`), bit-identical at `max_level == 1` (the census table of §5 is the `max_level == 1` reduction); `markAMRInterface`'s cell-tagging rule needed no change (verified per-pair, incl. across the parent-frame offset conversion; the commit-B fix was confined to its dir-array indexing); the `checkCouplingMapPattern` rails were re-anchored to the same frame. Residual v1-scope pins: single MPI rank, single GPU, 2:1 ratio, adjacent-pair couplings only; wall-shared faces at level ≥ 2 are implemented at commit E (the wall chain keys on the immediate parent's map in the parent frame, the R4 wall-pedestal prisms author the frozen rows behind the parent's upward own-8 window, and nested wall sharing is hard-guarded against the `F2C_LAGRAVA` opt-out).
 - **Non-Newtonian viscosity with AMR**: excluded.
 - **IBM (immersed boundary)**: excluded.
 
@@ -563,3 +563,109 @@ A follow-up variant — **post-collision Pi^neq rescale** — hypothesized that 
 - Gendre, F., Ricot, D., Fritz, G., & Sagaut, P. (2017). Grid refinement for aeroacoustics in the lattice Boltzmann method: A directional splitting approach. *Physical Review E*, 96, 023311.
 - Guzik, S. M., Weisgraber, T. H., Colella, P., & Alder, B. J. (2014). Interpolation methods and the accuracy of lattice-Boltzmann mesh refinement. *J. Computational Physics*, 259, 461–487.
 - Lagrava, D., Malaspinas, O., Latt, J., & Chopard, B. (2012). Advances in multi-domain lattice Boltzmann grid refinement. *J. Computational Physics*, 231(14), 4808–4822.
+
+---
+
+## 13. Multi-level static nesting (the amr-nlevel-nesting arc, commits A–G)
+
+Shipped state (the amr-nlevel-nesting arc commits A–G, 2026-08-27/28, HEAD `5214b01`, plan
+`.omo/plans/amr-nlevel-nesting.md`): the v1 two-level design generalizes to **N statically nested 2:1 refinement levels**
+(`max_level` ≤ 4, i.e. five lattice levels on the realized target), single MPI rank and single GPU retained from v1, every
+band/cycle rule of the contract extending **per adjacent pair, unchanged** (couplings stay strictly adjacent-pair; nothing
+crosses two levels). The arc ran under two discipline instruments, both green at HEAD: the **AMR gate 10/10**
+(`tests/run-amr-tests.sh` — the six v1 mocks × {ab,aa}, the new `test_amr_nesting_{ab,aa}` suite, and both ParaView e2e arms:
+the 2-level arm pinned, the 3-level nesting arm added) and the **bit-identity harness 11/11 verify mode**
+(`tests/regression/test_amr_bitidentity.py` — every `max_level == 1` artifact of the mocks and both sims byte-compared
+against the committed `tests/regression/amr_ref/manifest.json` after each commit, proving the nesting machinery changed no
+v1 behavior).
+
+### 13.1 Parent-frame `global_offset` and the three conversion helpers (commit A)
+
+The region file keeps its v1 convention — **level-0 coordinates for every level** — while `block.global_offset` is
+normalized to store the footprint origin in the **immediate parent's** lattice (in v1 this was latent: level 1's parent frame
+*is* the level-0 frame). The conversion lives at the single write site (`createAMRBlocks` phase 2) as three pure-integer
+helpers — parent-frame origin `go = origin >> (L−1)`, fine offset `offset = 2·(origin >> (L−1)) + 1`, fine interior
+`local = 2·(size >> (L−1)) − 2` per axis — all exact by the pre-existing alignment check (origin/size multiples of 2^(L−1)),
+and each reduces to the level-1 formula bit-for-bit (the shift is 0), which is the bit-identity-by-construction argument.
+Every consumer (`markAMRInterface`, `buildCouplings`, `buildFineWallMasks`, `checkCouplingMapPattern`,
+`isShadowedBySameLevelBlock`, the writer's REFINEDCELL pairing) was verified correct unmodified under parent-frame storage —
+that was the point of normalizing at the write site.
+
+### 13.2 The nesting V-suite (commit B `4712ebe`)
+
+The v1 `level > 1` reject is removed and superseded by phase-1 validation in `createAMRBlocks` (read-only, before any block
+is created; `spdlog::error` + `std::runtime_error` in the existing style). V1–V4 are the pre-existing checks (level in
+[1, max_level]; per-axis footprint ≥ 3 parent cells; level-0 containment; 2^(L−1) alignment). The new checks:
+
+- **V5 — ascending level order** (hard error): a level-L region's parent (level L−1) must appear earlier in the region file;
+  establishes the level-ascending creation order the wall chain derives through.
+- **V6 — parent existence & uniqueness** (hard error): exactly one level-(L−1) region fully contains the child rect (level-0
+  coords, V4-exact conversions) — the "orphan" / "ambiguous parent" rejects.
+- **V7 — telescoping gap** (hard error): the child sits strictly inside its parent; per-face inset ≥ **2** parent cells on
+  every face, except a wall-candidate face which must sit at exactly **s = −1** (its halo row on the parent's wall machinery).
+- **V8 — sibling separation** (hard error): same-level regions pairwise disjoint with Chebyshev separation ≥ 2 level-L cells.
+- **V9 — gap advisory** (`spdlog::warn` only): 2 ≤ gap < 3 on a non-shared face warns — the parent's upward F2C windows then
+  read coupling-authored ring/skin cells instead of plain fluid. The user-decided 2026-08-27 tier: floor 2 is the validity
+  bound, warn below 3; the exact-coverage wall-to-wall corner stays valid.
+- **V10 — wall-candidate agreement** (hard error): an s = −1 face of a child requires the parent's same axis/side face to
+  itself be a wall-candidate, recursively down the chain; map-backed confirmation (a full `GEO_WALL` parent plane) is
+  deferred to `buildFineWallMasks` at SimInit.
+
+### 13.3 The `advancePair` Berger–Colella recursion (commit C `cef7ae5`)
+
+`State_AMR::SimUpdate` is a literal recursive pair emission: each pair at level L covers two of L's substeps (widened substep
+1 → optional recursion into level L+1's first pair + F2C mid-sync + the mid-cycle C2F fill → interior substep 2 → optional
+second pair + F2C end-sync), so **level L performs exactly 2^L substeps per coarse step** (correct Berger–Colella). Per-level
+**cumulative substep counters** (`LBM::totalSubstepCount`) drive `updateKernelDataForLevel(L, s_L)` — an absolute setter on
+`substep % 2` (parity) and `substep % DFMAX` (DF rotation; DFMAX = 1 under AA, so the rotation is identically a no-op there)
+— making the cumulative invocation equivalent to v1's positional 0/1, and the `max_level == 1` reduction **byte-identical**
+to the pre-refactor flat schedule of §5 (census-locked at 1, 2 and 3 fine levels, ab + aa, with per-event parity locks). The
+F2C write parity keys on the parent's **next** substep counter and collapses to v1's `(iterations % 2) == 1` at level 0.
+Placement rules: the C2F fill runs once per pair before its substep 1, sourcing the parent's **live** post-substep-A state
+mid-cycle; the cycle ends F2C(1→0)-first, then a **level-ascending** re-arm + C2F cascade — the AA in-place discipline (a
+level's launch destroys its previous frame, so fills issue while their source frames still exist; F2C and C2F touch disjoint
+sets).
+
+### 13.4 The wall chain (commit E `6c25740`)
+
+Wall-shared faces (s = −1) nest through the chain by keying `buildFineWallMasks` on the **immediate parent's** map (one
+floor(fine/2) hop, exact under parent-frame storage), scanned against the parent's overlap-extended **storage extent** — the
+backing `GEO_WALL` row of a nested wall-shared face sits on the parent's own fine wall row at parent-local −2, inside its
+ghost zone. Blocks are visited level-ascending (V5), so a depth-K mask derives through K hops. The one genuinely new mechanism
+is the **R4 wall-pedestal prism**: on a wall-shared face the parent's upward own-8 F2C window reads face-normal rows {2,3} —
+deep-frozen `GEO_NOTHING` cells no standard transfer authors in a chain (the "shadow solve" the band registration exists to
+kill) — so `buildCouplings` appends twice-inset tangent rectangles covering exactly those rows to the coupling's interior
+patches (disjoint from the six depth-1 skins, empty at level 1, so the v1 census is untouched); `checkCouplingMapPattern`'s
+rail (b) generalizes to the face-specific depth sets, and the rail's sibling shadowing was verified already parent-frame at
+depth. Fail-fasts: partial parent wall and a **broken chain** (own `GEO_WALL` row with zero parent backing) throw at SimInit;
+**`F2C_LAGRAVA` + nested wall sharing is a hard SimInit error** (the 4-node filter window underflows the 3-row pedestal;
+`F2C_SCHONHERR` is unaffected).
+
+### 13.5 The chain solver and the windbreak target (commits F `6ae4a61` + G `5214b01`)
+
+`sim_AMR/amr_chain_solver.h` derives the level-2..max footprints from the 2-level channel's level-1 anchor in
+createAMRBlocks' integer parent-cell frames (`rect_L = 2 · inset(rect_{L−1})`): insets of 3 parent cells per non-wall face
+per hop (the V9 no-warning tier) and a gap-0 wall-chained z-min face per hop, holding every level's z-min face on the level-0
+wall-candidate lane z = R+1 — the V10 wall chain 0..max_level. Nested mode is opt-in via `--max-level 2..4` on
+`sim_AMR_channel` (the default `--max-level 1` path emits the byte-frozen 2-level config through the same `fmt::format` call
+as before); the full V-suite remains the authoritative guard on the emitted spec. The derived **R = 1 chain** carries an L4
+span of 86×22×43 parent cells; its one locked deviation is the **level-4 y fine span of 44 cells, not 48** — the 16-cell
+anchor minus three y-hops of inset ≥ 3 exhausts the budget (all hard floors pass; the 44-cell span keeps a workable wake
+margin).
+
+`sim_AMR/amr_windbreak.h` stamps the rod array on the **finest level's map only** (every parent treats rod columns as plain
+fluid — sub-grid geometry never appears upstream): axis-edge discs `(2dx+1)² + (2dy+1)² ≤ d²` extruded from the wall-chain row
+under integer-exact guardrails. The realized default-knob geometry is **3 rods in a 2+1 stagger** (row 1 at x = 32 with y axes
+{13, 29}; row 2 at x = 66 with y {21} — the half-pitch stagger), 12-cell discs (d = 4), height 40 rows, 480 cells per rod,
+**1440 cells total**. The four locked knobs are CLI-tunable (`--windbreak-diameter/-pitch/-height/-row-spacing`, plus
+`--no-windbreak`); **`--max-level 2..3` with the default rod geometry hard-errors at SimInit** (those y spans cannot host the
+p = 16 staggered second row) — use `--no-windbreak` or tuned knobs there.
+
+Pre-registered runs (640-step convective pass, R = 1, `--max-level 4`; both re-run digit-for-digit at commit time):
+
+- **F — 5-level chain, no rods**: final mass 1.863994e+04 (−0.011 % vs the 2-level 1.866006e+04); KE per level L0→L4 =
+  8.145986e+01 / 3.221264e+01 / 7.490310e+01 / 2.158624e+02 / 3.090272e+03; smooth saturating inflow-driven rise,
+  max\|v\| 1.2e-1 class on every level, zero NaN.
+- **G — same + windbreak rods**: mass 1.423224e+04 → 1.864126e+04 (+0.007 % vs F); KE L0→L4 = 8.179896e+01 / 3.220101e+01 /
+  7.333960e+01 / 2.054079e+02 / 2.596176e+03 — the −16.0 % level-4 blockage signature (deficit deepening toward the finest
+  level); rod cells hold u = 0, rho = 1 (a documented constant mass offset).

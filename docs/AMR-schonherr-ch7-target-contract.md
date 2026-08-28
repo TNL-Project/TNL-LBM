@@ -230,6 +230,34 @@ None. Every item required for implementation was normatively specified in the pl
 
 ---
 
+## 11. Addendum: multi-level nesting (2026-08-28)
+
+This contract, written for two levels (coarse + one fine), generalizes to **N statically nested 2:1 levels** (shipped as
+commits A–G of `.omo/plans/amr-nlevel-nesting.md`, branch HEAD `5214b01`; implementation chapter
+`docs/AMR-for-LBM-implementation.md` §13). The addendum records how the binding rules carry over; the contract body above is
+unmodified.
+
+- **Per-pair extension, unchanged.** The band map (§2), the simulated-band cycle contract (§3), and the map-pattern rails
+  remain binding **per adjacent level pair**: couplings are strictly adjacent-pair (nothing couples L to L−2), each finer
+  level re-tags only its own parent's map, and the band registration is identical at every pair.
+- **Schedule recursion.** The single-level cycle of §3 is the `max_level == 1` reduction of the `advancePair(L)` recursion:
+  level L runs exactly 2^L substeps per coarse step, F2C once per parent substep (frame-forced, not a physics choice), the
+  C2F fill once per pair before its substep 1 (sourcing the parent's live post-substep-A state mid-cycle), and a
+  level-ascending re-arm + C2F cascade at cycle end (the AA in-place discipline, per §3's ordering argument). The reduction
+  is census-locked byte-identical at 1, 2 and 3 fine levels under both streaming patterns (`tests/test_amr_nesting_{ab,aa}`).
+- **New validation V5–V10** (hard `createAMRBlocks` floors: ascending file order, unique containing parent, telescoping
+  gap ≥ 2 with the wall-candidate s = −1 exception, sibling Chebyshev separation, wall-candidate chain agreement) plus the
+  **V9 advisory warn tier** (gap 2 valid, warn below 3 — user-decided 2026-08-27); V1–V4 are this contract's pre-existing
+  checks.
+- **Wall chain.** Wall-shared faces (the s = −1 lane) chain through nested levels: masks key on the immediate parent's map
+  over its storage extent, **R4 wall-pedestal prisms** author the frozen rows behind the parent's upward own-8 F2C window,
+  and `F2C_LAGRAVA` + nested wall sharing is a hard SimInit error (the §7.2 σ = 2 default is unaffected).
+- **Evidence discipline.** The pre-registered instrument for proving v1 unchanged is the bit-identity harness
+  (`tests/regression/test_amr_bitidentity.py`, verify mode against the committed manifest), complementing the 10-target
+  gate; the conversion-era §6 gates are unaffected.
+
+---
+
 ## Appendix: §7.2 equation audit
 
 **Provenance:** plan row 10 (T9) worksheet — the §7.2 equation-by-equation audit of 2026-08-19, extended (A.5-U1) and integrated into this contract doc at commit 11 (T11, 2026-08-21). Session draft: `.omo/evidence/schonherr_conversion/eq-audit-draft.md`.
