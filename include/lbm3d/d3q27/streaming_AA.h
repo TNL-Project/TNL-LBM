@@ -534,189 +534,204 @@ struct D3Q27_STREAMING
 		KS.vz = vz;
 	}
 
-	// Streaming for separate outflow-pass kernel (deterministic BC for A-A pattern):
-	// both branches reconstruct the pre-collision populations at the translated
-	// A-B pull sites of the outflow cell: postcoll_{n-1}(i) at site (xm, y - cy,i),
-	// i.e. the populations that a pull stencil anchored at column xm delivers to column x.
+	// Streaming for separate outflow-pass kernel (deterministic BC for A-A pattern),
+	// parameterized by the outflow face (outward normal): both branches reconstruct
+	// the pre-collision populations at the translated A-B pull sites of the outflow
+	// cell: postcoll_{n-1}(i) at site (anchor, tangential -c_i), where the anchor is
+	// the fluid-side neighbor column one cell inward.
 	// The slot layouts provide this only from the finalized previous launch:
-	// the required slots are owned by column xm-1/interior threads in both parities,
-	// so no race-free in-launch gather exists and the pass must run before the main kernel.
-	template <typename LBM_DATA, typename LBM_KS>
-	__cuda_callable__ static void
-	streamingOutflowRight(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp_unused, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
+	// the required slots are owned by the pre-anchor/interior threads in both
+	// parities, so no race-free in-launch gather exists and the pass must run
+	// before the main kernel.
+	// FACE is a compile-time template parameter, so the per-direction
+	// components and site offsets fold to constants.
+	template <int FACE, typename LBM_DATA, typename LBM_KS>
+	__cuda_callable__ static void streamingOutflowImpl(LBM_DATA& SD, LBM_KS& KS, idx anchor, idx x, idx y, idx z)
 	{
+		constexpr int axis = (FACE & (bc_face::XP | bc_face::XM)) ? 0
+						   : (FACE & (bc_face::YP | bc_face::YM)) ? 1
+																  : 2;	// normal axis: 0 = x, 1 = y, 2 = z
 		if (SD.even_iter) {
-			// natural layout: slot (i, t + c_i) = postcoll_{n-1}(i, t);
-			// the row/column offsets cancel so every term lands at (y, z)
-			const idx xmm = xm - 1;
-			KS.f[ppp] = TNL::Backend::ldg(SD.df(df_cur, ppp, x, y, z));
-			KS.f[ppz] = TNL::Backend::ldg(SD.df(df_cur, ppz, x, y, z));
-			KS.f[ppm] = TNL::Backend::ldg(SD.df(df_cur, ppm, x, y, z));
-			KS.f[pzp] = TNL::Backend::ldg(SD.df(df_cur, pzp, x, y, z));
-			KS.f[pzz] = TNL::Backend::ldg(SD.df(df_cur, pzz, x, y, z));
-			KS.f[pzm] = TNL::Backend::ldg(SD.df(df_cur, pzm, x, y, z));
-			KS.f[pmp] = TNL::Backend::ldg(SD.df(df_cur, pmp, x, y, z));
-			KS.f[pmz] = TNL::Backend::ldg(SD.df(df_cur, pmz, x, y, z));
-			KS.f[pmm] = TNL::Backend::ldg(SD.df(df_cur, pmm, x, y, z));
-			KS.f[zpp] = TNL::Backend::ldg(SD.df(df_cur, zpp, xm, y, z));
-			KS.f[zpz] = TNL::Backend::ldg(SD.df(df_cur, zpz, xm, y, z));
-			KS.f[zpm] = TNL::Backend::ldg(SD.df(df_cur, zpm, xm, y, z));
-			KS.f[zzp] = TNL::Backend::ldg(SD.df(df_cur, zzp, xm, y, z));
-			KS.f[zzz] = TNL::Backend::ldg(SD.df(df_cur, zzz, xm, y, z));
-			KS.f[zzm] = TNL::Backend::ldg(SD.df(df_cur, zzm, xm, y, z));
-			KS.f[zmp] = TNL::Backend::ldg(SD.df(df_cur, zmp, xm, y, z));
-			KS.f[zmz] = TNL::Backend::ldg(SD.df(df_cur, zmz, xm, y, z));
-			KS.f[zmm] = TNL::Backend::ldg(SD.df(df_cur, zmm, xm, y, z));
-			KS.f[mmm] = TNL::Backend::ldg(SD.df(df_cur, mmm, xmm, y, z));
-			KS.f[mmz] = TNL::Backend::ldg(SD.df(df_cur, mmz, xmm, y, z));
-			KS.f[mmp] = TNL::Backend::ldg(SD.df(df_cur, mmp, xmm, y, z));
-			KS.f[mzm] = TNL::Backend::ldg(SD.df(df_cur, mzm, xmm, y, z));
-			KS.f[mzz] = TNL::Backend::ldg(SD.df(df_cur, mzz, xmm, y, z));
-			KS.f[mzp] = TNL::Backend::ldg(SD.df(df_cur, mzp, xmm, y, z));
-			KS.f[mpm] = TNL::Backend::ldg(SD.df(df_cur, mpm, xmm, y, z));
-			KS.f[mpz] = TNL::Backend::ldg(SD.df(df_cur, mpz, xmm, y, z));
-			KS.f[mpp] = TNL::Backend::ldg(SD.df(df_cur, mpp, xmm, y, z));
+			// natural layout: slot (i, t + c_i) = postcoll_{n-1}(i, t) with
+			// t = (anchor, tangential -c_i); the tangential offsets cancel
+			// against +c_i, so the normal coordinate is anchor + c_i[normal]
+			// and the tangential coordinates are the cell's own
+			for (int i = 0; i < 27; i++) {
+				idx sx, sy, sz;
+				if constexpr (axis == 0) {
+					sx = anchor + dir27_cx(i);
+					sy = y;
+					sz = z;
+				}
+				else if constexpr (axis == 1) {
+					sx = x;
+					sy = anchor + dir27_cy(i);
+					sz = z;
+				}
+				else {
+					sx = x;
+					sy = y;
+					sz = anchor + dir27_cz(i);
+				}
+				KS.f[i] = TNL::Backend::ldg(SD.df(df_cur, i, sx, sy, sz));
+			}
 		}
 		else {
 			// twist layout: slot (opp(i), t) = postcoll_{n-1}(i, t)
-			KS.f[ppp] = TNL::Backend::ldg(SD.df(df_cur, mmm, xm, ym, zm));
-			KS.f[ppz] = TNL::Backend::ldg(SD.df(df_cur, mmz, xm, ym, z));
-			KS.f[ppm] = TNL::Backend::ldg(SD.df(df_cur, mmp, xm, ym, zp));
-			KS.f[pzp] = TNL::Backend::ldg(SD.df(df_cur, mzm, xm, y, zm));
-			KS.f[pzz] = TNL::Backend::ldg(SD.df(df_cur, mzz, xm, y, z));
-			KS.f[pzm] = TNL::Backend::ldg(SD.df(df_cur, mzp, xm, y, zp));
-			KS.f[pmp] = TNL::Backend::ldg(SD.df(df_cur, mpm, xm, yp, zm));
-			KS.f[pmz] = TNL::Backend::ldg(SD.df(df_cur, mpz, xm, yp, z));
-			KS.f[pmm] = TNL::Backend::ldg(SD.df(df_cur, mpp, xm, yp, zp));
-			KS.f[zpp] = TNL::Backend::ldg(SD.df(df_cur, zmm, xm, ym, zm));
-			KS.f[zpz] = TNL::Backend::ldg(SD.df(df_cur, zmz, xm, ym, z));
-			KS.f[zpm] = TNL::Backend::ldg(SD.df(df_cur, zmp, xm, ym, zp));
-			KS.f[zzp] = TNL::Backend::ldg(SD.df(df_cur, zzm, xm, y, zm));
-			KS.f[zzz] = TNL::Backend::ldg(SD.df(df_cur, zzz, xm, y, z));
-			KS.f[zzm] = TNL::Backend::ldg(SD.df(df_cur, zzp, xm, y, zp));
-			KS.f[zmp] = TNL::Backend::ldg(SD.df(df_cur, zpm, xm, yp, zm));
-			KS.f[zmz] = TNL::Backend::ldg(SD.df(df_cur, zpz, xm, yp, z));
-			KS.f[zmm] = TNL::Backend::ldg(SD.df(df_cur, zpp, xm, yp, zp));
-			KS.f[mmm] = TNL::Backend::ldg(SD.df(df_cur, ppp, xm, yp, zp));
-			KS.f[mmz] = TNL::Backend::ldg(SD.df(df_cur, ppz, xm, yp, z));
-			KS.f[mmp] = TNL::Backend::ldg(SD.df(df_cur, ppm, xm, yp, zm));
-			KS.f[mzm] = TNL::Backend::ldg(SD.df(df_cur, pzp, xm, y, zp));
-			KS.f[mzz] = TNL::Backend::ldg(SD.df(df_cur, pzz, xm, y, z));
-			KS.f[mzp] = TNL::Backend::ldg(SD.df(df_cur, pzm, xm, y, zm));
-			KS.f[mpm] = TNL::Backend::ldg(SD.df(df_cur, pmp, xm, ym, zp));
-			KS.f[mpz] = TNL::Backend::ldg(SD.df(df_cur, pmz, xm, ym, z));
-			KS.f[mpp] = TNL::Backend::ldg(SD.df(df_cur, pmm, xm, ym, zm));
+			for (int i = 0; i < 27; i++) {
+				idx sx, sy, sz;
+				if constexpr (axis == 0) {
+					sx = anchor;
+					sy = y - dir27_cy(i);
+					sz = z - dir27_cz(i);
+				}
+				else if constexpr (axis == 1) {
+					sx = x - dir27_cx(i);
+					sy = anchor;
+					sz = z - dir27_cz(i);
+				}
+				else {
+					sx = x - dir27_cx(i);
+					sy = y - dir27_cy(i);
+					sz = anchor;
+				}
+				KS.f[i] = TNL::Backend::ldg(SD.df(df_cur, opposite_direction(i), sx, sy, sz));
+			}
 		}
 	}
 
-	// interpolated outflow (Geier 2015): reproduces the legacy fused arithmetic exactly
-	// (the parity-free body lives in streaming_AB.h::streamingOutflowInterpRight),
-	// site-translated like the streamingOutflowRight gather above.
-	// The interpolated m-family blends postcoll_{n-1} from column xm with
-	// the outflow cell's own postcoll (column x), the z-family takes the cell's own postcoll,
-	// the p-family comes from column xm; all of it is previous-launch state finalized before the pass runs.
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void
-	streamingOutflowInterpRight(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp_unused, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
+	streamingOutflow(LBM_DATA& SD, LBM_KS& KS, int face, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
+		switch (face) {
+			case bc_face::XP:
+				streamingOutflowImpl<bc_face::XP>(SD, KS, xm, x, y, z);
+				break;
+			case bc_face::XM:
+				streamingOutflowImpl<bc_face::XM>(SD, KS, xp, x, y, z);
+				break;
+			case bc_face::YP:
+				streamingOutflowImpl<bc_face::YP>(SD, KS, ym, x, y, z);
+				break;
+			case bc_face::YM:
+				streamingOutflowImpl<bc_face::YM>(SD, KS, yp, x, y, z);
+				break;
+			case bc_face::ZP:
+				streamingOutflowImpl<bc_face::ZP>(SD, KS, zm, x, y, z);
+				break;
+			default:
+				streamingOutflowImpl<bc_face::ZM>(SD, KS, zp, x, y, z);
+				break;
+		}
+	}
+
+	// interpolated-outflow blend in the pinned lbm_fma_rn form:
+	// the first site delivers the anchor-column postcoll (weight cs),
+	// the second site the own-column postcoll (weight 1-cs)
+	template <typename LBM_DATA>
+	__cuda_callable__ static dreal outflowInterpBlend(LBM_DATA& SD, int dir, idx ax, idx ay, idx az, idx bx, idx by, idx bz)
+	{
+		// NOTE: velocity is neglected (for the case velocity << speed of sound)
 		constexpr dreal SpeedOfSound = 0.5773502691896257;
+		return lbm_fma_rn(
+			SpeedOfSound, TNL::Backend::ldg(SD.df(df_cur, dir, ax, ay, az)), (1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, dir, bx, by, bz))
+		);
+	}
+
+	// interpolated outflow (Geier 2015) for an arbitrary face: reproduces the
+	// legacy fused arithmetic exactly, site-translated like the streamingOutflow
+	// gather above. The population moving against the outward normal blends
+	// postcoll_{n-1} from the anchor column with the outflow cell's own postcoll,
+	// the perpendicular population takes the cell's own postcoll, the outward-
+	// moving population comes from the anchor column; all of it is previous-launch
+	// state finalized before the pass runs.
+	template <int FACE, typename LBM_DATA, typename LBM_KS>
+	__cuda_callable__ static void streamingOutflowInterpImpl(LBM_DATA& SD, LBM_KS& KS, idx anchor, idx x, idx y, idx z)
+	{
+		constexpr int axis = (FACE & (bc_face::XP | bc_face::XM)) ? 0 : (FACE & (bc_face::YP | bc_face::YM)) ? 1 : 2;
+		constexpr int out_sign = (FACE & (bc_face::XM | bc_face::YM | bc_face::ZM)) ? -1 : 1;
 		if (SD.even_iter) {
-			// natural layout: slot (i, t + c_i) = postcoll_{n-1}(i, t); the
-			// row/column offsets cancel so every term lands at (y, z)
-			const idx xmm = xm - 1;
-			KS.f[ppp] = TNL::Backend::ldg(SD.df(df_cur, ppp, x, y, z));
-			KS.f[ppz] = TNL::Backend::ldg(SD.df(df_cur, ppz, x, y, z));
-			KS.f[ppm] = TNL::Backend::ldg(SD.df(df_cur, ppm, x, y, z));
-			KS.f[pzp] = TNL::Backend::ldg(SD.df(df_cur, pzp, x, y, z));
-			KS.f[pzz] = TNL::Backend::ldg(SD.df(df_cur, pzz, x, y, z));
-			KS.f[pzm] = TNL::Backend::ldg(SD.df(df_cur, pzm, x, y, z));
-			KS.f[pmp] = TNL::Backend::ldg(SD.df(df_cur, pmp, x, y, z));
-			KS.f[pmz] = TNL::Backend::ldg(SD.df(df_cur, pmz, x, y, z));
-			KS.f[pmm] = TNL::Backend::ldg(SD.df(df_cur, pmm, x, y, z));
-			KS.f[zpp] = TNL::Backend::ldg(SD.df(df_cur, zpp, x, y, z));
-			KS.f[zpz] = TNL::Backend::ldg(SD.df(df_cur, zpz, x, y, z));
-			KS.f[zpm] = TNL::Backend::ldg(SD.df(df_cur, zpm, x, y, z));
-			KS.f[zzp] = TNL::Backend::ldg(SD.df(df_cur, zzp, x, y, z));
-			KS.f[zzz] = TNL::Backend::ldg(SD.df(df_cur, zzz, x, y, z));
-			KS.f[zzm] = TNL::Backend::ldg(SD.df(df_cur, zzm, x, y, z));
-			KS.f[zmp] = TNL::Backend::ldg(SD.df(df_cur, zmp, x, y, z));
-			KS.f[zmz] = TNL::Backend::ldg(SD.df(df_cur, zmz, x, y, z));
-			KS.f[zmm] = TNL::Backend::ldg(SD.df(df_cur, zmm, x, y, z));
-			KS.f[mmm] = lbm_fma_rn(
-				SpeedOfSound, TNL::Backend::ldg(SD.df(df_cur, mmm, xmm, y, z)), (1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, mmm, xm, y, z))
-			);
-			KS.f[mmz] = lbm_fma_rn(
-				SpeedOfSound, TNL::Backend::ldg(SD.df(df_cur, mmz, xmm, y, z)), (1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, mmz, xm, y, z))
-			);
-			KS.f[mmp] = lbm_fma_rn(
-				SpeedOfSound, TNL::Backend::ldg(SD.df(df_cur, mmp, xmm, y, z)), (1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, mmp, xm, y, z))
-			);
-			KS.f[mzm] = lbm_fma_rn(
-				SpeedOfSound, TNL::Backend::ldg(SD.df(df_cur, mzm, xmm, y, z)), (1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, mzm, xm, y, z))
-			);
-			KS.f[mzz] = lbm_fma_rn(
-				SpeedOfSound, TNL::Backend::ldg(SD.df(df_cur, mzz, xmm, y, z)), (1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, mzz, xm, y, z))
-			);
-			KS.f[mzp] = lbm_fma_rn(
-				SpeedOfSound, TNL::Backend::ldg(SD.df(df_cur, mzp, xmm, y, z)), (1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, mzp, xm, y, z))
-			);
-			KS.f[mpm] = lbm_fma_rn(
-				SpeedOfSound, TNL::Backend::ldg(SD.df(df_cur, mpm, xmm, y, z)), (1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, mpm, xm, y, z))
-			);
-			KS.f[mpz] = lbm_fma_rn(
-				SpeedOfSound, TNL::Backend::ldg(SD.df(df_cur, mpz, xmm, y, z)), (1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, mpz, xm, y, z))
-			);
-			KS.f[mpp] = lbm_fma_rn(
-				SpeedOfSound, TNL::Backend::ldg(SD.df(df_cur, mpp, xmm, y, z)), (1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, mpp, xm, y, z))
-			);
+			// natural layout: the outward- and perpendicular-moving populations
+			// take the cell's own postcoll, the inward-moving population blends
+			// postcoll_{n-1} from the pre-anchor column with the anchor column
+			for (int i = 0; i < 27; i++) {
+				const int cn = (axis == 0) ? dir27_cx(i) : (axis == 1) ? dir27_cy(i) : dir27_cz(i);	 // normal component of c_i
+				if (cn == out_sign || cn == 0)
+					KS.f[i] = TNL::Backend::ldg(SD.df(df_cur, i, x, y, z));
+				else if constexpr (axis == 0)
+					KS.f[i] = outflowInterpBlend(SD, i, anchor + dir27_cx(i), y, z, anchor, y, z);
+				else if constexpr (axis == 1)
+					KS.f[i] = outflowInterpBlend(SD, i, x, anchor + dir27_cy(i), z, x, anchor, z);
+				else
+					KS.f[i] = outflowInterpBlend(SD, i, x, y, anchor + dir27_cz(i), x, y, anchor);
+			}
 		}
 		else {
-			// twist layout: slot (opp(i), t) = postcoll_{n-1}(i, t)
-			KS.f[ppp] = TNL::Backend::ldg(SD.df(df_cur, mmm, xm, ym, zm));
-			KS.f[ppz] = TNL::Backend::ldg(SD.df(df_cur, mmz, xm, ym, z));
-			KS.f[ppm] = TNL::Backend::ldg(SD.df(df_cur, mmp, xm, ym, zp));
-			KS.f[pzp] = TNL::Backend::ldg(SD.df(df_cur, mzm, xm, y, zm));
-			KS.f[pzz] = TNL::Backend::ldg(SD.df(df_cur, mzz, xm, y, z));
-			KS.f[pzm] = TNL::Backend::ldg(SD.df(df_cur, mzp, xm, y, zp));
-			KS.f[pmp] = TNL::Backend::ldg(SD.df(df_cur, mpm, xm, yp, zm));
-			KS.f[pmz] = TNL::Backend::ldg(SD.df(df_cur, mpz, xm, yp, z));
-			KS.f[pmm] = TNL::Backend::ldg(SD.df(df_cur, mpp, xm, yp, zp));
-			KS.f[zpp] = TNL::Backend::ldg(SD.df(df_cur, zmm, x, ym, zm));
-			KS.f[zpz] = TNL::Backend::ldg(SD.df(df_cur, zmz, x, ym, z));
-			KS.f[zpm] = TNL::Backend::ldg(SD.df(df_cur, zmp, x, ym, zp));
-			KS.f[zzp] = TNL::Backend::ldg(SD.df(df_cur, zzm, x, y, zm));
-			KS.f[zzz] = TNL::Backend::ldg(SD.df(df_cur, zzz, x, y, z));
-			KS.f[zzm] = TNL::Backend::ldg(SD.df(df_cur, zzp, x, y, zp));
-			KS.f[zmp] = TNL::Backend::ldg(SD.df(df_cur, zpm, x, yp, zm));
-			KS.f[zmz] = TNL::Backend::ldg(SD.df(df_cur, zpz, x, yp, z));
-			KS.f[zmm] = TNL::Backend::ldg(SD.df(df_cur, zpp, x, yp, zp));
-			KS.f[mmm] = lbm_fma_rn(
-				SpeedOfSound, TNL::Backend::ldg(SD.df(df_cur, ppp, xm, yp, zp)), (1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, ppp, x, yp, zp))
-			);
-			KS.f[mmz] = lbm_fma_rn(
-				SpeedOfSound, TNL::Backend::ldg(SD.df(df_cur, ppz, xm, yp, z)), (1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, ppz, x, yp, z))
-			);
-			KS.f[mmp] = lbm_fma_rn(
-				SpeedOfSound, TNL::Backend::ldg(SD.df(df_cur, ppm, xm, yp, zm)), (1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, ppm, x, yp, zm))
-			);
-			KS.f[mzm] = lbm_fma_rn(
-				SpeedOfSound, TNL::Backend::ldg(SD.df(df_cur, pzp, xm, y, zp)), (1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, pzp, x, y, zp))
-			);
-			KS.f[mzz] = lbm_fma_rn(
-				SpeedOfSound, TNL::Backend::ldg(SD.df(df_cur, pzz, xm, y, z)), (1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, pzz, x, y, z))
-			);
-			KS.f[mzp] = lbm_fma_rn(
-				SpeedOfSound, TNL::Backend::ldg(SD.df(df_cur, pzm, xm, y, zm)), (1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, pzm, x, y, zm))
-			);
-			KS.f[mpm] = lbm_fma_rn(
-				SpeedOfSound, TNL::Backend::ldg(SD.df(df_cur, pmp, xm, ym, zp)), (1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, pmp, x, ym, zp))
-			);
-			KS.f[mpz] = lbm_fma_rn(
-				SpeedOfSound, TNL::Backend::ldg(SD.df(df_cur, pmz, xm, ym, z)), (1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, pmz, x, ym, z))
-			);
-			KS.f[mpp] = lbm_fma_rn(
-				SpeedOfSound, TNL::Backend::ldg(SD.df(df_cur, pmm, xm, ym, zm)), (1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, pmm, x, ym, zm))
-			);
+			// twist layout: the outward-moving population comes from the anchor
+			// column, the perpendicular population from the own column, the
+			// inward-moving population blends the anchor column with the own column
+			for (int i = 0; i < 27; i++) {
+				const int cn = (axis == 0) ? dir27_cx(i) : (axis == 1) ? dir27_cy(i) : dir27_cz(i);	 // normal component of c_i
+				// site in the anchor column and site in the own column, tangential -c offsets
+				idx nx, ny, nz, ox, oy, oz;
+				if constexpr (axis == 0) {
+					nx = anchor;
+					ny = y - dir27_cy(i);
+					nz = z - dir27_cz(i);
+					ox = x;
+					oy = y - dir27_cy(i);
+					oz = z - dir27_cz(i);
+				}
+				else if constexpr (axis == 1) {
+					nx = x - dir27_cx(i);
+					ny = anchor;
+					nz = z - dir27_cz(i);
+					ox = x - dir27_cx(i);
+					oy = y;
+					oz = z - dir27_cz(i);
+				}
+				else {
+					nx = x - dir27_cx(i);
+					ny = y - dir27_cy(i);
+					nz = anchor;
+					ox = x - dir27_cx(i);
+					oy = y - dir27_cy(i);
+					oz = z;
+				}
+				if (cn == out_sign)
+					KS.f[i] = TNL::Backend::ldg(SD.df(df_cur, opposite_direction(i), nx, ny, nz));
+				else if (cn == 0)
+					KS.f[i] = TNL::Backend::ldg(SD.df(df_cur, opposite_direction(i), ox, oy, oz));
+				else
+					KS.f[i] = outflowInterpBlend(SD, opposite_direction(i), nx, ny, nz, ox, oy, oz);
+			}
+		}
+	}
+
+	template <typename LBM_DATA, typename LBM_KS>
+	__cuda_callable__ static void
+	streamingOutflowInterp(LBM_DATA& SD, LBM_KS& KS, int face, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
+	{
+		switch (face) {
+			case bc_face::XP:
+				streamingOutflowInterpImpl<bc_face::XP>(SD, KS, xm, x, y, z);
+				break;
+			case bc_face::XM:
+				streamingOutflowInterpImpl<bc_face::XM>(SD, KS, xp, x, y, z);
+				break;
+			case bc_face::YP:
+				streamingOutflowInterpImpl<bc_face::YP>(SD, KS, ym, x, y, z);
+				break;
+			case bc_face::YM:
+				streamingOutflowInterpImpl<bc_face::YM>(SD, KS, yp, x, y, z);
+				break;
+			case bc_face::ZP:
+				streamingOutflowInterpImpl<bc_face::ZP>(SD, KS, zm, x, y, z);
+				break;
+			default:
+				streamingOutflowInterpImpl<bc_face::ZM>(SD, KS, zp, x, y, z);
+				break;
 		}
 	}
 };

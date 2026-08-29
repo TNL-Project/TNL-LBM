@@ -329,6 +329,25 @@ struct LBM_CONFIG
 //#define USE_GEIER_CUM_2017 // use Geier 2017 Cummulant improvement A,B terms
 //#define USE_GEIER_CUM_ANTIALIAS // use antialiasing Dxu, Dyv, Dzw from Geier 2015/2017
 
+// Bitmask encoding of a domain face (outward normal direction),
+// shared by two subsystems:
+// - the outflow pass uses a single face value
+//   (the outflow cell gathers from its anchor column - the fluid-side neighbor one cell inward,
+//   on the side opposite to the normal),
+// - the GEO_SYMMETRY closure ORs the bits of the cell's GEO_NOTHING ghost sides into a per-cell mask
+struct bc_face
+{
+	enum : std::uint8_t
+	{
+		XP = 1 << 0,  // outward normal +x / ghost side at x+1
+		XM = 1 << 1,  // outward normal -x / ghost side at x-1
+		YP = 1 << 2,  // outward normal +y / ghost side at y+1
+		YM = 1 << 3,  // outward normal -y / ghost side at y-1
+		ZP = 1 << 4,  // outward normal +z / ghost side at z+1
+		ZM = 1 << 5	  // outward normal -z / ghost side at z-1
+	};
+};
+
 // D2Q9 direction enum — scoped via struct to avoid namespace pollution,
 // but values are plain integers (implicitly std::uint8_t) so they can be
 // used directly as array indices without an idx() wrapper.
@@ -350,6 +369,57 @@ struct dir9
 		mp = 8,
 	};
 };
+
+// velocity components of the D2Q9 directions
+// (constexpr functions: usable in device code, unlike namespace-scope tables)
+constexpr int dir9_cx(int dir)
+{
+	switch (dir) {
+		case dir9::zz:
+			return 0;
+		case dir9::pz:
+			return 1;
+		case dir9::mz:
+			return -1;
+		case dir9::zp:
+			return 0;
+		case dir9::zm:
+			return 0;
+		case dir9::pp:
+			return 1;
+		case dir9::mm:
+			return -1;
+		case dir9::pm:
+			return 1;
+		case dir9::mp:
+			return -1;
+	}
+	return 0;
+}
+constexpr int dir9_cy(int dir)
+{
+	switch (dir) {
+		case dir9::zz:
+			return 0;
+		case dir9::pz:
+			return 0;
+		case dir9::mz:
+			return 0;
+		case dir9::zp:
+			return 1;
+		case dir9::zm:
+			return -1;
+		case dir9::pp:
+			return 1;
+		case dir9::mm:
+			return -1;
+		case dir9::pm:
+			return -1;
+		case dir9::mp:
+			return 1;
+	}
+	return 0;
+}
 
 // NOTE: df_sync_directions must be kept consistent with this enum!
 enum : std::uint8_t
@@ -386,8 +456,191 @@ enum : std::uint8_t
 	mpp = 26,
 };
 
-// opposite direction index: the D3Q27 enum pairs each direction with its
-// opposite as consecutive values (1↔2, 3↔4, ..., 25↔26), with zzz=0 self-opposite.
+// velocity components of the D3Q27 directions (first letter = x, second = y,
+// third = z; constexpr functions: usable in device code, unlike namespace-scope tables)
+constexpr int dir27_cx(int dir)
+{
+	switch (dir) {
+		case zzz:
+			return 0;
+		case pzz:
+			return 1;
+		case mzz:
+			return -1;
+		case zpz:
+			return 0;
+		case zmz:
+			return 0;
+		case zzp:
+			return 0;
+		case zzm:
+			return 0;
+		case ppz:
+			return 1;
+		case mmz:
+			return -1;
+		case pmz:
+			return 1;
+		case mpz:
+			return -1;
+		case pzp:
+			return 1;
+		case mzm:
+			return -1;
+		case pzm:
+			return 1;
+		case mzp:
+			return -1;
+		case zpp:
+			return 0;
+		case zmm:
+			return 0;
+		case zpm:
+			return 0;
+		case zmp:
+			return 0;
+		case ppp:
+			return 1;
+		case mmm:
+			return -1;
+		case ppm:
+			return 1;
+		case mmp:
+			return -1;
+		case pmp:
+			return 1;
+		case mpm:
+			return -1;
+		case pmm:
+			return 1;
+		case mpp:
+			return -1;
+	}
+	return 0;
+}
+constexpr int dir27_cy(int dir)
+{
+	switch (dir) {
+		case zzz:
+			return 0;
+		case pzz:
+			return 0;
+		case mzz:
+			return 0;
+		case zpz:
+			return 1;
+		case zmz:
+			return -1;
+		case zzp:
+			return 0;
+		case zzm:
+			return 0;
+		case ppz:
+			return 1;
+		case mmz:
+			return -1;
+		case pmz:
+			return -1;
+		case mpz:
+			return 1;
+		case pzp:
+			return 0;
+		case mzm:
+			return 0;
+		case pzm:
+			return 0;
+		case mzp:
+			return 0;
+		case zpp:
+			return 1;
+		case zmm:
+			return -1;
+		case zpm:
+			return 1;
+		case zmp:
+			return -1;
+		case ppp:
+			return 1;
+		case mmm:
+			return -1;
+		case ppm:
+			return 1;
+		case mmp:
+			return -1;
+		case pmp:
+			return -1;
+		case mpm:
+			return 1;
+		case pmm:
+			return -1;
+		case mpp:
+			return 1;
+	}
+	return 0;
+}
+constexpr int dir27_cz(int dir)
+{
+	switch (dir) {
+		case zzz:
+			return 0;
+		case pzz:
+			return 0;
+		case mzz:
+			return 0;
+		case zpz:
+			return 0;
+		case zmz:
+			return 0;
+		case zzp:
+			return 1;
+		case zzm:
+			return -1;
+		case ppz:
+			return 0;
+		case mmz:
+			return 0;
+		case pmz:
+			return 0;
+		case mpz:
+			return 0;
+		case pzp:
+			return 1;
+		case mzm:
+			return -1;
+		case pzm:
+			return -1;
+		case mzp:
+			return 1;
+		case zpp:
+			return 1;
+		case zmm:
+			return -1;
+		case zpm:
+			return -1;
+		case zmp:
+			return 1;
+		case ppp:
+			return 1;
+		case mmm:
+			return -1;
+		case ppm:
+			return -1;
+		case mmp:
+			return 1;
+		case pmp:
+			return 1;
+		case mpm:
+			return -1;
+		case pmm:
+			return -1;
+		case mpp:
+			return 1;
+	}
+	return 0;
+}
+
+// opposite direction index: the D3Q27 and D2Q9 (dir9) enums pair each direction
+// with its opposite as consecutive values (1↔2, 3↔4, ...), with zzz/zz self-opposite.
 constexpr int opposite_direction(int dir)
 {
 	return dir == 0 ? 0 : (dir & 1) ? dir + 1 : dir - 1;
