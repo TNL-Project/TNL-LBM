@@ -61,14 +61,45 @@ struct D3Q27_BC_All
 		return mapgi == GEO_OUTFLOW_RIGHT || mapgi == GEO_OUTFLOW_RIGHT_INTERP;
 	}
 
+	// interior side of an outflow plane: fluid, or symmetry (which acts as a
+	// fluid cell - outflow planes may cover the full face including
+	// symmetry-row corners)
+	__cuda_callable__ static bool isOutflowInterior(map_t mapgi)
+	{
+		return mapgi == GEO_FLUID || mapgi == GEO_SYMMETRY;
+	}
+
+	// Outflow face detection from the map: the interior side of the outlet is
+	// the axis-neighbor acting as fluid (GEO_FLUID, or GEO_SYMMETRY which acts
+	// as a fluid cell - outflow planes may cover the full face including
+	// symmetry-row corners), the outward normal points away from it.
+	// LBM_BLOCK::validateOutflowPassRegion (called from copyMapToDevice)
+	// guarantees exactly one such axis-neighbor per outflow cell, so the
+	// check order only matters for unvalidated maps.
+	__cuda_callable__ static int detectOutflowFace(DATA& SD, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
+	{
+		if (isOutflowInterior(SD.map(xm, y, z)))
+			return bc_face::XP;
+		if (isOutflowInterior(SD.map(xp, y, z)))
+			return bc_face::XM;
+		if (isOutflowInterior(SD.map(x, ym, z)))
+			return bc_face::YP;
+		if (isOutflowInterior(SD.map(x, yp, z)))
+			return bc_face::YM;
+		if (isOutflowInterior(SD.map(x, y, zm)))
+			return bc_face::ZP;
+		return bc_face::ZM;
+	}
+
 	// gathers read the postcollision state finalized by the previous launch
 	// and live in streaming_*.h; the BC body then follows the legacy cases
 	template <typename LBM_KS>
 	__cuda_callable__ static void outflowPass(DATA& SD, LBM_KS& KS, map_t mapgi, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
+		const int face = detectOutflowFace(SD, xm, x, xp, ym, y, yp, zm, z, zp);
 		switch (mapgi) {
 			case GEO_OUTFLOW_RIGHT:
-				STREAMING::streamingOutflowRight(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+				STREAMING::streamingOutflow(SD, KS, face, xm, x, xp, ym, y, yp, zm, z, zp);
 				applySymmetryCorner(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				COLL::computeDensityAndVelocity(KS);
 				KS.rho = 1;
@@ -76,7 +107,7 @@ struct D3Q27_BC_All
 				STREAMING::postCollisionStreaming(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				break;
 			case GEO_OUTFLOW_RIGHT_INTERP:
-				STREAMING::streamingOutflowInterpRight(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+				STREAMING::streamingOutflowInterp(SD, KS, face, xm, x, xp, ym, y, yp, zm, z, zp);
 				applySymmetryCorner(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				COLL::computeDensityAndVelocity(KS);
 				COLL::setEquilibriumDecomposition(KS, 1);
@@ -86,18 +117,6 @@ struct D3Q27_BC_All
 				break;
 		}
 	}
-
-	// Bitmask of ghost half-spaces adjacent to a GEO_SYMMETRY cell.
-	// Each bit marks a side where the neighbor cell is GEO_NOTHING (the domain-frame ghost layer).
-	enum SYM_SIDES : std::uint8_t
-	{
-		SYM_XM = 1 << 0,  // ghost at x-1
-		SYM_XP = 1 << 1,  // ghost at x+1
-		SYM_YM = 1 << 2,  // ghost at y-1
-		SYM_YP = 1 << 3,  // ghost at y+1
-		SYM_ZM = 1 << 4,  // ghost at z-1
-		SYM_ZP = 1 << 5,  // ghost at z+1
-	};
 
 	// direction slot for the letter trits (ex, ey, ez) in {m=0, z=1, p=2} packed as 9*ex + 3*ey + ez
 	__cuda_callable__ static constexpr std::uint8_t sym_dir_slot(int code)
@@ -154,9 +173,9 @@ struct D3Q27_BC_All
 			const int ez = code % 3;
 			// cx/cy/cz are set when the direction's component crosses a ghost side
 			// ('p' crosses the minus side, 'm' crosses the plus side, 'z' crosses neither)
-			const bool cx = ex != 1 && (ghosts & (ex == 2 ? SYM_XM : SYM_XP));
-			const bool cy = ey != 1 && (ghosts & (ey == 2 ? SYM_YM : SYM_YP));
-			const bool cz = ez != 1 && (ghosts & (ez == 2 ? SYM_ZM : SYM_ZP));
+			const bool cx = ex != 1 && (ghosts & (ex == 2 ? bc_face::XM : bc_face::XP));
+			const bool cy = ey != 1 && (ghosts & (ey == 2 ? bc_face::YM : bc_face::YP));
+			const bool cz = ez != 1 && (ghosts & (ez == 2 ? bc_face::ZM : bc_face::ZP));
 			if (cx || cy || cz) {
 				const int src = 9 * (cx ? 2 - ex : ex) + 3 * (cy ? 2 - ey : ey) + (cz ? 2 - ez : ez);
 				KS.f[sym_dir_slot(code)] = KS.f[sym_dir_slot(src)];
@@ -177,33 +196,33 @@ struct D3Q27_BC_All
 		std::uint8_t ghosts = 0;
 		if (SD.map(xm, y, z) == GEO_SYMMETRY || SD.map(xp, y, z) == GEO_SYMMETRY) {
 			if (SD.map(x, ym, z) == GEO_NOTHING)
-				ghosts |= SYM_YM;
+				ghosts |= bc_face::YM;
 			if (SD.map(x, yp, z) == GEO_NOTHING)
-				ghosts |= SYM_YP;
+				ghosts |= bc_face::YP;
 			if (SD.map(x, y, zm) == GEO_NOTHING)
-				ghosts |= SYM_ZM;
+				ghosts |= bc_face::ZM;
 			if (SD.map(x, y, zp) == GEO_NOTHING)
-				ghosts |= SYM_ZP;
+				ghosts |= bc_face::ZP;
 		}
 		if (SD.map(x, ym, z) == GEO_SYMMETRY || SD.map(x, yp, z) == GEO_SYMMETRY) {
 			if (SD.map(xm, y, z) == GEO_NOTHING)
-				ghosts |= SYM_XM;
+				ghosts |= bc_face::XM;
 			if (SD.map(xp, y, z) == GEO_NOTHING)
-				ghosts |= SYM_XP;
+				ghosts |= bc_face::XP;
 			if (SD.map(x, y, zm) == GEO_NOTHING)
-				ghosts |= SYM_ZM;
+				ghosts |= bc_face::ZM;
 			if (SD.map(x, y, zp) == GEO_NOTHING)
-				ghosts |= SYM_ZP;
+				ghosts |= bc_face::ZP;
 		}
 		if (SD.map(x, y, zm) == GEO_SYMMETRY || SD.map(x, y, zp) == GEO_SYMMETRY) {
 			if (SD.map(xm, y, z) == GEO_NOTHING)
-				ghosts |= SYM_XM;
+				ghosts |= bc_face::XM;
 			if (SD.map(xp, y, z) == GEO_NOTHING)
-				ghosts |= SYM_XP;
+				ghosts |= bc_face::XP;
 			if (SD.map(x, ym, z) == GEO_NOTHING)
-				ghosts |= SYM_YM;
+				ghosts |= bc_face::YM;
 			if (SD.map(x, yp, z) == GEO_NOTHING)
-				ghosts |= SYM_YP;
+				ghosts |= bc_face::YP;
 		}
 		if (ghosts)
 			applySymmetry(KS, ghosts);
@@ -409,17 +428,17 @@ struct D3Q27_BC_All
 					// and directions towards GEO_NOTHING determine the normal of the symmetry plane.
 					std::uint8_t ghosts = 0;
 					if (SD.map(xm, y, z) == GEO_NOTHING)
-						ghosts |= SYM_XM;
+						ghosts |= bc_face::XM;
 					if (SD.map(xp, y, z) == GEO_NOTHING)
-						ghosts |= SYM_XP;
+						ghosts |= bc_face::XP;
 					if (SD.map(x, ym, z) == GEO_NOTHING)
-						ghosts |= SYM_YM;
+						ghosts |= bc_face::YM;
 					if (SD.map(x, yp, z) == GEO_NOTHING)
-						ghosts |= SYM_YP;
+						ghosts |= bc_face::YP;
 					if (SD.map(x, y, zm) == GEO_NOTHING)
-						ghosts |= SYM_ZM;
+						ghosts |= bc_face::ZM;
 					if (SD.map(x, y, zp) == GEO_NOTHING)
-						ghosts |= SYM_ZP;
+						ghosts |= bc_face::ZP;
 					applySymmetry(KS, ghosts);
 					COLL::computeDensityAndVelocity(KS);
 					break;

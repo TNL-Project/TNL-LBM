@@ -6,7 +6,7 @@
  * GEO_NOTHING to find the mirror half-planes. Verifies:
  * - no symmetry neighbor → no closure
  * - single-plane symmetry → correct mirror direction
- * - same-axis double ghost (SYM_XM|SYM_XP) → destructive one-sided copy
+ * - same-axis double ghost (bc_face::XM|bc_face::XP) → destructive one-sided copy
  * - GEO_NOTHING without adjacent GEO_SYMMETRY → no closure (ignored)
  * - two-axis symmetry (x and y simultaneously) → both axes mirrored
  */
@@ -108,7 +108,7 @@ TEST_CASE("bcsymmetry: ghost-without-symmetry")
 		CHECK(ks.f[i] == doctest::Approx(makeKS().f[i]));
 }
 
-// symmetry at x+1=(2,1), ghost at (1,0)=BC cell's y-1 → SYM_YM
+// symmetry at x+1=(2,1), ghost at (1,0)=BC cell's y-1 → bc_face::YM
 TEST_CASE("bcsymmetry: single-plane-ym")
 {
 	auto block = makeBlock(6, 6);
@@ -119,7 +119,7 @@ TEST_CASE("bcsymmetry: single-plane-ym")
 	KS ks = makeKS();
 	BC::applySymmetryCorner(block.data, ks, 0, 1, 2, 0, 1, 2, 0, 0, 0);
 
-	// SYM_YM: zp←zm, pp←pm, mp←mm (only y flipped, x stays)
+	// bc_face::YM: zp←zm, pp←pm, mp←mm (only y flipped, x stays)
 	CHECK(ks.f[dir9::zp] == doctest::Approx(ks.f[dir9::zm]));
 	CHECK(ks.f[dir9::pp] == doctest::Approx(ks.f[dir9::pm]));
 	CHECK(ks.f[dir9::mp] == doctest::Approx(ks.f[dir9::mm]));
@@ -128,7 +128,7 @@ TEST_CASE("bcsymmetry: single-plane-ym")
 	CHECK(ks.f[dir9::mz] == doctest::Approx(30.0f));
 }
 
-// symmetry at y+1=(1,3), ghost at (0,2)=BC cell's x-1 → SYM_XM
+// symmetry at y+1=(1,3), ghost at (0,2)=BC cell's x-1 → bc_face::XM
 TEST_CASE("bcsymmetry: single-plane-xm")
 {
 	auto block = makeBlock(6, 6);
@@ -139,7 +139,7 @@ TEST_CASE("bcsymmetry: single-plane-xm")
 	KS ks = makeKS();
 	BC::applySymmetryCorner(block.data, ks, 0, 1, 2, 1, 2, 3, 0, 0, 0);
 
-	// SYM_XM: pz←mz=30, pp←mp=90, pm←mm=70
+	// bc_face::XM: pz←mz=30, pp←mp=90, pm←mm=70
 	CHECK(ks.f[dir9::pz] == doctest::Approx(30.0f));
 	CHECK(ks.f[dir9::pp] == doctest::Approx(90.0f));
 	CHECK(ks.f[dir9::pm] == doctest::Approx(70.0f));
@@ -148,7 +148,7 @@ TEST_CASE("bcsymmetry: single-plane-xm")
 	CHECK(ks.f[dir9::zm] == doctest::Approx(50.0f));
 }
 
-// symmetry at x+1, ghost at y+1 → SYM_YP
+// symmetry at x+1, ghost at y+1 → bc_face::YP
 TEST_CASE("bcsymmetry: single-plane-yp")
 {
 	auto block = makeBlock(6, 6);
@@ -159,7 +159,7 @@ TEST_CASE("bcsymmetry: single-plane-yp")
 	KS ks = makeKS();
 	BC::applySymmetryCorner(block.data, ks, 0, 1, 2, 0, 1, 2, 0, 0, 0);
 
-	// SYM_YP: zm←zp=40, mm←mp=90, pm←pp=60
+	// bc_face::YP: zm←zp=40, mm←mp=90, pm←pp=60
 	CHECK(ks.f[dir9::zm] == doctest::Approx(40.0f));
 	CHECK(ks.f[dir9::mm] == doctest::Approx(90.0f));
 	CHECK(ks.f[dir9::pm] == doctest::Approx(60.0f));
@@ -168,7 +168,7 @@ TEST_CASE("bcsymmetry: single-plane-yp")
 	CHECK(ks.f[dir9::mz] == doctest::Approx(30.0f));
 }
 
-// symmetry at y+1, ghost at x+1 → SYM_XP
+// symmetry at y+1, ghost at x+1 → bc_face::XP
 TEST_CASE("bcsymmetry: single-plane-xp")
 {
 	auto block = makeBlock(6, 6);
@@ -179,7 +179,7 @@ TEST_CASE("bcsymmetry: single-plane-xp")
 	KS ks = makeKS();
 	BC::applySymmetryCorner(block.data, ks, 0, 1, 2, 1, 2, 3, 0, 0, 0);
 
-	// SYM_XP: mz←pz=20, mm←pm=80, mp←pp=60
+	// bc_face::XP: mz←pz=20, mm←pm=80, mp←pp=60
 	CHECK(ks.f[dir9::mz] == doctest::Approx(20.0f));
 	CHECK(ks.f[dir9::mm] == doctest::Approx(80.0f));
 	CHECK(ks.f[dir9::mp] == doctest::Approx(60.0f));
@@ -188,7 +188,7 @@ TEST_CASE("bcsymmetry: single-plane-xp")
 	CHECK(ks.f[dir9::zp] == doctest::Approx(40.0f));
 }
 
-// symmetry on both x and y axes simultaneously → SYM_XM|SYM_YM
+// symmetry on both x and y axes simultaneously → bc_face::XM|bc_face::YM
 TEST_CASE("bcsymmetry: two-axis-symmetry")
 {
 	auto block = makeBlock(6, 6);
@@ -201,7 +201,7 @@ TEST_CASE("bcsymmetry: two-axis-symmetry")
 	KS ks = makeKS();
 	BC::applySymmetryCorner(block.data, ks, 0, 1, 2, 0, 1, 2, 0, 0, 0);
 
-	// ghosts = SYM_XM | SYM_YM
+	// ghosts = bc_face::XM | bc_face::YM
 	// pp←mm=70 (both x and y flipped)
 	CHECK(ks.f[dir9::pp] == doctest::Approx(70.0f));
 	// pz←mz=30 (x flipped, y=z)
@@ -216,7 +216,7 @@ TEST_CASE("bcsymmetry: two-axis-symmetry")
 	CHECK(ks.f[dir9::zz] == doctest::Approx(10.0f));
 }
 
-// symmetry at y-1, ghosts at both x-1 and x+1 (BC cell's own neighbors) → SYM_XM|SYM_XP
+// symmetry at y-1, ghosts at both x-1 and x+1 (BC cell's own neighbors) → bc_face::XM|bc_face::XP
 TEST_CASE("bcsymmetry: edge-x-both-sides")
 {
 	auto block = makeBlock(6, 6);
@@ -228,7 +228,7 @@ TEST_CASE("bcsymmetry: edge-x-both-sides")
 	KS ks = makeKS();
 	BC::applySymmetryCorner(block.data, ks, 0, 1, 2, 0, 1, 2, 0, 0, 0);
 
-	// SYM_XM|SYM_XP: applySymmetry iterates codes 0..8; m-family (codes 0..2) are
+	// bc_face::XM|bc_face::XP: applySymmetry iterates codes 0..8; m-family (codes 0..2) are
 	// written first from p-family, then p-family (codes 6..8) read the already-
 	// overwritten m-family slots. Net effect is a one-sided destructive copy, not a swap.
 	// Original: mm=70, mz=30, mp=90, pm=80, pz=20, pp=60.
@@ -343,7 +343,7 @@ TEST_CASE("bcsymmetry3d: ghost-without-symmetry")
 		CHECK(ks.f[i] == doctest::Approx(makeKS3().f[i]));
 }
 
-// symmetry at x+1, ghost at y-1 → SYM_YM
+// symmetry at x+1, ghost at y-1 → bc_face::YM
 TEST_CASE("bcsymmetry3d: single-plane-ym")
 {
 	auto block = makeBlock3(6, 6, 6);
@@ -354,7 +354,7 @@ TEST_CASE("bcsymmetry3d: single-plane-ym")
 	KS3 ks = makeKS3();
 	BC3::applySymmetryCorner(block.data, ks, 1, 2, 3, 1, 2, 3, 1, 2, 3);
 
-	// SYM_YM: y=p directions mirrored from y=m (same x,z)
+	// bc_face::YM: y=p directions mirrored from y=m (same x,z)
 	// mpm←mmm, mpz←mmz, mpp←mmp, zpm←zmm, zpz←zmz, zpp←zmp, ppm←pmm, ppz←pmz, ppp←pmp
 	CHECK(ks.f[mpm] == doctest::Approx(makeKS3().f[mmm]));
 	CHECK(ks.f[mpz] == doctest::Approx(makeKS3().f[mmz]));
@@ -372,7 +372,7 @@ TEST_CASE("bcsymmetry3d: single-plane-ym")
 	CHECK(ks.f[mmm] == doctest::Approx(makeKS3().f[mmm]));
 }
 
-// symmetry at y+1, ghost at x-1 → SYM_XM
+// symmetry at y+1, ghost at x-1 → bc_face::XM
 TEST_CASE("bcsymmetry3d: single-plane-xm")
 {
 	auto block = makeBlock3(6, 6, 6);
@@ -383,7 +383,7 @@ TEST_CASE("bcsymmetry3d: single-plane-xm")
 	KS3 ks = makeKS3();
 	BC3::applySymmetryCorner(block.data, ks, 1, 2, 3, 1, 2, 3, 1, 2, 3);
 
-	// SYM_XM: x=p directions mirrored from x=m (same y,z)
+	// bc_face::XM: x=p directions mirrored from x=m (same y,z)
 	// pmm←mmm, pmz←mmz, pmp←mmp, pzm←mzm, pzz←mzz, pzp←mzp, ppm←mpm, ppz←mpz, ppp←mpp
 	CHECK(ks.f[pmm] == doctest::Approx(makeKS3().f[mmm]));
 	CHECK(ks.f[pmz] == doctest::Approx(makeKS3().f[mmz]));
@@ -400,7 +400,7 @@ TEST_CASE("bcsymmetry3d: single-plane-xm")
 	CHECK(ks.f[mmm] == doctest::Approx(makeKS3().f[mmm]));
 }
 
-// symmetry at y-1, ghosts at both x-1 and x+1 → SYM_XM|SYM_XP (destructive copy)
+// symmetry at y-1, ghosts at both x-1 and x+1 → bc_face::XM|bc_face::XP (destructive copy)
 TEST_CASE("bcsymmetry3d: edge-x-both-sides")
 {
 	auto block = makeBlock3(6, 6, 6);
@@ -412,7 +412,7 @@ TEST_CASE("bcsymmetry3d: edge-x-both-sides")
 	KS3 ks = makeKS3();
 	BC3::applySymmetryCorner(block.data, ks, 1, 2, 3, 1, 2, 3, 1, 2, 3);
 
-	// SYM_XM|SYM_XP: m-family written first from p-family, then p-family reads overwritten m-family.
+	// bc_face::XM|bc_face::XP: m-family written first from p-family, then p-family reads overwritten m-family.
 	// Destructive one-sided copy, not a swap.
 	// m-family ← p-family (first pass, originals)
 	CHECK(ks.f[mmm] == doctest::Approx(makeKS3().f[pmm]));
@@ -439,7 +439,7 @@ TEST_CASE("bcsymmetry3d: edge-x-both-sides")
 	CHECK(ks.f[zpz] == doctest::Approx(makeKS3().f[zpz]));
 }
 
-// symmetry on both x and y axes simultaneously → SYM_XM|SYM_YM
+// symmetry on both x and y axes simultaneously → bc_face::XM|bc_face::YM
 TEST_CASE("bcsymmetry3d: two-axis-symmetry")
 {
 	auto block = makeBlock3(6, 6, 6);
@@ -452,9 +452,9 @@ TEST_CASE("bcsymmetry3d: two-axis-symmetry")
 	KS3 ks = makeKS3();
 	BC3::applySymmetryCorner(block.data, ks, 1, 2, 3, 1, 2, 3, 1, 2, 3);
 
-	// x-sym block triggers: SYM_YM (y-1 ghost) and SYM_ZM/SYM_ZP checked (neither ghost)
-	// y-sym block triggers: SYM_XM (x-1 ghost) and SYM_ZM/SYM_ZP checked (neither ghost)
-	// ghosts = SYM_XM | SYM_YM
+	// x-sym block triggers: bc_face::YM (y-1 ghost) and bc_face::ZM/bc_face::ZP checked (neither ghost)
+	// y-sym block triggers: bc_face::XM (x-1 ghost) and bc_face::ZM/bc_face::ZP checked (neither ghost)
+	// ghosts = bc_face::XM | bc_face::YM
 	// x=p, y=p directions mirrored from x=m, y=m (same z)
 	// ppm←mmm, ppz←mmz, ppp←mmp
 	CHECK(ks.f[ppm] == doctest::Approx(makeKS3().f[mmm]));
@@ -480,7 +480,7 @@ TEST_CASE("bcsymmetry3d: two-axis-symmetry")
 	CHECK(ks.f[zzz] == doctest::Approx(makeKS3().f[zzz]));
 }
 
-// symmetry at y+1, ghost at x+1 → SYM_XP
+// symmetry at y+1, ghost at x+1 → bc_face::XP
 TEST_CASE("bcsymmetry3d: single-plane-xp")
 {
 	auto block = makeBlock3(6, 6, 6);
@@ -491,7 +491,7 @@ TEST_CASE("bcsymmetry3d: single-plane-xp")
 	KS3 ks = makeKS3();
 	BC3::applySymmetryCorner(block.data, ks, 1, 2, 3, 1, 2, 3, 1, 2, 3);
 
-	// SYM_XP: x=m directions mirrored from x=p (same y,z)
+	// bc_face::XP: x=m directions mirrored from x=p (same y,z)
 	// mmm←pmm, mmz←pmz, mmp←pmp, mzm←pzm, mzz←pzz, mzp←pzp, mpm←ppm, mpz←ppz, mpp←ppp
 	CHECK(ks.f[mmm] == doctest::Approx(makeKS3().f[pmm]));
 	CHECK(ks.f[mmz] == doctest::Approx(makeKS3().f[pmz]));
@@ -507,7 +507,7 @@ TEST_CASE("bcsymmetry3d: single-plane-xp")
 	CHECK(ks.f[pzz] == doctest::Approx(makeKS3().f[pzz]));
 }
 
-// symmetry at x+1, ghost at y+1 → SYM_YP
+// symmetry at x+1, ghost at y+1 → bc_face::YP
 TEST_CASE("bcsymmetry3d: single-plane-yp")
 {
 	auto block = makeBlock3(6, 6, 6);
@@ -518,7 +518,7 @@ TEST_CASE("bcsymmetry3d: single-plane-yp")
 	KS3 ks = makeKS3();
 	BC3::applySymmetryCorner(block.data, ks, 1, 2, 3, 1, 2, 3, 1, 2, 3);
 
-	// SYM_YP: y=m directions mirrored from y=p (same x,z)
+	// bc_face::YP: y=m directions mirrored from y=p (same x,z)
 	// mmm←mpm, mmz←mpz, mmp←mpp, zmm←zpm, zmz←zpz, zmp←zpp, pmm←ppm, pmz←ppz, pmp←ppp
 	CHECK(ks.f[mmm] == doctest::Approx(makeKS3().f[mpm]));
 	CHECK(ks.f[mmz] == doctest::Approx(makeKS3().f[mpz]));
@@ -534,7 +534,7 @@ TEST_CASE("bcsymmetry3d: single-plane-yp")
 	CHECK(ks.f[zpz] == doctest::Approx(makeKS3().f[zpz]));
 }
 
-// symmetry at x+1, ghost at z-1 → SYM_ZM
+// symmetry at x+1, ghost at z-1 → bc_face::ZM
 TEST_CASE("bcsymmetry3d: single-plane-zm")
 {
 	auto block = makeBlock3(6, 6, 6);
@@ -545,7 +545,7 @@ TEST_CASE("bcsymmetry3d: single-plane-zm")
 	KS3 ks = makeKS3();
 	BC3::applySymmetryCorner(block.data, ks, 1, 2, 3, 1, 2, 3, 1, 2, 3);
 
-	// SYM_ZM: z=p directions mirrored from z=m (same x,y)
+	// bc_face::ZM: z=p directions mirrored from z=m (same x,y)
 	// mmp←mmm, mzp←mzm, mpp←mpm, zmp←zmm, zzp←zzm, zpp←zpm, pmp←pmm, pzp←pzm, ppp←ppm
 	CHECK(ks.f[mmp] == doctest::Approx(makeKS3().f[mmm]));
 	CHECK(ks.f[mzp] == doctest::Approx(makeKS3().f[mzm]));
@@ -561,7 +561,7 @@ TEST_CASE("bcsymmetry3d: single-plane-zm")
 	CHECK(ks.f[zzm] == doctest::Approx(makeKS3().f[zzm]));
 }
 
-// symmetry at x+1, ghost at z+1 → SYM_ZP
+// symmetry at x+1, ghost at z+1 → bc_face::ZP
 TEST_CASE("bcsymmetry3d: single-plane-zp")
 {
 	auto block = makeBlock3(6, 6, 6);
@@ -572,7 +572,7 @@ TEST_CASE("bcsymmetry3d: single-plane-zp")
 	KS3 ks = makeKS3();
 	BC3::applySymmetryCorner(block.data, ks, 1, 2, 3, 1, 2, 3, 1, 2, 3);
 
-	// SYM_ZP: z=m directions mirrored from z=p (same x,y)
+	// bc_face::ZP: z=m directions mirrored from z=p (same x,y)
 	// mmm←mmp, mzm←mzp, mpm←mpp, zmm←zmp, zzm←zzp, zpm←zpp, pmm←pmp, pzm←pzp, ppm←ppp
 	CHECK(ks.f[mmm] == doctest::Approx(makeKS3().f[mmp]));
 	CHECK(ks.f[mzm] == doctest::Approx(makeKS3().f[mzp]));

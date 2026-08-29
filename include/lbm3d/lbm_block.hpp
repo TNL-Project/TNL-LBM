@@ -3,6 +3,8 @@
 #include "lbm_block.h"
 #include "block_size_optimizer.h"
 
+#include <fmt/core.h>
+
 #include <map>
 #include <tuple>  // std::tie
 
@@ -392,7 +394,61 @@ void LBM_BLOCK<CONFIG>::copyMapToDevice()
 	ddiffusionCoeff = hdiffusionCoeff;
 	dphiTransferDirection = hphiTransferDirection;
 
+	validateOutflowPassRegion();
 	updateOutflowPassRegion();
+}
+
+template <typename CONFIG>
+void LBM_BLOCK<CONFIG>::validateOutflowPassRegion()
+{
+	if constexpr (CONFIG::BC::use_outflow_pass) {
+		// interior-side predicate in *global* map indexing; positions outside
+		// the global lattice extent count as non-interior (covers the domain
+		// frame and the missing overlaps of non-distributed dimensions)
+		auto isInteriorAt = [this](idx gx, idx gy, idx gz)
+		{
+			if (gx < 0 || gx >= global.x() || gy < 0 || gy >= global.y() || gz < 0 || gz >= global.z())
+				return false;
+			const map_t m = hmap(gx, gy, gz);
+			return CONFIG::BC::isOutflowInterior(m);
+		};
+
+		for (idx lz = 0; lz < local.z(); lz++)
+			for (idx ly = 0; ly < local.y(); ly++)
+				for (idx lx = 0; lx < local.x(); lx++) {
+					const idx gx = offset.x() + lx;
+					const idx gy = offset.y() + ly;
+					const idx gz = offset.z() + lz;
+					if (! CONFIG::BC::isOutflowPassBC(hmap(gx, gy, gz)))
+						continue;
+
+					int interior_neighbors = 0;
+					if (isInteriorAt(gx - 1, gy, gz))
+						interior_neighbors++;
+					if (isInteriorAt(gx + 1, gy, gz))
+						interior_neighbors++;
+					if (isInteriorAt(gx, gy - 1, gz))
+						interior_neighbors++;
+					if (isInteriorAt(gx, gy + 1, gz))
+						interior_neighbors++;
+					if (isInteriorAt(gx, gy, gz - 1))
+						interior_neighbors++;
+					if (isInteriorAt(gx, gy, gz + 1))
+						interior_neighbors++;
+
+					if (interior_neighbors != 1)
+						throw std::runtime_error(
+							fmt::format(
+								"outflow boundary cell at global ({},{},{}) has {} interior-side (fluid/symmetry) axis-neighbors "
+								"(expected exactly 1)",
+								gx,
+								gy,
+								gz,
+								interior_neighbors
+							)
+						);
+				}
+	}
 }
 
 template <typename CONFIG>
