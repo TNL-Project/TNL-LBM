@@ -1,7 +1,7 @@
 # one doctest binary for all unit-test .cu files in this directory
 # (doctest_main.cu carries the runner main function, the rest are test cases)
 set(unit_test_sources
-    test_outflowcover.cu
+    test_outflow_cover.cu
     test_outflow_gather2d.cu
     test_outflow_gather3d.cu
     test_decomposition.cu
