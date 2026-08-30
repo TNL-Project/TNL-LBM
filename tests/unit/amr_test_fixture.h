@@ -1,11 +1,12 @@
 #pragma once
 
-// Shared fixture machinery for the AMR gate binaries, extracted verbatim from
-// test_amr_subcycling.cu so that test_amr_nesting.cu reuses the same census
-// spies, map-scan carriers and reference-stat helpers (extraction precondition
-// of the amr-nlevel-nesting plan's commit B; the subcycling tests compile from
-// this header with byte-identical behavior):
+// Shared fixture machinery for the doctest-based AMR unit-test binaries,
+// extracted verbatim from test_amr_subcycling.cu so that test_amr_nesting.cu
+// reuses the same census spies, map-scan carriers and reference-stat helpers:
 //
+// - report(): the doctest assertion shim -- every legacy report()/check()
+//   call site becomes exactly one CHECK_MESSAGE assertion with the same
+//   pass/continue-on-fail semantics the g_failures accumulator had;
 // - makeLattice / setSineInitialCondition: the 16^3 periodic-box lattice and
 //   the non-uniform (kernel-detectable) initial condition;
 // - StateLocal_AMR / StateLocal_Base: pass-through subclasses wiring the sine
@@ -19,7 +20,11 @@
 //   captureFineGhost / ghostLayerDepth: scan-order map+macro censuses of the
 //   coarse block and of the fine block's C2F destination complement;
 // - RefStats / computeReferenceStats / closeRel: the host-side conservation
-//   reference sums (GEO_NOTHING exclusion) and the OpenMP-tolerant closeness.
+//   reference sums (GEO_NOTHING exclusion) and the deterministic-reduction
+//   closeness.
+//
+// All free functions are inline so that the consolidated per-pattern binaries
+// (which link this header into four suite TUs) get a single definition.
 
 #include <algorithm>
 #include <cmath>
@@ -28,6 +33,8 @@
 #include <tuple>
 
 #include <fmt/core.h>
+
+#include <doctest/doctest.h>
 
 #include "lbm3d/core.h"
 #include "lbm3d/amr_state.h"
@@ -57,16 +64,14 @@ using point_t = typename TRAITS::point_t;
 using lat_t = Lattice<3, real, idx>;
 using BLOCK = LBM_BLOCK<NSE_CONFIG>;
 
-int g_failures = 0;
-
-void report(bool ok, const std::string& what)
+// doctest assertion shim: every legacy report(ok, what) call site becomes
+// exactly one doctest assertion, keeping the case running on a failed check
+// (same continue-on-fail semantics as the retired g_failures accumulator;
+// on success doctest prints nothing, satisfying the silent-on-success
+// stdout contract of the nesting-lock census tests)
+inline void report(bool ok, const std::string& what)
 {
-	if (ok)
-		fmt::println("PASS: {}", what);
-	else {
-		fmt::println("FAIL: {}", what);
-		g_failures++;
-	}
+	CHECK_MESSAGE(ok, what);
 }
 
 // N^3 periodic box in physical units (same scaling as sim_AMR at that N: the
@@ -74,7 +79,7 @@ void report(bool ok, const std::string& what)
 // nu_lb_fine = 0.01 and physDt_fine = physDt_coarse / 2 exactly (binary
 // halving); periodicity is declared per-dimension via the bool3d passed to
 // the State/LBM constructors
-lat_t makeLattice(int N = 16)
+inline lat_t makeLattice(int N = 16)
 {
 	const real LBM_VISCOSITY = 0.005;
 	const real PHYS_HEIGHT = 0.41;
@@ -187,7 +192,7 @@ struct StateLocal_Base : State<NSE>
 // For the A-B pattern each kernel-launch preparation rotates data.dfs by one
 // position: `data.dfs[0] == dfs[0].getData()` is the identity (substep 0)
 // state, `data.dfs[0] == dfs[1].getData()` is the swapped (substep 1) state.
-bool dfsSwapped(const BLOCK& block)
+inline bool dfsSwapped(const BLOCK& block)
 {
 	return block.data.dfs[0] == block.dfs[1].getData();
 }
@@ -326,7 +331,7 @@ struct HostSnapshot
 	std::vector<double> macro;
 };
 
-HostSnapshot snapshotBlock(const BLOCK& block)
+inline HostSnapshot snapshotBlock(const BLOCK& block)
 {
 	HostSnapshot snap;
 	snap.local = block.local;
@@ -346,7 +351,7 @@ HostSnapshot snapshotBlock(const BLOCK& block)
 
 // maximum absolute difference of the block's host arrays against a snapshot
 // taken in the same element order (bitwise comparison, exact == 0 expected)
-double maxAbsDiffSnapshot(const BLOCK& block, const HostSnapshot& snap)
+inline double maxAbsDiffSnapshot(const BLOCK& block, const HostSnapshot& snap)
 {
 	double max_diff = 0;
 	std::size_t i = 0;
@@ -371,7 +376,7 @@ using dreal = typename TRAITS::dreal;
 // gone by the time the reference state exists -- the State constructor
 // registers a global spdlog logger per instance, so the two states are
 // compared through their snapshots)
-double maxAbsDiffSnapshots(const HostSnapshot& a, const HostSnapshot& b)
+inline double maxAbsDiffSnapshots(const HostSnapshot& a, const HostSnapshot& b)
 {
 	double max_diff = 0;
 	for (std::size_t i = 0; i < a.dfs.size(); i++)
@@ -390,7 +395,7 @@ struct CoarseMacroScan
 	std::vector<double> vals;  // 4 entries per cell (rho, vx, vy, vz), scan order
 };
 
-CoarseMacroScan captureCoarseMacros(const BLOCK& block)
+inline CoarseMacroScan captureCoarseMacros(const BLOCK& block)
 {
 	CoarseMacroScan scan;
 	for (idx z = 0; z < block.local.z(); z++)
@@ -426,7 +431,7 @@ struct FineGhostScan
 	std::vector<double> frame1;	 // per-destination-cell values of dfs[1] (AB only)
 };
 
-FineGhostScan captureFineGhost(BLOCK& block)
+inline FineGhostScan captureFineGhost(BLOCK& block)
 {
 	FineGhostScan scan;
 	scan.offset = block.offset;
@@ -456,7 +461,7 @@ FineGhostScan captureFineGhost(BLOCK& block)
 // [offset, offset + local): 1 = inner overlap layer (the simulated-band rows
 // the substep-1 kernel integrates), 2 = outer overlap layer (the fill-only
 // streaming source of the inner rows).
-int ghostLayerDepth(const FineGhostScan& scan, const idx3d& c)
+inline int ghostLayerDepth(const FineGhostScan& scan, const idx3d& c)
 {
 	const idx d_x = c.x() < scan.offset.x() ? scan.offset.x() - c.x() : c.x() - (scan.offset.x() + scan.local.x() - 1);
 	const idx d_y = c.y() < scan.offset.y() ? scan.offset.y() - c.y() : c.y() - (scan.offset.y() + scan.local.y() - 1);
@@ -506,7 +511,7 @@ RefStats computeReferenceStats(const STATE& state)
 // (summation order varies between calls), so exact equality is not expected;
 // the double-count signal (216 hidden cells with sentinel rho ~= 3.8e4) exceeds 9e3
 // and dwarfs both this tolerance and any reassociation noise
-bool closeRel(double a, double b)
+inline bool closeRel(double a, double b)
 {
 	return std::abs(a - b) <= 1e-6 * std::max({1.0, std::abs(a), std::abs(b)});
 }

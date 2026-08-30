@@ -70,9 +70,11 @@
 //   is unchanged), no parent block sees a rod cell, and the layout
 //   guardrails reject the forbidden classes with named errors.
 //
-// The streaming pattern is selected at compile time (AB_PATTERN/AA_PATTERN
-// from tests/CMakeLists.txt), everything is single-rank. Shared fixture
-// machinery (lattice factory, report) comes from tests/amr_test_fixture.h.
+// The streaming pattern is selected at compile time (AB_PATTERN/AA_PATTERN);
+// this suite is compiled into the consolidated doctest binaries
+// test_amr_units_{ab,aa} (tests/unit/CMakeLists.txt), which provide main().
+// Everything is single-rank. Shared fixture machinery (lattice factory,
+// report) comes from tests/unit/amr_test_fixture.h.
 
 #include <algorithm>
 #include <map>
@@ -85,7 +87,7 @@
 #include <spdlog/spdlog.h>
 
 #include "amr_test_fixture.h"
-#include "../sim_AMR/amr_windbreak.h"
+#include "../../sim_AMR/amr_windbreak.h"
 
 using BC = typename NSE_CONFIG::BC;
 
@@ -148,6 +150,8 @@ struct RejectCase
 	const char* config;
 	std::string expected_message;
 };
+
+TEST_SUITE_BEGIN("amr_nesting");
 
 void test_vsuite_reject_corpus()
 {
@@ -1965,36 +1969,19 @@ void test_windbreak_rod_census()
 	}
 }
 
-int main(int argc, char** argv)
-{
-	TNLMPI_INIT mpi(argc, argv);
+TEST_CASE("V-suite reject corpus") { test_vsuite_reject_corpus(); }
+TEST_CASE("V-suite gap-2 warning") { test_vsuite_gap2_warning(); }
+TEST_CASE("V-suite separation-2 warning") { test_vsuite_sep2_warning(); }
+TEST_CASE("three-level creation") { test_three_level_creation(); }
+TEST_CASE("three-level mark census") { test_three_level_mark_census(); }
+TEST_CASE("two-level schedule census") { test_two_level_schedule_census(); }
+TEST_CASE("three-level schedule census") { test_three_level_schedule_census(); }
+TEST_CASE("three-level conservation smoke") { test_three_level_conservation_smoke(); }
+TEST_CASE("wall-chain masks") { test_wall_chain_masks(); }
+TEST_CASE("wall pedestal prisms") { test_wall_pedestal_prisms(); }
+TEST_CASE("wall-chain fail-fast") { test_wall_chain_failfast(); }
+TEST_CASE("Lagrava wall-chain guard") { test_wall_chain_lagrava_guard(); }
+TEST_CASE("five-level chain creation") { test_five_level_channel_chain_creation(); }
+TEST_CASE("windbreak rod census") { test_windbreak_rod_census(); }
 
-	if (TNL::MPI::GetSize(MPI_COMM_WORLD) != 1) {
-		fmt::println("RESULT: AMR nesting tests are single-rank only (nproc = {})", TNL::MPI::GetSize(MPI_COMM_WORLD));
-		return 1;
-	}
-
-	fmt::println("AMR nesting validation tests (streaming pattern: {})", pattern_name);
-
-	test_vsuite_reject_corpus();
-	test_vsuite_gap2_warning();
-	test_vsuite_sep2_warning();
-	test_three_level_creation();
-	test_three_level_mark_census();
-	test_two_level_schedule_census();
-	test_three_level_schedule_census();
-	test_three_level_conservation_smoke();
-	test_wall_chain_masks();
-	test_wall_pedestal_prisms();
-	test_wall_chain_failfast();
-	test_wall_chain_lagrava_guard();
-	test_five_level_channel_chain_creation();
-	test_windbreak_rod_census();
-
-	if (g_failures == 0) {
-		fmt::println("RESULT: all AMR nesting tests passed");
-		return 0;
-	}
-	fmt::println("RESULT: {} AMR nesting check(s) FAILED", g_failures);
-	return 1;
-}
+TEST_SUITE_END();

@@ -35,7 +35,7 @@
 // GEO_WALL rod cells as a documented constant offset (locked item 5).
 //
 // Shared by sim_AMR/sim_AMR_channel.cu (the stamping consumer) and
-// tests/test_amr_nesting.cu (the rod-map census test), so the sim and
+// tests/unit/test_amr_nesting.cu (the rod-map census test), so the sim and
 // the test always run the same arithmetic by construction. Pure
 // integers/std types: no TNL or lbm3d dependency.
 
