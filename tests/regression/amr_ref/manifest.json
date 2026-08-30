@@ -42,12 +42,16 @@
     "sim_AMR_channel.output_amr_0027.vtkhdf": "9274aca3aad9a7c4da86bbeb570e163d",
     "sim_AMR_channel.output_amr_0028.vtkhdf": "412326ad0919c349d78c473d882ddafc",
     "sim_AMR_channel.stdout": "0242de9e6361c719fc066029884bc48e",
-    "test_amr_coupling_aa.stdout": "701105171ce391a0b2607f43c8c6f147",
-    "test_amr_coupling_ab.stdout": "63f2dbb9d098b295ca2d33bca5613a2d",
-    "test_amr_subcycling_aa.stdout": "4bf71c62aa333bacb0c2e516075b43a0",
-    "test_amr_subcycling_ab.stdout": "9a2cdacfc1f1ab79b43a24e33b025df0",
-    "test_amr_vtkhdf_writer_aa.stdout": "fe58bf766ff79dc8c7687c44585af11d",
-    "test_amr_vtkhdf_writer_ab.stdout": "fe58bf766ff79dc8c7687c44585af11d"
+    "test_amr_coupling_aa.stdout": "d1c4c141a6c26a7b7a6db88f430150af",
+    "test_amr_coupling_ab.stdout": "d7e65d395d8d5151765fe7e172e43cf0",
+    "test_amr_subcycling_aa.stdout": "af1891bf6879003043fa55093925dba2",
+    "test_amr_subcycling_ab.stdout": "5daa9fb03835f65c433aa777e8691a8e",
+    "test_amr_vtkhdf_writer_aa.stdout": "cf59be9b84a43b6893a24522b2cf4713",
+    "test_amr_vtkhdf_writer_aa.test_amr.vtkhdf": "b36ac3a30d1d4adac06355d75e2f09ac",
+    "test_amr_vtkhdf_writer_aa.test_amr_nesting.vtkhdf": "de19298097fb715f95e1ad275a3f5488",
+    "test_amr_vtkhdf_writer_ab.stdout": "cf59be9b84a43b6893a24522b2cf4713",
+    "test_amr_vtkhdf_writer_ab.test_amr.vtkhdf": "b36ac3a30d1d4adac06355d75e2f09ac",
+    "test_amr_vtkhdf_writer_ab.test_amr_nesting.vtkhdf": "de19298097fb715f95e1ad275a3f5488"
   },
   "description": "AMR bit-identity reference digests (plan amr-nlevel-nesting \u00a77.5): md5 of normalized stdout and of VTKHDF dataset content for the mock census suites and sim_AMR / sim_AMR_channel short runs; recorded at the pre-refactor baseline and verified by tests/regression/test_amr_bitidentity.py",
   "schema": 1
