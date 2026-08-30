@@ -7,9 +7,11 @@
 // compact-moment branch of cudaAMR_CoarseToFine (include/lbm3d/d3q27/
 // amr_coupling.h :588-637) and cannot share a binary with the default build
 // (ODR hazard on the kernel template symbol), so they smoke as standalone
-// per-define binaries: tests/CMakeLists.txt compiles this source once per
-// define per streaming pattern (the same idiom as the _ab/_aa AMR test
-// binaries), and tests/unit/test_amr_c2f_debug_smoke.py drives them.
+// per-define doctest binaries: tests/unit/CMakeLists.txt compiles
+// doctest_main.cu + this source once per define per streaming pattern,
+// registering the "amr_c2f_smoke" TEST_SUITE as the
+// test_amr_c2f_smoke_{eq,dev,norm,shear}_{ab,aa} targets, and
+// tests/unit/test_amr_c2f_debug_smoke.py drives them.
 // Semantics of the defines (each suppresses part of the non-equilibrium
 // pressure tensor Pi of f_neq before the k-moment construction, Eqs.
 // 7.5-7.9):
@@ -63,8 +65,9 @@
 //       (targets identically zero).
 //   S3: every written DF finite (the all-fluid map keeps the carve inert).
 //
-// The binary prints per-define measured maxima and exits nonzero on any
-// failed check (fmt REPORT idiom of tests/test_amr_coupling.cu).
+// Every check is one report() doctest assertion (see the shim below): the
+// per-define measured maxima travel in the assertion messages, and the
+// doctest runner exits nonzero on any failed check.
 
 #include <algorithm>
 #include <array>
@@ -75,6 +78,9 @@
 
 #include "lbm3d/core.h"
 #include "lbm3d/d3q27/amr_coupling.h"
+
+// the doctest runner main() lives in doctest_main.cu (MPI initialization)
+#include <doctest/doctest.h>
 
 using TRAITS = TraitsSP;
 using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
@@ -87,12 +93,6 @@ using NSE_CONFIG = LBM_CONFIG<
 	D3Q27_STREAMING<TRAITS>,
 	D3Q27_BC_All,
 	D3Q27_MACRO_Default<TRAITS>>;
-
-#ifdef AA_PATTERN
-constexpr const char* pattern_name = "AA";
-#else
-constexpr const char* pattern_name = "AB";
-#endif
 
 #if defined(C2F_EQ_ONLY)
 constexpr const char* define_name = "C2F_EQ_ONLY";
@@ -149,17 +149,13 @@ constexpr int VELOCITY[27][3] = {
 	{-1, 1, 1},	  // mpp
 };
 
-int g_failures = 0;
+// doctest assertion shim: every legacy report(ok, what) call site becomes
+// exactly one doctest assertion, keeping the case running on a failed check
+// (same continue-on-fail semantics as the retired g_failures accumulator,
+// and nothing is printed on success)
+inline void report(bool ok, const std::string& what) { CHECK_MESSAGE(ok, what); }
 
-void report(bool ok, const std::string& what)
-{
-	if (ok)
-		fmt::println("PASS: {}", what);
-	else {
-		fmt::println("FAIL: {}", what);
-		g_failures++;
-	}
-}
+TEST_SUITE_BEGIN("amr_c2f_smoke");
 
 std::array<dreal, 27> equilibriumOnHost(dreal rho, dreal vx, dreal vy, dreal vz)
 {
@@ -175,7 +171,7 @@ std::array<dreal, 27> equilibriumOnHost(dreal rho, dreal vx, dreal vy, dreal vz)
 	return eq;
 }
 
-// minimal mock of an LBM block's device data (the tests/test_amr_coupling.cu
+// minimal mock of an LBM block's device data (the tests/unit/test_amr_coupling.cu
 // idiom)
 struct MockBlock
 {
@@ -281,7 +277,7 @@ dreal d3q27Weight(int q)
 }
 
 // the smoke field: rho and velocities linear in all three coordinates (the
-// tests/test_amr_coupling.cu CMLinearField coefficients)
+// tests/unit/test_amr_coupling.cu CMLinearField coefficients)
 std::array<double, 4> exact_field(double X, double Y, double Z)
 {
 	return {
@@ -361,16 +357,24 @@ bool closeEnough(dreal actual, double expected, dreal rtol, dreal atol)
 	return std::abs(actual - expected) <= atol + rtol * std::abs(expected);
 }
 
-int main()
+// shared setup of the two smoke cases (the retired main()'s setup block,
+// computations byte-identical): allocate the coarse/fine mock pair and fill
+// the coarse block with the CE-consistent linear field; each case performs
+// its own kernel launch and readback on top
+void setupSmokeBlocks(MockBlock& coarse, MockBlock& fine, bool even_iter)
 {
-	fmt::println("AMR C2F debug-define smoke (define: {}, pattern: {})", define_name, pattern_name);
-	const bool even_iter = false;
-
-	MockBlock coarse, fine;
 	coarse.allocate(COARSE_N);
 	fine.allocate(FINE_N);
 	fillFieldCE(coarse, even_iter);
 	coarse.copyToDevice();
+}
+
+TEST_CASE("S1 field rail")
+{
+	const bool even_iter = false;
+
+	MockBlock coarse, fine;
+	setupSmokeBlocks(coarse, fine, even_iter);
 	launchCoarseToFine(fine, coarse, {2, 2, 2}, {15, 15, 15}, even_iter);
 	fine.copyToHost();
 
@@ -406,6 +410,16 @@ int main()
 			fmt::format("S1 macros == analytic linear field (max rel rho err = {:.3e}, max abs vel err = {:.3e})", max_rel_rho, max_abs_u)
 		);
 	}
+}
+
+TEST_CASE("S2 strain targets")
+{
+	const bool even_iter = false;
+
+	MockBlock coarse, fine;
+	setupSmokeBlocks(coarse, fine, even_iter);
+	launchCoarseToFine(fine, coarse, {2, 2, 2}, {15, 15, 15}, even_iter);
+	fine.copyToHost();
 
 	// S2: recovered Pi^neq == the filtered-strain analytic targets
 	{
@@ -473,11 +487,6 @@ int main()
 			)
 		);
 	}
-
-	if (g_failures == 0) {
-		fmt::println("RESULT: all AMR C2F debug-define smoke checks passed");
-		return 0;
-	}
-	fmt::println("RESULT: {} AMR C2F debug-define smoke check(s) FAILED", g_failures);
-	return 1;
 }
+
+TEST_SUITE_END();

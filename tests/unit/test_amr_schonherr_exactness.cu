@@ -32,10 +32,10 @@
  *   once per fill launch (coverage measured; disjointness is the row-3
  *   registration suite's structural lock, cited in the case).
  * (T10g, the C2F_EQ_ONLY/DEV_ONLY/NORM_ONLY/SHEAR_ONLY compile-and-run
- * smokes, lives in tests/test_amr_c2f_debug_smoke.cu -- the defines are
+ * smokes, lives in tests/unit/test_amr_c2f_debug_smoke.cu -- the defines are
  * per-TU compile-time switches of the kernel semantics and cannot share a
  * doctest binary with the default-branch build (ODR hazard on the kernel
- * template symbol); see the tests/CMakeLists.txt block.)
+ * template symbol); see the tests/unit/CMakeLists.txt block.)
  * - (T11) wall-attached C2F window transit (thesis Sec. 7.3): the fill
  *   from a nominal source tuple covering a GEO_WALL row must come from
  *   the wall-shifted window instead (the nearest complete source cell);
@@ -62,7 +62,7 @@
  * finiteness rail. The map is all-fluid: a carve shift would move a window
  * onto a poisoned cell, so the carve pre-pass is pinned provably inert on
  * valid faces (the carve lanes are Tests 10-13/17 of
- * tests/test_amr_coupling.cu, untouched by this suite).
+ * tests/unit/test_amr_coupling.cu, untouched by this suite).
  *
  * TOLERANCE DOCUMENTATION (plan row 11 MUST-DO: each numeric tolerance is
  * derived from first principles; bitwise only where structurally sound):
@@ -155,7 +155,7 @@ constexpr idx GO = 4;  // footprint origin (coarse)
 constexpr idx GS = 8;  // footprint size (coarse)
 
 // relaxation times of the two levels for nu_lb_coarse = 0.05 (nu_lb_fine
-// double at the 2:1 refinement; same values as tests/test_amr_coupling.cu so
+// double at the 2:1 refinement; same values as tests/unit/test_amr_coupling.cu so
 // the sigma/omega ratios are exercised for real)
 constexpr dreal TAU_COARSE = 3 * 0.05f + 0.5f;
 constexpr dreal TAU_FINE = 3 * 0.10f + 0.5f;
@@ -194,7 +194,7 @@ constexpr int VELOCITY[27][3] = {
 
 // reference equilibrium computed on the host with the same
 // COLL::setEquilibrium implementation that the coupling kernel uses on the
-// device (same helper as tests/test_amr_coupling.cu)
+// device (same helper as tests/unit/test_amr_coupling.cu)
 std::array<dreal, 27> equilibriumOnHost(dreal rho, dreal vx, dreal vy, dreal vz)
 {
 	LBM_KS KS;
@@ -212,7 +212,7 @@ std::array<dreal, 27> equilibriumOnHost(dreal rho, dreal vx, dreal vy, dreal vz)
 // minimal mock of an LBM block's device data (plain NDArrays with a 2-cell
 // overlap layer, hand-wired into the kernel-facing DATA structure exactly
 // like LBM_BLOCK::allocateDeviceData does -- trimmed from
-// tests/test_amr_coupling.cu's MockBlock to the C2F surface)
+// tests/unit/test_amr_coupling.cu's MockBlock to the C2F surface)
 struct MockBlock
 {
 	DATA data;
@@ -288,7 +288,7 @@ struct MockBlock
 
 // Store the post-collision DF of direction `q` in the slot (and array) the
 // coupling kernel reads back as direction `q` (pattern-parametrized idiom
-// from tests/test_amr_coupling.cu)
+// from tests/unit/test_amr_coupling.cu)
 void storePostCollisionDF(MockBlock& block, bool even_iter, int q, idx x, idx y, idx z, dreal value)
 {
 #ifdef AB_PATTERN
@@ -326,7 +326,7 @@ dreal d3q27Weight(int q)
 // fill the whole stored extent of the coarse mock block with the
 // CE-consistent DF state f_eq + f_neq of the field returned by
 // `FIELD::fill(x,y,z) = {rho, vx, vy, vz, Gxx, Gyy, Gzz, Gxy, Gxz, Gyz}` --
-// the CE-consistent strain construction (same as tests/test_amr_coupling.cu's
+// the CE-consistent strain construction (same as tests/unit/test_amr_coupling.cu's
 // fillFieldCE): the partner non-equilibrium is seeded from the analytic
 // symmetric strain G of the velocity field via the second-order Hermite
 // moment
@@ -539,7 +539,7 @@ RowStats checkDestRectExact(const MockBlock& fine, const DestRect& rect, int out
 	return stats;
 }
 
-// (T10b) field, verbatim coefficients of tests/test_amr_coupling.cu's
+// (T10b) field, verbatim coefficients of tests/unit/test_amr_coupling.cu's
 // CMLinearField: rho and (u,v,w) linear in all three coordinates with a
 // nonzero constant strain (the CE-consistent partner of fillFieldCE)
 struct ExactLinearField
@@ -565,7 +565,7 @@ struct ExactLinearField
 	}
 };
 
-// (T10c) field, verbatim coefficients of tests/test_amr_coupling.cu's
+// (T10c) field, verbatim coefficients of tests/unit/test_amr_coupling.cu's
 // CMQuadraticField: linear rho, velocities linear + per-axis PURE quadratic
 // terms (no cross terms, inside the CM exactness class). The field
 // deliberately spans both R1-discriminating classes of the audit
@@ -626,7 +626,7 @@ void poisonDestRectsFine(MockBlock& fine, dreal sentinel)
 }
 
 // the same 16^3 periodic box in physical units as the row-3 fixture
-// (tests/test_amr_subcycling.cu idiom: nu_lb coarse 0.005)
+// (tests/unit/test_amr_subcycling.cu idiom: nu_lb coarse 0.005)
 lat_t makeLattice()
 {
 	const int N = 16;
@@ -955,7 +955,7 @@ TEST_CASE("T10b linear-field exactness on both destination rows per face (produc
 // implementation fails this case systematically at O(|q|/32) ~ 1e-5..1e-4
 // on this field while the code family's measured floor is <= ~2e-7; the
 // gate sits between (see the header tolerance note). Tests 9/10/11/17 of
-// tests/test_amr_coupling.cu pin this field on the zero-offset mock box;
+// tests/unit/test_amr_coupling.cu pin this field on the zero-offset mock box;
 // this case pins it on the production destination rows.
 TEST_CASE("T10c quadratic-velocity CE-strain exactness on both destination rows per face (R1 code family)")
 {

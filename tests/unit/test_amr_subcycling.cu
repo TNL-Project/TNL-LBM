@@ -30,14 +30,18 @@
 //   State sibling on the same lattice run through the same sequence
 //   (bitwise-identical DFs and macroscopic quantities on the host).
 //
-// The streaming pattern is selected at compile time (AB_PATTERN/AA_PATTERN
-// from tests/CMakeLists.txt), everything is single-rank.
+// The streaming pattern is selected at compile time (AB_PATTERN/AA_PATTERN);
+// this suite is compiled into the consolidated doctest binaries
+// test_amr_units_{ab,aa} (tests/unit/CMakeLists.txt), which provide main().
+// Everything is single-rank.
 
 // The shared fixture machinery (lattice factory, spy states, census carriers,
-// reference-stat helpers) lives in tests/amr_test_fixture.h so that
+// reference-stat helpers) lives in tests/unit/amr_test_fixture.h so that
 // test_amr_nesting.cu reuses it; this file keeps the tests themselves
 // (extraction precondition of the amr-nlevel-nesting commit B).
 #include "amr_test_fixture.h"
+
+TEST_SUITE_BEGIN("amr_subcycling");
 
 // Tests 1 and 2: cycle launch census with parity-at-call-site locks, and
 // time synchronization. Per SimUpdate call the schedule must record
@@ -1618,32 +1622,15 @@ void test_fine_wall_maxface()
 	);
 }
 
-int main(int argc, char** argv)
-{
-	TNLMPI_INIT mpi(argc, argv);
+TEST_CASE("T01-T02 schedule census and time sync") { test_subcycling_schedule(); }
+TEST_CASE("T09 parity structure") { test_schedule_parity_structure(); }
+TEST_CASE("T03 max-level-0 fallthrough") { test_max_level_zero_fallthrough(); }
+TEST_CASE("T04 interface ring freshness") { test_interface_ring_freshness(); }
+TEST_CASE("T08 freshness generative model") { test_interface_ring_freshness_model(); }
+TEST_CASE("T05 conservation hidden-cell exclusion") { test_conservation_hidden_cell_exclusion(); }
+TEST_CASE("T06 skin partition geometry") { test_skin_partition_geometry(); }
+TEST_CASE("T07 footprint min-size validation") { test_footprint_min_size_validation(); }
+TEST_CASE("T10 fine wall fail-fast") { test_fine_wall_failfast(); }
+TEST_CASE("T11 fine wall max-face") { test_fine_wall_maxface(); }
 
-	if (TNL::MPI::GetSize(MPI_COMM_WORLD) != 1) {
-		fmt::println("RESULT: AMR subcycling tests are single-rank only (nproc = {})", TNL::MPI::GetSize(MPI_COMM_WORLD));
-		return 1;
-	}
-
-	fmt::println("AMR subcycling unit tests (streaming pattern: {})", pattern_name);
-
-	test_subcycling_schedule();
-	test_schedule_parity_structure();
-	test_max_level_zero_fallthrough();
-	test_interface_ring_freshness();
-	test_interface_ring_freshness_model();
-	test_conservation_hidden_cell_exclusion();
-	test_skin_partition_geometry();
-	test_footprint_min_size_validation();
-	test_fine_wall_failfast();
-	test_fine_wall_maxface();
-
-	if (g_failures == 0) {
-		fmt::println("RESULT: all AMR subcycling tests passed");
-		return 0;
-	}
-	fmt::println("RESULT: {} AMR subcycling check(s) FAILED", g_failures);
-	return 1;
-}
+TEST_SUITE_END();
