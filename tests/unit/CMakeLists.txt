@@ -44,7 +44,7 @@ set(AMR_SUITE_SOURCES
 foreach(pattern IN ITEMS ab aa)
     string(TOUPPER "${pattern}" pattern_upper)
     set(target "test_amr_units_${pattern}")
-    add_executable(${target} doctest_main.cu ${AMR_SUITE_SOURCES})
+    add_executable(${target} doctest_main_amr.cu ${AMR_SUITE_SOURCES})
     target_compile_definitions(${target} PRIVATE "${pattern_upper}_PATTERN")
     target_link_libraries(${target} PUBLIC TNL::TNL_LBM PRIVATE doctest::doctest)
     set_target_properties(${target} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
@@ -63,24 +63,24 @@ foreach(pattern IN ITEMS ab aa)
 
     # force language to HIP
     if(TNL_LBM_BUILD_HIP)
-        set_source_files_properties(${AMR_SUITE_SOURCES} PROPERTIES LANGUAGE HIP)
+        set_source_files_properties(doctest_main_amr.cu ${AMR_SUITE_SOURCES} PROPERTIES LANGUAGE HIP)
     endif()
 endforeach()
 
 # standalone per-define doctest driver: the F2C_SCHONHERR branch selects a
 # different body of the same kernel template symbol (ODR hazard), so the
-# define gets its own binary, built from doctest_main.cu + the shared driver
+# define gets its own binary, built from doctest_main_amr.cu + the shared driver
 # TU. Driven by tests/unit/test_amr_f2c_schonherr.py, NOT by the gate module
 foreach(pattern IN ITEMS ab aa)
     string(TOUPPER "${pattern}" pattern_upper)
     set(target "test_amr_f2c_schonherr_${pattern}")
-    add_executable(${target} doctest_main.cu test_amr_f2c_schonherr.cu)
+    add_executable(${target} doctest_main_amr.cu test_amr_f2c_schonherr.cu)
     target_compile_definitions(${target} PRIVATE "${pattern_upper}_PATTERN" "F2C_SCHONHERR")
     target_link_libraries(${target} PUBLIC TNL::TNL_LBM PRIVATE doctest::doctest)
     set_target_properties(${target} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
 
     # force language to HIP
     if(TNL_LBM_BUILD_HIP)
-        set_source_files_properties(test_amr_f2c_schonherr.cu PROPERTIES LANGUAGE HIP)
+        set_source_files_properties(doctest_main_amr.cu test_amr_f2c_schonherr.cu PROPERTIES LANGUAGE HIP)
     endif()
 endforeach()
