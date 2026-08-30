@@ -77,7 +77,7 @@ void test_subcycling_schedule()
 	const std::string id = fmt::format("test_amr_subcycling_{}_sched", pattern_name);
 	StateSchedule_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/1);
 	if (! state.canCompute()) {
-		report(false, "Test 1/2 setup: state.canCompute()");
+		CHECK_MESSAGE(false, "Test 1/2 setup: state.canCompute()");
 		return;
 	}
 
@@ -87,7 +87,7 @@ void test_subcycling_schedule()
 
 	const std::vector<BLOCK*> level0 = state.nse.getBlocksAtLevel(0);
 	const std::vector<BLOCK*> level1 = state.nse.getBlocksAtLevel(1);
-	report(level0.size() == 1 && level1.size() == 1, "Test 1 setup: one level-0 block and one level-1 block created");
+	CHECK_MESSAGE((level0.size() == 1 && level1.size() == 1), "Test 1 setup: one level-0 block and one level-1 block created");
 	if (level0.empty() || level1.empty())
 		return;
 	BLOCK* coarse = level0.front();
@@ -97,15 +97,15 @@ void test_subcycling_schedule()
 	// coupling patches, initial condition, initial single-frame fill)
 	state.SimInit();
 	if (state.nse.terminate) {
-		report(false, "Test 1/2 setup: SimInit triggered the terminate flag");
+		CHECK_MESSAGE(false, "Test 1/2 setup: SimInit triggered the terminate flag");
 		return;
 	}
 
-	report(! state.couplings.empty() && ! state.couplings.front().patches.empty(), "Test 1 setup: interface coupling patches were built in SimInit");
+	CHECK_MESSAGE((! state.couplings.empty() && ! state.couplings.front().patches.empty()), "Test 1 setup: interface coupling patches were built in SimInit");
 
 	const double nu_lb_coarse = state.nse.lat.lbmViscosity();
 	const double nu_lb_fine = fine->lat_local.lbmViscosity();
-	report(
+	CHECK_MESSAGE(
 		std::abs(nu_lb_fine - 2 * nu_lb_coarse) <= 1e-12 * nu_lb_coarse,
 		fmt::format("Test 1 setup: fine lattice viscosity is doubled (nu_fine = {:.6e}, nu_coarse = {:.6e})", nu_lb_fine, nu_lb_coarse)
 	);
@@ -114,19 +114,19 @@ void test_subcycling_schedule()
 	// Schönherr cycle): one C2F launch filling the substep-0 frame
 	// rotation, before any SimUpdate
 	if (state.events.size() != 1 || state.events[0].stage != StateSchedule_AMR<NSE_CONFIG>::Stage::c2f) {
-		report(false, fmt::format("Test 1 setup: SimInit launched {} events, expected exactly 1 (C2F frame 0)", state.events.size()));
+		CHECK_MESSAGE(false, fmt::format("Test 1 setup: SimInit launched {} events, expected exactly 1 (C2F frame 0)", state.events.size()));
 		return;
 	}
 #ifdef AB_PATTERN
 	{
 		const void* const P = fine->dfs[0].getData();
-		report(
+		CHECK_MESSAGE(
 			state.events[0].fine_cur == P,
 			"Test 1 setup: SimInit's initial fill targeted frame P (the substep-0 rotation)"
 		);
 	}
 #elif defined(AA_PATTERN)
-	report(
+	CHECK_MESSAGE(
 		state.events[0].fine_even == false,
 		"Test 1 setup: SimInit's initial fill ran at even_iter false (the substep-0 parity)"
 	);
@@ -184,7 +184,7 @@ void test_subcycling_schedule()
 #endif
 		if (! call_ok) {
 			census_ok = false;
-			report(
+			CHECK_MESSAGE(
 				false,
 				fmt::format(
 					"Test 1 launch census after call {}: iterations = {}, {} events recorded -- {} | {}",
@@ -204,7 +204,7 @@ void test_subcycling_schedule()
 		const double nu_l0 = coarse->data.lbmViscosity;
 		if (std::abs(nu_l1 - nu_lb_fine) > 1e-6 * nu_lb_fine || std::abs(nu_l0 - nu_lb_coarse) > 1e-6 * nu_lb_coarse) {
 			visc_ok = false;
-			report(false, fmt::format("Test 1 per-level viscosity after call {}: level0 = {:.6e}, level1 = {:.6e}", call, nu_l0, nu_l1));
+			CHECK_MESSAGE(false, fmt::format("Test 1 per-level viscosity after call {}: level0 = {:.6e}, level1 = {:.6e}", call, nu_l0, nu_l1));
 		}
 
 		// Test 2: time synchronization -- the fine level performs exactly 2
@@ -218,19 +218,19 @@ void test_subcycling_schedule()
 						&& (2.0 * static_cast<double>(fine->lat_local.physDl) == static_cast<double>(state.nse.lat.physDl));
 		if (! (dt_ok && t_coarse == t_fine)) {
 			sync_ok = false;
-			report(false, fmt::format("Test 2 time sync after call {}: t_coarse = {:.17e}, t_fine = {:.17e}", call, t_coarse, t_fine));
+			CHECK_MESSAGE(false, fmt::format("Test 2 time sync after call {}: t_coarse = {:.17e}, t_fine = {:.17e}", call, t_coarse, t_fine));
 		}
 	}
 
-	report(
-		state.nse.iterations == 3 && state.events.size() == 3 * 5 && census_ok && visc_ok,
+	CHECK_MESSAGE((
+		state.nse.iterations == 3 && state.events.size() == 3 * 5 && census_ok && visc_ok),
 		"Test 1 launch census: 3 coarse iterations, each recording 2 fine substeps + 1 coarse step + 2 fill launches (1 F2C + 1 C2F) with the "
 		"parity-at-call-site and launch-extent table asserted (per-level viscosities restored)"
 	);
-	report(
+	CHECK_MESSAGE(
 		sync_ok, "Test 2 time synchronization: fine clock (2 substeps of dt/2) equals coarse clock (1 step of dt) after every Berger-Colella step"
 	);
-	report(! state.nse.terminate, "Test 1/2: no termination or kernel failure during 3 subcycled iterations");
+	CHECK_MESSAGE(! state.nse.terminate, "Test 1/2: no termination or kernel failure during 3 subcycled iterations");
 }
 
 // Test 3: max_level == 0 fallthrough must be identical to the base driver.
@@ -246,14 +246,14 @@ void test_max_level_zero_fallthrough()
 		const std::string id_amr = fmt::format("test_amr_subcycling_{}_amr0", pattern_name);
 		StateLocal_AMR<NSE_CONFIG> state_amr(id_amr, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true});
 		if (! state_amr.canCompute()) {
-			report(false, "Test 3 setup: state.canCompute()");
+			CHECK_MESSAGE(false, "Test 3 setup: state.canCompute()");
 			return;
 		}
-		report(state_amr.nse.max_level == 0, "Test 3 setup: State_AMR constructed with max_level == 0 (no extra LBM args)");
+		CHECK_MESSAGE(state_amr.nse.max_level == 0, "Test 3 setup: State_AMR constructed with max_level == 0 (no extra LBM args)");
 
 		state_amr.SimInit();
 		if (state_amr.nse.terminate) {
-			report(false, "Test 3 setup: SimInit triggered the terminate flag");
+			CHECK_MESSAGE(false, "Test 3 setup: SimInit triggered the terminate flag");
 			return;
 		}
 		snap_amr_init = snapshotBlock(state_amr.nse.blocks.front());
@@ -266,9 +266,9 @@ void test_max_level_zero_fallthrough()
 		state_amr.updateKernelData();
 		state_amr.SimUpdate();
 
-		report(state_amr.nse.iterations == 1 && ! state_amr.nse.terminate, "Test 3: one SimUpdate completed (iterations == 1, no termination)");
-		report(
-			state_amr.nse.blocks.size() == 1 && state_amr.nse.blocks.front().level == 0,
+		CHECK_MESSAGE((state_amr.nse.iterations == 1 && ! state_amr.nse.terminate), "Test 3: one SimUpdate completed (iterations == 1, no termination)");
+		CHECK_MESSAGE((
+			state_amr.nse.blocks.size() == 1 && state_amr.nse.blocks.front().level == 0),
 			"Test 3: no fine-level blocks or per-level data exist at max_level == 0"
 		);
 
@@ -284,19 +284,19 @@ void test_max_level_zero_fallthrough()
 		const std::string id_base = fmt::format("test_amr_subcycling_{}_base0", pattern_name);
 		StateLocal_Base<NSE_CONFIG> state_base(id_base, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true});
 		if (! state_base.canCompute()) {
-			report(false, "Test 3 sibling setup: state.canCompute()");
+			CHECK_MESSAGE(false, "Test 3 sibling setup: state.canCompute()");
 			return;
 		}
 
 		state_base.SimInit();
 		if (state_base.nse.terminate) {
-			report(false, "Test 3 sibling setup: SimInit triggered the terminate flag");
+			CHECK_MESSAGE(false, "Test 3 sibling setup: SimInit triggered the terminate flag");
 			return;
 		}
 
 		// identical initialization (bitwise)
 		const double init_diff = maxAbsDiffSnapshot(state_base.nse.blocks.front(), snap_amr_init);
-		report(init_diff == 0, fmt::format("Test 3 initialization bitwise identical to base (max |diff| = {:.3e})", init_diff));
+		CHECK_MESSAGE(init_diff == 0, fmt::format("Test 3 initialization bitwise identical to base (max |diff| = {:.3e})", init_diff));
 
 		state_base.cnt[OUT3DCUT].period = 1e-30;
 		state_base.updateKernelData();
@@ -307,7 +307,7 @@ void test_max_level_zero_fallthrough()
 			block.copyMacroToHost();
 		}
 		const double step_diff = maxAbsDiffSnapshot(state_base.nse.blocks.front(), snap_amr_step);
-		report(step_diff == 0, fmt::format("Test 3 one-step result bitwise identical to the base driver (max |diff| = {:.3e})", step_diff));
+		CHECK_MESSAGE(step_diff == 0, fmt::format("Test 3 one-step result bitwise identical to the base driver (max |diff| = {:.3e})", step_diff));
 
 		// the non-uniform IC must actually evolve in one step (guards
 		// against the comparison passing vacuously when no kernel ran)
@@ -319,7 +319,7 @@ void test_max_level_zero_fallthrough()
 					const double initial = 1.0 + 0.01 * TNL::sin(8.0 * (x * lat.physDl));
 					max_rho_change = std::max(max_rho_change, std::abs(static_cast<double>(block.hmacro(NSE_CONFIG::MACRO::e_rho, x, y, z)) - initial));
 				}
-		report(max_rho_change > 0, fmt::format("Test 3 sanity: the step advanced the state (max |rho change| = {:.3e})", max_rho_change));
+		CHECK_MESSAGE(max_rho_change > 0, fmt::format("Test 3 sanity: the step advanced the state (max |rho change| = {:.3e})", max_rho_change));
 	}
 }
 
@@ -386,7 +386,7 @@ void test_interface_ring_freshness()
 		const std::string id = fmt::format("test_amr_subcycling_{}_ring", pattern_name);
 		StateLocal_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/1);
 		if (! state.canCompute()) {
-			report(false, "Test 4 setup: state.canCompute()");
+			CHECK_MESSAGE(false, "Test 4 setup: state.canCompute()");
 			return;
 		}
 
@@ -397,7 +397,7 @@ void test_interface_ring_freshness()
 
 		state.SimInit();
 		if (state.nse.terminate) {
-			report(false, "Test 4 setup: SimInit triggered the terminate flag");
+			CHECK_MESSAGE(false, "Test 4 setup: SimInit triggered the terminate flag");
 			return;
 		}
 
@@ -424,7 +424,7 @@ void test_interface_ring_freshness()
 		state.updateKernelData();
 		state.SimUpdate();
 		if (state.nse.terminate) {
-			report(false, "Test 4: SimUpdate triggered the terminate flag");
+			CHECK_MESSAGE(false, "Test 4: SimUpdate triggered the terminate flag");
 			return;
 		}
 
@@ -451,13 +451,13 @@ void test_interface_ring_freshness()
 		const std::string id = fmt::format("test_amr_subcycling_{}_ringref", pattern_name);
 		StateLocal_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/1);
 		if (! state.canCompute()) {
-			report(false, "Test 4 setup: reference state.canCompute()");
+			CHECK_MESSAGE(false, "Test 4 setup: reference state.canCompute()");
 			return;
 		}
 		createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>("1 4 4 4 8 8 8"));
 		state.SimInit();
 		if (state.nse.terminate) {
-			report(false, "Test 4 setup: reference SimInit triggered the terminate flag");
+			CHECK_MESSAGE(false, "Test 4 setup: reference SimInit triggered the terminate flag");
 			return;
 		}
 
@@ -465,7 +465,7 @@ void test_interface_ring_freshness()
 		// reproducible bitwise across instances)
 		const HostSnapshot reference_init = snapshotBlock(*state.nse.getBlocksAtLevel(0).front());
 		const double init_diff = maxAbsDiffSnapshots(subject_init, reference_init);
-		report(
+		CHECK_MESSAGE(
 			init_diff == 0,
 			fmt::format(
 				"Test 4 reference init: kernels-only reference is bitwise identical to the subject after SimInit (max |diff| = {:.3e})", init_diff
@@ -482,7 +482,7 @@ void test_interface_ring_freshness()
 		state.updateKernelData();
 		state.SimUpdate();
 		if (state.nse.terminate) {
-			report(false, "Test 4: reference SimUpdate triggered the terminate flag");
+			CHECK_MESSAGE(false, "Test 4: reference SimUpdate triggered the terminate flag");
 			return;
 		}
 
@@ -505,7 +505,7 @@ void test_interface_ring_freshness()
 	for (const int tag : subject.map)
 		if (tag == NSE_CONFIG::BC::GEO_AMR_INTERFACE)
 			ring_cells++;
-	report(
+	CHECK_MESSAGE(
 		ring_cells == 10 * 10 * 10 - 6 * 6 * 6,
 		fmt::format("Test 4 setup: GEO_AMR_INTERFACE ring has 784 cells around the 8^3 footprint (got {})", ring_cells)
 	);
@@ -526,7 +526,7 @@ void test_interface_ring_freshness()
 			&& subject.vals[c + 3] == static_cast<real>(0))
 			placeholder_cells++;
 	}
-	report(
+	CHECK_MESSAGE(
 		max_ring_diff == 0,
 		fmt::format(
 			"Test 4 ring macros kernel-produced (ring F2C removed, D.1): all {} GEO_AMR_INTERFACE cells' macros are bitwise identical to the "
@@ -535,7 +535,7 @@ void test_interface_ring_freshness()
 			max_ring_diff
 		)
 	);
-	report(
+	CHECK_MESSAGE(
 		placeholder_cells == 0,
 		fmt::format(
 			"Test 4 freshness: all {} GEO_AMR_INTERFACE cells hold kernel-produced macros ({} still hold the rho=1, v=0 placeholder)",
@@ -548,8 +548,8 @@ void test_interface_ring_freshness()
 	// is (local + 2*ov)^3 - local^3 cells (K = 8 fixture: 18^3 - 14^3 =
 	// 3,088 cells, 27 DF entries each)
 	const long ghost_cells = static_cast<long>(subject_ghost.frame0.size()) / NSE_CONFIG::Q;
-	report(
-		subject_ghost.frame0.size() == 27 * 3088 && subject_ghost.frame0.size() == reference_ghost.frame0.size(),
+	CHECK_MESSAGE((
+		subject_ghost.frame0.size() == 27 * 3088 && subject_ghost.frame0.size() == reference_ghost.frame0.size()),
 		fmt::format("Test 4 fill census: the fine block has 3,088 fill-owned destination cells (got {})", ghost_cells)
 	);
 
@@ -561,7 +561,7 @@ void test_interface_ring_freshness()
 	for (std::size_t i = 0; i < subject_ghost.map.size(); i++)
 		if (subject_ghost.map[i] != NSE_CONFIG::BC::GEO_FLUID)
 			non_fluid_ghosts++;
-	report(
+	CHECK_MESSAGE(
 		non_fluid_ghosts == 0,
 		fmt::format(
 			"Test 4 ghost map: all {} destination cells are GEO_FLUID ({} non-fluid entries) so the widened substep-1 kernel "
@@ -587,8 +587,8 @@ void test_interface_ring_freshness()
 		else
 			refilled_outer++;
 	}
-	report(
-		refilled_inner > 0 && refilled_outer > 0,
+	CHECK_MESSAGE((
+		refilled_inner > 0 && refilled_outer > 0),
 		fmt::format(
 			"Test 4 fill coverage: the cycle-end fill re-wrote {} inner-layer and {} outer-layer destination entries of frame 0 "
 			"(both ghost layers must be filled)",
@@ -625,8 +625,8 @@ void test_interface_ring_freshness()
 			sb2_max_diff = std::max(sb2_max_diff, diff);
 		}
 	}
-	report(
-		sb1_inner_total > 0 && sb1_changed > 0,
+	CHECK_MESSAGE((
+		sb1_inner_total > 0 && sb1_changed > 0),
 		fmt::format(
 			"Test 4 simulated band (substep-1 integration): {} of {} frame-1 inner-layer destination entries were updated by the "
 			"widened kernel (max |change| = {:.3e})",
@@ -635,8 +635,8 @@ void test_interface_ring_freshness()
 			sb1_max_diff
 		)
 	);
-	report(
-		sb2_outer_total > 0 && sb2_max_diff == 0,
+	CHECK_MESSAGE((
+		sb2_outer_total > 0 && sb2_max_diff == 0),
 		fmt::format(
 			"Test 4 single fill (no frame-1 fill): all {} frame-1 outer-layer destination entries keep the SimInit-era fill "
 			"bitwise (max |diff| = {:.3e})",
@@ -689,13 +689,13 @@ void test_interface_ring_freshness_model()
 	const std::string id = fmt::format("test_amr_subcycling_{}_ringmodel", pattern_name);
 	StateLocal_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/1);
 	if (! state.canCompute()) {
-		report(false, "Test 8 setup: state.canCompute()");
+		CHECK_MESSAGE(false, "Test 8 setup: state.canCompute()");
 		return;
 	}
 	createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>("1 4 4 4 8 8 8"));
 	state.SimInit();
 	if (state.nse.terminate) {
-		report(false, "Test 8 setup: SimInit triggered the terminate flag");
+		CHECK_MESSAGE(false, "Test 8 setup: SimInit triggered the terminate flag");
 		return;
 	}
 
@@ -714,8 +714,8 @@ void test_interface_ring_freshness_model()
 		fine->copyDFsToHost();
 		fills.push_back(captureFineGhost(*fine));
 	}
-	report(
-		static_cast<int>(fills.size()) == cycles + 1 && ! state.nse.terminate,
+	CHECK_MESSAGE((
+		static_cast<int>(fills.size()) == cycles + 1 && ! state.nse.terminate),
 		"Test 8 setup: the SimInit anchor fill plus 3 coupled cycle-end fills were scanned without termination"
 	);
 	if (static_cast<int>(fills.size()) != cycles + 1)
@@ -726,7 +726,7 @@ void test_interface_ring_freshness_model()
 	bool census_ok = true;
 	for (const auto& scan : fills)
 		census_ok = census_ok && scan.frame0.size() == 27 * 3088;
-	report(census_ok, "Test 8 census: all 4 fill scans cover exactly the 3,088-cell C2F destination complement (27 x 3,088 entries each)");
+	CHECK_MESSAGE(census_ok, "Test 8 census: all 4 fill scans cover exactly the 3,088-cell C2F destination complement (27 x 3,088 entries each)");
 
 	// M1: cycle k's fill is a fresh fill of the kernel-evolved coarse state,
 	// never a stale re-write of an earlier cycle's fill
@@ -740,7 +740,7 @@ void test_interface_ring_freshness_model()
 			if (min_diff < 0 || diff < min_diff)
 				min_diff = diff;
 		}
-		report(
+		CHECK_MESSAGE(
 			min_diff > 0,
 			fmt::format(
 				"Test 8 fill freshness, cycle {}: the cycle-end fill differs from every earlier fill ({} differing entries vs the "
@@ -767,8 +767,8 @@ void test_interface_ring_freshness_model()
 			if (fills[k].frame1[i] != fills[k - 1].frame1[i])
 				inner_vs_prev++;
 		}
-		report(
-			inner_vs_anchor > 0 && inner_vs_prev > 0,
+		CHECK_MESSAGE((
+			inner_vs_anchor > 0 && inner_vs_prev > 0),
 			fmt::format(
 				"Test 8 simulated-band inner layer, cycle {}: the substep-1 kernel's inner-overlap output is fresh ({} differing "
 				"entries vs the SimInit anchor, {} vs the previous cycle)",
@@ -791,8 +791,8 @@ void test_interface_ring_freshness_model()
 			outer_total++;
 			outer_max_diff = std::max(outer_max_diff, static_cast<double>(std::abs(fills[k].frame1[i] - fills[0].frame1[i])));
 		}
-		report(
-			outer_total > 0 && outer_max_diff == 0,
+		CHECK_MESSAGE((
+			outer_total > 0 && outer_max_diff == 0),
 			fmt::format(
 				"Test 8 fill-only outer layer, cycle {}: all {} frame-1 outer-layer destination entries still hold the SimInit "
 				"anchor fill bitwise (max |diff| = {:.3e})",
@@ -845,13 +845,13 @@ void test_schedule_parity_structure()
 	const std::string id = fmt::format("test_amr_subcycling_{}_parity", pattern_name);
 	StateSchedule_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/1);
 	if (! state.canCompute()) {
-		report(false, "Test 9 setup: state.canCompute()");
+		CHECK_MESSAGE(false, "Test 9 setup: state.canCompute()");
 		return;
 	}
 	createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>("1 4 4 4 8 8 8"));
 	state.SimInit();
 	if (state.nse.terminate) {
-		report(false, "Test 9 setup: SimInit triggered the terminate flag");
+		CHECK_MESSAGE(false, "Test 9 setup: SimInit triggered the terminate flag");
 		return;
 	}
 	// consume SimInit's C2F event (the cycle-0 anchor, asserted in Test 1)
@@ -873,7 +873,7 @@ void test_schedule_parity_structure()
 				   && ev[2].stage == Stage::kernel && ev[2].level == 0 && ev[3].stage == Stage::f2c && ev[3].level == 1 && ev[4].stage == Stage::c2f
 				   && ev[4].level == 1;
 		}
-	report(
+	CHECK_MESSAGE(
 		premise,
 		"Test 9 premise: 4 cycles recorded exactly the simulated-band stage sequence each (20 events: kernel L1 x2, kernel L0, F2C, "
 		"C2F per cycle; the indexing premise for the parity derivation)"
@@ -893,7 +893,7 @@ void test_schedule_parity_structure()
 			invariant_ok = invariant_ok && ref.fine_even == cur.fine_even;
 #endif
 		}
-	report(
+	CHECK_MESSAGE(
 		invariant_ok,
 		"Test 9 cycle-invariant fine parity: the fine ghost frame consumed at each substep slot and targeted at each fill slot is "
 		"the same frame in every one of the 4 cycles (absolute frame identities are pinned by Test 1)"
@@ -918,7 +918,7 @@ void test_schedule_parity_structure()
 			alternation_ok = alternation_ok && state.events[5 * k + slot].coarse_even == state.events[5 * (k + 2) + slot].coarse_even;
 #endif
 		}
-	report(
+	CHECK_MESSAGE(
 		alternation_ok,
 		"Test 9 alternating fill-source parity: the coarse rotation at every coarse-touching slot (kernel, F2C, the C2F fill) flips "
 		"with cycle parity across all 3 transitions and repeats at same-parity cycles (one toggle per cycle, none inside)"
@@ -940,7 +940,7 @@ void test_schedule_parity_structure()
 		consumption_ok = consumption_ok && substep1.fine_even == fill.fine_even && substep2.fine_even != substep1.fine_even;
 #endif
 	}
-	report(
+	CHECK_MESSAGE(
 		consumption_ok,
 		"Test 9 consumption chain: every cycle's substep 1 consumes exactly the frame that the previous cycle end's fill was "
 		"recorded writing, and substep 2 consumes the frame substep 1 wrote -- the fill imprint carried to the seam still "
@@ -985,7 +985,7 @@ void test_conservation_hidden_cell_exclusion()
 		const std::string id = fmt::format("test_amr_subcycling_{}_cons", pattern_name);
 		StateLocal_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/1);
 		if (! state.canCompute()) {
-			report(false, "Test 5 setup: state.canCompute()");
+			CHECK_MESSAGE(false, "Test 5 setup: state.canCompute()");
 			return;
 		}
 
@@ -994,7 +994,7 @@ void test_conservation_hidden_cell_exclusion()
 
 		state.SimInit();
 		if (state.nse.terminate) {
-			report(false, "Test 5 setup: SimInit triggered the terminate flag");
+			CHECK_MESSAGE(false, "Test 5 setup: SimInit triggered the terminate flag");
 			return;
 		}
 
@@ -1004,7 +1004,7 @@ void test_conservation_hidden_cell_exclusion()
 		state.updateKernelData();
 		state.SimUpdate();
 		if (state.nse.terminate) {
-			report(false, "Test 5: SimUpdate triggered the terminate flag");
+			CHECK_MESSAGE(false, "Test 5: SimUpdate triggered the terminate flag");
 			return;
 		}
 
@@ -1021,7 +1021,7 @@ void test_conservation_hidden_cell_exclusion()
 				for (idx x = 0; x < coarse->local.x(); x++)
 					if (coarse->hmap(x, y, z) == NSE_CONFIG::BC::GEO_NOTHING)
 						hidden++;
-		report(
+		CHECK_MESSAGE(
 			hidden == 6 * 6 * 6,
 			fmt::format("Test 5 setup: GEO_NOTHING footprint has exactly 216 coarse cells (skin 152 + deep 64; got {})", hidden)
 		);
@@ -1049,7 +1049,7 @@ void test_conservation_hidden_cell_exclusion()
 		// again - the reference below reads the same mirrors)
 		const AMRConservationStats s1 = state.computeConservationStats();
 		const RefStats ref = computeReferenceStats(state);
-		report(
+		CHECK_MESSAGE(
 			ref.hidden == 6 * 6 * 6,
 			fmt::format("Test 5 reference: exactly 216 hidden cells excluded from the reference sums (got {})", ref.hidden)
 		);
@@ -1063,38 +1063,38 @@ void test_conservation_hidden_cell_exclusion()
 			 std::abs(s1.total_momentum_z - s0.total_momentum_z),
 			 std::abs(s1.per_level_kinetic_energy.at(0) - s0.per_level_kinetic_energy.at(0)),
 			 std::abs(s1.per_level_kinetic_energy.at(1) - s0.per_level_kinetic_energy.at(1))});
-		report(
+		CHECK_MESSAGE((
 			closeRel(s1.total_mass, s0.total_mass) && closeRel(s1.total_momentum_x, s0.total_momentum_x)
 				&& closeRel(s1.total_momentum_y, s0.total_momentum_y) && closeRel(s1.total_momentum_z, s0.total_momentum_z)
 				&& closeRel(s1.per_level_kinetic_energy.at(0), s0.per_level_kinetic_energy.at(0))
-				&& closeRel(s1.per_level_kinetic_energy.at(1), s0.per_level_kinetic_energy.at(1)),
+				&& closeRel(s1.per_level_kinetic_energy.at(1), s0.per_level_kinetic_energy.at(1))),
 			fmt::format("Test 5 hidden-cell exclusion: conservation stats are invariant to sentinel macros injected into GEO_NOTHING cells (max |diff| = {:.3e})", inv_diff)
 		);
 
 		// the metric must equal the reference that excludes exactly the
 		// GEO_NOTHING cells (this also proves the GEO_AMR_INTERFACE ring
 		// cells keep counting: they are part of the reference sums)
-		report(
+		CHECK_MESSAGE(
 			closeRel(s1.total_mass, ref.mass),
 			fmt::format("Test 5 mass: metric equals the reference sum that excludes exactly the GEO_NOTHING cells (metric = {:.6e}, ref = {:.6e})", s1.total_mass, ref.mass)
 		);
-		report(
-			closeRel(s1.total_momentum_x, ref.mx) && closeRel(s1.total_momentum_y, ref.my) && closeRel(s1.total_momentum_z, ref.mz),
+		CHECK_MESSAGE((
+			closeRel(s1.total_momentum_x, ref.mx) && closeRel(s1.total_momentum_y, ref.my) && closeRel(s1.total_momentum_z, ref.mz)),
 			fmt::format(
 				"Test 5 momentum: metric equals the reference sum that excludes exactly the GEO_NOTHING cells (metric = {:.6e}, {:.6e}, {:.6e}; ref = {:.6e}, {:.6e}, {:.6e})",
 				s1.total_momentum_x, s1.total_momentum_y, s1.total_momentum_z, ref.mx, ref.my, ref.mz
 			)
 		);
-		report(
+		CHECK_MESSAGE((
 			s1.per_level_kinetic_energy.size() == 2 && ref.ke.size() == 2 && closeRel(s1.per_level_kinetic_energy.at(0), ref.ke.at(0))
-				&& closeRel(s1.per_level_kinetic_energy.at(1), ref.ke.at(1)),
+				&& closeRel(s1.per_level_kinetic_energy.at(1), ref.ke.at(1))),
 			fmt::format("Test 5 per-level kinetic energy: metric matches the reference (L0 metric = {:.6e} ref = {:.6e}; L1 metric = {:.6e} ref = {:.6e})",
 				s1.per_level_kinetic_energy.at(0),
 				ref.ke.at(0),
 				s1.per_level_kinetic_energy.at(1),
 				ref.ke.at(1))
 		);
-		report(s0.total_mass > 0 && s1.total_mass > 0, "Test 5 sanity: total mass is nonzero with two levels");
+		CHECK_MESSAGE((s0.total_mass > 0 && s1.total_mass > 0), "Test 5 sanity: total mass is nonzero with two levels");
 	}
 
 	// single-level sibling: no fine block, hence no GEO_NOTHING cells - the
@@ -1104,13 +1104,13 @@ void test_conservation_hidden_cell_exclusion()
 		const std::string id = fmt::format("test_amr_subcycling_{}_cons0", pattern_name);
 		StateLocal_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true});
 		if (! state.canCompute()) {
-			report(false, "Test 5 single-level setup: state.canCompute()");
+			CHECK_MESSAGE(false, "Test 5 single-level setup: state.canCompute()");
 			return;
 		}
 
 		state.SimInit();
 		if (state.nse.terminate) {
-			report(false, "Test 5 single-level setup: SimInit triggered the terminate flag");
+			CHECK_MESSAGE(false, "Test 5 single-level setup: SimInit triggered the terminate flag");
 			return;
 		}
 
@@ -1118,18 +1118,18 @@ void test_conservation_hidden_cell_exclusion()
 		state.updateKernelData();
 		state.SimUpdate();
 		if (state.nse.terminate) {
-			report(false, "Test 5 single-level: SimUpdate triggered the terminate flag");
+			CHECK_MESSAGE(false, "Test 5 single-level: SimUpdate triggered the terminate flag");
 			return;
 		}
 
 		const AMRConservationStats s = state.computeConservationStats();
 		const RefStats ref = computeReferenceStats(state);
-		report(ref.hidden == 0, fmt::format("Test 5 single-level: no GEO_NOTHING cells present (got {})", ref.hidden));
-		report(
-			closeRel(s.total_mass, ref.mass) && s.total_mass > 1000,
+		CHECK_MESSAGE(ref.hidden == 0, fmt::format("Test 5 single-level: no GEO_NOTHING cells present (got {})", ref.hidden));
+		CHECK_MESSAGE((
+			closeRel(s.total_mass, ref.mass) && s.total_mass > 1000),
 			fmt::format("Test 5 single-level: the full mass is counted when no exclusion tag exists (metric = {:.6e}, ref = {:.6e})", s.total_mass, ref.mass)
 		);
-		report(s.per_level_kinetic_energy.size() == 1, "Test 5 single-level: one per-level kinetic-energy entry");
+		CHECK_MESSAGE(s.per_level_kinetic_energy.size() == 1, "Test 5 single-level: one per-level kinetic-energy entry");
 	}
 }
 
@@ -1147,18 +1147,18 @@ void check_skin_partition(const char* config, const idx3d& go, const idx3d& gs, 
 	const std::string id = fmt::format("test_amr_subcycling_{}_skin_{}", pattern_name, label);
 	StateLocal_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/1);
 	if (! state.canCompute()) {
-		report(false, fmt::format("Test 6 {} setup: state.canCompute()", label));
+		CHECK_MESSAGE(false, fmt::format("Test 6 {} setup: state.canCompute()", label));
 		return;
 	}
 	createAMRBlocks(state.nse, parseAMRConfig<NSE_CONFIG>(config));
 	state.SimInit();
 	if (state.nse.terminate) {
-		report(false, fmt::format("Test 6 {} setup: SimInit triggered the terminate flag", label));
+		CHECK_MESSAGE(false, fmt::format("Test 6 {} setup: SimInit triggered the terminate flag", label));
 		return;
 	}
 
 	if (state.couplings.size() != 1) {
-		report(false, fmt::format("Test 6 {} setup: exactly one inter-level coupling was built (got {})", label, state.couplings.size()));
+		CHECK_MESSAGE(false, fmt::format("Test 6 {} setup: exactly one inter-level coupling was built (got {})", label, state.couplings.size()));
 		return;
 	}
 	const auto& coupling = state.couplings.front();
@@ -1191,15 +1191,15 @@ void check_skin_partition(const char* config, const idx3d& go, const idx3d& gs, 
 					pushed_cells++;
 				}
 	}
-	report(
-		refs_ok && static_cast<int>(rects.size()) == expected_rects,
+	CHECK_MESSAGE((
+		refs_ok && static_cast<int>(rects.size()) == expected_rects),
 		fmt::format("Test 6 {}: exactly {} non-degenerate skin rectangles pushed (got {})", label, expected_rects, rects.size())
 	);
-	report(bounds_ok, fmt::format("Test 6 {}: every skin rectangle is non-empty and lies inside the footprint", label));
+	CHECK_MESSAGE(bounds_ok, fmt::format("Test 6 {}: every skin rectangle is non-empty and lies inside the footprint", label));
 
 	// (i) pairwise disjoint: the number of pushed cells equals the set size
 	// (an overlap or a duplicate rectangle would shrink the set)
-	report(
+	CHECK_MESSAGE(
 		pushed_cells == covered.size(),
 		fmt::format("Test 6 {}: skin rectangles are pairwise disjoint ({} cells pushed, {} distinct)", label, pushed_cells, covered.size())
 	);
@@ -1219,11 +1219,11 @@ void check_skin_partition(const char* config, const idx3d& go, const idx3d& gs, 
 	const idx3d inset2{std::max(gs.x() - 4, idx(0)), std::max(gs.y() - 4, idx(0)), std::max(gs.z() - 4, idx(0))};
 	const long analytic =
 		static_cast<long>(inset1.x()) * inset1.y() * inset1.z() - static_cast<long>(inset2.x()) * inset2.y() * inset2.z();
-	report(
+	CHECK_MESSAGE(
 		shell.size() == static_cast<std::size_t>(analytic),
 		fmt::format("Test 6 {} sanity: analytic depth-1 shell size {} matches the enumerated shell", label, analytic)
 	);
-	report(
+	CHECK_MESSAGE(
 		covered == shell,
 		fmt::format(
 			"Test 6 {}: skin-rectangle union equals exactly the depth-1 face shell of the footprint ({} of {} cells)",
@@ -1261,7 +1261,7 @@ void test_footprint_min_size_validation()
 	const std::string id = fmt::format("test_amr_subcycling_{}_minfp", pattern_name);
 	StateLocal_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/1);
 	if (! state.canCompute()) {
-		report(false, "Test 7 setup: state.canCompute()");
+		CHECK_MESSAGE(false, "Test 7 setup: state.canCompute()");
 		return;
 	}
 
@@ -1288,8 +1288,8 @@ void test_footprint_min_size_validation()
 			axis,
 			size
 		);
-		report(
-			message.find(expected) != std::string::npos && state.nse.blocks.size() == level0_blocks,
+		CHECK_MESSAGE((
+			message.find(expected) != std::string::npos && state.nse.blocks.size() == level0_blocks),
 			fmt::format(
 				"Test 7: a {}-coarse-cell-thin footprint on axis {} is rejected in the read-only validation phase ({})",
 				size,
@@ -1316,7 +1316,7 @@ void test_footprint_min_size_validation()
 			axis,
 			size
 		);
-		report(
+		CHECK_MESSAGE(
 			message == expected_full,
 			fmt::format("Test 7 wording lock: the {}-thin rejection message matches the gs>=3 minimum-footprint wording verbatim", axis)
 		);
@@ -1330,11 +1330,11 @@ void test_footprint_min_size_validation()
 	catch (const std::runtime_error& e) {
 		message = e.what();
 	}
-	report(message.empty(), fmt::format("Test 7: the minimum [3, 8, 8] footprint is accepted ({})", message.empty() ? "no exception" : message));
+	CHECK_MESSAGE(message.empty(), fmt::format("Test 7: the minimum [3, 8, 8] footprint is accepted ({})", message.empty() ? "no exception" : message));
 	const std::vector<BLOCK*> level1 = state.nse.getBlocksAtLevel(1);
 	// re-anchored indexer (ruling): local' = 2*gs - 2 per axis
-	report(
-		level1.size() == 1 && level1.front()->local == idx3d{4, 14, 14},
+	CHECK_MESSAGE((
+		(level1.size() == 1 && level1.front()->local == idx3d{4, 14, 14})),
 		fmt::format("Test 7: the accepted [3, 8, 8] footprint created one level-1 block of 4x14x14 fine cells (got {} blocks)", level1.size())
 	);
 }
@@ -1450,7 +1450,7 @@ void test_fine_wall_failfast()
 		const std::string id = fmt::format("test_amr_subcycling_{}_wallpartial", pattern_name);
 		StateWall_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{false, false, false}, /*max_level=*/1);
 		if (! state.canCompute()) {
-			report(false, "Test 10 setup (partial): state.canCompute()");
+			CHECK_MESSAGE(false, "Test 10 setup (partial): state.canCompute()");
 			return;
 		}
 		state.wall_mode = 1;
@@ -1462,9 +1462,9 @@ void test_fine_wall_failfast()
 		catch (const std::runtime_error& e) {
 			message = e.what();
 		}
-		report(
+		CHECK_MESSAGE((
 			message.find("PARTIAL fine-level wall") != std::string::npos && message.find("z-min") != std::string::npos
-				&& message.find("block 1") != std::string::npos && message.find("98 of 196") != std::string::npos,
+				&& message.find("block 1") != std::string::npos && message.find("98 of 196") != std::string::npos),
 			fmt::format(
 				"Test 10 partial-wall rejection: SimInit throws the named error (block, face, count 98 of 196) -- {}",
 				message.empty() ? "no exception thrown" : fmt::format("threw: {}", message)
@@ -1479,7 +1479,7 @@ void test_fine_wall_failfast()
 		const std::string id = fmt::format("test_amr_subcycling_{}_wallnooverlap", pattern_name);
 		StateWall_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{false, false, false}, /*max_level=*/1);
 		if (! state.canCompute()) {
-			report(false, "Test 10 setup (missing override): state.canCompute()");
+			CHECK_MESSAGE(false, "Test 10 setup (missing override): state.canCompute()");
 			return;
 		}
 		state.wall_mode = 2;
@@ -1491,9 +1491,9 @@ void test_fine_wall_failfast()
 		catch (const std::runtime_error& e) {
 			message = e.what();
 		}
-		report(
+		CHECK_MESSAGE((
 			message.find("storage_overlap_z") != std::string::npos && message.find("z-min") != std::string::npos
-				&& message.find("the z-axis overlap is 2 (< 3)") != std::string::npos,
+				&& message.find("the z-axis overlap is 2 (< 3)") != std::string::npos),
 			fmt::format(
 				"Test 10 missing-override rejection: SimInit throws the named error (block, face, storage_overlap_z) -- {}",
 				message.empty() ? "no exception thrown" : fmt::format("threw: {}", message)
@@ -1519,7 +1519,7 @@ void test_fine_wall_maxface()
 	const std::string id = fmt::format("test_amr_subcycling_{}_wallxmax", pattern_name);
 	StateWall_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{false, false, false}, /*max_level=*/1);
 	if (! state.canCompute()) {
-		report(false, "Test 11 setup: state.canCompute()");
+		CHECK_MESSAGE(false, "Test 11 setup: state.canCompute()");
 		return;
 	}
 	state.wall_mode = 3;
@@ -1529,13 +1529,13 @@ void test_fine_wall_maxface()
 	fine->storage_overlap_x = 3;
 	state.SimInit();
 	if (state.nse.terminate) {
-		report(false, "Test 11 setup: SimInit triggered the terminate flag");
+		CHECK_MESSAGE(false, "Test 11 setup: SimInit triggered the terminate flag");
 		return;
 	}
 
 	// the mask registers exactly the x-max (Right) bit of the six
 	const int right_bit = State_AMR<NSE_CONFIG>::fineWallFaceBit(SyncDirection::Right);
-	report(
+	CHECK_MESSAGE(
 		state.fineWallMask(*fine) == (1 << right_bit),
 		fmt::format(
 			"Test 11 wall mask: exactly the x-max (Right) bit is registered (mask = {})", static_cast<int>(state.fineWallMask(*fine))
@@ -1547,8 +1547,8 @@ void test_fine_wall_maxface()
 	// band ([-1, local+1) substep 1) and interior ([0, local) substep 2)
 	// extents of a 14^3 fine interior with a 3-deep x overlap
 	const auto w1 = state.kernelLaunchWindow(*fine, 1);
-	report(
-		w1.first == idx3d{-1, -1, -1} && w1.second == idx3d{17, 16, 16},
+	CHECK_MESSAGE((
+		(w1.first == idx3d{-1, -1, -1} && w1.second == idx3d{17, 16, 16})),
 		fmt::format(
 			"Test 11 substep-1 window: [{},{},{}] + [{},{},{}] (expected [-1,-1,-1] + [17,16,16])",
 			w1.first.x(),
@@ -1560,8 +1560,8 @@ void test_fine_wall_maxface()
 		)
 	);
 	const auto w0 = state.kernelLaunchWindow(*fine, 0);
-	report(
-		w0.first == idx3d{0, 0, 0} && w0.second == idx3d{16, 14, 14},
+	CHECK_MESSAGE((
+		w0.first == idx3d{0, 0, 0} && w0.second == idx3d{16, 14, 14}),
 		fmt::format(
 			"Test 11 substep-2 window: [{},{},{}] + [{},{},{}] (expected [0,0,0] + [16,14,14])",
 			w0.first.x(),
@@ -1577,16 +1577,16 @@ void test_fine_wall_maxface()
 	// roundup(local) with zero slack, so a max-face-wall substep-2 window
 	// (begin {0,0,0} but size.x = local+2) MUST recompute the grid -- a
 	// begin-only fast-path check would silently skip the wall row
-	report(
+	CHECK_MESSAGE(
 		! State_AMR<NSE_CONFIG>::isInteriorLaunchWindow(w0.first, w0.second, fine->local),
 		"Test 11 grid selection: the x-max-wall substep-2 window is NOT eligible for the precomputed interior grid"
 	);
-	report(
+	CHECK_MESSAGE(
 		! State_AMR<NSE_CONFIG>::isInteriorLaunchWindow(w1.first, w1.second, fine->local),
 		"Test 11 grid selection: the widened substep-1 window is NOT eligible for the precomputed interior grid"
 	);
-	report(
-		State_AMR<NSE_CONFIG>::isInteriorLaunchWindow(idx3d{0, 0, 0}, fine->local, fine->local),
+	CHECK_MESSAGE((
+		State_AMR<NSE_CONFIG>::isInteriorLaunchWindow(idx3d{0, 0, 0}, fine->local, fine->local)),
 		"Test 11 grid selection: the plain interior [0, local) window IS eligible for the precomputed grid"
 	);
 
@@ -1603,8 +1603,8 @@ void test_fine_wall_maxface()
 		else
 			others_nonempty = others_nonempty && patch.fine_size.x() > 0 && patch.fine_size.y() > 0 && patch.fine_size.z() > 0;
 	}
-	report(
-		saw_right && right_empty && others_nonempty && n_patches == 6,
+	CHECK_MESSAGE((
+		saw_right && right_empty && others_nonempty && n_patches == 6),
 		fmt::format(
 			"Test 11 coupling patches: x-max destination is empty ({}), the other 5 faces keep their full bands ({})",
 			right_empty,
@@ -1616,8 +1616,8 @@ void test_fine_wall_maxface()
 	// bounce-back row is processed against the allocated buffer row)
 	state.updateKernelData();
 	state.SimUpdate();
-	report(
-		! state.nse.terminate && state.nse.iterations == 1,
+	CHECK_MESSAGE((
+		! state.nse.terminate && state.nse.iterations == 1),
 		"Test 11: one coupled SimUpdate over the x-max fine wall runs cleanly"
 	);
 }

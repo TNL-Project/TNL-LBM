@@ -296,7 +296,7 @@ void test_vsuite_reject_corpus()
 		const std::string id = fmt::format("test_amr_nesting_{}_{}", pattern_name, kase.name);
 		StateLocal_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/3);
 		if (! state.canCompute()) {
-			report(false, fmt::format("V-suite corpus {} setup: state.canCompute()", kase.name));
+			CHECK_MESSAGE(false, fmt::format("V-suite corpus {} setup: state.canCompute()", kase.name));
 			return;
 		}
 
@@ -308,7 +308,7 @@ void test_vsuite_reject_corpus()
 		catch (const std::runtime_error& e) {
 			message = e.what();
 		}
-		report(
+		CHECK_MESSAGE(
 			message == kase.expected_message,
 			fmt::format(
 				"V-suite corpus {}: rejected with the rule-specific message verbatim ({})",
@@ -316,7 +316,7 @@ void test_vsuite_reject_corpus()
 				message.empty() ? "no exception thrown" : fmt::format("threw: {}", message)
 			)
 		);
-		report(
+		CHECK_MESSAGE(
 			state.nse.blocks.size() == 1,
 			fmt::format(
 				"V-suite corpus {}: rejection happened in the read-only validation phase ({} blocks, expected the level-0 block only)",
@@ -352,7 +352,7 @@ void test_vsuite_gap2_warning()
 	const std::string id = fmt::format("test_amr_nesting_{}_gap2warn", pattern_name);
 	StateLocal_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/2);
 	if (! state.canCompute()) {
-		report(false, "V-suite gap-2 warning setup: state.canCompute()");
+		CHECK_MESSAGE(false, "V-suite gap-2 warning setup: state.canCompute()");
 		return;
 	}
 
@@ -367,17 +367,17 @@ void test_vsuite_gap2_warning()
 	catch (const std::runtime_error& e) {
 		message = e.what();
 	}
-	report(
-		message.empty() && state.nse.blocks.size() == 3,
+	CHECK_MESSAGE((
+		message.empty() && state.nse.blocks.size() == 3),
 		fmt::format(
 			"V-suite gap-2 floor: the footprint inset exactly 2 parent-level cells is accepted and the block is created ({})",
 			message.empty() ? "no exception" : fmt::format("threw: {}", message)
 		)
 	);
-	report(
+	CHECK_MESSAGE((
 		capture.sink->warnings.size() == 3
 			&& capture.hasWarning("telescoping gap of 2 parent-level cells on the x-min face is below the recommended 3")
-			&& capture.hasWarning("the parent's fine-to-coarse transfer windows will read coupling-authored ring/skin cells"),
+			&& capture.hasWarning("the parent's fine-to-coarse transfer windows will read coupling-authored ring/skin cells")),
 		fmt::format(
 			"V-suite gap-2 floor: one advisory warning per 2-cell face emitted ({} warnings) naming the face and the",
 			capture.sink->warnings.size()
@@ -391,7 +391,7 @@ void test_vsuite_sep2_warning()
 	const std::string id = fmt::format("test_amr_nesting_{}_sep2warn", pattern_name);
 	StateLocal_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/1);
 	if (! state.canCompute()) {
-		report(false, "V-suite separation-2 warning setup: state.canCompute()");
+		CHECK_MESSAGE(false, "V-suite separation-2 warning setup: state.canCompute()");
 		return;
 	}
 
@@ -405,17 +405,17 @@ void test_vsuite_sep2_warning()
 	catch (const std::runtime_error& e) {
 		message = e.what();
 	}
-	report(
-		message.empty() && state.nse.blocks.size() == 3,
+	CHECK_MESSAGE((
+		message.empty() && state.nse.blocks.size() == 3),
 		fmt::format(
 			"V-suite separation floor: siblings exactly 2 parent-level cells apart are accepted and both blocks are created ({})",
 			message.empty() ? "no exception" : fmt::format("threw: {}", message)
 		)
 	);
-	report(
+	CHECK_MESSAGE((
 		capture.sink->warnings.size() == 1
 			&& capture.hasWarning("separated by exactly 2 parent-level cells")
-			&& capture.hasWarning("below the recommended 3"),
+			&& capture.hasWarning("below the recommended 3")),
 		fmt::format(
 			"V-suite separation floor: one advisory warning emitted for the 2-cell sibling separation ({})",
 			capture.sink->warnings.size()
@@ -440,7 +440,7 @@ void test_three_level_creation()
 	const std::string id = fmt::format("test_amr_nesting_{}_chain", pattern_name);
 	StateLocal_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/3);
 	if (! state.canCompute()) {
-		report(false, "3-level creation setup: state.canCompute()");
+		CHECK_MESSAGE(false, "3-level creation setup: state.canCompute()");
 		return;
 	}
 
@@ -452,7 +452,7 @@ void test_three_level_creation()
 	catch (const std::runtime_error& e) {
 		message = e.what();
 	}
-	report(
+	CHECK_MESSAGE(
 		message.empty(),
 		fmt::format(
 			"3-level creation: the telescoping chain passes the whole V-suite (the level > 1 reject is superseded) ({})",
@@ -466,8 +466,8 @@ void test_three_level_creation()
 	// createAMRBlocks, and are intentionally not accounted in
 	// level_block_counts[0] (the vector tracks fine levels only)
 	const std::vector<int> counts = state.nse.level_block_counts;
-	report(
-		state.nse.blocks.size() == 4 && counts == std::vector<int>({0, 1, 1, 1}),
+	CHECK_MESSAGE((
+		state.nse.blocks.size() == 4 && counts == std::vector<int>({0, 1, 1, 1})),
 		fmt::format(
 			"3-level creation: block census -- {} blocks (1 per level), level_block_counts = [{},{},{},{}]",
 			state.nse.blocks.size(),
@@ -488,14 +488,14 @@ void test_three_level_creation()
 		const std::vector<BLOCK*> blocks = state.nse.getBlocksAtLevel(expected.level);
 		if (blocks.size() != 1) {
 			geometry_ok = false;
-			report(false, fmt::format("3-level creation: expected exactly one level-{} block (got {})", expected.level, blocks.size()));
+			CHECK_MESSAGE(false, fmt::format("3-level creation: expected exactly one level-{} block (got {})", expected.level, blocks.size()));
 			continue;
 		}
 		const BLOCK* fine = blocks.front();
 		geometry_ok = geometry_ok && fine->global_offset == expected.global_offset && fine->offset == expected.offset
 				   && fine->local == expected.local;
 	}
-	report(
+	CHECK_MESSAGE(
 		geometry_ok,
 		"3-level creation: every fine block carries the exact parent-frame global_offset, re-anchored fine offset and fine "
 		"local of the region chain (L1 22x58x22@(17,3,9), L2 14x118x14@(39,5,17), L3 6x238x6@(83,9,33))"
@@ -516,7 +516,7 @@ void test_three_level_creation()
 		scaling_ok = scaling_ok && std::abs(static_cast<double>(fine.lat_local.physDt) * ratio - base_dt) <= 1e-12 * base_dt;
 		scaling_ok = scaling_ok && std::abs(static_cast<double>(fine.lat_local.lbmViscosity()) - ratio * base_nu) <= 1e-12 * base_nu;
 	}
-	report(
+	CHECK_MESSAGE(
 		scaling_ok,
 		fmt::format(
 			"3-level creation: per-level physDt/physDl halve and lattice viscosity doubles per level (nu level1..3 = {:.3e}, "
@@ -527,7 +527,7 @@ void test_three_level_creation()
 		)
 	);
 
-	report(
+	CHECK_MESSAGE(
 		capture.sink->warnings.empty(),
 		fmt::format(
 			"3-level creation: zero warnings emitted for a fully valid nested chain (the no-new-warnings invariant; got {})",
@@ -597,7 +597,7 @@ void test_three_level_mark_census()
 	const std::string id = fmt::format("test_amr_nesting_{}_chainmark", pattern_name);
 	StateLocal_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/3);
 	if (! state.canCompute()) {
-		report(false, "3-level mark census setup: state.canCompute()");
+		CHECK_MESSAGE(false, "3-level mark census setup: state.canCompute()");
 		return;
 	}
 	state.nse.allocateHostData();
@@ -609,7 +609,7 @@ void test_three_level_mark_census()
 	catch (const std::runtime_error& e) {
 		message = e.what();
 	}
-	report(
+	CHECK_MESSAGE(
 		message.empty(),
 		fmt::format("3-level mark census setup: the chain validates ({})", message.empty() ? "no exception" : fmt::format("threw: {}", message))
 	);
@@ -658,8 +658,8 @@ void test_three_level_mark_census()
 		interface_census[fine.level] = interface_count;
 		nothing_census[fine.level] = nothing_count;
 		map_mismatches_total += mismatches;
-		report(
-			mismatches == 0 && interface_count == ref.interface_count && nothing_count == ref.nothing_count,
+		CHECK_MESSAGE((
+			mismatches == 0 && interface_count == ref.interface_count && nothing_count == ref.nothing_count),
 			fmt::format(
 				"3-level mark census: level-{} map matches the contract band tag rule of the level-{} fine footprint "
 				"(GEO_AMR_INTERFACE = {}, GEO_NOTHING = {}, map mismatches = {})",
@@ -680,22 +680,22 @@ void test_three_level_mark_census()
 	// tag rules there are covered by the reference comparison's clip)
 	{
 		BLOCK* level0 = state.nse.getBlocksAtLevel(0).front();
-		report(
-			level0->hmap(12, 16, 10) == BC::GEO_NOTHING && level0->hmap(8, 0, 8) == BC::GEO_AMR_INTERFACE,
+		CHECK_MESSAGE((
+			level0->hmap(12, 16, 10) == BC::GEO_NOTHING && level0->hmap(8, 0, 8) == BC::GEO_AMR_INTERFACE),
 			"3-level mark census: level-0 spot checks -- deep footprint cell frozen, halo cell tagged"
 		);
 	}
 	{
 		BLOCK* level1 = state.nse.getBlocksAtLevel(1).front();
-		report(
-			level1->hmap(20, 30, 10) == BC::GEO_NOTHING && level1->hmap(20, 30, 16) == BC::GEO_AMR_INTERFACE,
+		CHECK_MESSAGE((
+			level1->hmap(20, 30, 10) == BC::GEO_NOTHING && level1->hmap(20, 30, 16) == BC::GEO_AMR_INTERFACE),
 			"3-level mark census: level-1 spot checks -- deep footprint cell frozen, halo cell tagged"
 		);
 	}
 	{
 		BLOCK* level2 = state.nse.getBlocksAtLevel(2).front();
-		report(
-			level2->hmap(42, 10, 18) == BC::GEO_NOTHING && level2->hmap(42, 10, 20) == BC::GEO_AMR_INTERFACE,
+		CHECK_MESSAGE((
+			level2->hmap(42, 10, 18) == BC::GEO_NOTHING && level2->hmap(42, 10, 20) == BC::GEO_AMR_INTERFACE),
 			"3-level mark census: level-2 spot checks -- deep footprint cell frozen, halo cell tagged"
 		);
 	}
@@ -721,9 +721,9 @@ void test_three_level_mark_census()
 				for (idx z = block.offset.z(); z < block.offset.z() + block.local.z(); z++, k++)
 					idempotent = idempotent && block.hmap(x, y, z) == maps_before.at(block.level)[k];
 	}
-	report(idempotent, "3-level mark census: markAMRInterface re-invocation is idempotent on the 3-level chain");
+	CHECK_MESSAGE(idempotent, "3-level mark census: markAMRInterface re-invocation is idempotent on the 3-level chain");
 
-	report(
+	CHECK_MESSAGE(
 		map_mismatches_total == 0,
 		fmt::format(
 			"3-level mark census: per-level censuses -- L1->L0 interface {} / frozen {}, L2->L1 interface {} / frozen {}, "
@@ -993,7 +993,7 @@ void checkScheduleCensus(int max_level, const char* regions, const char* label, 
 	const std::string id = fmt::format("test_amr_nesting_{}_census{}", pattern_name, max_level);
 	StateSchedule_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, max_level);
 	if (! state.canCompute()) {
-		report(false, fmt::format("{} setup: state.canCompute()", label));
+		CHECK_MESSAGE(false, fmt::format("{} setup: state.canCompute()", label));
 		return;
 	}
 	std::string message;
@@ -1004,8 +1004,8 @@ void checkScheduleCensus(int max_level, const char* regions, const char* label, 
 	catch (const std::runtime_error& e) {
 		message = e.what();
 	}
-	report(
-		message.empty() && ! state.nse.terminate,
+	CHECK_MESSAGE((
+		message.empty() && ! state.nse.terminate),
 		fmt::format("{} setup: chain creation and SimInit ({})", label, message.empty() ? "no exception" : fmt::format("threw: {}", message))
 	);
 	if (! message.empty() || state.nse.terminate)
@@ -1025,7 +1025,7 @@ void checkScheduleCensus(int max_level, const char* regions, const char* label, 
 		init_ok = init_ok && evt.fine_even == false;
 #endif
 	}
-	report(init_ok, fmt::format("{} SimInit: level-ascending initial c2f cascade ({} events, all at rotation 0)", label, state.events.size()));
+	CHECK_MESSAGE(init_ok, fmt::format("{} SimInit: level-ascending initial c2f cascade ({} events, all at rotation 0)", label, state.events.size()));
 	state.events.clear();
 
 	bool cycles_ok = true;
@@ -1053,8 +1053,8 @@ void checkScheduleCensus(int max_level, const char* regions, const char* label, 
 			}
 		}
 	}
-	report(
-		cycles_ok && state.nse.iterations == 3,
+	CHECK_MESSAGE((
+		cycles_ok && state.nse.iterations == 3),
 		fmt::format(
 			"{}: 3 cycles match the {}-event advancePair expansion per cycle (rotations, f2c next-parity/indices, counters){}",
 			label,
@@ -1062,7 +1062,7 @@ void checkScheduleCensus(int max_level, const char* regions, const char* label, 
 			failure.empty() ? "" : fmt::format(" -- first failure: {}", failure)
 		)
 	);
-	report(! state.nse.terminate, fmt::format("{}: no termination during the census run", label));
+	CHECK_MESSAGE(! state.nse.terminate, fmt::format("{}: no termination during the census run", label));
 }
 
 void test_two_level_schedule_census()
@@ -1088,7 +1088,7 @@ void test_three_level_conservation_smoke()
 	const std::string id = fmt::format("test_amr_nesting_{}_smoke", pattern_name);
 	StateSchedule_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/3);
 	if (! state.canCompute()) {
-		report(false, "3-level conservation smoke setup: state.canCompute()");
+		CHECK_MESSAGE(false, "3-level conservation smoke setup: state.canCompute()");
 		return;
 	}
 	std::string message;
@@ -1099,8 +1099,8 @@ void test_three_level_conservation_smoke()
 	catch (const std::runtime_error& e) {
 		message = e.what();
 	}
-	report(
-		message.empty() && ! state.nse.terminate,
+	CHECK_MESSAGE((
+		message.empty() && ! state.nse.terminate),
 		fmt::format(
 			"3-level conservation smoke setup: chain creation and SimInit ({})",
 			message.empty() ? "no exception" : fmt::format("threw: {}", message)
@@ -1167,25 +1167,25 @@ void test_three_level_conservation_smoke()
 			}
 		}
 	}
-	report(
+	CHECK_MESSAGE(
 		finite_ok,
 		fmt::format(
 			"3-level conservation smoke: all conservation entries finite (no NaN) over 20 cycles{}",
 			failure.empty() && finite_ok ? "" : fmt::format(" -- {}", failure)
 		)
 	);
-	report(
+	CHECK_MESSAGE(
 		consistent_ok,
 		fmt::format(
 			"3-level conservation smoke: nested metric matches the GEO_NOTHING-excluding reference at every checkpoint{}",
 			failure.empty() && consistent_ok ? "" : fmt::format(" -- {}", failure)
 		)
 	);
-	report(
-		stable_ok && mass_earliest > 0,
+	CHECK_MESSAGE((
+		stable_ok && mass_earliest > 0),
 		fmt::format("3-level conservation smoke: global mass stable over 20 coupled cycles (relative drift {:.6e} over cycles 5 -> 20)", drift_final)
 	);
-	report(state.nse.iterations == 20 && ! state.nse.terminate, "3-level conservation smoke: 20 coupled cycles, no termination");
+	CHECK_MESSAGE((state.nse.iterations == 20 && ! state.nse.terminate), "3-level conservation smoke: 20 coupled cycles, no termination");
 }
 
 // Commit E wall-chain tests (plan sec. 5 + sec. 5.5 Tests 12--14): the wall
@@ -1215,8 +1215,8 @@ void setupWallChain(StateWallChain_AMR<NSE_CONFIG>& state, const char* label)
 	catch (const std::runtime_error& e) {
 		message = e.what();
 	}
-	report(
-		message.empty() && ! state.nse.terminate,
+	CHECK_MESSAGE((
+		message.empty() && ! state.nse.terminate),
 		fmt::format("{} setup: chain, wall tagging and SimInit ({})", label, message.empty() ? "no exception" : fmt::format("threw: {}", message))
 	);
 }
@@ -1228,7 +1228,7 @@ void setupWallChain(StateWallChain_AMR<NSE_CONFIG>& state, const char* label)
 void test_wall_chain_masks()
 {
 #if defined(F2C_LAGRAVA)
-	report(
+	CHECK_MESSAGE(
 		true,
 		"wall chain: masks census is a default-strategy (F2C_SCHONHERR) resident -- under F2C_LAGRAVA the wall chain is "
 		"guard-rejected at SimInit (see the Lagrava guard test)"
@@ -1241,7 +1241,7 @@ void test_wall_chain_masks()
 	const std::string id = fmt::format("test_amr_nesting_{}_wallchain", pattern_name);
 	StateWallChain_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/3);
 	if (! state.canCompute()) {
-		report(false, "wall-chain masks setup: state.canCompute()");
+		CHECK_MESSAGE(false, "wall-chain masks setup: state.canCompute()");
 		return;
 	}
 	setupWallChain(state, "wall-chain masks");
@@ -1254,7 +1254,7 @@ void test_wall_chain_masks()
 	const int zmin_bit = State_AMR<NSE_CONFIG>::fineWallFaceBit(SyncDirection::Back);
 	for (int L = 1; L <= 3; L++) {
 		BLOCK* fine = state.nse.getBlocksAtLevel(L).front();
-		report(
+		CHECK_MESSAGE(
 			state.fineWallMask(*fine) == (1 << zmin_bit),
 			fmt::format(
 				"wall chain: level-{} fine_wall_masks == {{z-min: 1, else: 0}} (mask = {})", L, static_cast<int>(state.fineWallMask(*fine))
@@ -1269,9 +1269,9 @@ void test_wall_chain_masks()
 		BLOCK* fine = state.nse.getBlocksAtLevel(L).front();
 		const auto w1 = state.kernelLaunchWindow(*fine, 1);
 		const auto w0 = state.kernelLaunchWindow(*fine, 0);
-		report(
+		CHECK_MESSAGE((
 			w1.first.z() == -2 && w1.second.z() == fine->local.z() + 3 && w1.first.x() == -1 && w1.first.y() == -1 && w0.first.z() == -2
-				&& w0.second.z() == fine->local.z() + 2 && w0.first.x() == 0 && w0.first.y() == 0,
+				&& w0.second.z() == fine->local.z() + 2 && w0.first.x() == 0 && w0.first.y() == 0),
 			fmt::format(
 				"wall chain: level-{} launch windows deepen to the GEO_WALL row at local z=-2 on both substeps "
 				"(widened [{},{},{}] + [{},{},{}], interior [{},{},{}] + [{},{},{}])",
@@ -1299,7 +1299,7 @@ void test_wall_chain_masks()
 		for (const auto& patch : coupling.patches)
 			if (patch.face == SyncDirection::Back && patch.fine_size.z() != 0)
 				zmin_destinations_empty = false;
-	report(zmin_destinations_empty, "wall chain: no coupling carries a coarse-to-fine fill on any z-min (wall-shared) face");
+	CHECK_MESSAGE(zmin_destinations_empty, "wall chain: no coupling carries a coarse-to-fine fill on any z-min (wall-shared) face");
 
 	// nested channel smoke (plan sec. 8 row E): 3 coupled cycles over the
 	// wall chain run cleanly -- the deepened launches process every level's
@@ -1308,8 +1308,8 @@ void test_wall_chain_masks()
 		state.updateKernelData();
 		state.SimUpdate();
 	}
-	report(
-		state.nse.iterations == 3 && ! state.nse.terminate,
+	CHECK_MESSAGE((
+		state.nse.iterations == 3 && ! state.nse.terminate),
 		"wall chain: 3 coupled cycles over the wall chain, no termination (the deepened launches process every wall row)"
 	);
 	const AMRConservationStats stats = state.computeConservationStats();
@@ -1317,7 +1317,7 @@ void test_wall_chain_masks()
 			   && std::isfinite(stats.total_momentum_z) && stats.per_level_kinetic_energy.size() == 4;
 	for (int L = 0; L <= 3 && finite; L++)
 		finite = finite && std::isfinite(stats.per_level_kinetic_energy[L]);
-	report(finite, "wall chain: conservation entries finite after 3 cycles over the wall chain");
+	CHECK_MESSAGE(finite, "wall chain: conservation entries finite after 3 cycles over the wall chain");
 }
 
 // Test 14 (R4 census) + the census invariants of plan sec. 5: the (1,2)
@@ -1330,7 +1330,7 @@ void test_wall_chain_masks()
 void test_wall_pedestal_prisms()
 {
 #if defined(F2C_LAGRAVA)
-	report(
+	CHECK_MESSAGE(
 		true,
 		"R4 pedestal: census is a default-strategy (F2C_SCHONHERR) resident -- under F2C_LAGRAVA the wall chain is "
 		"guard-rejected at SimInit (see the Lagrava guard test)"
@@ -1341,7 +1341,7 @@ void test_wall_pedestal_prisms()
 	const std::string id = fmt::format("test_amr_nesting_{}_wallprism", pattern_name);
 	StateWallChain_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/3);
 	if (! state.canCompute()) {
-		report(false, "wall-prism census setup: state.canCompute()");
+		CHECK_MESSAGE(false, "wall-prism census setup: state.canCompute()");
 		return;
 	}
 	setupWallChain(state, "wall-prism census");
@@ -1369,8 +1369,8 @@ void test_wall_pedestal_prisms()
 		if (patch.coarse_origin.z() == prism_begin.z() - 1 && patch.coarse_size.z() == 1)
 			skin_zmin_present = true;
 	}
-	report(
-		c12.interior_patches.size() == 7 && prisms_found == 1,
+	CHECK_MESSAGE((
+		c12.interior_patches.size() == 7 && prisms_found == 1),
 		fmt::format(
 			"R4 pedestal: the (1,2) coupling carries the 6 depth-1 skins plus exactly 1 z-min prism at relative rows "
 			"{{1,2}} ({} interior patches, {} prisms)",
@@ -1378,12 +1378,12 @@ void test_wall_pedestal_prisms()
 			prisms_found
 		)
 	);
-	report(skin_zmin_present, "R4 pedestal: the standard z-min depth-1 skin is untouched (disjoint from the prism)");
+	CHECK_MESSAGE(skin_zmin_present, "R4 pedestal: the standard z-min depth-1 skin is untouched (disjoint from the prism)");
 
 	// the (2,3) coupling: the level-3 footprint (gs = 4 on x and z) has no
 	// twice-inset tangent and no deep core, so it needs and gets no prism
 	const auto& c23 = state.couplings[2];
-	report(
+	CHECK_MESSAGE(
 		c23.interior_patches.size() == 2,
 		fmt::format(
 			"R4 pedestal: the (2,3) coupling carries no prism on the thin level-3 footprint "
@@ -1451,9 +1451,9 @@ void test_wall_pedestal_prisms()
 					}
 		}
 	}
-	report(tags_ok, "R4 census (d): every interior destination cell of the nested couplings is frozen GEO_NOTHING");
-	report(depths_ok, "R4 census (d): destinations sit at depth {1} everywhere except the z-min pedestal {1,2,3} (no deeper cell touched)");
-	report(pedestal_cover, "R4 census (d): the deep frozen rows the parent's upward own-8 window reads are fully F2C-authored");
+	CHECK_MESSAGE(tags_ok, "R4 census (d): every interior destination cell of the nested couplings is frozen GEO_NOTHING");
+	CHECK_MESSAGE(depths_ok, "R4 census (d): destinations sit at depth {1} everywhere except the z-min pedestal {1,2,3} (no deeper cell touched)");
+	CHECK_MESSAGE(pedestal_cover, "R4 census (d): the deep frozen rows the parent's upward own-8 window reads are fully F2C-authored");
 }
 
 // Test 13 (fail-fast): the three silent lanes of the wall chain each die
@@ -1464,7 +1464,7 @@ void test_wall_pedestal_prisms()
 void test_wall_chain_failfast()
 {
 #if defined(F2C_LAGRAVA)
-	report(
+	CHECK_MESSAGE(
 		true,
 		"wall fail-fast: the three wall-chain rails are default-strategy (F2C_SCHONHERR) residents -- under F2C_LAGRAVA the "
 		"guard fires first at SimInit (see the Lagrava guard test)"
@@ -1479,7 +1479,7 @@ void test_wall_chain_failfast()
 		const std::string id = fmt::format("test_amr_nesting_{}_wallpartial", pattern_name);
 		StateWallChain_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/3);
 		if (! state.canCompute()) {
-			report(false, "wall fail-fast (i) setup: state.canCompute()");
+			CHECK_MESSAGE(false, "wall fail-fast (i) setup: state.canCompute()");
 			return;
 		}
 		state.tag_level0_wall = true;
@@ -1496,9 +1496,9 @@ void test_wall_chain_failfast()
 		catch (const std::runtime_error& e) {
 			message = e.what();
 		}
-		report(
+		CHECK_MESSAGE((
 			message.find("PARTIAL fine-level wall") != std::string::npos && message.find("z-min") != std::string::npos
-				&& message.find("block 2") != std::string::npos,
+				&& message.find("block 2") != std::string::npos),
 			fmt::format(
 				"wall fail-fast (i): partial parent wall at level 2 throws the named error (block, face, counts) -- {}",
 				message.empty() ? "no exception thrown" : fmt::format("threw: {}", message)
@@ -1514,7 +1514,7 @@ void test_wall_chain_failfast()
 		const std::string id = fmt::format("test_amr_nesting_{}_wallnooverlap", pattern_name);
 		StateWallChain_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/3);
 		if (! state.canCompute()) {
-			report(false, "wall fail-fast (ii) setup: state.canCompute()");
+			CHECK_MESSAGE(false, "wall fail-fast (ii) setup: state.canCompute()");
 			return;
 		}
 		state.tag_level0_wall = true;
@@ -1530,9 +1530,9 @@ void test_wall_chain_failfast()
 		catch (const std::runtime_error& e) {
 			message = e.what();
 		}
-		report(
+		CHECK_MESSAGE((
 			message.find("the z-axis overlap is 2 (< 3)") != std::string::npos && message.find("storage_overlap_z") != std::string::npos
-				&& message.find("z-min") != std::string::npos && message.find("block 2") != std::string::npos,
+				&& message.find("z-min") != std::string::npos && message.find("block 2") != std::string::npos),
 			fmt::format(
 				"wall fail-fast (ii): missing storage_overlap_z = 3 at level 2 throws the named error -- {}",
 				message.empty() ? "no exception thrown" : fmt::format("threw: {}", message)
@@ -1549,7 +1549,7 @@ void test_wall_chain_failfast()
 		const std::string id = fmt::format("test_amr_nesting_{}_wallunbacked", pattern_name);
 		StateWallChain_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/3);
 		if (! state.canCompute()) {
-			report(false, "wall fail-fast (iii) setup: state.canCompute()");
+			CHECK_MESSAGE(false, "wall fail-fast (iii) setup: state.canCompute()");
 			return;
 		}
 		state.tag_fine_wall[2] = true;
@@ -1564,9 +1564,9 @@ void test_wall_chain_failfast()
 		catch (const std::runtime_error& e) {
 			message = e.what();
 		}
-		report(
+		CHECK_MESSAGE((
 			message.find("has GEO_WALL tags on its own z-min wall row but no wall backing on the parent level") != std::string::npos
-				&& message.find("block 2") != std::string::npos,
+				&& message.find("block 2") != std::string::npos),
 			fmt::format(
 				"wall fail-fast (iii): wall-shared face without parent wall backing throws the named error -- {}",
 				message.empty() ? "no exception thrown" : fmt::format("threw: {}", message)
@@ -1590,7 +1590,7 @@ void test_wall_chain_lagrava_guard()
 	const std::string id = fmt::format("test_amr_nesting_{}_wallguard", pattern_name);
 	StateWallChain_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{true, true, true}, /*max_level=*/3);
 	if (! state.canCompute()) {
-		report(false, "Lagrava guard setup: state.canCompute()");
+		CHECK_MESSAGE(false, "Lagrava guard setup: state.canCompute()");
 		return;
 	}
 	state.tag_level0_wall = true;
@@ -1606,15 +1606,15 @@ void test_wall_chain_lagrava_guard()
 	catch (const std::runtime_error& e) {
 		message = e.what();
 	}
-	report(
-		message.find("wall-shared nesting requires F2C_SCHONHERR") != std::string::npos && message.find("F2C_LAGRAVA") != std::string::npos,
+	CHECK_MESSAGE((
+		message.find("wall-shared nesting requires F2C_SCHONHERR") != std::string::npos && message.find("F2C_LAGRAVA") != std::string::npos),
 		fmt::format(
 			"Lagrava guard: nested wall-shared faces under F2C_LAGRAVA hard-error at SimInit naming the strategy -- {}",
 			message.empty() ? "no exception thrown" : fmt::format("threw: {}", message)
 		)
 	);
 #else
-	report(
+	CHECK_MESSAGE(
 		true,
 		"Lagrava guard: default F2C_SCHONHERR build -- the guard is compiled out and the wall chain SimInit runs green "
 		"(see the wall-chain mask census); the F2C_LAGRAVA arm is exercised by a strategy-flipped binary"
@@ -1648,7 +1648,7 @@ void test_five_level_channel_chain_creation()
 	const std::string id = fmt::format("test_amr_nesting_{}_channel5", pattern_name);
 	StateLocal_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{false, true, false}, /*max_level=*/4);
 	if (! state.canCompute()) {
-		report(false, "5-level channel chain setup: state.canCompute()");
+		CHECK_MESSAGE(false, "5-level channel chain setup: state.canCompute()");
 		return;
 	}
 
@@ -1660,7 +1660,7 @@ void test_five_level_channel_chain_creation()
 	catch (const std::runtime_error& e) {
 		message = e.what();
 	}
-	report(
+	CHECK_MESSAGE(
 		message.empty(),
 		fmt::format(
 			"5-level channel chain: the derived chain (blocks 0..4, every z-min face wall-chained to level 1) passes the full "
@@ -1674,8 +1674,8 @@ void test_five_level_channel_chain_creation()
 	// level-0 blocks are created by the LBM constructor and are intentionally
 	// not accounted in level_block_counts[0] (see test_three_level_creation)
 	const std::vector<int> counts = state.nse.level_block_counts;
-	report(
-		state.nse.blocks.size() == 5 && counts == std::vector<int>({0, 1, 1, 1, 1}),
+	CHECK_MESSAGE((
+		state.nse.blocks.size() == 5 && counts == std::vector<int>({0, 1, 1, 1, 1})),
 		fmt::format("5-level channel chain: block census -- {} blocks (one per level 0..4)", state.nse.blocks.size())
 	);
 
@@ -1692,20 +1692,20 @@ void test_five_level_channel_chain_creation()
 		const std::vector<BLOCK*> blocks = state.nse.getBlocksAtLevel(expected.level);
 		if (blocks.size() != 1) {
 			geometry_ok = false;
-			report(false, fmt::format("5-level channel chain: expected exactly one level-{} block (got {})", expected.level, blocks.size()));
+			CHECK_MESSAGE(false, fmt::format("5-level channel chain: expected exactly one level-{} block (got {})", expected.level, blocks.size()));
 			continue;
 		}
 		const BLOCK* fine = blocks.front();
 		geometry_ok = geometry_ok && fine->global_offset == expected.global_offset && fine->offset == expected.offset
 				   && fine->local == expected.local;
 	}
-	report(
+	CHECK_MESSAGE(
 		geometry_ok,
 		"5-level channel chain: every fine block carries the chain solver's exact parent-frame global_offset, re-anchored "
 		"fine offset and fine local"
 	);
 
-	report(
+	CHECK_MESSAGE(
 		capture.sink->warnings.empty(),
 		fmt::format(
 			"5-level channel chain: zero V-suite warnings emitted (every inset lands in the no-warning tier; got {})",
@@ -1738,7 +1738,7 @@ void test_windbreak_rod_census()
 	const std::string id = fmt::format("test_amr_nesting_{}_windbreak", pattern_name);
 	StateLocal_AMR<NSE_CONFIG> state(id, MPI_COMM_WORLD, lat, "adios2.xml", /*periodic=*/TRAITS::bool3d{false, true, false}, /*max_level=*/4);
 	if (! state.canCompute()) {
-		report(false, "windbreak rod census setup: state.canCompute()");
+		CHECK_MESSAGE(false, "windbreak rod census setup: state.canCompute()");
 		return;
 	}
 	state.nse.allocateHostData();
@@ -1750,7 +1750,7 @@ void test_windbreak_rod_census()
 	catch (const std::runtime_error& e) {
 		message = e.what();
 	}
-	report(
+	CHECK_MESSAGE(
 		message.empty(),
 		fmt::format(
 			"windbreak rod census setup: the 5-level chain validates ({})",
@@ -1776,7 +1776,7 @@ void test_windbreak_rod_census()
 	catch (const std::runtime_error& e) {
 		message = e.what();
 	}
-	report(
+	CHECK_MESSAGE(
 		message.empty(),
 		fmt::format(
 			"windbreak layout: derives on the level-4 footprint ({}x{}x{}) ({})",
@@ -1797,7 +1797,7 @@ void test_windbreak_rod_census()
 						&& layout.rods[0].row == 1 && layout.rods[1].axis_x == 32 && layout.rods[1].axis_y == 29
 						&& layout.rods[1].row == 1 && layout.rods[2].axis_x == 66 && layout.rods[2].axis_y == 21
 						&& layout.rods[2].row == 2;
-	report(
+	CHECK_MESSAGE(
 		layout_ok,
 		fmt::format(
 			"windbreak layout: two staggered rows at the hand-computed axes (32,13) + (32,29) and (66,21), the 12-cell "
@@ -1831,7 +1831,7 @@ void test_windbreak_rod_census()
 					min_z = std::min(min_z, z);
 					max_z = std::max(max_z, z);
 				}
-	report(
+	CHECK_MESSAGE(
 		wall_total == layout.cells_total,
 		fmt::format(
 			"windbreak census: {} tagged rod cells match the analytic cross-section integral {} (12-cell disc * 40 rows * "
@@ -1853,7 +1853,7 @@ void test_windbreak_rod_census()
 						count++;
 		per_rod_ok = per_rod_ok && count == layout.cells_per_rod;
 	}
-	report(per_rod_ok, "windbreak census: every rod's window census matches the per-rod analytic count (12 * 40 = 480)");
+	CHECK_MESSAGE(per_rod_ok, "windbreak census: every rod's window census matches the per-rod analytic count (12 * 40 = 480)");
 
 	// the clearance rule on the observed tagged window: >= 8 cells off the x
 	// faces, >= 4 off the y faces, the base sits on the wall row (z = -1)
@@ -1861,7 +1861,7 @@ void test_windbreak_rod_census()
 	const bool clearance_ok = min_x >= 8 && max_x <= l4->local.x() - 1 - 8 && min_y >= params.clearance
 						   && max_y <= l4->local.y() - 1 - params.clearance && min_z == layout.z_first
 						   && max_z <= l4->local.z() - 1 - params.clearance;
-	report(
+	CHECK_MESSAGE(
 		clearance_ok,
 		fmt::format(
 			"windbreak clearance: tagged window x [{}, {}], y [{}, {}], z [{}, {}] keeps the face margins (>= 8 on x, "
@@ -1892,7 +1892,7 @@ void test_windbreak_rod_census()
 						wall_rows_fluid = false;
 				}
 	}
-	report(
+	CHECK_MESSAGE(
 		wall_rows_fluid,
 		"windbreak wall rows: the stamping touched no face wall row (the local -2 / local+1 planes stay fluid, so "
 		"buildFineWallMasks' census is unchanged -- rods are interior obstacles, not face walls)"
@@ -1910,7 +1910,7 @@ void test_windbreak_rod_census()
 					if (block.hmap(x, y, z) == BC::GEO_WALL)
 						parents_fluid = false;
 	}
-	report(parents_fluid, "windbreak parents: not a single rod cell outside the finest level's map (locked item 1)");
+	CHECK_MESSAGE(parents_fluid, "windbreak parents: not a single rod cell outside the finest level's map (locked item 1)");
 
 	// guardrail rails: the forbidden classes die with named errors
 	{
@@ -1923,7 +1923,7 @@ void test_windbreak_rod_census()
 		catch (const std::runtime_error& e) {
 			message = e.what();
 		}
-		report(
+		CHECK_MESSAGE(
 			message.find("below the 3-cell minimum") != std::string::npos,
 			fmt::format(
 				"windbreak guardrail: diameter 2 is rejected ({})",
@@ -1940,7 +1940,7 @@ void test_windbreak_rod_census()
 		catch (const std::runtime_error& e) {
 			message = e.what();
 		}
-		report(
+		CHECK_MESSAGE(
 			message.find("stagger") != std::string::npos,
 			fmt::format(
 				"windbreak guardrail: a y span too narrow for the staggered second row is rejected ({})",
@@ -1959,7 +1959,7 @@ void test_windbreak_rod_census()
 		catch (const std::runtime_error& e) {
 			message = e.what();
 		}
-		report(
+		CHECK_MESSAGE(
 			message.find("partial-height") != std::string::npos,
 			fmt::format(
 				"windbreak guardrail: a non-partial height is rejected ({})",
