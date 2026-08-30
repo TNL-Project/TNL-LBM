@@ -9,6 +9,8 @@
 #include <utility>
 #include <vector>
 
+#include <omp.h>
+
 #include <spdlog/spdlog.h>
 
 #include "state.h"
@@ -101,10 +103,14 @@ struct AMRConservationStats
  * The relative order of step 4 (F2C) against step 5 (C2F) is
  * irrelevant: their touched sets are disjoint (F2C writes coarse skin
  * cells of the coarse post-step array, C2F writes fine ghost rows) -
- * declared per the cycle contract. \ref SimInit performs the same
- * single-frame fill (step 5) after building \ref couplings, so cycle 0
- * starts with valid destinations in the substep-0 frame (the fine
- * substep 1 of cycle 0 therefore reads a t_0 fill - the startup
+ * declared per the cycle contract. This disjointness is EXPLOITED: the
+ * two directions run CONCURRENTLY, each on its own dedicated stream
+ * (stream_f2c / stream_c2f), with a single barrier per transfer phase
+ * (synchronizeTransfers) before the next dependent kernel launch -
+ * Schönherr's asynchronous coupling overlap. \ref SimInit performs the
+ * same single-frame fill (step 5) after building \ref couplings, so
+ * cycle 0 starts with valid destinations in the substep-0 frame (the
+ * fine substep 1 of cycle 0 therefore reads a t_0 fill - the startup
  * transient of the contract sec. 1.3).
  *
  * `nse.iterations` counts COARSE steps only; fine substeps advance the
@@ -258,6 +264,42 @@ struct State_AMR : State<NSE>
 	// fine-to-coarse channel since the ring F2C launch was removed (gate B
 	// ruling, D.1 hard-delete)
 	virtual void launchFineToCoarseTransfersInterior(int fine_level);
+
+	// per-direction transfer streams of the asynchronous coupling overlap
+	// (Schönherr's F2C/C2F concurrency): the two directions' kernels touch
+	// disjoint cell sets (F2C writes the parent skin reading fine
+	// interiors, C2F writes the fine ghost rows reading the parent ring),
+	// so each transfer phase launches both directions with no intermediate
+	// sync -- one per stream -- and drains them at the single barrier
+	// synchronizeTransfers() before the next dependent kernel launch.
+	// Created lazily as BLOCKING streams (StreamDefault): they implicitly
+	// order after all prior null-stream work, so a transfer can never race
+	// the producing LBM kernels (which are null-stream synced at every
+	// launch anyway). Stream 0 until created: the spy fixtures that
+	// override the launchers leave them at 0 and the barrier degrades to
+	// a null-stream sync.
+	TNL::Backend::stream_t stream_f2c = 0;
+	TNL::Backend::stream_t stream_c2f = 0;
+
+	void ensureTransferStreams()
+	{
+		if (stream_f2c == 0) {
+			stream_f2c = TNL::Backend::streamCreateWithPriority(TNL::Backend::StreamDefault, 0);
+			stream_c2f = TNL::Backend::streamCreateWithPriority(TNL::Backend::StreamDefault, 0);
+		}
+	}
+
+	// the single sync point of a transfer phase: both directions' streams
+	// drained before the next dependent kernel launch (substep B / the next
+	// cycle / SimInit's post-fill seeding) and before any host-side read
+	// of the transferred data
+	void synchronizeTransfers();
+
+	~State_AMR() override
+	{
+		TNL::Backend::streamDestroy(stream_f2c);
+		TNL::Backend::streamDestroy(stream_c2f);
+	}
 
 	// the Berger-Colella pair recursion driving the launch helpers above
 	// (the file docstring): advance `level` by one pair of substeps (2 dt_L
@@ -591,6 +633,9 @@ void State_AMR<NSE>::SimInit()
 		this->nse.updateKernelDataForLevel(L, this->nse.totalSubstepCount[L]);
 		launchCoarseToFineTransfers(L);
 	}
+	// the SimInit fill's single sync point: the ghost-macro seeding below
+	// reads the filled ghost DFs, so both transfer streams must be drained
+	synchronizeTransfers();
 
 	// seed the ghost-row macros from the SimInit C2F fill: frame 0000 is
 	// emitted before any kernel ran, and computeInitialMacro covers only the
@@ -973,7 +1018,17 @@ auto State_AMR<NSE>::computeConservationStats() -> AMRConservationStats
 		block.copyMacroToHost();
 		// cell volume scales as (1/2)^3 per refinement level (2:1 ratio)
 		const double volume_factor = std::pow(0.5, 3.0 * block.level);
-		double block_ke = 0.0;
+
+		// conservation accumulated in a DETERMINISTIC order:
+		// forLocalLatticeSites is OpenMP-parallel with schedule(static), so
+		// the site->thread assignment is fixed; per-thread partials are
+		// written by their own thread only (no atomics, no arrival-order
+		// reassociation) and merged in thread-index order, reproducing one
+		// summation order bit-for-bit regardless of host timing (the
+		// previous atomic accumulations reassociated with the barrier
+		// timing of the asynchronous-coupling era)
+		const int threads = omp_get_max_threads();
+		std::vector<double> p_mass(threads, 0.0), p_mx(threads, 0.0), p_my(threads, 0.0), p_mz(threads, 0.0), p_ke(threads, 0.0);
 
 		block.forLocalLatticeSites(
 			[&](BLOCK_NSE& b, idx x, idx y, idx z)
@@ -991,20 +1046,23 @@ auto State_AMR<NSE>::computeConservationStats() -> AMRConservationStats
 				const double vy = b.hmacro(MACRO::e_vy, x, y, z);
 				const double vz = b.hmacro(MACRO::e_vz, x, y, z);
 
-			// forLocalLatticeSites is OpenMP-parallel: accumulate atomically
-#pragma omp atomic update
-				s.total_mass += rho * volume_factor;
-#pragma omp atomic update
-				s.total_momentum_x += rho * vx * volume_factor;
-#pragma omp atomic update
-				s.total_momentum_y += rho * vy * volume_factor;
-#pragma omp atomic update
-				s.total_momentum_z += rho * vz * volume_factor;
-#pragma omp atomic update
-				block_ke += 0.5 * rho * (vx * vx + vy * vy + vz * vz);
+				const int t = omp_get_thread_num();
+				p_mass[t] += rho * volume_factor;
+				p_mx[t] += rho * vx * volume_factor;
+				p_my[t] += rho * vy * volume_factor;
+				p_mz[t] += rho * vz * volume_factor;
+				p_ke[t] += 0.5 * rho * (vx * vx + vy * vy + vz * vz);
 			}
 		);
 
+		double block_ke = 0.0;
+		for (int t = 0; t < threads; t++) {
+			s.total_mass += p_mass[t];
+			s.total_momentum_x += p_mx[t];
+			s.total_momentum_y += p_my[t];
+			s.total_momentum_z += p_mz[t];
+			block_ke += p_ke[t];
+		}
 		s.per_level_kinetic_energy[block.level] += block_ke;
 	}
 	return s;
@@ -1660,6 +1718,8 @@ void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level)
 {
 	using SyncDirection = TNL::Containers::SyncDirection;
 
+	ensureTransferStreams();
+
 	for (InterLevelCoupling& coupling : couplings) {
 		if (coupling.fine_level != fine_level)
 			continue;
@@ -1726,6 +1786,7 @@ void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level)
 			TNL::Backend::LaunchConfiguration launch_config;
 			launch_config.blockSize = patch.cached_block_size;
 			launch_config.gridSize = patch.cached_grid_size;
+			launch_config.stream = stream_c2f;
 			TNL::Backend::launchKernelAsync(
 				cudaAMR_CoarseToFine<NSE>,
 				launch_config,
@@ -1741,9 +1802,9 @@ void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level)
 			);
 		}
 	}
-	// the fine substeps below consume the ghost DFs on the same stream, but
-	// keep the same discipline as the base driver (null-stream sync)
-	TNL::Backend::streamSynchronize(0);
+	// NO trailing sync: the C2F kernels run concurrently with the F2C
+	// direction on their own streams (disjoint cell sets); the phase's
+	// single barrier is the caller's synchronizeTransfers()
 }
 
 // D.1 hard-delete (gate-B ruling, 2026-08-16): the ring fine-to-coarse
@@ -1778,6 +1839,8 @@ template <typename NSE>
 void State_AMR<NSE>::launchFineToCoarseTransfersInterior(int fine_level)
 {
 	const int coarse_level = fine_level - 1;
+
+	ensureTransferStreams();
 
 	for (InterLevelCoupling& coupling : couplings) {
 		if (coupling.fine_level != fine_level)
@@ -1827,6 +1890,7 @@ void State_AMR<NSE>::launchFineToCoarseTransfersInterior(int fine_level)
 			TNL::Backend::LaunchConfiguration launch_config;
 			launch_config.blockSize = patch.cached_block_size;
 			launch_config.gridSize = patch.cached_grid_size;
+			launch_config.stream = stream_f2c;
 			TNL::Backend::launchKernelAsync(
 				cudaAMR_FineToCoarse<NSE>,
 				launch_config,
@@ -1845,7 +1909,19 @@ void State_AMR<NSE>::launchFineToCoarseTransfersInterior(int fine_level)
 			);
 		}
 	}
-	TNL::Backend::streamSynchronize(0);
+	// NO trailing sync: the F2C kernels run concurrently with the C2F
+	// direction on their own streams (disjoint cell sets); the phase's
+	// single barrier is the caller's synchronizeTransfers()
+}
+
+template <typename NSE>
+void State_AMR<NSE>::synchronizeTransfers()
+{
+	// the single sync point of a transfer phase: draining both directions
+	// ends the F2C/C2F overlap window exactly here (uncreated spy-fixture
+	// streams are the null stream, so this degrades to a null-stream sync)
+	TNL::Backend::streamSynchronize(stream_f2c);
+	TNL::Backend::streamSynchronize(stream_c2f);
 }
 
 /**
@@ -1922,10 +1998,16 @@ void State_AMR<NSE>::advancePair(int level, bool compute_macro, bool sync_macro)
 		// mid-sync at t+dt_L, both levels time-aligned: fill the skin from
 		// the finer pair, then refill the finer band for its pair #2 from
 		// this level's live post-substep-A state (single-frame fill of the
-		// finer level's substep-0 rotation)
+		// finer level's substep-0 rotation). The two directions run
+		// CONCURRENTLY on their per-direction streams (disjoint cell sets)
+		// and are drained together below -- the phase's single sync point
 		launchFineToCoarseTransfersInterior(level + 1);
 		this->nse.updateKernelDataForLevel(level + 1, this->nse.totalSubstepCount[level + 1]);
 		launchCoarseToFineTransfers(level + 1);
+		// substep B reads the skin the F2C just wrote (its ring streams
+		// from it) and the finer pair #2 reads the ghost rows the C2F
+		// filled -- both must be complete
+		synchronizeTransfers();
 	}
 
 	// substep B: interior-only launch (on a face masked in fine_wall_masks
@@ -2082,11 +2164,18 @@ void State_AMR<NSE>::SimUpdate()
 	// counter argument is the level's cumulative substep count, always even
 	// at a cycle boundary, so the parity/rotation matches the historical
 	// positional-0 preparation bit-for-bit (updateKernelDataForLevel is an
-	// absolute setter on substep mod 2 / mod DFMAX)
+	// absolute setter on substep mod 2 / mod DFMAX). The cascade overlaps
+	// the F2C above on its own stream (disjoint cell sets)
 	for (int M = 1; M <= this->nse.max_level; M++) {
 		this->nse.updateKernelDataForLevel(M, this->nse.totalSubstepCount[M]);
 		launchCoarseToFineTransfers(M);
 	}
+
+	// the cycle-end transfer phase's single sync point: the end-sync F2C(1)
+	// and the whole C2F cascade ran concurrently on their per-direction
+	// streams -- drain both before the timers stop and AfterSimUpdate's
+	// host-side reads (conservation stats, output frames, checkpoints)
+	synchronizeTransfers();
 
 	this->timer_compute.stop();
 	this->timer_SimUpdate.stop();
