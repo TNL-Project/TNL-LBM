@@ -163,9 +163,9 @@ TNL_LBM_BUILD_DIR=build-ab pytest
 # Python bindings (after build)
 PYTHONPATH=build/pytnl_lbm python -c "import pytnl_lbm"
 
-# AMR gate: build the doctest AMR binaries + run the 10 counted targets
-# (4 gate suites × {ab,aa} via doctest --test-suite + 2 ParaView E2E; needs a CUDA GPU)
-./tests/run-amr-tests.sh
+# AMR gate (fully pytest-native; needs a CUDA GPU; ParaView arms skip without pvpython):
+cmake --build build --target test_amr_units_ab test_amr_units_aa test_amr_nesting_sim
+pytest tests/unit/test_amr_units.py tests/regression/test_amr_paraview.py
 # 2-level AMR example simulations (Taylor-Green; --convective-times 20 for the long decision-table run)
 ./build/sim_AMR/sim_AMR --resolution 1
 ./build/sim_AMR/sim_AMR_channel --resolution 1
@@ -309,13 +309,15 @@ nesting addendum §11).
   Debug channel defines:
   `C2F_EQ_ONLY/DEV_ONLY/NORM_ONLY/SHEAR_ONLY`. Pre-flip build caches keep the
   old empty strategy — re-default with `cmake -B build -S . -UTNL_LBM_F2C_STRATEGY`.
-- **AMR gate**: `tests/run-amr-tests.sh` builds the two consolidated per-pattern
-  doctest binaries `test_amr_units_{ab,aa}` (TEST_SUITEs
-  `amr_coupling`/`amr_subcycling`/`amr_vtkhdf_writer`/`amr_nesting`, all suites
-  ported to doctest together with the `test_amr_f2c_schonherr_{ab,aa}` /
-  `test_amr_c2f_smoke_*` drivers) and runs the 10 AMR targets
-  (the 4 gate suites × {ab,aa} via doctest `--test-suite=` + ParaView E2E +
-  the E2E nesting arm); 10/10 at HEAD. Bit-identity evidence harness:
+- **AMR gate** (fully pytest-native; the shell launchers were retired):
+  `pytest tests/unit/test_amr_units.py tests/regression/test_amr_paraview.py`
+  runs the 10 AMR targets — the 4 gate TEST_SUITEs
+  (`amr_coupling`/`amr_subcycling`/`amr_vtkhdf_writer`/`amr_nesting`) × {ab,aa}
+  of the consolidated `test_amr_units_{ab,aa` binaries via doctest
+  `--test-suite=` + the 2 ParaView e2e arms (skipped when pvpython is absent);
+  all suites were ported to doctest together with the
+  `test_amr_f2c_schonherr_{ab,aa}` / `test_amr_c2f_smoke_*` drivers.
+  10/10 at HEAD. Bit-identity evidence harness:
   `tests/regression/test_amr_bitidentity.py` — verify mode compares every
   `max_level == 1` artifact against the committed
   `tests/regression/amr_ref/manifest.json` (11/11 at HEAD; re-record ONLY from

@@ -11,7 +11,8 @@
 // the define hardcoded, registering the "amr_f2c_schonherr" TEST_SUITE as
 // test_amr_f2c_schonherr_{ab,aa} (the same idiom as the test_amr_c2f_smoke_*
 // binaries), and tests/unit/test_amr_f2c_schonherr.py drives them. The
-// default build (tests/unit/test_amr_coupling.cu + tests/run-amr-tests.sh)
+// default build (tests/unit/test_amr_coupling.cu, driven by
+// tests/unit/test_amr_units.py)
 // keeps the Lagrava path pinned separately, so the pair of batteries is
 // green under BOTH strategies.
 //

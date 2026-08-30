@@ -12,8 +12,9 @@ cannot share a binary with the F2C_LAGRAVA opt-out build, so it locks
 as standalone per-pattern binaries — the same pytest-side,
 build-variants-in-the-default-build idiom as the ``test_amr_c2f_smoke_*``
 debug-define binaries.  The strategy builds of the ``amr_coupling``
-doctest suite in ``tests/unit/test_amr_coupling.cu`` (+
-``tests/run-amr-tests.sh``) pin the Lagrava opt-out path separately, so
+doctest suite in ``tests/unit/test_amr_coupling.cu`` (driven by
+``tests/unit/test_amr_units.py``) pin the Lagrava opt-out path separately,
+so
 the two batteries are green under both strategies.
 
 Each binary runs the F2C transfer on (i) a uniform field, (ii) a

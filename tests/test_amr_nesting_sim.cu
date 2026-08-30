@@ -1,5 +1,6 @@
 // Dedicated 3-level nesting mock simulation for the ParaView end-to-end
-// nesting arm (tests/test_amr_paraview_e2e_nesting.{sh,py}, the
+// nesting arm (tests/regression/test_amr_paraview.py driving
+// tests/amr_paraview_e2e_nesting.py under pvpython, the
 // amr-nlevel-nesting plan's commit D). sim_AMR/sim_AMR_channel hardcode
 // their region specs, so a compact dedicated driver is the clean path to a
 // nested-region VTKHDF frame: a 32^3 periodic Taylor-Green box with three
