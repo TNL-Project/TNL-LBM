@@ -8,11 +8,14 @@ committed in ``tests/regression/amr_ref/manifest.json``.
 
 Battery (all single rank, current-tree binaries under ``TNL_LBM_BUILD_DIR``):
 
-- the mock census suites ``test_amr_coupling_{ab,aa}``,
-  ``test_amr_subcycling_{ab,aa}`` and ``test_amr_vtkhdf_writer_{ab,aa}`` —
-  their complete stdout (normalized, see below) plus the dataset content of
-  every ``*.vtkhdf`` file they emit (``test_amr_vtkhdf_writer_*`` writes
-  ``test_amr.vtkhdf``);
+- the mock census doctest suites ``amr_coupling``, ``amr_subcycling`` and
+  ``amr_vtkhdf_writer`` of the per-pattern consolidated binaries
+  ``test_amr_units_{ab,aa}``, each run via doctest's ``--test-suite``
+  filter (the artifact keys keep the historical per-suite names
+  ``test_amr_{coupling,subcycling,vtkhdf_writer}_{ab,aa}`` so the manifest
+  stays comparable) — their complete stdout (normalized, see below) plus
+  the dataset content of every ``*.vtkhdf`` file they emit
+  (``amr_vtkhdf_writer`` writes ``test_amr.vtkhdf``);
 - short fixed-configuration runs of ``sim_AMR --resolution 1`` and
   ``sim_AMR_channel --resolution 1`` (both default settings) — normalized
   stdout (carries the conservation lines) plus the dataset content of every
@@ -61,14 +64,15 @@ MANIFEST = REF_DIR / "manifest.json"
 
 _RECORD = os.environ.get("TNL_LBM_AMR_REF") == "record"
 
-MOCK_SUITES = [
-    "test_amr_coupling_ab",
-    "test_amr_coupling_aa",
-    "test_amr_subcycling_ab",
-    "test_amr_subcycling_aa",
-    "test_amr_vtkhdf_writer_ab",
-    "test_amr_vtkhdf_writer_aa",
-]
+# artifact key -> (consolidated doctest binary, TEST_SUITE filter inside it)
+MOCK_SUITES: dict[str, tuple[str, str]] = {
+    "test_amr_coupling_ab": ("test_amr_units_ab", "amr_coupling"),
+    "test_amr_coupling_aa": ("test_amr_units_aa", "amr_coupling"),
+    "test_amr_subcycling_ab": ("test_amr_units_ab", "amr_subcycling"),
+    "test_amr_subcycling_aa": ("test_amr_units_aa", "amr_subcycling"),
+    "test_amr_vtkhdf_writer_ab": ("test_amr_units_ab", "amr_vtkhdf_writer"),
+    "test_amr_vtkhdf_writer_aa": ("test_amr_units_aa", "amr_vtkhdf_writer"),
+}
 
 SIMS: dict[str, tuple[pathlib.Path, list[str]]] = {
     "sim_AMR": (BUILD_DIR / "sim_AMR" / "sim_AMR", ["--resolution", "1"]),
@@ -112,6 +116,8 @@ def _normalize_stdout(text: str) -> str:
             continue  # performance cadence lines (GLUPS/WT/ETA values)
         if "total walltime:" in line:
             continue
+        if "compute time:" in line:
+            continue  # phase-duration report, wall-clock volatile like the total
         if "saved in:" in line:
             continue  # write3D/write3Dcut wall-clock report lines
         if "MiB estimated needed," in line:
@@ -153,19 +159,23 @@ def _collect_stdouts(
     """Run the battery once and return {artifact: md5}; fill conservation."""
     artifacts: dict[str, str] = {}
 
-    for suite in MOCK_SUITES:
-        binary = BUILD_DIR / "tests" / suite
+    for suite, (binary_name, suite_filter) in MOCK_SUITES.items():
+        binary = BUILD_DIR / "tests" / binary_name
         if not binary.is_file():
             pytest.fail(
                 f"cannot find {binary} — build the AMR test targets first: "
-                f"cmake --build {BUILD_DIR} --target {suite}",
+                f"cmake --build {BUILD_DIR} --target {binary_name}",
                 pytrace=False,
             )
         workdir = root / suite
         workdir.mkdir()
         # the suites read adios2.xml from their cwd (State ctor)
         shutil.copy(ADIOS_CONFIG, workdir / "adios2.xml")
-        stdout = run_sim([binary], workdir=workdir, timeout=300.0)
+        stdout = run_sim(
+            [binary, f"--test-suite={suite_filter}", "--no-colors", "--no-duration"],
+            workdir=workdir,
+            timeout=300.0,
+        )
         artifacts[f"{suite}.stdout"] = _digest(_normalize_stdout(stdout))
         for vtkhdf in sorted(workdir.glob("*.vtkhdf")):
             artifacts[f"{suite}.{vtkhdf.name}"] = _vtkhdf_digest(vtkhdf)
