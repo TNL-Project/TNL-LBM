@@ -26,10 +26,12 @@
 // high-level lite API (libhdf5_hl), so H5LTfind_group/H5LTfind_attribute
 // are replaced by H5Lexists and H5Aopen + H5Aread.
 //
-// The streaming pattern is selected at compile time (AB_PATTERN/AA_PATTERN
-// from tests/CMakeLists.txt); the writer itself is pattern-agnostic (it
-// reads only the macroscopic quantities, which both patterns produce
-// identically from an equilibrium state). Everything is single-rank.
+// The streaming pattern is selected at compile time (AB_PATTERN/AA_PATTERN);
+// this suite is compiled into the consolidated doctest binaries
+// test_amr_units_{ab,aa} (tests/unit/CMakeLists.txt), which provide main().
+// The writer itself is pattern-agnostic (it reads only the macroscopic
+// quantities, which both patterns produce identically from an equilibrium
+// state). Everything is single-rank.
 //
 // NESTING (the amr-nlevel-nesting plan's commit D): a second test pins the
 // writer's per-level structure on a 3-level telescoping chain (levels
@@ -59,6 +61,9 @@
 #include "lbm3d/amr_decomposition.h"
 #include "lbm3d/viz/OverlappingAMRWriter.h"
 
+// the doctest runner main() lives in doctest_main.cu (MPI initialization)
+#include <doctest/doctest.h>
+
 using TRAITS = TraitsSP;
 using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
 using NSE_CONFIG = LBM_CONFIG<
@@ -71,29 +76,19 @@ using NSE_CONFIG = LBM_CONFIG<
 	D3Q27_BC_All,
 	D3Q27_MACRO_Default<TRAITS>>;
 
-#ifdef AA_PATTERN
-constexpr const char* pattern_name = "AA";
-#else
-constexpr const char* pattern_name = "AB";
-#endif
-
 using idx = typename TRAITS::idx;
 using idx3d = typename TRAITS::idx3d;
 using real = typename TRAITS::real;
 using point_t = typename TRAITS::point_t;
 using lat_t = Lattice<3, real, idx>;
 
-int g_failures = 0;
+// doctest assertion shim: every legacy report(ok, what) call site becomes
+// exactly one doctest assertion, keeping the case running on a failed check
+// (same continue-on-fail semantics as the retired g_failures accumulator,
+// and nothing is printed on success)
+inline void report(bool ok, const std::string& what) { CHECK_MESSAGE(ok, what); }
 
-void report(bool ok, const std::string& what)
-{
-	if (ok)
-		fmt::println("PASS: {}", what);
-	else {
-		fmt::println("FAIL: {}", what);
-		g_failures++;
-	}
-}
+TEST_SUITE_BEGIN("amr_vtkhdf_writer");
 
 // 16^3 box in physical units (same lattice as test_amr_subcycling.cu)
 lat_t makeLattice(int N = 16)
@@ -703,26 +698,7 @@ void test_vtkhdf_nesting_structure()
 		report(false, fmt::format("nesting vtkhdf census: {}", failure.empty() ? "setup failed" : failure));
 }
 
-int main(int argc, char** argv)
-{
-	TNLMPI_INIT mpi(argc, argv);
+TEST_CASE("two-level structure") { test_vtkhdf_structure(); }
+TEST_CASE("three-level nesting census") { test_vtkhdf_nesting_structure(); }
 
-	if (TNL::MPI::GetSize(MPI_COMM_WORLD) != 1) {
-		fmt::println("RESULT: the VTKHDF writer test is single-rank only (nproc = {})", TNL::MPI::GetSize(MPI_COMM_WORLD));
-		return 1;
-	}
-
-	fmt::println("VTKHDF OverlappingAMR writer unit test (streaming pattern: {})", pattern_name);
-
-	test_vtkhdf_structure();
-	// nesting census (plan commit D; silent on success, see the stdout
-	// contract in the file header)
-	test_vtkhdf_nesting_structure();
-
-	if (g_failures == 0) {
-		fmt::println("RESULT: all VTKHDF writer tests passed");
-		return 0;
-	}
-	fmt::println("RESULT: {} VTKHDF writer check(s) FAILED", g_failures);
-	return 1;
-}
+TEST_SUITE_END();

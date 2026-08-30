@@ -242,7 +242,7 @@ struct State_AMR : State<NSE>
 	// and virtual: schedule-observation test subclasses override them to
 	// record the launch sequence and AB parity at each call site, then
 	// delegate to these implementations (the schedule census of
-	// tests/test_amr_subcycling.cu).
+	// tests/unit/test_amr_subcycling.cu).
 
 	// launch `cudaLBMKernel` on every block at `level` (null-stream,
 	// interior launch configuration) and synchronize. With

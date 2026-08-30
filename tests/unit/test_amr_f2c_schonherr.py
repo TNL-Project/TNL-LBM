@@ -1,19 +1,20 @@
 """Compile-and-run exactness locks for the F2C_SCHONHERR branch (T14).
 
 Drives the two ``test_amr_f2c_schonherr_{ab,aa}`` executables — one binary
-per streaming pattern, compiled from ``tests/test_amr_f2c_schonherr.cu``
-with ``F2C_SCHONHERR`` hardcoded (Schönherr ch7 conversion, commit 13 /
-plan row 14; the default strategy since commit 15 / T17).
+per streaming pattern, compiled from ``tests/unit/doctest_main.cu`` and
+``tests/unit/test_amr_f2c_schonherr.cu`` with ``F2C_SCHONHERR`` hardcoded
+(Schönherr ch7 conversion, commit 13 / plan row 14; the default strategy
+since commit 15 / T17; doctest-based since the amr-doctest-port).
 
 The define is a per-TU compile-time switch selecting the thesis §7.2
 σ-form compact-moment transfer (σ = 2) inside ``cudaAMR_FineToCoarse`` and
 cannot share a binary with the F2C_LAGRAVA opt-out build, so it locks
 as standalone per-pattern binaries — the same pytest-side,
 build-variants-in-the-default-build idiom as the ``test_amr_c2f_smoke_*``
-debug-define binaries.  The strategy builds of
-``tests/test_amr_coupling.cu`` (+ ``tests/run-amr-tests.sh``) pin the
-Lagrava opt-out path separately, so the two batteries are green under
-both strategies.
+debug-define binaries.  The strategy builds of the ``amr_coupling``
+doctest suite in ``tests/unit/test_amr_coupling.cu`` (+
+``tests/run-amr-tests.sh``) pin the Lagrava opt-out path separately, so
+the two batteries are green under both strategies.
 
 Each binary runs the F2C transfer on (i) a uniform field, (ii) a
 CE-consistent linear field, and (iii) a CE-consistent quadratic-velocity
@@ -28,6 +29,7 @@ never a silent skip.
 from __future__ import annotations
 
 import pathlib
+import re
 
 import pytest
 
@@ -49,5 +51,15 @@ def test_f2c_schonherr_exactness(pattern: str, test_dir: pathlib.Path) -> None:
             f"cmake --build {BUILD_DIR} --target test_amr_f2c_schonherr_{pattern}",
             pytrace=False,
         )
-    stdout = run_sim([str(binary)], workdir=test_dir, timeout=120.0)
-    assert "RESULT: all AMR F2C Schönherr exactness locks passed" in stdout
+    stdout = run_sim(
+        [str(binary), "--no-colors", "--no-duration"], workdir=test_dir, timeout=120.0
+    )
+    # doctest all-pass banner of the amr_f2c_schonherr TEST_SUITE: every
+    # test case passed and no assertion failed (the exit code alone only
+    # proves the runner finished)
+    assert re.search(
+        r"\[doctest\] test cases: +\d+ \| +\d+ passed \| +0 failed", stdout
+    )
+    assert re.search(
+        r"\[doctest\] assertions: +\d+ \| +\d+ passed \| +0 failed", stdout
+    )

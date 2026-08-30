@@ -6,13 +6,14 @@
 // thesis sec. 7.2 sigma-form compact-moment transfer (sigma_{f->c} = 2)
 // inside the F2C kernel and cannot share a binary with the default
 // Lagrava-filter build (ODR hazard on the kernel template symbol), so it
-// locks as standalone per-pattern binaries: tests/CMakeLists.txt compiles
-// this source once per streaming pattern with the define hardcoded (the
-// same idiom as the test_amr_c2f_smoke_* seam-investigation binaries), and
-// tests/unit/test_amr_f2c_schonherr.py drives them. The default build
-// (tests/test_amr_coupling.cu + tests/run-amr-tests.sh) keeps the Lagrava
-// path pinned separately, so the pair of batteries is green under BOTH
-// strategies.
+// locks as standalone per-pattern doctest binaries: tests/unit/CMakeLists.txt
+// compiles doctest_main.cu + this source once per streaming pattern with
+// the define hardcoded, registering the "amr_f2c_schonherr" TEST_SUITE as
+// test_amr_f2c_schonherr_{ab,aa} (the same idiom as the test_amr_c2f_smoke_*
+// binaries), and tests/unit/test_amr_f2c_schonherr.py drives them. The
+// default build (tests/unit/test_amr_coupling.cu + tests/run-amr-tests.sh)
+// keeps the Lagrava path pinned separately, so the pair of batteries is
+// green under BOTH strategies.
 //
 // Branch semantics under test (Schönherr 2015 thesis sec. 7.2 + contract
 // doc docs/AMR-schonherr-ch7-target-contract.md appendix A.2.3): sources
@@ -30,7 +31,7 @@
 //   rec_zz       = -(2 sigma rho_f / (9 omega_d)) * (-Gxx - Gyy + 2 Gzz) / 2
 // with sigma = 2 and omega_d = 1/TAU_COARSE (the F2C sigma-form of Eqs.
 // 7.38-7.48; rec_ab = C_ab - delta_ab rho_f/3 at the same first moments,
-// cf. the S2 lock of tests/test_amr_c2f_debug_smoke.cu).
+// cf. the S2 lock of tests/unit/test_amr_c2f_debug_smoke.cu).
 //
 // Checks per binary (each x all four combos of fine read parity and coarse
 // store parity):
@@ -55,8 +56,9 @@
 //       mean-density transfer with no conservation claim -- T15's T4a
 //       successor), reported against the gate rtol 1e-6 / atol 1e-7.
 //
-// The binary prints measured maxima and exits nonzero on any failed check
-// (fmt REPORT idiom of tests/test_amr_coupling.cu).
+// Every check is one report() doctest assertion (see the shim below): the
+// measured maxima travel in the assertion messages, and the doctest
+// runner exits nonzero on any failed check.
 
 #include <algorithm>
 #include <array>
@@ -67,6 +69,9 @@
 
 #include "lbm3d/core.h"
 #include "lbm3d/d3q27/amr_coupling.h"
+
+// the doctest runner main() lives in doctest_main.cu (MPI initialization)
+#include <doctest/doctest.h>
 
 using TRAITS = TraitsSP;
 using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
@@ -80,14 +85,8 @@ using NSE_CONFIG = LBM_CONFIG<
 	D3Q27_BC_All,
 	D3Q27_MACRO_Default<TRAITS>>;
 
-#ifdef AA_PATTERN
-constexpr const char* pattern_name = "AA";
-#else
-constexpr const char* pattern_name = "AB";
-#endif
-
 #ifndef F2C_SCHONHERR
-	#error "test_amr_f2c_schonherr must be compiled with -DF2C_SCHONHERR (see tests/CMakeLists.txt)"
+	#error "test_amr_f2c_schonherr must be compiled with -DF2C_SCHONHERR (see tests/unit/CMakeLists.txt)"
 #endif
 
 using idx = typename TRAITS::idx;
@@ -133,17 +132,13 @@ constexpr int VELOCITY[27][3] = {
 	{-1, 1, 1},	   // mpp
 };
 
-int g_failures = 0;
+// doctest assertion shim: every legacy report(ok, what) call site becomes
+// exactly one doctest assertion, keeping the case running on a failed check
+// (same continue-on-fail semantics as the retired g_failures accumulator,
+// and nothing is printed on success)
+inline void report(bool ok, const std::string& what) { CHECK_MESSAGE(ok, what); }
 
-void report(bool ok, const std::string& what)
-{
-	if (ok)
-		fmt::println("PASS: {}", what);
-	else {
-		fmt::println("FAIL: {}", what);
-		g_failures++;
-	}
-}
+TEST_SUITE_BEGIN("amr_f2c_schonherr");
 
 std::array<dreal, 27> equilibriumOnHost(dreal rho, dreal vx, dreal vy, dreal vz)
 {
@@ -159,8 +154,8 @@ std::array<dreal, 27> equilibriumOnHost(dreal rho, dreal vx, dreal vy, dreal vz)
 	return eq;
 }
 
-// minimal mock of an LBM block's device data (the tests/test_amr_coupling.cu
-// idiom, as specialized in tests/test_amr_c2f_debug_smoke.cu)
+// minimal mock of an LBM block's device data (the tests/unit/test_amr_coupling.cu
+// idiom, as specialized in tests/unit/test_amr_c2f_debug_smoke.cu)
 struct MockBlock
 {
 	DATA data;
@@ -274,7 +269,7 @@ dreal d3q27Weight(int q)
 }
 
 // L2/L4 field: rho and velocities linear in all three coordinates (the
-// Tests-8 coefficients of tests/test_amr_coupling.cu)
+// Tests-8 coefficients of tests/unit/test_amr_coupling.cu)
 struct FLinear
 {
 	std::array<dreal, 10> fill(idx x, idx y, idx z) const
@@ -644,19 +639,9 @@ void test_strain_roundtrip()
 	}
 }
 
-int main()
-{
-	fmt::println("AMR F2C Schönherr exactness locks (define: F2C_SCHONHERR, pattern: {})", pattern_name);
+TEST_CASE("L1 constant field exactness") { test_constant_exact(); }
+TEST_CASE("L2 linear field exactness") { test_macros_exact(FLinear{}, "linear field"); }
+TEST_CASE("L3 quadratic velocity exactness") { test_macros_exact(FQuadratic{}, "linear rho + pure quadratic velocity field"); }
+TEST_CASE("L4 strain roundtrip exactness") { test_strain_roundtrip(); }
 
-	test_constant_exact();
-	test_macros_exact(FLinear{}, "linear field");
-	test_macros_exact(FQuadratic{}, "linear rho + pure quadratic velocity field");
-	test_strain_roundtrip();
-
-	if (g_failures == 0) {
-		fmt::println("RESULT: all AMR F2C Schönherr exactness locks passed");
-		return 0;
-	}
-	fmt::println("RESULT: {} AMR F2C Schönherr exactness lock(s) FAILED", g_failures);
-	return 1;
-}
+TEST_SUITE_END();

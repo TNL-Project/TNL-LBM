@@ -1108,7 +1108,7 @@ __global__ void cudaAMR_CoarseToFine(
 	// density fit is the plain trilinear nodal fit, reproducing only
 	// linear/constant densities exactly; D.5, 2026-08-16, per the A.2
 	// symbolic/numeric check validated by Tests 8/9 of
-	// tests/test_amr_coupling.cu), corrects the averaged
+	// tests/unit/test_amr_coupling.cu), corrects the averaged
 	// moments by the fitted gradients, and reconstructs the fine DFs from
 	// the six second-order cumulants via the cumulant back-transformation
 	// of col_cum.h; third-order and higher central moments are set to

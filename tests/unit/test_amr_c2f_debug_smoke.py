@@ -4,8 +4,9 @@ Drives the eight ``test_amr_c2f_smoke_{eq,dev,norm,shear}_{ab,aa}``
 executables — one binary per seam-investigation debug define
 (``C2F_EQ_ONLY`` / ``C2F_DEV_ONLY`` / ``C2F_NORM_ONLY`` /
 ``C2F_SHEAR_ONLY``) per streaming pattern, compiled from
-``tests/test_amr_c2f_debug_smoke.cu`` (Schönherr ch7 conversion, commit 10
-/ plan row 11 T10g).
+``tests/unit/doctest_main.cu`` and ``tests/unit/test_amr_c2f_debug_smoke.cu``
+(Schönherr ch7 conversion, commit 10 / plan row 11 T10g; doctest-based
+since the amr-doctest-port).
 
 The defines are per-TU compile-time switches inside the default
 compact-moment branch of ``cudaAMR_CoarseToFine`` and cannot share a binary
@@ -25,6 +26,7 @@ is a hard failure with a build hint, never a silent skip.
 from __future__ import annotations
 
 import pathlib
+import re
 
 import pytest
 
@@ -57,5 +59,15 @@ def test_c2f_debug_define_smoke(
             f"cmake --build {BUILD_DIR} --target test_amr_c2f_smoke_{define}_{pattern}",
             pytrace=False,
         )
-    stdout = run_sim([str(binary)], workdir=test_dir, timeout=120.0)
-    assert "RESULT: all AMR C2F debug-define smoke checks passed" in stdout
+    stdout = run_sim(
+        [str(binary), "--no-colors", "--no-duration"], workdir=test_dir, timeout=120.0
+    )
+    # doctest all-pass banner of the amr_c2f_smoke TEST_SUITE: every test
+    # case passed and no assertion failed (the exit code alone only proves
+    # the runner finished)
+    assert re.search(
+        r"\[doctest\] test cases: +\d+ \| +\d+ passed \| +0 failed", stdout
+    )
+    assert re.search(
+        r"\[doctest\] assertions: +\d+ \| +\d+ passed \| +0 failed", stdout
+    )
