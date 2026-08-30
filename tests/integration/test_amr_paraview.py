@@ -7,10 +7,11 @@ and render a non-trivial PNG — the real-consumer complement of the
 retired ``tests/test_amr_paraview_e2e_{,_nesting}.sh`` wrappers):
 
 - ``test_amr_paraview_e2e``: ``sim_AMR --resolution 1`` data (2 levels),
-  driven by ``tests/amr_paraview_e2e.py`` under pvpython;
+  driven by ``tests/integration/amr_paraview_e2e.py`` under pvpython;
 - ``test_amr_paraview_e2e_nesting``: the 3-level telescoping chain of the
-  dedicated mock ``build/tests/test_amr_nesting_sim`` (4 levels), driven
-  by ``tests/amr_paraview_e2e_nesting.py`` under pvpython.
+  dedicated mock ``build/tests/regression/test_amr_nesting_sim`` (4 levels;
+  the mock lives in ``tests/regression/`` with the sim-driving regression
+  suites), driven by ``tests/integration/amr_paraview_e2e_nesting.py`` under pvpython.
 
 The input data is regenerated into the session workspace on every pytest
 run (the retired shells reused results_*/ in the project root instead —
@@ -83,7 +84,7 @@ def _pv_run(
     return run_sim(
         [
             _PVPYTHON,
-            str(PROJECT_ROOT / "tests" / script),
+            str(PROJECT_ROOT / "tests" / "integration" / script),
             "--input",
             str(vtkhdf),
             "--outdir",
@@ -111,7 +112,7 @@ def test_amr_paraview_e2e_nesting(workspace: pathlib.Path) -> None:
     vtkhdf = _regen_arm(
         workspace,
         "e2e_nesting",
-        BUILD_DIR / "tests" / "test_amr_nesting_sim",
+        BUILD_DIR / "tests" / "regression" / "test_amr_nesting_sim",
         [],
         "test_amr_nesting_sim",
         "results_test_amr_nesting_sim_np001",

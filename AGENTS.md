@@ -165,7 +165,7 @@ PYTHONPATH=build/pytnl_lbm python -c "import pytnl_lbm"
 
 # AMR gate (fully pytest-native; needs a CUDA GPU; ParaView arms skip without pvpython):
 cmake --build build --target test_amr_units_ab test_amr_units_aa test_amr_nesting_sim
-pytest tests/unit/test_amr_units.py tests/regression/test_amr_paraview.py
+pytest tests/unit/test_amr_units.py tests/integration/test_amr_paraview.py
 # 2-level AMR example simulations (Taylor-Green; --convective-times 20 for the long decision-table run)
 ./build/sim_AMR/sim_AMR --resolution 1
 ./build/sim_AMR/sim_AMR_channel --resolution 1
@@ -310,7 +310,7 @@ nesting addendum §11).
   `C2F_EQ_ONLY/DEV_ONLY/NORM_ONLY/SHEAR_ONLY`. Pre-flip build caches keep the
   old empty strategy — re-default with `cmake -B build -S . -UTNL_LBM_F2C_STRATEGY`.
 - **AMR gate** (fully pytest-native; the shell launchers were retired):
-  `pytest tests/unit/test_amr_units.py tests/regression/test_amr_paraview.py`
+  `pytest tests/unit/test_amr_units.py tests/integration/test_amr_paraview.py`
   runs the 10 AMR targets — the 4 gate TEST_SUITEs
   (`amr_coupling`/`amr_subcycling`/`amr_vtkhdf_writer`/`amr_nesting`) × {ab,aa}
   of the consolidated `test_amr_units_{ab,aa` binaries via doctest
