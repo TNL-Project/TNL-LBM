@@ -57,7 +57,7 @@
 //       mean-density transfer with no conservation claim -- T15's T4a
 //       successor), reported against the gate rtol 1e-6 / atol 1e-7.
 //
-// Every check is one report() doctest assertion (see the shim below): the
+// Every check is one plain CHECK_MESSAGE() doctest assertion: the
 // measured maxima travel in the assertion messages, and the doctest
 // runner exits nonzero on any failed check.
 
@@ -132,12 +132,6 @@ constexpr int VELOCITY[27][3] = {
 	{1, -1, -1},   // pmm
 	{-1, 1, 1},	   // mpp
 };
-
-// doctest assertion shim: every legacy report(ok, what) call site becomes
-// exactly one doctest assertion, keeping the case running on a failed check
-// (same continue-on-fail semantics as the retired g_failures accumulator,
-// and nothing is printed on success)
-inline void report(bool ok, const std::string& what) { CHECK_MESSAGE(ok, what); }
 
 TEST_SUITE_BEGIN("amr_f2c_schonherr");
 
@@ -461,7 +455,7 @@ void test_constant_exact()
 								bad++;
 							max_err = std::max<double>(max_err, std::abs(actual - expected[q]));
 						}
-			report(
+			CHECK_MESSAGE(
 				bad == 0,
 				fmt::format("L1 constant exact (fine_even={}, coarse_even={}): all 27 DFs match equilibrium (max |err| = {:.3e})", fe, ce, max_err)
 			);
@@ -524,7 +518,7 @@ void test_macros_exact(const FIELD& field, const char* name)
 						if (! closeEnough(rho_m, d0_mean, 1e-6, 1e-7))
 							bad_d0++;
 					}
-			report(
+			CHECK_MESSAGE(
 				bad_macros == 0,
 				fmt::format(
 					"macros exact ({}; fine_even={}, coarse_even={}): destination macros match the analytic center field incl. extent corners (max "
@@ -536,7 +530,7 @@ void test_macros_exact(const FIELD& field, const char* name)
 					max_abs_u
 				)
 			);
-			report(
+			CHECK_MESSAGE(
 				max_abs_macro <= 1e-6,
 				fmt::format(
 					"written macros ({}; fine_even={}, coarse_even={}): dmacro carries d0/a0/b0/c0 of the DF state (max |err| = {:.3e})",
@@ -546,7 +540,7 @@ void test_macros_exact(const FIELD& field, const char* name)
 					max_abs_macro
 				)
 			);
-			report(
+			CHECK_MESSAGE(
 				bad_d0 == 0,
 				fmt::format(
 					"L5 mass identity ({}; fine_even={}, coarse_even={}): sum of destination DFs == mean subcell density d0 exactly (max |rho_sum - "
@@ -625,7 +619,7 @@ void test_strain_roundtrip()
 								bad++;
 						}
 					}
-			report(
+			CHECK_MESSAGE(
 				bad == 0,
 				fmt::format(
 					"L4 strain round-trip at sigma = 2 (fine_even={}, coarse_even={}): recovered Pi^neq == reduced-cumulant targets (max abs err = "

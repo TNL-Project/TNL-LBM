@@ -65,9 +65,10 @@ def test_c2f_debug_define_smoke(
     # doctest all-pass banner of the amr_c2f_smoke TEST_SUITE: every test
     # case passed and no assertion failed (the exit code alone only proves
     # the runner finished)
-    assert re.search(
-        r"\[doctest\] test cases: +\d+ \| +\d+ passed \| +0 failed", stdout
+    cases_banner = re.search(
+        r"\[doctest\] test cases: +(\d+) \| +\d+ passed \| +0 failed", stdout
     )
+    assert cases_banner is not None and int(cases_banner.group(1)) > 0
     assert re.search(
         r"\[doctest\] assertions: +\d+ \| +\d+ passed \| +0 failed", stdout
     )

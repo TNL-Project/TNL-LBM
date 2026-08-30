@@ -361,7 +361,8 @@ Single variable vs the current design (ring-F2C kept), same benchmark:
 4. CM exactness unit test (part of change 5) + a carved-window case
    (ghost adjacent to the footprint face: verify the shifted window +
    off-center evaluation reproduces linear/quadratic fields exactly); full
-   `run-amr-tests.sh` on AB;
+   `run-amr-tests.sh` on AB (the gate shell; retired in favor of
+   `pytest tests/unit/test_amr_units.py tests/integration/test_amr_paraview.py`);
 5. memory/LUPS comparison: 1-deep vs 2-deep overlap (expect ≈8.5 % block
    storage reduction at 64³ fine, half the C2F fill work per launch).
 
