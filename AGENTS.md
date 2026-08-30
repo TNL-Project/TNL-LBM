@@ -51,7 +51,7 @@ with optional Python bindings via nanobind and distributed execution through CUD
 | Python binding surface | `pytnl_lbm/pytnl_lbm.cpp` | Exports one concrete `SP_D3Q27_CUM_ConstInflow` instantiation |
 | 3D example simulations | `sim_NSE/*.cu`, `sim_NSE_ADE/*.cu`, `sim_adjoint/*.cu` | Each `int main()` is a standalone CMake executable |
 | 2D example simulations | `sim_2D/*.cu` | sim2d_1 (channel+hole), sim2d_2 (Poiseuille), sim2d_Taylor_Green, sim2d_hills |
-| Unit-test C++ binary | `tests/unit/*.cu` | doctest cases compiled into one binary; `test_outflowcover.cu` (`TEST_SUITE("outflowcover")`), `test_decomposition.cu` (`TEST_SUITE("decomposition")`) |
+| Unit-test doctest binaries | `tests/unit/*.cu` | doctest cases (runner `doctest_main.cu`): `test_cpp_units` carries `test_outflowcover.cu`, `test_decomposition.cu` and the AMR Schönherr registration/exactness suites; the AMR gate suites live in the per-pattern `test_amr_units_{ab,aa}` (suites `amr_coupling`/`amr_subcycling`/`amr_vtkhdf_writer`/`amr_nesting`), the per-define exactness drivers in `test_amr_f2c_schonherr_{ab,aa}` and `test_amr_c2f_smoke_{eq,dev,norm,shear}_{ab,aa}` |
 | Regression tests | `tests/regression/` | pytest suites: IBM matrices vs `baseline_ibm_matrices/` + IBM flow-field checks, D3Q27 NSE (sim_1..sim_4 + forcing variants) checks, D2Q9 verification checks + forcing variant, MPI multi-rank checks (test_mpi.py) |
 | Output-data pipeline test | `tests/integration/` | pytest suite driving `test_outputdata` (BP5, SST, Catalyst inline/plugin engines) |
 | External consumption test | `tests/subproject/` | Verifies TNL-LBM works via CMake `FetchContent` |
@@ -163,7 +163,8 @@ TNL_LBM_BUILD_DIR=build-ab pytest
 # Python bindings (after build)
 PYTHONPATH=build/pytnl_lbm python -c "import pytnl_lbm"
 
-# AMR gate: build + run the 10 AMR test targets (needs a CUDA GPU)
+# AMR gate: build the doctest AMR binaries + run the 10 counted targets
+# (4 gate suites × {ab,aa} via doctest --test-suite + 2 ParaView E2E; needs a CUDA GPU)
 ./tests/run-amr-tests.sh
 # 2-level AMR example simulations (Taylor-Green; --convective-times 20 for the long decision-table run)
 ./build/sim_AMR/sim_AMR --resolution 1
@@ -308,13 +309,18 @@ nesting addendum §11).
   Debug channel defines:
   `C2F_EQ_ONLY/DEV_ONLY/NORM_ONLY/SHEAR_ONLY`. Pre-flip build caches keep the
   old empty strategy — re-default with `cmake -B build -S . -UTNL_LBM_F2C_STRATEGY`.
-- **AMR gate**: `tests/run-amr-tests.sh` builds and runs the 10 AMR targets
-  (coupling/subcycling/vtkhdf/nesting mocks × {ab,aa} + ParaView E2E + the E2E
-  nesting arm); 10/10 at HEAD. Bit-identity evidence harness:
+- **AMR gate**: `tests/run-amr-tests.sh` builds the two consolidated per-pattern
+  doctest binaries `test_amr_units_{ab,aa}` (TEST_SUITEs
+  `amr_coupling`/`amr_subcycling`/`amr_vtkhdf_writer`/`amr_nesting`, all suites
+  ported to doctest together with the `test_amr_f2c_schonherr_{ab,aa}` /
+  `test_amr_c2f_smoke_*` drivers) and runs the 10 AMR targets
+  (the 4 gate suites × {ab,aa} via doctest `--test-suite=` + ParaView E2E +
+  the E2E nesting arm); 10/10 at HEAD. Bit-identity evidence harness:
   `tests/regression/test_amr_bitidentity.py` — verify mode compares every
   `max_level == 1` artifact against the committed
   `tests/regression/amr_ref/manifest.json` (11/11 at HEAD; re-record ONLY from
-  a trusted pre-change tree).
+  a trusted pre-change tree; its mock-suite artifacts drive the consolidated
+  binaries per-suite).
   pytest sides: `tests/unit/test_cpp_units.py` (AMR doctest suites),
   `tests/unit/test_amr_f2c_schonherr.py`, `tests/unit/test_amr_c2f_debug_smoke.py`.
 - **Measured verdict (recorded, not repaired)**: the conversion was an
