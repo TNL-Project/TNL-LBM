@@ -82,12 +82,6 @@ using real = typename TRAITS::real;
 using point_t = typename TRAITS::point_t;
 using lat_t = Lattice<3, real, idx>;
 
-// doctest assertion shim: every legacy report(ok, what) call site becomes
-// exactly one doctest assertion, keeping the case running on a failed check
-// (same continue-on-fail semantics as the retired g_failures accumulator,
-// and nothing is printed on success)
-inline void report(bool ok, const std::string& what) { CHECK_MESSAGE(ok, what); }
-
 TEST_SUITE_BEGIN("amr_vtkhdf_writer");
 
 // 16^3 box in physical units (same lattice as test_amr_subcycling.cu)
@@ -194,12 +188,12 @@ void verifyLevel(hid_t file, int level, idx n, real expected_spacing, const std:
 	const std::string prefix = fmt::format("/VTKHDF/Level{}", level);
 	const idx cells = n * n * n;
 
-	report(H5Lexists(file, prefix.c_str(), H5P_DEFAULT) > 0, fmt::format("group {} exists", prefix));
-	report(H5Lexists(file, (prefix + "/CellData").c_str(), H5P_DEFAULT) > 0, fmt::format("group {}/CellData exists", prefix));
+	CHECK_MESSAGE(H5Lexists(file, prefix.c_str(), H5P_DEFAULT) > 0, fmt::format("group {} exists", prefix));
+	CHECK_MESSAGE(H5Lexists(file, (prefix + "/CellData").c_str(), H5P_DEFAULT) > 0, fmt::format("group {}/CellData exists", prefix));
 
 	hid_t group = H5Gopen2(file, prefix.c_str(), H5P_DEFAULT);
 	if (group < 0) {
-		report(false, fmt::format("{}: readable for attribute and dataset checks", prefix));
+		CHECK_MESSAGE(false, fmt::format("{}: readable for attribute and dataset checks", prefix));
 		return;
 	}
 
@@ -208,7 +202,7 @@ void verifyLevel(hid_t file, int level, idx n, real expected_spacing, const std:
 	bool spacing_ok = readAttrF64x3(group, "Spacing", spacing);
 	for (double s : spacing)
 		spacing_ok = spacing_ok && (s == static_cast<double>(expected_spacing));
-	report(spacing_ok, fmt::format("{} attribute Spacing == {}", prefix, static_cast<double>(expected_spacing)));
+	CHECK_MESSAGE(spacing_ok, fmt::format("{} attribute Spacing == {}", prefix, static_cast<double>(expected_spacing)));
 	H5Gclose(group);
 
 	std::vector<hsize_t> dims;
@@ -222,7 +216,7 @@ void verifyLevel(hid_t file, int level, idx n, real expected_spacing, const std:
 		for (int i = 0; i < 6; i++)
 			box_ok = box_ok && (amr_box[i] == expected_box[i]);
 	if (amr_box.size() == 6)
-		report(
+		CHECK_MESSAGE(
 			box_ok,
 			fmt::format(
 				"{} AMRBox row == [{}, {}, {}, {}, {}, {}] (actual: [{}, {}, {}, {}, {}, {}])",
@@ -242,7 +236,7 @@ void verifyLevel(hid_t file, int level, idx n, real expected_spacing, const std:
 			)
 		);
 	else
-		report(false, fmt::format("{} AMRBox readable with shape [1, 6]", prefix));
+		CHECK_MESSAGE(false, fmt::format("{} AMRBox readable with shape [1, 6]", prefix));
 
 	// rho == 1 on ALL emitted cells, including the finest-level border rows
 	// (footprint-covering ghost rows filled above with the equilibrium macro)
@@ -258,7 +252,7 @@ void verifyLevel(hid_t file, int level, idx n, real expected_spacing, const std:
 					max_rho_err = std::max(max_rho_err, std::abs(v - 1.0));
 				}
 	rho_ok = rho_ok && max_rho_err <= 1e-5;
-	report(rho_ok, fmt::format("{} CellData/rho has {} cells with rho ~ 1 (max |rho - 1| = {:.3e})", prefix, cells, max_rho_err));
+	CHECK_MESSAGE(rho_ok, fmt::format("{} CellData/rho has {} cells with rho ~ 1 (max |rho - 1| = {:.3e})", prefix, cells, max_rho_err));
 
 	// vx/vy/vz == 0 on all emitted cells (see the rho comment above)
 	for (const char* name : {"vx", "vy", "vz"}) {
@@ -274,7 +268,7 @@ void verifyLevel(hid_t file, int level, idx n, real expected_spacing, const std:
 						max_abs = std::max(max_abs, std::abs(v));
 					}
 		vel_ok = vel_ok && max_abs <= 1e-6;
-		report(
+		CHECK_MESSAGE(
 			vel_ok,
 			fmt::format("{} CellData/{} has {} cells with {} ~ 0 (max |{}| = {:.3e})", prefix, name, cells, name, name, max_abs)
 		);
@@ -306,7 +300,7 @@ void verifyLevel(hid_t file, int level, idx n, real expected_spacing, const std:
 					}
 				}
 	ghost_ok = ghost_ok && mismatches == 0;
-	report(
+	CHECK_MESSAGE(
 		ghost_ok,
 		fmt::format("{} CellData/vtkGhostType: {} cells with expected tags ({} tagged REFINEDCELL)", prefix, cells, tagged)
 	);
@@ -329,8 +323,8 @@ void test_vtkhdf_structure()
 	// fine block at fine offset (9, 9, 9) under the re-anchored indexer
 	createAMRBlocks(lbm, parseAMRConfig<NSE_CONFIG>("1 4 4 4 8 8 8"));
 
-	report(
-		lbm.blocks.size() == 2 && lbm.getBlocksAtLevel(0).size() == 1 && lbm.getBlocksAtLevel(1).size() == 1,
+	CHECK_MESSAGE(
+		(lbm.blocks.size() == 2 && lbm.getBlocksAtLevel(0).size() == 1 && lbm.getBlocksAtLevel(1).size() == 1),
 		"setup: one level-0 block and one level-1 block created"
 	);
 
@@ -369,23 +363,23 @@ void test_vtkhdf_structure()
 		OverlappingAMRWriter<TRAITS>::write(filename, lbm, 0.0);
 	}
 	catch (const std::exception& e) {
-		report(false, fmt::format("{}: writer threw an exception: {}", filename, e.what()));
+		CHECK_MESSAGE(false, fmt::format("{}: writer threw an exception: {}", filename, e.what()));
 		std::remove(filename);
 		return;
 	}
 
 	// ---- verify the HDF5 structure ----
 	hid_t file = H5Fopen(filename, H5F_ACC_RDONLY, H5P_DEFAULT);
-	report(file >= 0, fmt::format("{}: H5Fopen succeeded", filename));
+	CHECK_MESSAGE(file >= 0, fmt::format("{}: H5Fopen succeeded", filename));
 	if (file < 0) {
 		std::remove(filename);
 		return;
 	}
 
-	report(H5Lexists(file, "/VTKHDF", H5P_DEFAULT) > 0, "group /VTKHDF exists");
+	CHECK_MESSAGE(H5Lexists(file, "/VTKHDF", H5P_DEFAULT) > 0, "group /VTKHDF exists");
 	hid_t root = H5Gopen2(file, "/VTKHDF", H5P_DEFAULT);
 	if (root < 0) {
-		report(false, "group /VTKHDF readable for attribute checks");
+		CHECK_MESSAGE(false, "group /VTKHDF readable for attribute checks");
 		H5Fclose(file);
 		std::remove(filename);
 		return;
@@ -394,15 +388,15 @@ void test_vtkhdf_structure()
 	// root attributes (Version [2, 8] as of VTK 9.6+)
 	std::int64_t version[2] = {0, 0};
 	const bool version_read = readAttrI64x2(root, "Version", version);
-	report(
-		version_read && version[0] == 2 && version[1] == 8,
+	CHECK_MESSAGE(
+		(version_read && version[0] == 2 && version[1] == 8),
 		fmt::format("attribute Version == [2, 8] (actual: [{}, {}])", version[0], version[1])
 	);
 
 	std::string type;
 	const bool type_read = readAttrString(root, "Type", type);
-	report(
-		type_read && type == "OverlappingAMR",
+	CHECK_MESSAGE(
+		((type_read && type == "OverlappingAMR")),
 		fmt::format("attribute Type == \"OverlappingAMR\" (actual: \"{}\")", type)
 	);
 
@@ -411,7 +405,7 @@ void test_vtkhdf_structure()
 	bool origin_ok = readAttrF64x3(root, "Origin", origin);
 	origin_ok = origin_ok && origin[0] == static_cast<double>(expected_origin.x()) && origin[1] == static_cast<double>(expected_origin.y())
 			 && origin[2] == static_cast<double>(expected_origin.z());
-	report(
+	CHECK_MESSAGE(
 		origin_ok,
 		fmt::format(
 			"attribute Origin == lbm2physPoint(0, 0, 0) = ({}, {}, {})",
@@ -435,7 +429,8 @@ void test_vtkhdf_structure()
 	verifyLevel(file, 1, 16, lat.physDl / 2, box1, /*finest=*/true);
 
 	H5Fclose(file);
-	std::remove(filename);
+	// the freshly written file stays behind: the bit-identity harness pins
+	// its dataset content (the writer's real output is part of the battery)
 }
 
 // Nesting census (the amr-nlevel-nesting plan's commit D): the writer on a
@@ -692,10 +687,11 @@ void test_vtkhdf_nesting_structure()
 				H5Fclose(file);
 			}
 		}
-		std::remove(filename);
+		// keep the written file: the bit-identity harness pins its dataset
+		// content alongside the two-level writer's
 	}
 	if (! ok)
-		report(false, fmt::format("nesting vtkhdf census: {}", failure.empty() ? "setup failed" : failure));
+		CHECK_MESSAGE(false, fmt::format("nesting vtkhdf census: {}", failure.empty() ? "setup failed" : failure));
 }
 
 TEST_CASE("two-level structure") { test_vtkhdf_structure(); }

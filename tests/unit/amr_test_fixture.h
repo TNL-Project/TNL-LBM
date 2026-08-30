@@ -4,9 +4,10 @@
 // extracted verbatim from test_amr_subcycling.cu so that test_amr_nesting.cu
 // reuses the same census spies, map-scan carriers and reference-stat helpers:
 //
-// - report(): the doctest assertion shim -- every legacy report()/check()
-//   call site becomes exactly one CHECK_MESSAGE assertion with the same
-//   pass/continue-on-fail semantics the g_failures accumulator had;
+// - the shared machinery is used directly via doctest CHECK_MESSAGE: every
+//   legacy report()/check() call site of the retired custom-main harnesses
+//   became a plain doctest assertion (same continue-on-fail semantics as
+//   the retired g_failures accumulator);
 // - makeLattice / setSineInitialCondition: the 16^3 periodic-box lattice and
 //   the non-uniform (kernel-detectable) initial condition;
 // - StateLocal_AMR / StateLocal_Base: pass-through subclasses wiring the sine
@@ -63,16 +64,6 @@ using real = typename TRAITS::real;
 using point_t = typename TRAITS::point_t;
 using lat_t = Lattice<3, real, idx>;
 using BLOCK = LBM_BLOCK<NSE_CONFIG>;
-
-// doctest assertion shim: every legacy report(ok, what) call site becomes
-// exactly one doctest assertion, keeping the case running on a failed check
-// (same continue-on-fail semantics as the retired g_failures accumulator;
-// on success doctest prints nothing, satisfying the silent-on-success
-// stdout contract of the nesting-lock census tests)
-inline void report(bool ok, const std::string& what)
-{
-	CHECK_MESSAGE(ok, what);
-}
 
 // N^3 periodic box in physical units (same scaling as sim_AMR at that N: the
 // subcycling fixtures use N = 16): LBM viscosity nu_lb_coarse = 0.005, hence
