@@ -56,7 +56,7 @@
 // suite's full normalized stdout digest against the manifest, and SIM
 // battery artifacts must stay byte-reproducible. The nesting locks below
 // therefore run SILENT on success: failures print a FAIL line through
-// report() and flip the exit code, success adds zero bytes to the stream.
+// CHECK_MESSAGE() and flip the exit code, success adds zero bytes to the stream.
 
 #include <algorithm>
 #include <array>
@@ -496,7 +496,7 @@ void test_uniform_coarse_to_fine()
 						}
 						max_err = std::max<double>(max_err, std::abs(actual - expected[q]));
 					}
-		report(bad == 0, fmt::format("Test 1 uniform coarse-to-fine (even_iter={}): all 27 DFs match equilibrium (max |err| = {:.3e})", even_iter, max_err));
+		CHECK_MESSAGE(bad == 0, fmt::format("Test 1 uniform coarse-to-fine (even_iter={}): all 27 DFs match equilibrium (max |err| = {:.3e})", even_iter, max_err));
 	}
 }
 
@@ -557,7 +557,7 @@ void test_uniform_fine_to_coarse()
 							}
 							max_err = std::max<double>(max_err, std::abs(actual - expected[q]));
 						}
-		report(
+		CHECK_MESSAGE(
 			bad == 0,
 			fmt::format(
 				"Test 2 uniform fine-to-coarse (fine_even={}, coarse_even={}) [{}]: all 27 DFs match equilibrium (max |err| = {:.3e})",
@@ -641,7 +641,7 @@ void test_linear_gradient_coarse_to_fine()
 			}
 		}
 	}
-	report(
+	CHECK_MESSAGE(
 		bad == 0,
 		fmt::format(
 			"Test 3 linear gradient coarse-to-fine: ghost moments match exact interpolation "
@@ -767,7 +767,7 @@ void test_mass_conservation_fine_to_coarse()
 				if (rel > 1e-5)
 					bad++;
 			}
-	report(
+	CHECK_MESSAGE(
 		bad == 0,
 		fmt::format(
 			"Test 4a quadratic reproduction fine-to-coarse [{}]: {}", f2c_strategy_name,
@@ -834,7 +834,7 @@ void test_mass_conservation_coarse_to_fine()
 				if (rel > 1e-4)
 					bad++;
 			}
-	report(
+	CHECK_MESSAGE(
 		bad == 0,
 		fmt::format("Test 4b mass conservation coarse-to-fine: 1/8 * fine subcell mass == coarse mass (max rel err = {:.3e})", max_rel)
 	);
@@ -1013,7 +1013,7 @@ void test_nested_geometry_coupling()
 				}
 			}
 		}
-		report(
+		CHECK_MESSAGE(
 			bad == 0,
 			fmt::format("Test 5 nested C2F ghost x={}: all y/z cells and DFs match the correct global-frame mapping (max |err| = {:.3e})", gxx, max_err)
 		);
@@ -1040,7 +1040,7 @@ void test_nested_geometry_coupling()
 			}
 		}
 	}
-	report(bad == 0, fmt::format("Test 5 nested C2F ghost rho moments: moments match (max |err| = {:.3e})", max_err));
+	CHECK_MESSAGE(bad == 0, fmt::format("Test 5 nested C2F ghost rho moments: moments match (max |err| = {:.3e})", max_err));
 
 	// re-establish the pristine marker state for the F2C direction: the C2F
 	// fill just wrote into the fine ghost layer that the F2C filter reads
@@ -1128,7 +1128,7 @@ void test_nested_geometry_coupling()
 				}
 			}
 		}
-		report(
+		CHECK_MESSAGE(
 			bad == 0,
 			fmt::format(
 				"Test 5 nested F2C halo c={} [{}]: subcell average of the correct fine subcells "
@@ -1162,7 +1162,7 @@ void test_nested_geometry_coupling()
 			}
 		}
 	}
-	report(
+	CHECK_MESSAGE(
 		bad == 0,
 		fmt::format("Test 5 nested F2C A-B frame: halo writes landed in df_out (df_cur untouched sentinel, max |err| = {:.3e})", max_err)
 	);
@@ -1180,7 +1180,7 @@ void test_nested_geometry_coupling()
 		if (! closeEnough(rho_m, rho_marker, 1e-4, 1e-5))
 			bad++;
 	}
-	report(
+	CHECK_MESSAGE(
 		bad == 0,
 		fmt::format("Test 5 nested F2C storability guard: non-storable halo cells (c=2,13) remain at the marker IC (max |err| = {:.3e})", max_err)
 	);
@@ -1287,7 +1287,7 @@ void test_cubic_reproduction_fine_to_coarse()
 							max_err = std::max<double>(max_err, std::abs(actual - eq[q]));
 						}
 					}
-			report(
+			CHECK_MESSAGE(
 				bad == 0,
 				fmt::format(
 					"Test 6 cubic reproduction fine-to-coarse (fine_even={}, coarse_even={}) [{}]: "
@@ -1411,7 +1411,7 @@ void test_f2c_df_store_map_guard()
 			}
 			max_err = std::max<double>(max_err, std::abs(actual - expected));
 		}
-		report(
+		CHECK_MESSAGE(
 			bad == 0,
 			fmt::format(
 				"Test 7 F2C DF-store map guard: {} cell {} (max |err| = {:.3e})",
@@ -1447,7 +1447,7 @@ void test_f2c_df_store_map_guard()
 			}
 			max_err = std::max<double>(max_err, std::abs(actual - expected[m]));
 		}
-		report(
+		CHECK_MESSAGE(
 			bad == 0,
 			fmt::format(
 				"Test 7 F2C macro-store map guard: {} macros {} (max |err| = {:.3e})",
@@ -1621,7 +1621,7 @@ bool checkFineMacrosExact(const MockBlock& fine, idx3d begin, idx3d end, const F
 			}
 		}
 	}
-	report(bad == 0, fmt::format("{}: reconstructed fine macros match the analytic field (max rel rho err = {:.3e}, max abs vel err = {:.3e})", what, max_rel_rho, max_abs_u));
+	CHECK_MESSAGE(bad == 0, fmt::format("{}: reconstructed fine macros match the analytic field (max rel rho err = {:.3e}, max abs vel err = {:.3e})", what, max_rel_rho, max_abs_u));
 	return bad == 0;
 }
 
@@ -1920,7 +1920,7 @@ bool checkCoarseTransferExact(const MockBlock& coarse, const std::vector<idx3d>&
 			max_err = std::max<double>(max_err, std::abs(actual - eq[q]));
 		}
 	}
-	report(bad == 0, fmt::format("{}: written DFs match the analytically projected cubic field (max |err| = {:.3e})", what, max_err));
+	CHECK_MESSAGE(bad == 0, fmt::format("{}: written DFs match the analytically projected cubic field (max |err| = {:.3e})", what, max_err));
 	return bad == 0;
 }
 
@@ -2024,7 +2024,7 @@ void test_f2c_skin_edge_clamp_exactness()
 	// T15: no clamp machinery on the F2C_SCHONHERR arm -- this lock is the
 	// Lagrava (opt-out) branch's authority and is not duplicated (dedupe
 	// audit); the explicit deferral line keeps the arm's report truthful
-	report(
+	CHECK_MESSAGE(
 		true,
 		"Test 15 depth-1 lo-edge clamp exactness [F2C_SCHONHERR arm]: N/A -- clamp is Lagrava-only window machinery; authority lives on the Lagrava (opt-out) branch (retired nothing)"
 	);
@@ -2187,7 +2187,7 @@ void test_f2c_skin_df_store_map_guard()
 			if (expect_write)
 				max_err = std::max<double>(max_err, std::abs(actual - eq_transfer[q]));
 		}
-		report(
+		CHECK_MESSAGE(
 			bad == 0,
 			fmt::format(
 				"Test 16 skin F2C DF-store map guard [{}]: {} cell {} (max |err| = {:.3e})",
@@ -2231,7 +2231,7 @@ void test_f2c_skin_df_store_map_guard()
 			if (expect_write)
 				max_err = std::max<double>(max_err, std::abs(actual - expected[m]));
 		}
-		report(
+		CHECK_MESSAGE(
 			bad == 0,
 			fmt::format(
 				"Test 16 skin F2C macro-store map guard [{}]: {} macros {} (max |err| = {:.3e})",
@@ -2269,7 +2269,7 @@ void test_f2c_skin_edge2pair_clamp_exactness()
 	// T15: no clamp machinery on the F2C_SCHONHERR arm -- this lock is the
 	// Lagrava (opt-out) branch's authority and is not duplicated (dedupe
 	// audit); the explicit deferral line keeps the arm's report truthful
-	report(
+	CHECK_MESSAGE(
 		true,
 		"Test 18 depth-1 lo-lo edge clamp exactness [F2C_SCHONHERR arm]: N/A -- clamp is Lagrava-only window machinery; authority lives on the Lagrava (opt-out) branch (retired nothing)"
 	);
@@ -2333,14 +2333,6 @@ void test_f2c_skin_edge2pair_clamp_exactness()
 // coupling coverage through the REAL State_AMR schedule and through direct
 // two-hop kernel launches. Stdout contract (see the file header): silent
 // on success, FAIL + nonzero exit on failure.
-
-// quiet-on-success check (the suite's full stdout digest is pinned by the
-// bit-identity manifest, sec. 7.5 -- success must add zero bytes, and
-// doctest prints passing CHECK_MESSAGE assertions only in verbose mode)
-inline void check(bool ok, const std::string& what)
-{
-	CHECK_MESSAGE(ok, what);
-}
 
 // stdout nuller for the State-driven nesting locks: the State ctor
 // installs its own spdlog "main" logger (include/lbm_common/logging.h)
@@ -2648,17 +2640,17 @@ void test_two_hop_transfer_census()
 		}
 	}
 	if (! setup_ok) {
-		check(false, fmt::format("Test 19 2-hop transfer census setup: {}", failure));
+		CHECK_MESSAGE(false, fmt::format("Test 19 2-hop transfer census setup: {}", failure));
 		return;
 	}
-	check(
+	CHECK_MESSAGE(
 		ok,
 		fmt::format(
 			"Test 19 2-hop transfer census: 3 cycles match the per-pair expansion{}",
 			failure.empty() ? "" : fmt::format(" -- first failure: {}", failure)
 		)
 	);
-	check(still_running, "Test 19 2-hop transfer census: no termination during the census run");
+	CHECK_MESSAGE(still_running, "Test 19 2-hop transfer census: no termination during the census run");
 }
 
 // sentinel payload of the Test-20 ordering lock: a uniform equilibrium
@@ -2792,11 +2784,11 @@ void test_midcycle_fill_live_source()
 		}
 	}
 	if (! setup_ok) {
-		check(false, fmt::format("Test 20 live-source setup: {}", failure));
+		CHECK_MESSAGE(false, fmt::format("Test 20 live-source setup: {}", failure));
 		return;
 	}
-	check(injected, "Test 20 live-source: sentinel was injected after the widened level-1 substep");
-	check(captured, "Test 20 live-source: the level-2 band was snapshotted after the mid-cycle fill");
+	CHECK_MESSAGE(injected, "Test 20 live-source: sentinel was injected after the widened level-1 substep");
+	CHECK_MESSAGE(captured, "Test 20 live-source: the level-2 band was snapshotted after the mid-cycle fill");
 	if (! captured)
 		return;
 
@@ -2805,7 +2797,7 @@ void test_midcycle_fill_live_source()
 	// destination cell) pair -- the scan lists every destination cell once
 	// per direction in direction-major order
 	const std::size_t cells = band.coords.size() / NSE_CONFIG::Q;
-	check(cells > 0, "Test 20 live-source: the destination complement snapshot is non-empty");
+	CHECK_MESSAGE(cells > 0, "Test 20 live-source: the destination complement snapshot is non-empty");
 	std::size_t bad = 0;
 	double max_err = 0;
 	for (int s = 0; s < NSE_CONFIG::Q; s++) {
@@ -2824,7 +2816,7 @@ void test_midcycle_fill_live_source()
 			max_err = std::max<double>(max_err, std::abs(actual - expected));
 		}
 	}
-	check(
+	CHECK_MESSAGE(
 		bad == 0,
 		fmt::format(
 			"Test 20 live-source: the mid-cycle fill of the level-2 band carries the live post-substep-A state "
@@ -2832,7 +2824,7 @@ void test_midcycle_fill_live_source()
 			bad, NSE_CONFIG::Q * cells, max_err
 		)
 	);
-	check(still_running, "Test 20 live-source: no termination during the probe cycle");
+	CHECK_MESSAGE(still_running, "Test 20 live-source: no termination during the probe cycle");
 }
 
 // fill the whole stored extent of `block` with the equilibrium of the
@@ -2987,8 +2979,8 @@ void test_two_hop_kernel_composition()
 						bad++;
 					max_err = std::max<double>(max_err, std::abs(actual - eq[q]));
 				}
-		check(
-			bad == 0 && closeEnough(rho_replica, rho_e, 1e-5, 1e-6),
+		CHECK_MESSAGE(
+			(bad == 0 && closeEnough(rho_replica, rho_e, 1e-5, 1e-6)),
 			fmt::format(
 				"Test 21 two-hop C2F composition: fine2 ghost x={} carries the doubled interpolation rho = {:.9e} "
 				"(replica {:.9e}; all cells/DFs, max |err| = {:.3e})",
@@ -3044,7 +3036,7 @@ void test_two_hop_kernel_composition()
 			if (err > 1e-5)
 				bad++;
 		}
-	check(
+	CHECK_MESSAGE(
 		bad == 0,
 		fmt::format(
 			"Test 21 two-hop F2C composition (hop A): fine1 x=4 subcells hold the own-8 mean d0 = {:.6e} [{}] (max |err| = {:.3e})",
@@ -3063,7 +3055,7 @@ void test_two_hop_kernel_composition()
 	const dreal rho_hopB = dreal(10.3125);
 	coarse.copyToHost();
 	const dreal rho_c6 = f2cWrittenRho(coarse, /*next_coarse_even_iter=*/false, 6, 6, 6);
-	check(
+	CHECK_MESSAGE(
 		closeEnough(rho_c6, rho_hopB, 1e-5, 1e-6),
 		fmt::format(
 			"Test 21 two-hop F2C composition (hop B): coarse cell (6,6,6) holds the mean-of-mean d0 = {:.6e} [{}] "

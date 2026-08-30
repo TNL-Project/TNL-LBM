@@ -14,8 +14,10 @@ Battery (all single rank, current-tree binaries under ``TNL_LBM_BUILD_DIR``):
   filter (the artifact keys keep the historical per-suite names
   ``test_amr_{coupling,subcycling,vtkhdf_writer}_{ab,aa}`` so the manifest
   stays comparable) — their complete stdout (normalized, see below) plus
-  the dataset content of every ``*.vtkhdf`` file they emit
-  (``amr_vtkhdf_writer`` writes ``test_amr.vtkhdf``);
+  the dataset content of every ``*.vtkhdf`` file they leave behind
+  (``amr_vtkhdf_writer`` writes ``test_amr.vtkhdf`` and
+  ``test_amr_nesting.vtkhdf``, kept after a green run for exactly this
+  pinning);
 - short fixed-configuration runs of ``sim_AMR --resolution 1`` and
   ``sim_AMR_channel --resolution 1`` (both default settings) — normalized
   stdout (carries the conservation lines) plus the dataset content of every
@@ -169,10 +171,20 @@ def _collect_stdouts(
             )
         workdir = root / suite
         workdir.mkdir()
-        # the suites read adios2.xml from their cwd (State ctor)
+        # the suites read adios2.xml from their cwd (State ctor); --success
+        # makes doctest print every passing assertion's message: the
+        # FP-metric texts the pre-port PASS lines carried stay inside the
+        # pinned stream (they are how this harness detects sub-tolerance
+        # FP drift -- the doctest banner alone is a mere count)
         shutil.copy(ADIOS_CONFIG, workdir / "adios2.xml")
         stdout = run_sim(
-            [binary, f"--test-suite={suite_filter}", "--no-colors", "--no-duration"],
+            [
+                binary,
+                f"--test-suite={suite_filter}",
+                "--no-colors",
+                "--no-duration",
+                "--success",
+            ],
             workdir=workdir,
             timeout=300.0,
         )

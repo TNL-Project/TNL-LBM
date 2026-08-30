@@ -65,7 +65,7 @@
 //       (targets identically zero).
 //   S3: every written DF finite (the all-fluid map keeps the carve inert).
 //
-// Every check is one report() doctest assertion (see the shim below): the
+// Every check is one plain CHECK_MESSAGE() doctest assertion: the
 // per-define measured maxima travel in the assertion messages, and the
 // doctest runner exits nonzero on any failed check.
 
@@ -148,12 +148,6 @@ constexpr int VELOCITY[27][3] = {
 	{1, -1, -1},  // pmm
 	{-1, 1, 1},	  // mpp
 };
-
-// doctest assertion shim: every legacy report(ok, what) call site becomes
-// exactly one doctest assertion, keeping the case running on a failed check
-// (same continue-on-fail semantics as the retired g_failures accumulator,
-// and nothing is printed on success)
-inline void report(bool ok, const std::string& what) { CHECK_MESSAGE(ok, what); }
 
 TEST_SUITE_BEGIN("amr_c2f_smoke");
 
@@ -405,10 +399,10 @@ TEST_CASE("S1 field rail")
 					if (! finite || ! closeEnough(rho, e[0], 1e-4f, 1e-6f) || abs_du > 1e-6 + 1e-4 * 0.03)
 						bad++;
 				}
-		report(
-			bad == 0 && ! finite_bad,
-			fmt::format("S1 macros == analytic linear field (max rel rho err = {:.3e}, max abs vel err = {:.3e})", max_rel_rho, max_abs_u)
-		);
+	CHECK_MESSAGE(
+		(bad == 0 && ! finite_bad),
+		fmt::format("S1 macros == analytic linear field (max rel rho err = {:.3e}, max abs vel err = {:.3e})", max_rel_rho, max_abs_u)
+	);
 	}
 }
 
@@ -479,7 +473,7 @@ TEST_CASE("S2 strain targets")
 							bad++;
 					}
 				}
-		report(
+		CHECK_MESSAGE(
 			bad == 0,
 			fmt::format(
 				"S2 [{}] recovered Pi^neq == filtered-strain targets (max abs err = {:.3e}, max rel err = {:.3e})",

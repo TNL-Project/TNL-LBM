@@ -8,14 +8,13 @@ since commit 15 / T17; doctest-based since the amr-doctest-port).
 
 The define is a per-TU compile-time switch selecting the thesis §7.2
 σ-form compact-moment transfer (σ = 2) inside ``cudaAMR_FineToCoarse`` and
-cannot share a binary with the F2C_LAGRAVA opt-out build, so it locks
-as standalone per-pattern binaries — the same pytest-side,
+cannot share a binary with the F2C_LAGRAVA opt-out build, so the locks
+live in standalone per-pattern binaries — the same pytest-side,
 build-variants-in-the-default-build idiom as the ``test_amr_c2f_smoke_*``
 debug-define binaries.  The strategy builds of the ``amr_coupling``
 doctest suite in ``tests/unit/test_amr_coupling.cu`` (driven by
-``tests/unit/test_amr_units.py``) pin the Lagrava opt-out path separately,
-so
-the two batteries are green under both strategies.
+``tests/unit/test_amr_units.py``) pin the Lagrava opt-out path
+separately, so the two batteries are green under both strategies.
 
 Each binary runs the F2C transfer on (i) a uniform field, (ii) a
 CE-consistent linear field, and (iii) a CE-consistent quadratic-velocity
@@ -58,9 +57,10 @@ def test_f2c_schonherr_exactness(pattern: str, test_dir: pathlib.Path) -> None:
     # doctest all-pass banner of the amr_f2c_schonherr TEST_SUITE: every
     # test case passed and no assertion failed (the exit code alone only
     # proves the runner finished)
-    assert re.search(
-        r"\[doctest\] test cases: +\d+ \| +\d+ passed \| +0 failed", stdout
+    cases_banner = re.search(
+        r"\[doctest\] test cases: +(\d+) \| +\d+ passed \| +0 failed", stdout
     )
+    assert cases_banner is not None and int(cases_banner.group(1)) > 0
     assert re.search(
         r"\[doctest\] assertions: +\d+ \| +\d+ passed \| +0 failed", stdout
     )
