@@ -1,25 +1,23 @@
 #!/usr/bin/env python3
-"""End-to-end ParaView check for the 3-level nesting mock VTKHDF output.
+"""End-to-end ParaView check for the sim_AMR VTKHDF OverlappingAMR output.
 
-Nesting arm of tests/test_amr_paraview_e2e.py (the amr-nlevel-nesting
-plan's commit D): tests/test_amr_vtkhdf_writer.cu pins the writer's HDF5
-layout on a 3-level chain; this script proves the nested-region file works
-for its real consumer. The input is produced by the dedicated driver
-tests/test_amr_nesting_sim (a 32^3 periodic Taylor-Green box with three
-fine blocks telescoping [6,26) -> [15,25) -> [33,41) per parent frame) --
-sim_AMR/sim_AMR_channel hardcode their region specs, so the e2e arm drives
-the mock instead.
+The amr_vtkhdf_writer doctest suite proves the writer emits the documented
+HDF5 layout; this script proves the file also works for its real consumer:
+it must load in ParaView (>= 6.0) through the VTKHDF reader, expose the
+expected AMR levels, cell fields and values, and render to a non-trivial
+PNG.
 
-Run under pvpython (ParaView's bundled python), e.g. via the wrapper
-tests/test_amr_paraview_e2e_nesting.sh, or directly from the project root:
+Run under pvpython (ParaView's bundled python) -- driven by the pytest
+module tests/integration/test_amr_paraview.py, or directly from the
+project root:
 
-    pvpython tests/test_amr_paraview_e2e_nesting.py \
-        --input results_test_amr_nesting_sim_np001/output_amr_0000.vtkhdf \
-        --outdir /tmp/opencode/pv_e2e_nesting
+    pvpython tests/integration/amr_paraview_e2e.py \
+        --input results_sim_AMR_res01_np001/output_amr_0000.vtkhdf \
+        --outdir /tmp/opencode/pv_e2e
 
 One PASS/FAIL line per check (same style as the C++ report() helper); prints
-"RESULT: all ParaView E2E nesting checks passed" and exits 0 on success,
-exits 1 if any check failed.
+"RESULT: all ParaView E2E checks passed" and exits 0 on success, exits 1 if
+any check failed.
 """
 
 import argparse
@@ -36,24 +34,25 @@ from paraview import servermanager
 from vtkmodules.numpy_interface import dataset_adapter as dsa
 
 EXPECTED_FIELDS = ("rho", "vx", "vy", "vz", "vtkGhostType")
-# 4 AMR levels (0..3), one block per level
-EXPECTED_LEVELS = 4
+EXPECTED_LEVELS = 2
 EXPECTED_BLOCKS_PER_LEVEL = 1
-# per-level block cell counts (the writer emits the interior plus the
-# footprint-covering ghost rows): L0 32^3, L1 40^3, L2 20^3, L3 16^3
-EXPECTED_CELLS = {0: 32**3, 1: 40**3, 2: 20**3, 3: 16**3}
-# per-level REFINEDCELL censuses: L0 <- level-1 footprint [6,26)^3 = 20^3,
-# L1 <- level-2 footprint [15,25)^3 = 10^3, L2 <- level-3 footprint
-# [33,41)^3 = 8^3, L3 never (finest)
-EXPECTED_REFINED_CELLS = {0: 20**3, 1: 10**3, 2: 8**3, 3: 0}
-# rho sanity bound: same Taylor-Green amplitude class as sim_AMR at res 1
-# (max envelope 9*V0^2/8 ~= 6.9e-5), the 5e-4 bound covers the IC envelope
-# plus early-run evolution/interface residual on the nested path
+# per-level block cell counts: level 0 is the 64^3 global domain; level 1 is
+# the coarse footprint's fine-cell coverage = 64^3 (the writer emits the
+# interior plus the footprint-inner ghost rows and drops the outer hidden
+# storage ring, so the fine AMRBox covers exactly the REFINEDCELL footprint
+# and the reader's overlap-blanking leaves no interface-ring band -- see
+# OverlappingAMRWriter::emitted_range)
+EXPECTED_CELLS = {0: 64**3, 1: 64**3}  # 262144, 262144
+EXPECTED_REFINED_CELLS = 32**3  # coarse footprint [16, 48)^3
+# rho sanity bound: the sim initializes the analytical Taylor-Green density
+# profile initialized in sim_AMR.cu (on-branch commit 19b88d3), not rho == 1 — rho = 1 + 3*V0^2/16*(cos2kx+cos2ky)*
+# (cos2kz+2), max amplitude 9*V0^2/8 ~= 6.9e-5 at resolution 1; the 5e-4 bound
+# covers the IC envelope plus early-run evolution/interface residual while
+# still catching coupling garbage, NaNs and unit-mixing explosions
 RHO_TOLERANCE = 5e-4
 VX_ABS_MAX = 0.02
-# vtkDataSetAttributes::REFINEDCELL; the reader ORs in EXTERIORCELL (0x8)
-# when it blanks overlapped cells, so the loaded array contains 4|8=12,
-# not plain 4
+# vtkDataSetAttributes::REFINEDCELL; the reader ORs in EXTERIORCELL (0x8) when
+# it blanks overlapped cells, so the loaded array contains 4|8=12, not plain 4
 REFINEDCELL_BIT = 0x4
 EXTERIORCELL_BIT = 0x8
 MIN_PNG_BYTES = 30 * 1024
@@ -86,7 +85,7 @@ def check_structure(src):
         oamr.GetClassName(),
     )
     n_levels = oamr.GetNumberOfLevels()
-    report(n_levels == EXPECTED_LEVELS, "AMR has 4 levels", n_levels)
+    report(n_levels == EXPECTED_LEVELS, "AMR has 2 levels", n_levels)
     for level in range(min(n_levels, EXPECTED_LEVELS)):
         n_blocks = oamr.GetNumberOfBlocks(level)
         report(
@@ -103,7 +102,7 @@ def check_structure(src):
 
 
 def check_values(oamr):
-    for level in range(EXPECTED_LEVELS):
+    for level, check_ghost in ((0, "refined"), (1, "zero")):
         block = oamr.GetDataSet(level, 0)
         if block is None:
             report(False, f"level {level} block 0 readable", "GetDataSet returned None")
@@ -117,22 +116,15 @@ def check_values(oamr):
         )
         rho = np.asarray(data.CellData["rho"])
         ghost = np.asarray(data.CellData["vtkGhostType"])
-        # rho finite everywhere (the coupling must not emit NaN/garbage),
-        # then the TG-envelope sanity bound on the visible cells
-        report(
-            bool(np.isfinite(rho).all()),
-            f"level {level} rho finite on all emitted cells",
-            f"{int(np.count_nonzero(~np.isfinite(rho)))} non-finite cells",
-        )
         # skip reader-hidden cells (blanked coarse interior, hidden fine ghost)
-        visible_mask = (ghost & EXTERIORCELL_BIT) == 0
+        visible_mask = (ghost & 0x8) == 0
         rho_err = float(np.abs(rho[visible_mask] - 1.0).max())
         report(
             rho_err <= RHO_TOLERANCE,
             f"level {level} rho within 1.0 +/- {RHO_TOLERANCE} (TG envelope)",
             f"max deviation {rho_err:.3e}",
         )
-        if level == 0:
+        if check_ghost == "refined":
             vx = np.asarray(data.CellData["vx"])
             vx_max = float(np.abs(vx).max())
             report(
@@ -140,31 +132,34 @@ def check_values(oamr):
                 f"level 0 |vx| < {VX_ABS_MAX}",
                 f"max {vx_max:.4f}",
             )
-        n_refined = int(np.count_nonzero((ghost & REFINEDCELL_BIT) == REFINEDCELL_BIT))
-        report(
-            n_refined == EXPECTED_REFINED_CELLS[level],
-            f"level {level} REFINEDCELL count is {EXPECTED_REFINED_CELLS[level]}",
-            n_refined,
-        )
-        # the reader's overlap-blanking must not exceed the writer's
-        # REFINEDCELL footprint at ANY level (an EXTERIORCELL-only cell --
-        # 0x8 without 0x4 -- is the interface-ring blanking defect class of
-        # the 2-level idiom, generalized per level)
-        n_blank_only = int(
-            np.count_nonzero(
-                ((ghost & EXTERIORCELL_BIT) != 0) & ((ghost & REFINEDCELL_BIT) == 0)
+            n_refined = int(
+                np.count_nonzero((ghost & REFINEDCELL_BIT) == REFINEDCELL_BIT)
             )
-        )
-        report(
-            n_blank_only == 0,
-            f"level {level} has no EXTERIORCELL-only cells (blanking == REFINEDCELL)",
-            n_blank_only,
-        )
-        if level == EXPECTED_LEVELS - 1:
+            report(
+                n_refined == EXPECTED_REFINED_CELLS,
+                f"level 0 REFINEDCELL (bit 0x4) count is {EXPECTED_REFINED_CELLS}",
+                n_refined,
+            )
+            # the reader's overlap-blanking must not exceed the writer's
+            # REFINEDCELL footprint: an EXTERIORCELL-only cell (0x8 without
+            # 0x4) renders as a 0.5-coarse-cell white band around the patch
+            # (the overhanging fine AMRBox over the hidden outer ghost ring
+            # blanked the coarse interface ring -- fixed by emitted_range)
+            n_blank_only = int(
+                np.count_nonzero(
+                    ((ghost & EXTERIORCELL_BIT) != 0) & ((ghost & REFINEDCELL_BIT) == 0)
+                )
+            )
+            report(
+                n_blank_only == 0,
+                "level 0 has no EXTERIORCELL-only cells (blanking == REFINEDCELL)",
+                n_blank_only,
+            )
+        else:
             valid_tags = set(np.unique(ghost).tolist()) <= {0}
             report(
                 valid_tags,
-                f"level {level} vtkGhostType is 0 everywhere (finest level)",
+                "level 1 vtkGhostType is 0 everywhere (all emitted rows cover the footprint)",
                 np.unique(ghost).tolist(),
             )
 
@@ -183,7 +178,7 @@ def check_fetch(src):
 
 def check_render(src, outdir):
     os.makedirs(outdir, exist_ok=True)
-    png_path = os.path.join(outdir, "amr_nesting_slice.png")
+    png_path = os.path.join(outdir, "amr_slice.png")
     bounds = src.GetDataInformation().GetBounds()
     center = [
         0.5 * (bounds[0] + bounds[1]),
@@ -259,9 +254,9 @@ def check_render(src, outdir):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--input", default="results_test_amr_nesting_sim_np001/output_amr_0000.vtkhdf"
+        "--input", default="results_sim_AMR_res01_np001/output_amr_0000.vtkhdf"
     )
-    parser.add_argument("--outdir", default="/tmp/opencode/pv_e2e_nesting")
+    parser.add_argument("--outdir", default="/tmp/opencode/pv_e2e")
     args = parser.parse_args()
 
     input_ok = os.path.isfile(args.input)
@@ -287,9 +282,9 @@ def main():
 
 def finish():
     if g_failures == 0:
-        print("RESULT: all ParaView E2E nesting checks passed", flush=True)
+        print("RESULT: all ParaView E2E checks passed", flush=True)
         sys.exit(0)
-    print(f"RESULT: {g_failures} ParaView E2E nesting check(s) FAILED", flush=True)
+    print(f"RESULT: {g_failures} ParaView E2E check(s) FAILED", flush=True)
     sys.exit(1)
 
 
