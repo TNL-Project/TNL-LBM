@@ -2714,6 +2714,11 @@ struct StateSentinel_AMR : StateSchedule_AMR<NSE>
 	{
 		Sched::launchCoarseToFineTransfers(fine_level);
 		if (injected && ! captured && fine_level == 2) {
+			// the fill kernels are ASYNCHRONOUS on the c2f stream (the
+			// F2C/C2F overlap; the launcher no longer syncs internally):
+			// drain the transfer phase before the host-side snapshot
+			// reads the filled ghost rows
+			this->synchronizeTransfers();
 			this->nse.copyDFsToHost();
 			band = captureFineGhost(*this->nse.getBlocksAtLevel(2).front());
 			captured = true;
