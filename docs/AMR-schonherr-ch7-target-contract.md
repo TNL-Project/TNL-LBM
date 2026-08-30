@@ -244,7 +244,7 @@ unmodified.
   level L runs exactly 2^L substeps per coarse step, F2C once per parent substep (frame-forced, not a physics choice), the
   C2F fill once per pair before its substep 1 (sourcing the parent's live post-substep-A state mid-cycle), and a
   level-ascending re-arm + C2F cascade at cycle end (the AA in-place discipline, per §3's ordering argument). The reduction
-  is census-locked byte-identical at 1, 2 and 3 fine levels under both streaming patterns (`tests/test_amr_nesting_{ab,aa}`).
+  is census-locked byte-identical at 1, 2 and 3 fine levels under both streaming patterns (`tests/unit/test_amr_nesting_{ab,aa}`).
 - **New validation V5–V10** (hard `createAMRBlocks` floors: ascending file order, unique containing parent, telescoping
   gap ≥ 2 with the wall-candidate s = −1 exception, sibling Chebyshev separation, wall-candidate chain agreement) plus the
   **V9 advisory warn tier** (gap 2 valid, warn below 3 — user-decided 2026-08-27); V1–V4 are this contract's pre-existing
@@ -454,7 +454,7 @@ making a₀ = 0, while the code gives a₀ = 0, a_xx = cq, a_yy = a_zz = 0 — e
 for c = 1. Conclusion: the code family is the exactly-consistent, cyclically
 closed variant; the print is internally inconsistent → thesis-print erratum is
 the working explanation (flag U1). Verified: Tests 8/9
-(`tests/test_amr_coupling.cu` `CMLinearField`/`CMQuadraticField`, :1541–1583)
+(`tests/unit/test_amr_coupling.cu` `CMLinearField`/`CMQuadraticField`, :1541–1583)
 assert exactly this exactness class against the code as-is, and the T10c lock
 (`tests/unit/test_amr_schonherr_exactness.cu`) discriminates the two families
 (code family green; the print-aligned family would sit ~1e-5 off).
