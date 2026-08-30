@@ -15,14 +15,14 @@
  *   (no runtime geometry) that pin the census arithmetic itself. These stay
  *   GREEN at every commit.
  * - "amr_schonherr_registration_locks": runtime locks against real State_AMR
- *   fixtures (same mock-state idiom as tests/test_amr_subcycling.cu). The
+ *   fixtures (same mock-state idiom as tests/unit/test_amr_subcycling.cu). The
  *   pytest wrapper (tests/unit/test_cpp_units.py) marks this suite's batch
  *   xfail(strict=True); the mark is removed at the commit-7 stage-1 gate.
  *
  * Fixture (shared by all runtime cases): 16^3 periodic domain with one
  * centered level-1 region, coarse footprint go = (4,4,4), gs = K = 8 cells
  * per axis, i.e. the "1 4 4 4 8 8 8" configuration from
- * tests/test_amr_subcycling.cu. Under the ruling (contract section 2.2) the
+ * tests/unit/test_amr_subcycling.cu. Under the ruling (contract section 2.2) the
  * fine block becomes offset' = 2*go+1 = 9 and local' = 2K-2 = 14 with a
  * 2-deep overlap, keeping the stored extent 2K+2 = 18 rows per axis
  * unchanged. The census identities used throughout (contract section 2.4):
@@ -107,7 +107,7 @@ long nothingCensus(long k)
 	return (k - 2) * (k - 2) * (k - 2);
 }
 
-// the same 16^3 periodic box in physical units as tests/test_amr_subcycling.cu
+// the same 16^3 periodic box in physical units as tests/unit/test_amr_subcycling.cu
 // (nu_lb coarse 0.005, binary-halved on the fine level)
 lat_t makeLattice()
 {
@@ -136,7 +136,7 @@ std::string adiosConfigPath()
 	return (root / "adios2.xml").string();
 }
 
-// minimal State_AMR subclass (same idiom as tests/test_amr_subcycling.cu):
+// minimal State_AMR subclass (same idiom as tests/unit/test_amr_subcycling.cu):
 // pass-through constructor plus the pure-virtual output-name surface
 template <typename NSE>
 struct StateLock_AMR : State_AMR<NSE>

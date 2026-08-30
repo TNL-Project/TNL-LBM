@@ -7,11 +7,12 @@
 // launches the coupling kernel directly, and verifies the result on the
 // host. No State/LBM objects are involved and no simulation is run.
 //
-// The streaming pattern is selected at compile time: tests/CMakeLists.txt
-// compiles this file twice, once with -DAB_PATTERN and once with
-// -DAA_PATTERN, producing the test_amr_coupling_{ab,aa} binaries (todo 12,
-// test 5). The A-A pattern stores post-collision data in the "twisted"
-// orientation (df_cur[opposite(q), site] holds direction q, see
+// The streaming pattern is selected at compile time: tests/unit/CMakeLists.txt
+// compiles this file twice, once with AB_PATTERN and once with
+// AA_PATTERN -- the `amr_coupling` TEST_SUITE of the consolidated doctest
+// binaries test_amr_units_{ab,aa} (whose main() comes from
+// doctest_main.cu). The A-A pattern stores post-collision data in the
+// "twisted" orientation (df_cur[opposite(q), site] holds direction q, see
 // streaming_AA.h and the kernel docstrings), so the fill/verify helpers
 // below are parametrized by the storage parity and cover both A-A states.
 //
@@ -40,9 +41,9 @@
 //
 // NESTING (the amr-nlevel-nesting plan's commit D): the tail of this file
 // pins the coupling at multi-level depth through the REAL schedule (the
-// StateSchedule_AMR spy and mock fixtures of tests/amr_test_fixture.h
+// StateSchedule_AMR spy and mock fixtures of tests/unit/amr_test_fixture.h
 // driving SimInit/SimUpdate on the 3-level telescoping chains of
-// tests/test_amr_nesting.cu): a per-pair transfer census (launches,
+// tests/unit/test_amr_nesting.cu): a per-pair transfer census (launches,
 // absolute substep counters and parities at every call site), a live-source
 // ordering lock proving the mid-cycle fill sources the parent's live
 // post-substep-A state, and a kernel-level composition lock proving the
@@ -52,9 +53,9 @@
 //
 // STDOUT CONTRACT OF THE NESTING LOCKS: the bit-identity harness
 // (tests/regression/test_amr_bitidentity.py, plan sec. 7.5) pins this
-// suite's full normalized stdout digest against the pre-nesting manifest,
-// and SIM battery artifacts must stay byte-reproducible. The nesting locks
-// below therefore run SILENT on success: failures print a FAIL line through
+// suite's full normalized stdout digest against the manifest, and SIM
+// battery artifacts must stay byte-reproducible. The nesting locks below
+// therefore run SILENT on success: failures print a FAIL line through
 // report() and flip the exit code, success adds zero bytes to the stream.
 
 #include <algorithm>
@@ -67,6 +68,8 @@
 #include <fmt/core.h>
 
 #include "amr_test_fixture.h"
+
+TEST_SUITE_BEGIN("amr_coupling");
 
 #include "lbm3d/d3q27/amr_coupling.h"
 
@@ -664,7 +667,7 @@ void test_linear_gradient_coarse_to_fine()
 //     destination cell's own 8 subcell densities (here the mean of the two
 //     x-subcell values; the sigma-form cumulant reconstruction preserves
 //     the zeroth moment of d0 exactly, cf. the L5 lock of
-//     tests/test_amr_f2c_schonherr.cu). This pins the subcell-mean reading
+//     tests/unit/test_amr_f2c_schonherr.cu). This pins the subcell-mean reading
 //     of the transfer and states NO conservation claim: for nonlinear
 //     content the subcell mean and the coarse-center field value differ
 //     (by 7.8e-4 for this marker, ~80x above the gate), so exactly one of
@@ -721,7 +724,7 @@ void test_mass_conservation_fine_to_coarse()
 	// mean-density transfer (the T4a successor; NO conservation claim): the
 	// destination density is d0 == the subcell mean -- for the x-only
 	// quadratic marker, the mean of rho(2x) and rho(2x+1); the L5 lock of
-	// tests/test_amr_f2c_schonherr.cu pins the same identity on the
+	// tests/unit/test_amr_f2c_schonherr.cu pins the same identity on the
 	// dedicated-suite geography (dedupe: one machinery class, two
 	// geographies -- this case owns the full-block launch class)
 	const auto rho_expected = [&rho_fine](idx x) -> double
@@ -1875,7 +1878,7 @@ void sentinelFineGhostPlane(MockBlock& fine, int axis)
 //     F2C; the constant velocities carry through exactly as a0/b0/c0 and
 //     the zero-strain fill gives vanishing non-equilibrium moments, so
 //     the destination DF state is the equilibrium of (d0, U0, V0, W0);
-//     the L5 lock of tests/test_amr_f2c_schonherr.cu pins the sum-DF
+//     the L5 lock of tests/unit/test_amr_f2c_schonherr.cu pins the sum-DF
 //     identity on the dedicated-suite geography -- dedupe: same machinery
 //     class, this helper owns the production skin-launch geography).
 //   - Lagrava (opt-out) branch: the analytically projected coarse-center
@@ -2332,11 +2335,11 @@ void test_f2c_skin_edge2pair_clamp_exactness()
 // on success, FAIL + nonzero exit on failure.
 
 // quiet-on-success check (the suite's full stdout digest is pinned by the
-// bit-identity manifest, sec. 7.5 -- success must add zero bytes)
-void check(bool ok, const std::string& what)
+// bit-identity manifest, sec. 7.5 -- success must add zero bytes, and
+// doctest prints passing CHECK_MESSAGEs only in verbose mode)
+inline void check(bool ok, const std::string& what)
 {
-	if (! ok)
-		report(false, what);
+	CHECK_MESSAGE(ok, what);
 }
 
 // stdout nuller for the State-driven nesting locks: the State ctor
@@ -3075,60 +3078,34 @@ void test_two_hop_kernel_composition()
 		// the chain runs on the Schönherr arm only
 }
 
-int main(int argc, char** argv)
-{
-	// silent MPI bootstrap: TNLMPI_INIT (TNL::MPI::ScopedInitializer) would
-	// print the selectGPU "Rank 0: ... / Environment: ..." lines to stdout,
-	// which the bit-identity manifest (sec. 7.5) pins absent in THIS suite;
-	// the nesting locks below need MPI only for the single-rank State ctor
-	// (the GPU is the default device 0, matching the manifest's recording)
-	int mpi_provided = 0;
-	MPI_Init_thread(&argc, &argv, MPI_THREAD_SINGLE, &mpi_provided);
-
-	if (TNL::MPI::GetSize(MPI_COMM_WORLD) != 1) {
-		fmt::println("RESULT: AMR coupling tests are single-rank only (nproc = {})", TNL::MPI::GetSize(MPI_COMM_WORLD));
-		MPI_Finalize();
-		return 1;
-	}
-
-	fmt::println("AMR coupling kernel unit tests (streaming pattern: {})", pattern_name);
-
-	test_uniform_coarse_to_fine();
-	test_uniform_fine_to_coarse();
-	test_linear_gradient_coarse_to_fine();
-	test_mass_conservation_fine_to_coarse();
-	test_mass_conservation_coarse_to_fine();
-	test_nested_geometry_coupling();
-	test_cubic_reproduction_fine_to_coarse();
-	test_f2c_df_store_map_guard();
-
-	// skin F2C path coverage (production's only F2C channel since the ring
-	// path was removed in D.1): exactness, lo-edge clamp, Defect-2 guard on
-	// skin geography, lo-lo edge clamp probes -- strategy-split per T15:
-	// Tests 14/16 assert BOTH branches (strategy-split expectation), the
-	// lo = 0 clamp locks (Tests 15/18) are Lagrava (opt-out) authorities
-	// and defer explicitly on the F2C_SCHONHERR arm
-	test_f2c_skin_exactness_interior();
-	test_f2c_skin_edge_clamp_exactness();
-	test_f2c_skin_df_store_map_guard();
-	test_f2c_skin_edge2pair_clamp_exactness();
+// the doctest registration of the suite: one TEST_CASE per test function in
+// the retired main()'s call order (doctest runs cases in registration
+// order, preserving the schedule); skin Tests 14/16 assert BOTH F2C
+// branches (strategy-split expectation), the lo = 0 clamp locks (Tests
+// 15/18) are Lagrava (opt-out) authorities and defer explicitly on the
+// F2C_SCHONHERR arm
+TEST_CASE("T01 uniform coarse-to-fine") { test_uniform_coarse_to_fine(); }
+TEST_CASE("T02 uniform fine-to-coarse") { test_uniform_fine_to_coarse(); }
+TEST_CASE("T03 linear-gradient coarse-to-fine") { test_linear_gradient_coarse_to_fine(); }
+TEST_CASE("T04 mass conservation fine-to-coarse") { test_mass_conservation_fine_to_coarse(); }
+TEST_CASE("T05 mass conservation coarse-to-fine") { test_mass_conservation_coarse_to_fine(); }
+TEST_CASE("T06 nested geometry coupling") { test_nested_geometry_coupling(); }
+TEST_CASE("T07 cubic reproduction fine-to-coarse") { test_cubic_reproduction_fine_to_coarse(); }
+TEST_CASE("T08 F2C DF/macro store map guard") { test_f2c_df_store_map_guard(); }
+TEST_CASE("T14 F2C skin interior exactness") { test_f2c_skin_exactness_interior(); }
+TEST_CASE("T15 F2C skin edge clamp") { test_f2c_skin_edge_clamp_exactness(); }
+TEST_CASE("T16 F2C skin DF store map guard") { test_f2c_skin_df_store_map_guard(); }
+TEST_CASE("T18 F2C skin edge-pair clamp") { test_f2c_skin_edge2pair_clamp_exactness(); }
 
 #if defined(C2F_COMPACT_MOMENT) || (!defined(C2F_LAGRANGE) && !defined(C2F_TRILINEAR) && !defined(C2F_LINEAR_EXPLOSION) && !defined(C2F_UNIFORM_EXPLOSION))
-	// production CM semantics (default since the 2026-08-18 flip, user ruling)
-	test_cm_exactness_nominal();
+// production CM semantics (default since the 2026-08-18 flip, user ruling)
+TEST_CASE("T09 CM nominal-window exactness") { test_cm_exactness_nominal(); }
 #endif	// CM semantics active
 
-	// nesting locks (plan commit D; silent on success, see the stdout
-	// contract in the file header)
-	test_two_hop_transfer_census();
-	test_midcycle_fill_live_source();
-	test_two_hop_kernel_composition();
+// nesting locks (plan commit D; silent on success, see the stdout contract
+// in the file header)
+TEST_CASE("T19 two-hop transfer census") { test_two_hop_transfer_census(); }
+TEST_CASE("T20 mid-cycle fill live source") { test_midcycle_fill_live_source(); }
+TEST_CASE("T21 two-hop kernel composition") { test_two_hop_kernel_composition(); }
 
-	MPI_Finalize();
-	if (g_failures == 0) {
-		fmt::println("RESULT: all AMR coupling tests passed");
-		return 0;
-	}
-	fmt::println("RESULT: {} AMR coupling check(s) FAILED", g_failures);
-	return 1;
-}
+TEST_SUITE_END();
