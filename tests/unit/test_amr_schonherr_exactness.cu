@@ -1163,6 +1163,10 @@ TEST_CASE("T10f fill census: every destination cell written exactly once per fil
 	// under the substep-0 rotation)
 	state.nse.updateKernelDataForLevel(1, 0);
 	state.launchCoarseToFineTransfers(1);
+	// the fill kernels run asynchronously on the c2f stream (the F2C/C2F
+	// overlap; the launcher no longer syncs internally): drain the
+	// transfer phase before the host-side census reads the destinations
+	state.synchronizeTransfers();
 	fine->copyDFsToHost();
 
 	// census on frame 0's physical array + frame isolation; capture the
@@ -1228,6 +1232,7 @@ TEST_CASE("T10f fill census: every destination cell written exactly once per fil
 	// bitwise at the post-frame-0 state.
 	state.nse.updateKernelDataForLevel(1, 1);
 	state.launchCoarseToFineTransfers(1);
+	state.synchronizeTransfers();
 	fine->copyDFsToHost();
 
 	long still_sentinel_f1 = 0, non_finite_f1 = 0, frame0_rewritten = 0;
