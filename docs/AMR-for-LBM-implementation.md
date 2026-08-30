@@ -176,7 +176,7 @@ Same global rows, same roles, same launches — the ONLY difference is A's alloc
 
 Flat per-level layout: Level0 = whole coarse lattice, Level1.. = fine footprints. Global `Origin` attribute + per-level `Spacing`. `vtkGhostType` marks under-footprint coarse cells as `REFINEDCELL` (bit 0x4) so ParaView blanks them under the fine data. `CellData` contains `rho`, `vx`, `vy`, `vz`, `vtkGhostType` per level.
 
-### 7.2 ParaView end-to-end test (`tests/regression/test_amr_paraview.py` driving `tests/amr_paraview_e2e.py` under pvpython)
+### 7.2 ParaView end-to-end test (`tests/integration/test_amr_paraview.py` driving `tests/integration/amr_paraview_e2e.py` under pvpython)
 
 Runs under pvpython: opens the VTKHDF file, asserts OverlappingAMR structure (level counts, field availability, ghost-type distributions), checks field statistics (rho ≈ 1.0, |vx| < V_max), renders a z-midplane slice to PNG, verifies the screenshot has ≥64 unique colors and ≥30 KB.
 
@@ -184,7 +184,7 @@ Runs under pvpython: opens the VTKHDF file, asserts OverlappingAMR structure (le
 
 ## 8. Verification infrastructure
 
-### 8.1 Unit tests (pytest: `tests/unit/test_amr_units.py` + `tests/regression/test_amr_paraview.py`)
+### 8.1 Unit tests (pytest: `tests/unit/test_amr_units.py` + `tests/integration/test_amr_paraview.py`)
 
 The gate is fully pytest-native (the retired `tests/run-amr-tests.sh` shell and the two e2e `.sh` wrappers were the last shell launchers; the gate suites run as doctest TEST_SUITEs of the consolidated `test_amr_units_{ab,aa}` binaries):
 
@@ -194,8 +194,8 @@ The gate is fully pytest-native (the retired `tests/run-amr-tests.sh` shell and 
 | `tests/unit/test_amr_units.py` suite `amr_subcycling` × {ab,aa} | 8 tests: six-step schedule census + parity-at-call-site (Test 1 test_subcycling_schedule — 2 fine + 1 coarse kernel launches + 3 fill launches per cycle per level), time synchronization (t_coarse == t_fine after the 2:1 subcycling), max_level==0 bitwise-identical-to-base-driver, interface-ring freshness (Test 4: every ring cell's macros bitwise-equal a kernels-only reference after one cycle — kernels-only equality is physically unextendable past cycle 1 because the ring streams from the F2C-refreshed skin), conservation hidden-cell exclusion (Test 5: the 216-cell frozen set of the recount excluded from the conservation sums), skin-partition geometry (Test 6: the depth-1 disjoint partition — pushed skin rectangles pairwise disjoint, union == exact depth-1 face shell, empties dropped — 8³/3³/{3,8,8}), footprint minimum (Test 7: per-axis gs ≥ 3 accepted, thinner rejected with the verbatim dual-role message — F3 F-1), generative fill-freshness model over 3 cycles (Test 8), and the 4-cycle parity-chain derivation of the seam's even/odd alternation (Test 9) — Tests 8/9 landed at commit 9/T8 |
 | `tests/unit/test_amr_units.py` suite `amr_vtkhdf_writer` × {ab,aa} | VTKHDF file structure, ghost-type tagging, field values; plus the 3-level nesting census (commit D): per-level block grouping/spacing/AMRBox extents and the direct-pair REFINEDCELL census on a 3-level chain (silent-on-success rows like the coupling locks below) |
 | `tests/unit/test_amr_units.py` suite `amr_nesting` × {ab,aa} | the amr-nlevel-nesting commits A–C suite: the V-suite reject corpus with verbatim messages + advisory-tier warnings, 3-level chain creation (exact parent-frame offsets/locals, per-level lattice scaling), the 3-level markAMRInterface map census, the 2/3-fine-level schedule censuses of the advancePair recursion (parity locks at every launch, 2^L substeps per level per cycle), the 3-level conservation smoke |
-| `tests/regression/test_amr_paraview.py::test_amr_paraview_e2e` | ParaView >= 6.0 fetch + field stats + slice render (6.1 in the test environment; skipped if pvpython absent — the retired shells' exit-77 convention) |
-| `tests/regression/test_amr_paraview.py::test_amr_paraview_e2e_nesting` | the 3-level nesting arm (commit D, target #10): the dedicated mock `test_amr_nesting_sim` writes a 4-level (0..3) nested-frame VTKHDF; ParaView asserts 4 levels × 1 block, per-level cell/REFINEDCELL censuses, no EXTERIORCELL-only blanking at any level, rho finite everywhere, fetch + slice render (skipped if pvpython absent) |
+| `tests/integration/test_amr_paraview.py::test_amr_paraview_e2e` | ParaView >= 6.0 fetch + field stats + slice render (6.1 in the test environment; skipped if pvpython absent — the retired shells' exit-77 convention) |
+| `tests/integration/test_amr_paraview.py::test_amr_paraview_e2e_nesting` | the 3-level nesting arm (commit D, target #10): the dedicated mock `test_amr_nesting_sim` writes a 4-level (0..3) nested-frame VTKHDF; ParaView asserts 4 levels × 1 block, per-level cell/REFINEDCELL censuses, no EXTERIORCELL-only blanking at any level, rho finite everywhere, fetch + slice render (skipped if pvpython absent) |
 
 Current status: **all 10 gate targets pass** (4 suites × 2 patterns + 2 e2e arms) on both AA and AB streaming patterns.
 
@@ -396,8 +396,8 @@ Fix: skip the DF write unless `coarse_SD.map(x,y,z) == GEO_NOTHING` — ~3 lines
 | `tests/unit/test_amr_coupling.cu` | Mock-block coupling kernel unit tests |
 | `tests/unit/test_amr_subcycling.cu` | State_AMR end-to-end subcycling tests (incl. Test 4 ring freshness + Tests 6/7 as above) |
 | `tests/unit/test_amr_vtkhdf_writer.cu` | VTKHDF writer unit test |
-| `tests/regression/test_amr_paraview.py` | ParaView end-to-end visualization tests (2 arms; drives the pvpython check scripts below) |
-| `tests/amr_paraview_e2e.py` / `tests/amr_paraview_e2e_nesting.py` | pvpython check scripts of the e2e arms (not pytest modules — ParaView python) |
+| `tests/integration/test_amr_paraview.py` | ParaView end-to-end visualization tests (2 arms; drives the pvpython check scripts below) |
+| `tests/integration/amr_paraview_e2e.py` / `tests/integration/amr_paraview_e2e_nesting.py` | pvpython check scripts of the e2e arms (not pytest modules — ParaView python) |
 | `tests/unit/test_amr_units.py` | AMR gate doctest launcher (the four suites of `test_amr_units_{ab,aa}` × patterns) |
 | `tests/between_metric.py` / `tests/interface_seam_metric.py` | Bracket (uniform-coarse/fine reference) and interface-seam metrics used by the conversion probes (§8.2) |
 | `tests/unit/test_amr_schonherr_registration.cu` / `test_amr_schonherr_exactness.cu` | doctest lock suites of the conversion (registration/census fingerprints; §7.2 exactness incl. the R1 code-family lock) wrapped by `tests/unit/test_cpp_units.py` |
@@ -576,7 +576,7 @@ Shipped state (the amr-nlevel-nesting arc commits A–G, 2026-08-27/28, HEAD `52
 (`max_level` ≤ 4, i.e. five lattice levels on the realized target), single MPI rank and single GPU retained from v1, every
 band/cycle rule of the contract extending **per adjacent pair, unchanged** (couplings stay strictly adjacent-pair; nothing
 crosses two levels). The arc ran under two discipline instruments, both green at HEAD: the **AMR gate 10/10**
-(the shell gate of the arc — since migrated entirely to pytest: `tests/unit/test_amr_units.py` runs the six v1 mocks × {ab,aa} + the `test_amr_nesting_*` suite, `tests/regression/test_amr_paraview.py` runs both ParaView e2e arms:
+(the shell gate of the arc — since migrated entirely to pytest: `tests/unit/test_amr_units.py` runs the six v1 mocks × {ab,aa} + the `test_amr_nesting_*` suite, `tests/integration/test_amr_paraview.py` runs both ParaView e2e arms:
 the 2-level arm pinned, the 3-level nesting arm added) and the **bit-identity harness 11/11 verify mode**
 (`tests/regression/test_amr_bitidentity.py` — every `max_level == 1` artifact of the mocks and both sims byte-compared
 against the committed `tests/regression/amr_ref/manifest.json` after each commit, proving the nesting machinery changed no

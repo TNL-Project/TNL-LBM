@@ -6,7 +6,7 @@ suites, one binary per streaming pattern (the per-pattern defines select
 the A-B/A-A kernels throughout) — once per TEST_SUITE via doctest's
 ``--test-suite=`` filter. These 2×4 runs are the gate half of the AMR
 battery (the ParaView end-to-end arms live in
-``tests/regression/test_amr_paraview.py``).
+``tests/integration/test_amr_paraview.py``).
 
 The suites are doctests: every legacy PASS/FAIL site maps one-to-one to a
 ``CHECK_MESSAGE`` (positive-coverage counting preserved; see the
