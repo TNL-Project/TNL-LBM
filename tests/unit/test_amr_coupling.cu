@@ -2336,7 +2336,7 @@ void test_f2c_skin_edge2pair_clamp_exactness()
 
 // quiet-on-success check (the suite's full stdout digest is pinned by the
 // bit-identity manifest, sec. 7.5 -- success must add zero bytes, and
-// doctest prints passing CHECK_MESSAGEs only in verbose mode)
+// doctest prints passing CHECK_MESSAGE assertions only in verbose mode)
 inline void check(bool ok, const std::string& what)
 {
 	CHECK_MESSAGE(ok, what);
