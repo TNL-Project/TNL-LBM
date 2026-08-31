@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lbm3d/defs.h"
+#include "lbm_common/rounding.h"
 
 template <typename CONFIG>
 struct D2Q9_BC_All
@@ -18,7 +19,7 @@ struct D2Q9_BC_All
 		GEO_FLUID,	// compulsory
 		GEO_WALL,	// compulsory
 		GEO_INFLOW,
-		GEO_INFLOW_LEFT,
+		GEO_INFLOW_MOMENT,
 		GEO_OUTFLOW_EQ,
 		GEO_OUTFLOW_RIGHT,
 		GEO_OUTFLOW_RIGHT_INTERP,
@@ -63,7 +64,7 @@ struct D2Q9_BC_All
 		return mapgi == GEO_FLUID || mapgi == GEO_SYMMETRY;
 	}
 
-	__cuda_callable__ static int detectOutflowFace(DATA& SD, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx z)
+	__cuda_callable__ static int detectBCFace(DATA& SD, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx z)
 	{
 		if (isOutflowInterior(SD.map(xm, y, z)))
 			return bc_face::XP;
@@ -74,12 +75,19 @@ struct D2Q9_BC_All
 		return bc_face::YM;
 	}
 
+	// BC tags whose runtime face detection must find exactly one interior
+	// axis-neighbor: the outflow pass and the moment inflow
+	__cuda_callable__ static bool isFaceDetectedBC(map_t mapgi)
+	{
+		return isOutflowPassBC(mapgi) || mapgi == GEO_INFLOW_MOMENT;
+	}
+
 	// gathers read the postcollision state finalized by the previous launch
 	// and live in streaming_*.h; the BC body then follows the legacy cases
 	template <typename LBM_KS>
 	__cuda_callable__ static void outflowPass(DATA& SD, LBM_KS& KS, map_t mapgi, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
-		const int face = detectOutflowFace(SD, xm, x, xp, ym, y, yp, z);
+		const int face = detectBCFace(SD, xm, x, xp, ym, y, yp, z);
 		switch (mapgi) {
 			case GEO_OUTFLOW_RIGHT:
 				STREAMING::streamingOutflow(SD, KS, face, xm, x, xp, ym, y, yp, z);
@@ -174,6 +182,86 @@ struct D2Q9_BC_All
 			applySymmetry(KS, ghosts);
 	}
 
+	// component of direction slot i along axis a (0 = x, 1 = y)
+	__cuda_callable__ static constexpr int dcomp(int i, int a)
+	{
+		return a == 0 ? dir9_cx(i) : dir9_cy(i);
+	}
+
+	// slot of the direction with the given (normal, tangential) components
+	// (-1 if not found; the tangential axis is the remaining one of the two)
+	__cuda_callable__ static constexpr int dslot(int a, int t, int cn, int ct)
+	{
+		for (int i = 0; i < 9; i++)
+			if (dcomp(i, a) == cn && dcomp(i, t) == ct)
+				return i;
+		return -1;
+	}
+
+	// moment boundary condition by Pavel Eichler https://doi.org/10.1016/j.camwa.2024.08.009
+	// (2D reduction: mass + tangential momentum + tangential stress), generalized from
+	// the legacy left-wall inflow (outward normal -x, face XM) to any domain face:
+	// AXIS is the face-normal axis, SIGN the outward sign of the inflow plane, and
+	// every slot depends only on those two parameters, so each instantiation folds
+	// to just its own face's code. A shared runtime-face form loses this folding and
+	// was measured worse in D2Q9's small fused kernels (hills AA -5% from register
+	// and literal pressure) and drifts values off the legacy FP contractions (the
+	// hills mass-conservation check failed at final time); the derivation in
+	// docs/moment-bc-derivation.md pins the rounding to the pre-generalization XM
+	// tree. D3Q27 keeps a runtime-face body instead (see d3q27/bc.h): its fused
+	// kernel tolerates it (measured fastest there, sim_2 AA neutral) and per-face
+	// instantiation reproduces the ptxas spill regression in the D3Q27 AA kernel
+	// (sim_2 -6.9%)
+	template <int AXIS, int SIGN, typename LBM_KS>
+	__cuda_callable__ static void inflowMoment(LBM_KS& KS)
+	{
+		constexpr int T = 1 - AXIS;
+
+		// layer slots: Z = populations with cn == 0, W = the outward-moving
+		// layer (cn == SIGN); each layer is one axis slot (ct == 0) plus the
+		// ct == +-1 pair; the pair is summed before joining the axis slot and
+		// the W pair is ordered negative-first so that on the legacy face (XM)
+		// the density matches the verbatim XM expression tree bit-exactly
+		constexpr int z0 = dslot(AXIS, T, 0, 0);
+		constexpr int zp = dslot(AXIS, T, 0, 1);
+		constexpr int zm = dslot(AXIS, T, 0, -1);
+		constexpr int w0 = dslot(AXIS, T, SIGN, 0);
+		constexpr int wp = dslot(AXIS, T, SIGN, 1);
+		constexpr int wm = dslot(AXIS, T, SIGN, -1);
+
+		const dreal vn = AXIS == 0 ? KS.vx : KS.vy;
+		const dreal vt = AXIS == 0 ? KS.vy : KS.vx;
+
+		KS.rho = (KS.f[z0] + (KS.f[zp] + KS.f[zm]) + 2 * (KS.f[w0] + (KS.f[wm] + KS.f[wp]))) / (1 + SIGN * vn);
+
+		// lbm_fma_rn pins replicate the fp-contraction spots the compiler picks
+		// for the legacy XM body (verified in SASS): n1o3*rho fused into the
+		// stress and rho*vt fused into each corner pair; which product gets fused
+		// depends on the whole-function data flow and cannot be left to the compiler
+		const dreal mTT = lbm_fma_rn(KS.rho, n1o3, KS.rho * (vt * vt));
+
+		// closed-form reconstruction of the unknown layer (populations moving
+		// into the domain, cn == -SIGN); corners first, the axis slot last
+		// because it reads the just-written corner slots
+		for (int i = 0; i < 9; i++) {
+			if (dcomp(i, AXIS) != -SIGN)
+				continue;
+			const int ct = dcomp(i, T);
+			if (ct == 0)
+				continue;
+			const int z = dslot(AXIS, T, 0, ct);
+			const int w = dslot(AXIS, T, SIGN, ct);
+			KS.f[i] = (dreal) 0.5 * (lbm_fma_rn((dreal) ct * vt, KS.rho, mTT) - 2 * KS.f[z] - 2 * KS.f[w]);
+		}
+
+		// the axis slot closes the mass budget; the subtraction order and pair
+		// grouping reproduce the legacy XM chain (corner writes above are read
+		// back here, which is why this slot must come last)
+		constexpr int up = dslot(AXIS, T, -SIGN, 1);
+		constexpr int um = dslot(AXIS, T, -SIGN, -1);
+		constexpr int axisSlot = dslot(AXIS, T, -SIGN, 0);
+		KS.f[axisSlot] = KS.rho - KS.f[z0] - KS.f[w0] - (KS.f[zp] + KS.f[zm]) - (KS.f[up] + KS.f[um]) - (KS.f[wm] + KS.f[wp]);
+	}
 	template <typename LBM_KS>
 	__cuda_callable__ static void preCollision(DATA& SD, LBM_KS& KS, map_t mapgi, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
@@ -194,23 +282,24 @@ struct D2Q9_BC_All
 				KS.rho = 1;
 				COLL::setEquilibrium(KS);
 				break;
-			case GEO_INFLOW_LEFT:
-				{
-					SD.inflow(KS, x, y, z);
-					applySymmetryCorner(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
-					// moment boundary condition by Pavel Eichler https://doi.org/10.1016/j.camwa.2024.08.009
-					// 2D reduction: mass + y-momentum + Π_yy (normal stress)
-					// expressions symetrized: Y-mirror directions paired so float32 summation is commutative
-					KS.rho =
-						(KS.f[dir9::zz] + (KS.f[dir9::zp] + KS.f[dir9::zm]) + 2 * (KS.f[dir9::mz] + (KS.f[dir9::mm] + KS.f[dir9::mp]))) / (1 - KS.vx);
-					dreal m01 = KS.rho * KS.vy;
-					dreal m02 = n1o3 * KS.rho + KS.rho * (KS.vy * KS.vy);
-					KS.f[dir9::pp] = (dreal) 0.5 * (m02 + m01 - 2 * KS.f[dir9::zp] - 2 * KS.f[dir9::mp]);
-					KS.f[dir9::pm] = (dreal) 0.5 * (m02 - m01 - 2 * KS.f[dir9::zm] - 2 * KS.f[dir9::mm]);
-					KS.f[dir9::pz] = KS.rho - KS.f[dir9::zz] - KS.f[dir9::mz] - (KS.f[dir9::zp] + KS.f[dir9::zm]) - (KS.f[dir9::pp] + KS.f[dir9::pm])
-								   - (KS.f[dir9::mm] + KS.f[dir9::mp]);
-					break;
+			case GEO_INFLOW_MOMENT:
+				SD.inflow(KS, x, y, z);
+				applySymmetryCorner(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+				switch (detectBCFace(SD, xm, x, xp, ym, y, yp, z)) {
+					case bc_face::XM:
+						inflowMoment<0, -1>(KS);
+						break;
+					case bc_face::XP:
+						inflowMoment<0, 1>(KS);
+						break;
+					case bc_face::YP:
+						inflowMoment<1, 1>(KS);
+						break;
+					default:
+						inflowMoment<1, -1>(KS);
+						break;
 				}
+				break;
 			case GEO_OUTFLOW_EQ:
 				applySymmetryCorner(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				COLL::computeDensityAndVelocity(KS);
@@ -256,7 +345,7 @@ struct D2Q9_BC_All
 	{
 		// by default, collision is done on non-BC sites only
 		// additionally, BCs which include the collision step should be specified here
-		return isFluid(mapgi) || isSymmetric(mapgi) || mapgi == GEO_INFLOW_LEFT;
+		return isFluid(mapgi) || isSymmetric(mapgi) || mapgi == GEO_INFLOW_MOMENT;
 	}
 
 	template <typename LBM_KS>

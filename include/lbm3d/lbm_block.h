@@ -174,12 +174,13 @@ struct LBM_BLOCK
 
 	void copyMapToHost();
 	void copyMapToDevice();
-	// Verify that every outflow-pass cell has exactly one interior-side
-	// (fluid/symmetry) axis-neighbor - the neighbor from which the outflow
-	// pass detects the face; throws std::runtime_error otherwise.
+	// Verify that every face-detected BC cell (outflow pass, moment inflow)
+	// has exactly one interior-side (fluid/symmetry) axis-neighbor - the
+	// neighbor from which the BC detects the face at runtime; throws
+	// std::runtime_error otherwise.
 	// Ghost sites hold the reset-base map values, so the check is exact
 	// whenever a BC plane does not coincide with a subdomain seam.
-	void validateOutflowPassRegion();
+	void validateFaceDetectedBC();
 	// recompute the rectangle cover of outflow-pass sites from the host map
 	void updateOutflowPassRegion();
 	void copyMacroToHost();

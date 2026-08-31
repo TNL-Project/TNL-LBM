@@ -15,7 +15,7 @@
  *
  * Under the A-A pattern the gathers are parity-dependent and every case
  * runs for both parities; under A-B both subcases exercise the same
- * parity-free path. Face detection (BC::detectOutflowFace, host-side) is
+ * parity-free path. Face detection (BC::detectBCFace, host-side) is
  * covered for all faces including the symmetry-as-interior rule.
  */
 
@@ -355,7 +355,7 @@ TEST_CASE("detect-faces")
 			block.hmap.setValue(BC::GEO_WALL);
 			block.hmap(x, y, z) = BC::GEO_OUTFLOW_RIGHT_INTERP;
 			block.hmap(c.ax, c.ay, c.az) = tag;
-			const int detected = BC::detectOutflowFace(block.data, x - 1, x, x + 1, y - 1, y, y + 1, z - 1, z, z + 1);
+			const int detected = BC::detectBCFace(block.data, x - 1, x, x + 1, y - 1, y, y + 1, z - 1, z, z + 1);
 			CHECK_EQ(detected, c.face);
 		}
 	}

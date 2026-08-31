@@ -84,7 +84,7 @@ TEST_SUITE_BEGIN("bcsymmetry");
 TEST_CASE("bcsymmetry: no-symmetry-neighbor")
 {
 	auto block = makeBlock(6, 6);
-	stamp(block, 2, 2, BC::GEO_INFLOW_LEFT);
+	stamp(block, 2, 2, BC::GEO_INFLOW_MOMENT);
 
 	KS ks = makeKS();
 	BC::applySymmetryCorner(block.data, ks, 1, 2, 3, 1, 2, 3, 0, 0, 0);
@@ -99,7 +99,7 @@ TEST_CASE("bcsymmetry: ghost-without-symmetry")
 	auto block = makeBlock(6, 6);
 	for (idx x = 0; x < 6; x++)
 		stamp(block, x, 0, BC::GEO_NOTHING);
-	stamp(block, 1, 1, BC::GEO_INFLOW_LEFT);
+	stamp(block, 1, 1, BC::GEO_INFLOW_MOMENT);
 
 	KS ks = makeKS();
 	BC::applySymmetryCorner(block.data, ks, 0, 1, 2, 0, 1, 2, 0, 0, 0);
@@ -114,7 +114,7 @@ TEST_CASE("bcsymmetry: single-plane-ym")
 	auto block = makeBlock(6, 6);
 	stamp(block, 2, 1, BC::GEO_SYMMETRY);
 	stamp(block, 1, 0, BC::GEO_NOTHING);
-	stamp(block, 1, 1, BC::GEO_INFLOW_LEFT);
+	stamp(block, 1, 1, BC::GEO_INFLOW_MOMENT);
 
 	KS ks = makeKS();
 	BC::applySymmetryCorner(block.data, ks, 0, 1, 2, 0, 1, 2, 0, 0, 0);
@@ -134,7 +134,7 @@ TEST_CASE("bcsymmetry: single-plane-xm")
 	auto block = makeBlock(6, 6);
 	stamp(block, 1, 3, BC::GEO_SYMMETRY);
 	stamp(block, 0, 2, BC::GEO_NOTHING);
-	stamp(block, 1, 2, BC::GEO_INFLOW_LEFT);
+	stamp(block, 1, 2, BC::GEO_INFLOW_MOMENT);
 
 	KS ks = makeKS();
 	BC::applySymmetryCorner(block.data, ks, 0, 1, 2, 1, 2, 3, 0, 0, 0);
@@ -154,7 +154,7 @@ TEST_CASE("bcsymmetry: single-plane-yp")
 	auto block = makeBlock(6, 6);
 	stamp(block, 2, 1, BC::GEO_SYMMETRY);
 	stamp(block, 1, 2, BC::GEO_NOTHING);
-	stamp(block, 1, 1, BC::GEO_INFLOW_LEFT);
+	stamp(block, 1, 1, BC::GEO_INFLOW_MOMENT);
 
 	KS ks = makeKS();
 	BC::applySymmetryCorner(block.data, ks, 0, 1, 2, 0, 1, 2, 0, 0, 0);
@@ -174,7 +174,7 @@ TEST_CASE("bcsymmetry: single-plane-xp")
 	auto block = makeBlock(6, 6);
 	stamp(block, 1, 3, BC::GEO_SYMMETRY);
 	stamp(block, 2, 2, BC::GEO_NOTHING);
-	stamp(block, 1, 2, BC::GEO_INFLOW_LEFT);
+	stamp(block, 1, 2, BC::GEO_INFLOW_MOMENT);
 
 	KS ks = makeKS();
 	BC::applySymmetryCorner(block.data, ks, 0, 1, 2, 1, 2, 3, 0, 0, 0);
@@ -196,7 +196,7 @@ TEST_CASE("bcsymmetry: two-axis-symmetry")
 	stamp(block, 1, 2, BC::GEO_SYMMETRY);  // y+1 symmetry
 	stamp(block, 0, 1, BC::GEO_NOTHING);   // x-1 ghost
 	stamp(block, 1, 0, BC::GEO_NOTHING);    // y-1 ghost
-	stamp(block, 1, 1, BC::GEO_INFLOW_LEFT);
+	stamp(block, 1, 1, BC::GEO_INFLOW_MOMENT);
 
 	KS ks = makeKS();
 	BC::applySymmetryCorner(block.data, ks, 0, 1, 2, 0, 1, 2, 0, 0, 0);
@@ -223,7 +223,7 @@ TEST_CASE("bcsymmetry: edge-x-both-sides")
 	stamp(block, 1, 0, BC::GEO_SYMMETRY);
 	stamp(block, 0, 1, BC::GEO_NOTHING);
 	stamp(block, 2, 1, BC::GEO_NOTHING);
-	stamp(block, 1, 1, BC::GEO_INFLOW_LEFT);
+	stamp(block, 1, 1, BC::GEO_INFLOW_MOMENT);
 
 	KS ks = makeKS();
 	BC::applySymmetryCorner(block.data, ks, 0, 1, 2, 0, 1, 2, 0, 0, 0);
@@ -320,7 +320,7 @@ TEST_SUITE_BEGIN("bcsymmetry3d");
 TEST_CASE("bcsymmetry3d: no-symmetry-neighbor")
 {
 	auto block = makeBlock3(6, 6, 6);
-	stamp3(block, 2, 2, 2, BC3::GEO_INFLOW_LEFT);
+	stamp3(block, 2, 2, 2, BC3::GEO_INFLOW_MOMENT);
 
 	KS3 ks = makeKS3();
 	BC3::applySymmetryCorner(block.data, ks, 1, 2, 3, 1, 2, 3, 1, 2, 3);
@@ -334,7 +334,7 @@ TEST_CASE("bcsymmetry3d: ghost-without-symmetry")
 	auto block = makeBlock3(6, 6, 6);
 	for (idx x = 0; x < 6; x++)
 		stamp3(block, x, 0, 0, BC3::GEO_NOTHING);
-	stamp3(block, 1, 1, 0, BC3::GEO_INFLOW_LEFT);
+	stamp3(block, 1, 1, 0, BC3::GEO_INFLOW_MOMENT);
 
 	KS3 ks = makeKS3();
 	BC3::applySymmetryCorner(block.data, ks, 0, 1, 2, 0, 1, 2, 0, 0, 0);
@@ -349,7 +349,7 @@ TEST_CASE("bcsymmetry3d: single-plane-ym")
 	auto block = makeBlock3(6, 6, 6);
 	stamp3(block, 3, 2, 2, BC3::GEO_SYMMETRY);
 	stamp3(block, 2, 1, 2, BC3::GEO_NOTHING);
-	stamp3(block, 2, 2, 2, BC3::GEO_INFLOW_LEFT);
+	stamp3(block, 2, 2, 2, BC3::GEO_INFLOW_MOMENT);
 
 	KS3 ks = makeKS3();
 	BC3::applySymmetryCorner(block.data, ks, 1, 2, 3, 1, 2, 3, 1, 2, 3);
@@ -378,7 +378,7 @@ TEST_CASE("bcsymmetry3d: single-plane-xm")
 	auto block = makeBlock3(6, 6, 6);
 	stamp3(block, 2, 3, 2, BC3::GEO_SYMMETRY);
 	stamp3(block, 1, 2, 2, BC3::GEO_NOTHING);
-	stamp3(block, 2, 2, 2, BC3::GEO_INFLOW_LEFT);
+	stamp3(block, 2, 2, 2, BC3::GEO_INFLOW_MOMENT);
 
 	KS3 ks = makeKS3();
 	BC3::applySymmetryCorner(block.data, ks, 1, 2, 3, 1, 2, 3, 1, 2, 3);
@@ -407,7 +407,7 @@ TEST_CASE("bcsymmetry3d: edge-x-both-sides")
 	stamp3(block, 2, 1, 2, BC3::GEO_SYMMETRY);
 	stamp3(block, 1, 2, 2, BC3::GEO_NOTHING);
 	stamp3(block, 3, 2, 2, BC3::GEO_NOTHING);
-	stamp3(block, 2, 2, 2, BC3::GEO_INFLOW_LEFT);
+	stamp3(block, 2, 2, 2, BC3::GEO_INFLOW_MOMENT);
 
 	KS3 ks = makeKS3();
 	BC3::applySymmetryCorner(block.data, ks, 1, 2, 3, 1, 2, 3, 1, 2, 3);
@@ -447,7 +447,7 @@ TEST_CASE("bcsymmetry3d: two-axis-symmetry")
 	stamp3(block, 2, 3, 2, BC3::GEO_SYMMETRY);	// y+1 symmetry
 	stamp3(block, 2, 1, 2, BC3::GEO_NOTHING);	// y-1 ghost
 	stamp3(block, 1, 2, 2, BC3::GEO_NOTHING);	// x-1 ghost
-	stamp3(block, 2, 2, 2, BC3::GEO_INFLOW_LEFT);
+	stamp3(block, 2, 2, 2, BC3::GEO_INFLOW_MOMENT);
 
 	KS3 ks = makeKS3();
 	BC3::applySymmetryCorner(block.data, ks, 1, 2, 3, 1, 2, 3, 1, 2, 3);
@@ -486,7 +486,7 @@ TEST_CASE("bcsymmetry3d: single-plane-xp")
 	auto block = makeBlock3(6, 6, 6);
 	stamp3(block, 2, 3, 2, BC3::GEO_SYMMETRY);
 	stamp3(block, 3, 2, 2, BC3::GEO_NOTHING);
-	stamp3(block, 2, 2, 2, BC3::GEO_INFLOW_LEFT);
+	stamp3(block, 2, 2, 2, BC3::GEO_INFLOW_MOMENT);
 
 	KS3 ks = makeKS3();
 	BC3::applySymmetryCorner(block.data, ks, 1, 2, 3, 1, 2, 3, 1, 2, 3);
@@ -513,7 +513,7 @@ TEST_CASE("bcsymmetry3d: single-plane-yp")
 	auto block = makeBlock3(6, 6, 6);
 	stamp3(block, 3, 2, 2, BC3::GEO_SYMMETRY);
 	stamp3(block, 2, 3, 2, BC3::GEO_NOTHING);
-	stamp3(block, 2, 2, 2, BC3::GEO_INFLOW_LEFT);
+	stamp3(block, 2, 2, 2, BC3::GEO_INFLOW_MOMENT);
 
 	KS3 ks = makeKS3();
 	BC3::applySymmetryCorner(block.data, ks, 1, 2, 3, 1, 2, 3, 1, 2, 3);
@@ -540,7 +540,7 @@ TEST_CASE("bcsymmetry3d: single-plane-zm")
 	auto block = makeBlock3(6, 6, 6);
 	stamp3(block, 3, 2, 2, BC3::GEO_SYMMETRY);
 	stamp3(block, 2, 2, 1, BC3::GEO_NOTHING);
-	stamp3(block, 2, 2, 2, BC3::GEO_INFLOW_LEFT);
+	stamp3(block, 2, 2, 2, BC3::GEO_INFLOW_MOMENT);
 
 	KS3 ks = makeKS3();
 	BC3::applySymmetryCorner(block.data, ks, 1, 2, 3, 1, 2, 3, 1, 2, 3);
@@ -567,7 +567,7 @@ TEST_CASE("bcsymmetry3d: single-plane-zp")
 	auto block = makeBlock3(6, 6, 6);
 	stamp3(block, 3, 2, 2, BC3::GEO_SYMMETRY);
 	stamp3(block, 2, 2, 3, BC3::GEO_NOTHING);
-	stamp3(block, 2, 2, 2, BC3::GEO_INFLOW_LEFT);
+	stamp3(block, 2, 2, 2, BC3::GEO_INFLOW_MOMENT);
 
 	KS3 ks = makeKS3();
 	BC3::applySymmetryCorner(block.data, ks, 1, 2, 3, 1, 2, 3, 1, 2, 3);

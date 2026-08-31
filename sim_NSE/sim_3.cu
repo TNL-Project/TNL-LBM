@@ -41,7 +41,7 @@ struct StateLocal : State<NSE>
 		nse.setBoundaryZ(nse.lat.global.z() - 2, BC::GEO_SYMMETRY);	 // top
 
 		// inflow/outflow next, so they win over symmetry at edges/corners
-		nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT);								 // left
+		nse.setBoundaryX(1, BC::GEO_INFLOW_MOMENT);								 // left
 		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT_INTERP);	 // right
 
 		// extra layer needed due to A-A pattern

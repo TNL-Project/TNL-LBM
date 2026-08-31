@@ -4,6 +4,7 @@ set(unit_test_sources
     test_outflow_cover.cu
     test_outflow_gather2d.cu
     test_outflow_gather3d.cu
+    test_inflow_moment.cu
     test_decomposition.cu
     test_bc_symmetry.cu
     doctest_main.cu

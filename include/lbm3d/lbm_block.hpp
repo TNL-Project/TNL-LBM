@@ -394,12 +394,12 @@ void LBM_BLOCK<CONFIG>::copyMapToDevice()
 	ddiffusionCoeff = hdiffusionCoeff;
 	dphiTransferDirection = hphiTransferDirection;
 
-	validateOutflowPassRegion();
+	validateFaceDetectedBC();
 	updateOutflowPassRegion();
 }
 
 template <typename CONFIG>
-void LBM_BLOCK<CONFIG>::validateOutflowPassRegion()
+void LBM_BLOCK<CONFIG>::validateFaceDetectedBC()
 {
 	if constexpr (CONFIG::BC::use_outflow_pass) {
 		// interior-side predicate in *global* map indexing; positions outside
@@ -419,7 +419,7 @@ void LBM_BLOCK<CONFIG>::validateOutflowPassRegion()
 					const idx gx = offset.x() + lx;
 					const idx gy = offset.y() + ly;
 					const idx gz = offset.z() + lz;
-					if (! CONFIG::BC::isOutflowPassBC(hmap(gx, gy, gz)))
+					if (! CONFIG::BC::isFaceDetectedBC(hmap(gx, gy, gz)))
 						continue;
 
 					int interior_neighbors = 0;
@@ -439,7 +439,7 @@ void LBM_BLOCK<CONFIG>::validateOutflowPassRegion()
 					if (interior_neighbors != 1)
 						throw std::runtime_error(
 							fmt::format(
-								"outflow boundary cell at global ({},{},{}) has {} interior-side (fluid/symmetry) axis-neighbors "
+								"face-detected boundary cell at global ({},{},{}) has {} interior-side (fluid/symmetry) axis-neighbors "
 								"(expected exactly 1)",
 								gx,
 								gy,

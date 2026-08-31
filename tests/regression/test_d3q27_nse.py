@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 
 # D3Q27 GEO enum (must match include/lbm3d/d3q27/bc.h)
 GEO_WALL = 1
-GEO_INFLOW_LEFT = 3
+GEO_INFLOW_MOMENT = 3
 GEO_OUTFLOW_RIGHT_INTERP = 8
 GEO_NOTHING = 9
 
@@ -148,7 +148,7 @@ class TestSim1:
 
     def test_inflow_uniform(self, data: FieldData) -> None:
         vx, wall = data["velocity_x"], data["wall"]
-        inflow_mask = wall[:, :, 1] == GEO_INFLOW_LEFT
+        inflow_mask = wall[:, :, 1] == GEO_INFLOW_MOMENT
         assert inflow_mask.any(), "no inflow cells found at x=1"
         inflow_vx = vx[:, :, 1][inflow_mask]
         spread = float(np.max(inflow_vx) - np.min(inflow_vx))
@@ -300,7 +300,7 @@ class TestSim3:
             inflow_col = get_col(cuts[axis]["wall"])
             assert inflow_col[0] == GEO_NOTHING
             assert inflow_col[-1] == GEO_NOTHING
-            assert np.all(inflow_col[1:-1] == GEO_INFLOW_LEFT), (
+            assert np.all(inflow_col[1:-1] == GEO_INFLOW_MOMENT), (
                 f"cut_{axis}: inflow edges overwritten by symmetry "
                 f"(tags: {np.unique(inflow_col[1:-1])})"
             )

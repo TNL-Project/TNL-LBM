@@ -2,6 +2,7 @@
 
 #include "lbm3d/defs.h"
 #include "lbm_common/ciselnik.h"
+#include "lbm_common/rounding.h"
 
 template <typename CONFIG>
 struct D3Q27_BC_All
@@ -19,7 +20,7 @@ struct D3Q27_BC_All
 		GEO_FLUID,	// compulsory
 		GEO_WALL,	// compulsory
 		GEO_INFLOW,
-		GEO_INFLOW_LEFT,
+		GEO_INFLOW_MOMENT,
 		GEO_INFLOW_BOUNCEBACK,
 		GEO_INFLOW_EQ_LEFT,
 		GEO_OUTFLOW_EQ,
@@ -76,7 +77,7 @@ struct D3Q27_BC_All
 	// LBM_BLOCK::validateOutflowPassRegion (called from copyMapToDevice)
 	// guarantees exactly one such axis-neighbor per outflow cell, so the
 	// check order only matters for unvalidated maps.
-	__cuda_callable__ static int detectOutflowFace(DATA& SD, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
+	__cuda_callable__ static int detectBCFace(DATA& SD, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
 		if (isOutflowInterior(SD.map(xm, y, z)))
 			return bc_face::XP;
@@ -91,12 +92,19 @@ struct D3Q27_BC_All
 		return bc_face::ZM;
 	}
 
+	// BC tags whose runtime face detection must find exactly one interior
+	// axis-neighbor: the outflow pass and the moment inflow
+	__cuda_callable__ static bool isFaceDetectedBC(map_t mapgi)
+	{
+		return isOutflowPassBC(mapgi) || mapgi == GEO_INFLOW_MOMENT;
+	}
+
 	// gathers read the postcollision state finalized by the previous launch
 	// and live in streaming_*.h; the BC body then follows the legacy cases
 	template <typename LBM_KS>
 	__cuda_callable__ static void outflowPass(DATA& SD, LBM_KS& KS, map_t mapgi, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
-		const int face = detectOutflowFace(SD, xm, x, xp, ym, y, yp, zm, z, zp);
+		const int face = detectBCFace(SD, xm, x, xp, ym, y, yp, zm, z, zp);
 		switch (mapgi) {
 			case GEO_OUTFLOW_RIGHT:
 				STREAMING::streamingOutflow(SD, KS, face, xm, x, xp, ym, y, yp, zm, z, zp);
@@ -228,6 +236,121 @@ struct D3Q27_BC_All
 			applySymmetry(KS, ghosts);
 	}
 
+	// component of direction slot i along axis a (0 = x, 1 = y, 2 = z)
+	__cuda_callable__ static constexpr int dcomp(int i, int a)
+	{
+		return a == 0 ? dir27_cx(i) : a == 1 ? dir27_cy(i) : dir27_cz(i);
+	}
+
+	// slot of the direction with the given (normal, t1, t2) components
+	// (-1 if not found; the tangential axes t1/t2 are chosen per face)
+	__cuda_callable__ static constexpr int dslot(int a, int t1, int t2, int cn, int ct1, int ct2)
+	{
+		for (int i = 0; i < 27; i++)
+			if (dcomp(i, a) == cn && dcomp(i, t1) == ct1 && dcomp(i, t2) == ct2)
+				return i;
+		return -1;
+	}
+
+	// velocity component of the kernel data along axis a (0 = x, 1 = y, 2 = z)
+	template <typename LBM_KS>
+	__cuda_callable__ static dreal vcomp(const LBM_KS& KS, int a)
+	{
+		return a == 0 ? KS.vx : a == 1 ? KS.vy : KS.vz;
+	}
+
+	// moment boundary condition by Pavel Eichler https://doi.org/10.1016/j.camwa.2024.08.009,
+	// generalized from the legacy left-wall inflow (outward normal -x, face XM) to any
+	// domain face (tangential axes are cyclic: t1 = axis+1, t2 = axis+2); the single
+	// runtime-parameterized body below serves all faces -- the derivation in
+	// docs/moment-bc-derivation.md pins its rounding to the pre-generalization XM tree.
+	// Unlike D2Q9 (per-face template instantiations, see d2q9/bc.h), this model keeps
+	// the runtime face: measured in the fused kernels it is the fastest D3Q27
+	// dispatch (sim_2 AB +1.7%, AA neutral vs committed), while per-face
+	// instantiation inlines six bodies into the AA kernel and reproduces the ptxas
+	// spill regression (sim_2 AA -6.9%)
+	template <typename LBM_KS>
+	__cuda_callable__ static void inflowMoment(int face, LBM_KS& KS)
+	{
+		const int AXIS = (face == bc_face::XP || face == bc_face::XM) ? 0 : (face == bc_face::YP || face == bc_face::YM) ? 1 : 2;
+		const int SIGN = (face == bc_face::XM || face == bc_face::YM || face == bc_face::ZM) ? -1 : 1;
+		const int T1 = (AXIS + 1) % 3;
+		const int T2 = (AXIS + 2) % 3;
+
+		const dreal vn = vcomp(KS, AXIS);
+		const dreal vt1 = vcomp(KS, T1);
+		const dreal vt2 = vcomp(KS, T2);
+
+		// layer slots: Z = populations with cn == 0, W = the outward-moving layer
+		// (cn == SIGN); each layer is one axis slot (ct1 == ct2 == 0) plus 8
+		// off-axis slots summed as balanced mirror pairs -- corners
+		// ((+1,+1)+(-1,-1)) + ((+1,-1)+(-1,+1)) first, then the tangential axis
+		// pairs ((+1,0)+(-1,0)) + ((0,+1)+(0,-1)), positive direction first; on
+		// the legacy face (XM) this reproduces the verbatim XM expression tree
+		// bit-exactly (pair-internal operand order is bitwise-invisible to the
+		// commutative IEEE add)
+		const int z00 = dslot(AXIS, T1, T2, 0, 0, 0);
+		const int zpp = dslot(AXIS, T1, T2, 0, 1, 1);
+		const int zmm = dslot(AXIS, T1, T2, 0, -1, -1);
+		const int zpm = dslot(AXIS, T1, T2, 0, 1, -1);
+		const int zmp = dslot(AXIS, T1, T2, 0, -1, 1);
+		const int zpz = dslot(AXIS, T1, T2, 0, 1, 0);
+		const int zmz = dslot(AXIS, T1, T2, 0, -1, 0);
+		const int zzp = dslot(AXIS, T1, T2, 0, 0, 1);
+		const int zzm = dslot(AXIS, T1, T2, 0, 0, -1);
+		const int w00 = dslot(AXIS, T1, T2, SIGN, 0, 0);
+		const int wpp = dslot(AXIS, T1, T2, SIGN, 1, 1);
+		const int wmm = dslot(AXIS, T1, T2, SIGN, -1, -1);
+		const int wpm = dslot(AXIS, T1, T2, SIGN, 1, -1);
+		const int wmp = dslot(AXIS, T1, T2, SIGN, -1, 1);
+		const int wpz = dslot(AXIS, T1, T2, SIGN, 1, 0);
+		const int wmz = dslot(AXIS, T1, T2, SIGN, -1, 0);
+		const int wzp = dslot(AXIS, T1, T2, SIGN, 0, 1);
+		const int wzm = dslot(AXIS, T1, T2, SIGN, 0, -1);
+
+		const dreal zCorners = ((KS.f[zpp] + KS.f[zmm]) + (KS.f[zpm] + KS.f[zmp]));
+		const dreal wCorners = ((KS.f[wpp] + KS.f[wmm]) + (KS.f[wpm] + KS.f[wmp]));
+		const dreal zSum = zCorners + ((KS.f[zpz] + KS.f[zmz]) + (KS.f[zzp] + KS.f[zzm]));
+		const dreal wSum = wCorners + ((KS.f[wpz] + KS.f[wmz]) + (KS.f[wzp] + KS.f[wzm]));
+
+		// reciprocal first, then multiply -- matches the legacy XM denominator
+		KS.rho = (dreal) 1.0 / (1 + SIGN * vn) * ((KS.f[z00] + zSum) + 2 * (KS.f[w00] + wSum));
+
+		// lbm_fma_rn pins replicate the fp-contraction spots the compiler picks
+		// for the legacy XM body (verified in SASS): a runtime-parameterized
+		// formula cannot reproduce those contractions reliably from source, and
+		// the intrinsic never re-contracts, so the pinned subexpressions keep
+		// the legacy rounding on XM deterministically
+		const dreal mT1 = KS.rho * vt1;
+		const dreal mT2 = KS.rho * vt2;
+		const dreal mT1T1 = n1o3 * KS.rho + KS.rho * (vt1 * vt1);
+		const dreal mT2T2 = lbm_fma_rn(KS.rho, vt2 * vt2, n1o3 * KS.rho);
+		const dreal mT1T1T2 = lbm_fma_rn(vt2, n1o3 * KS.rho, KS.rho * ((vt1 * vt1) * vt2));
+		const dreal mT1T2T2 = lbm_fma_rn(vt1, n1o3 * KS.rho, KS.rho * (vt1 * (vt2 * vt2)));
+		const dreal mTT = lbm_fma_rn(KS.rho * (vt1 * vt1), vt2 * vt2, lbm_fma_rn(KS.rho, n1o9, n1o3 * KS.rho * (vt1 * vt1 + vt2 * vt2)));
+
+		// closed-form reconstruction of the unknown layer (populations moving
+		// into the domain, cn == -SIGN); partner slots always live in the
+		// untouched W / Z layers, so the write order does not matter
+		for (int i = 0; i < 27; i++) {
+			if (dcomp(i, AXIS) != -SIGN)
+				continue;
+			const int ct1 = dcomp(i, T1);
+			const int ct2 = dcomp(i, T2);
+			const int w = dslot(AXIS, T1, T2, SIGN, ct1, ct2);
+			const int z = dslot(AXIS, T1, T2, 0, ct1, ct2);
+			if (ct1 == 0 && ct2 == 0)
+				KS.f[i] = lbm_fma_rn((dreal) (-SIGN) * vn, KS.rho, mTT - (mT1T1 + mT2T2)) + KS.f[w00] + zSum + 2 * wSum;
+			else if (ct2 == 0)
+				KS.f[i] = (dreal) 0.5 * ((mT1T1 - mTT) + ct1 * (mT1 - mT1T2T2)) - (KS.f[w] + KS.f[z]);
+			else if (ct1 == 0)
+				KS.f[i] = (dreal) 0.5 * ((mT2T2 - mTT) + ct2 * (mT2 - mT1T1T2)) - (KS.f[w] + KS.f[z]);
+			else
+				KS.f[i] =
+					(dreal) 0.25 * (lbm_fma_rn((dreal) (ct1 * ct2) * KS.rho, vt1 * vt2, mTT) + (ct2 * mT1T1T2 + ct1 * mT1T2T2)) - (KS.f[w] + KS.f[z]);
+		}
+	}
+
 	template <typename LBM_KS>
 	__cuda_callable__ static void preCollision(DATA& SD, LBM_KS& KS, map_t mapgi, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
@@ -258,59 +381,11 @@ struct D3Q27_BC_All
 				KS.rho = 1;
 				COLL::setEquilibrium(KS);
 				break;
-			case GEO_INFLOW_LEFT:
-				{
-					SD.inflow(KS, x, y, z);
-					applySymmetryCorner(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
-					// moment boundary condition by Pavel Eichler https://doi.org/10.1016/j.camwa.2024.08.009
-					// expressions symetrized by Jakub Klinkovsky
-					// clang-format off
-					KS.rho = (dreal)1.0/(1-KS.vx) * (
-						(
-							KS.f[zzz] + (
-								+ ((KS.f[zpp] + KS.f[zmm]) + (KS.f[zpm] + KS.f[zmp]))
-								+ ((KS.f[zpz] + KS.f[zmz]) + (KS.f[zzp] + KS.f[zzm]))
-							)
-						)
-						+ 2*(
-							KS.f[mzz] + (
-								+ ((KS.f[mpp] + KS.f[mmm]) + (KS.f[mpm] + KS.f[mmp]))
-								+ ((KS.f[mpz] + KS.f[mmz]) + (KS.f[mzp] + KS.f[mzm]))
-							)
-						)
-					);
-					// clang-format on
-					dreal m100 = KS.rho * KS.vx;
-					dreal m010 = KS.rho * KS.vy;
-					dreal m001 = KS.rho * KS.vz;
-					dreal m011 = KS.rho * (KS.vy * KS.vz);
-					dreal m020 = n1o3 * KS.rho + KS.rho * (KS.vy * KS.vy);
-					dreal m002 = n1o3 * KS.rho + KS.rho * (KS.vz * KS.vz);
-					dreal m021 = n1o3 * KS.rho * KS.vz + KS.rho * ((KS.vy * KS.vy) * KS.vz);
-					dreal m012 = n1o3 * KS.rho * KS.vy + KS.rho * (KS.vy * (KS.vz * KS.vz));
-					dreal m022 = n1o9 * KS.rho + n1o3 * KS.rho * (KS.vy * KS.vy + KS.vz * KS.vz) + KS.rho * (KS.vy * KS.vy) * (KS.vz * KS.vz);
-					// clang-format off
-					KS.f[pzz] = m100 + (m022 - (m020 + m002))
-						+ KS.f[mzz]
-						+ (
-							+ ((KS.f[zpp] + KS.f[zmm]) + (KS.f[zpm] + KS.f[zmp]))
-							+ ((KS.f[zzp] + KS.f[zzm]) + (KS.f[zpz] + KS.f[zmz]))
-						)
-						+ 2*(
-							+ ((KS.f[mpp] + KS.f[mmm]) + (KS.f[mpm] + KS.f[mmp]))
-							+ ((KS.f[mpz] + KS.f[mmz]) + (KS.f[mzp] + KS.f[mzm]))
-						);
-					// clang-format on
-					KS.f[ppz] = (dreal) 0.5 * ((m020 - m022) + (-m012 + m010)) - (KS.f[mpz] + KS.f[zpz]);
-					KS.f[pmz] = (dreal) 0.5 * ((m020 - m022) + (m012 - m010)) - (KS.f[mmz] + KS.f[zmz]);
-					KS.f[pzp] = (dreal) 0.5 * ((m002 - m022) + (-m021 + m001)) - (KS.f[mzp] + KS.f[zzp]);
-					KS.f[pzm] = (dreal) 0.5 * ((m002 - m022) + (m021 - m001)) - (KS.f[mzm] + KS.f[zzm]);
-					KS.f[ppp] = (dreal) 0.25 * ((m022 + m011) + (m021 + m012)) - (KS.f[mpp] + KS.f[zpp]);
-					KS.f[ppm] = (dreal) 0.25 * ((m022 - m011) + (-m021 + m012)) - (KS.f[mpm] + KS.f[zpm]);
-					KS.f[pmp] = (dreal) 0.25 * ((m022 - m011) + (m021 - m012)) - (KS.f[mmp] + KS.f[zmp]);
-					KS.f[pmm] = (dreal) 0.25 * ((m022 + m011) + (-m021 - m012)) - (KS.f[mmm] + KS.f[zmm]);
-					break;
-				}
+			case GEO_INFLOW_MOMENT:
+				SD.inflow(KS, x, y, z);
+				applySymmetryCorner(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+				inflowMoment(detectBCFace(SD, xm, x, xp, ym, y, yp, zm, z, zp), KS);
+				break;
 			case GEO_INFLOW_BOUNCEBACK:
 				SD.inflow(KS, x, y, z);
 				applySymmetryCorner(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
@@ -553,7 +628,7 @@ struct D3Q27_BC_All
 	{
 		// by default, collision is done on non-BC sites only
 		// additionally, BCs which include the collision step should be specified here
-		return isFluid(mapgi) || isSymmetric(mapgi) || mapgi == GEO_INFLOW_LEFT;
+		return isFluid(mapgi) || isSymmetric(mapgi) || mapgi == GEO_INFLOW_MOMENT;
 	}
 
 	template <typename LBM_KS>

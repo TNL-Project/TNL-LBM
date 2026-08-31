@@ -143,7 +143,7 @@ struct StateLocal : State<NSE>
 	void setupBoundaries() override
 	{
 		if (nse.blocks.front().data.vx_profile) {
-			nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT);								 // left
+			nse.setBoundaryX(1, BC::GEO_INFLOW_MOMENT);								 // left
 			nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT_INTERP);	 // right
 		}
 
