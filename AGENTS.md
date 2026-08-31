@@ -118,6 +118,22 @@ with optional Python bindings via nanobind and distributed execution through CUD
   Set `GEO_SYMMETRY` planes first, inflow/outflow next, then walls, and the `GEO_NOTHING` ghost layer always last
   — otherwise symmetry tags capture the inflow/outflow face edges.
 - **Fenced comments**: Do not add decorative comments with "fences", e.g. `# -----------------` or `// -----------------`.
+- **Inlining many heavy per-face BC bodies into the fused A-A kernel**: ptxas
+  trades registers for local-memory spills (proven by ncu on sim_2 AA: 96->80
+  regs, ~1.2 GB/launch spill traffic, -6.8% GLUPS). The symmetric failure is
+  a runtime-face BC body in D2Q9's small fused kernels: defeats constant
+  folding (hills AA -5%, and drifts values off the legacy FP contractions
+  until the mass-conservation regression fails at final time). Neither
+  extreme works: `__noinline__` outlines collapse D2Q9 AA 26.2 -> 11.0 GLUPS
+  (ABI overhead); one runtime-generic body for all models regresses D3Q27 AB
+  -3.5%. The tuned dispatch lives in `bc.h`: D3Q27 carries one
+  runtime-parameterized body called directly in both patterns; D2Q9 carries
+  a `template <int AXIS, int SIGN>` body (constexpr slot arithmetic)
+  instantiated per face in the preCollision switch.
+- **Verifying FP-bitwise contracts in test kernels only**: `lbm_fma_rn` pins
+  tuned against fp-contract fusion spots in a small test kernel do not
+  guarantee the same contractions in the larger fused production kernel; the
+  production regression suites are the gate.
 
 ## UNIQUE STYLES
 
