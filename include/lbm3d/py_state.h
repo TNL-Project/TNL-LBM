@@ -47,7 +47,7 @@ struct PyState : public State<NSE>
 	using idx = typename NSE::TRAITS::idx;
 	using idx3d = typename NSE::TRAITS::idx3d;
 
-	NB_TRAMPOLINE(State<NSE>, 16);
+	NB_TRAMPOLINE(State<NSE>);
 
 	[[nodiscard]] std::vector<std::string> getOutputDataNames() const override
 	{
@@ -60,10 +60,11 @@ struct PyState : public State<NSE>
 		// NOTE: code below is expanded from NB_OVERRIDE, but changed to use rv_policy::reference for arguments
 		// (necessary because LBM_BLOCK is not copyable)
 		using nb_ret_type = void;
-		nanobind::detail::ticket nb_ticket(nb_trampoline, "outputData", false);
+		constexpr uint64_t nb_hash = nanobind::detail::str_hash("outputData");
+		nanobind::detail::ticket nb_ticket(nb_trampoline, "outputData", nb_hash, false);
 		if (nb_ticket.key.is_valid()) {
 			return nanobind::cast<nb_ret_type>(
-				nb_trampoline.base().attr(nb_ticket.key).template operator()<nb::rv_policy::reference>(writer, block, begin, end)
+				nb_trampoline.base().attr(nb_ticket.key).template operator()<nb::rv_policy::reference_v>(writer, block, begin, end)
 			);
 		}
 		else
