@@ -4,14 +4,18 @@
 #include <cmath>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 #include <omp.h>
 
 #include <spdlog/spdlog.h>
+#include <spdlog/details/os.h>
+#include <spdlog/sinks/sink.h>
 
 #include "state.h"
 #include "amr_decomposition.h"
@@ -31,6 +35,58 @@ struct AMRConservationStats
 	double total_momentum_x = 0, total_momentum_y = 0, total_momentum_z = 0;
 	std::vector<double> per_level_kinetic_energy;
 };
+
+namespace amr_detail {
+/**
+ * \brief Pass-through spdlog sink dropping the async VTKHDF writer's own
+ * completion line.
+ *
+ * `OverlappingAMRWriter::write` logs "VTKHDF AMR output written: ..." at its
+ * end. With the write running on a `std::async` worker that line would land
+ * at a nondeterministic position of the stdout stream (which the
+ * bit-identity harness digests), so `State_AMR::write3D_AMR` prints the line
+ * itself at the write's launch (the call-site position of the synchronous
+ * baseline) and this sink drops only the worker thread's duplicate. Every
+ * other message from any thread is forwarded to the sinks captured at
+ * installation, gated by each wrapped sink's own level, so the console/file
+ * output is unchanged everywhere else. `set_pattern`/`set_formatter` are
+ * intentionally inert: the wrapped sinks already carry the patterns set by
+ * `init_logging` before this filter is installed.
+ */
+class VTKHDFWriteLogFilter : public spdlog::sinks::sink
+{
+public:
+	VTKHDFWriteLogFilter(std::vector<spdlog::sink_ptr> wrapped_sinks, std::size_t main_thread_id)
+	: wrapped_sinks_(std::move(wrapped_sinks)),
+	  main_thread_id_(main_thread_id)
+	{}
+
+	void log(const spdlog::details::log_msg& msg) override
+	{
+		if (msg.thread_id != main_thread_id_ && msg.payload.size() >= dropped_prefix.size()
+			&& std::equal(dropped_prefix.begin(), dropped_prefix.end(), msg.payload.data()))
+			return;
+		for (auto& sink : wrapped_sinks_)
+			if (sink->should_log(msg.level))
+				sink->log(msg);
+	}
+
+	void flush() override
+	{
+		for (auto& sink : wrapped_sinks_)
+			sink->flush();
+	}
+
+	void set_pattern(const std::string&) override {}
+	void set_formatter(std::unique_ptr<spdlog::formatter>) override {}
+
+private:
+	static constexpr std::string_view dropped_prefix{"VTKHDF AMR output written:"};
+
+	std::vector<spdlog::sink_ptr> wrapped_sinks_;
+	std::size_t main_thread_id_;
+};
+}  // namespace amr_detail
 
 /**
  * \brief Berger-Colella time subcycling driver for AMR simulations.
@@ -477,6 +533,49 @@ struct State_AMR : State<NSE>
 	// public like the other implementation details above so that unit tests
 	// can drive it directly (test_amr_subcycling)
 	AMRConservationStats computeConservationStats();
+
+	// pending asynchronous VTKHDF write launched by write3D_AMR (the
+	// join/snapshot contract is documented there)
+	std::future<void> pendingAMRIO_;
+
+	// per-block device-macro snapshot swapped into `block.dmacro` for the
+	// lifetime of the async writer (see write3D_AMR); inactive (real array
+	// restored) outside the async write window
+	std::vector<typename TRAITS::dmacro_array_t> amr_write_dmacro_snapshot_;
+	bool amr_write_snapshot_active_ = false;
+	bool amr_write_log_filter_installed_ = false;
+
+	// conservation statistics reuse across the PRINT cadence (see
+	// AfterSimUpdate): a macro-computing `SimUpdate` iteration bumps
+	// `macro_generation_`; the stats are recomputed only when the generation
+	// changed since the last computation
+	long macro_generation_ = 0;
+	long conservation_stats_generation_ = -1;
+	AMRConservationStats cached_conservation_stats_;
+
+	// join the pending async VTKHDF writer (future::get() propagates a
+	// worker-side exception on the main thread, mirroring the base idiom of
+	// State::waitForPendingIO) and restore the real device-macro arrays
+	void waitForPendingAMRIO();
+
+	// hides Base::waitForPendingIO(): the call sites that must tolerate no
+	// pending I/O at all (core.h's wall-time / savestate / end-of-run joins)
+	// join the AMR write first, then the base's pending write
+	void waitForPendingIO()
+	{
+		waitForPendingAMRIO();
+		Base::waitForPendingIO();
+	}
+
+	// install the amr_detail::VTKHDFWriteLogFilter on the default logger
+	// (once per logger, main thread only - call-site of the async write)
+	void installAMRWriteLogFilter();
+
+	// swap each block's device-macro array with the per-block snapshot
+	// storage (the async writer's private frozen copy - see write3D_AMR);
+	// used in both directions (snapshot in at the launch, real arrays back
+	// after the join)
+	void swapAMRWriteDMacroSnapshot();
 };
 
 /**
@@ -936,6 +1035,20 @@ State_AMR<NSE>::wallPedestalPrismRects(const BLOCK_NSE& fine, std::uint8_t mask)
 template <typename NSE>
 void State_AMR<NSE>::AfterSimUpdate()
 {
+	// join a pending async VTKHDF write before any non-OUT3D output/reset
+	// counter of this tick: the base driver's copy_macro path refreshes
+	// hmacro on those ticks with bytes newer than the frame the worker is
+	// still serializing, and the STAT resets additionally rewrite the device
+	// macros. OUT3D is exempt - it is the writer's own tick, whose base
+	// copy reads the frame-frozen snapshot (identical bytes). The counter
+	// set mirrors SimUpdate's sync_macro decision
+	if (this->nse.max_level > 0)
+		for (int c = 0; c < MAX_COUNTER; c++)
+			if (c != PRINT && c != SAVESTATE && c != OUT3D && this->cnt[c].action(this->nse.physTime())) {
+				waitForPendingAMRIO();
+				break;
+			}
+
 	// VTKHDF AMR output at the OUT3D cadence (co-exists with base BP5 output);
 	// trigger check BEFORE Base (Base increments count)
 	if (this->nse.max_level > 0 && this->cnt[OUT3D].action(this->nse.physTime()))
@@ -949,7 +1062,18 @@ void State_AMR<NSE>::AfterSimUpdate()
 	if (! do_amr_report)
 		return;
 
-	AMRConservationStats s = computeConservationStats();
+	// conservation statistics reuse: the host macro mirrors are immutable
+	// within a dmacro generation (no kernel with compute_macro == false
+	// writes dmacro; the inter-level transfers only write frozen
+	// GEO_NOTHING skin cells, which the reduction excludes), so a fresh
+	// copy plus the deterministic reduction reproduces bit-identical sums
+	// at every PRINT tick of the generation -- compute once per generation
+	// and reprint the cached values verbatim
+	if (conservation_stats_generation_ != macro_generation_) {
+		cached_conservation_stats_ = computeConservationStats();
+		conservation_stats_generation_ = macro_generation_;
+	}
+	const AMRConservationStats& s = cached_conservation_stats_;
 	spdlog::info("AMR conservation: mass = {:.6e}", s.total_mass);
 	for (std::size_t L = 0; L < s.per_level_kinetic_energy.size(); L++)
 		spdlog::info("AMR level {}: kinetic energy = {:.6e}", L, s.per_level_kinetic_energy[L]);
@@ -964,12 +1088,49 @@ void State_AMR<NSE>::AfterSimUpdate()
  * iteration when `MACRO::compute_in_each_iteration == false` (e.g.
  * D3Q27_MACRO_Default); the writer itself only copies, it does not
  * recompute.
+ *
+ * The write follows the base driver's std::async I/O idiom: the
+ * serialization + HDF5 disk work (the dominant ~1.2 s of the frame) runs on
+ * a worker thread while the driver advances the lattice. The
+ * race-safety contract that makes the moved work produce byte-identical
+ * files:
+ * - the writer's internal device-to-host refreshes must see the device
+ *   macros of THIS frame, although the inter-level fine-to-coarse transfer
+ *   keeps rewriting the frozen GEO_NOTHING skin cells of `dmacro` every
+ *   following cycle. Each block's `dmacro` is therefore deep-copied into a
+ *   per-block snapshot which is swapped into `block.dmacro` before the
+ *   launch: the writer's refreshes read the frozen private copy while the
+ *   kernels keep writing the real storage (the kernel-facing `data.dmacro`
+ *   pointer is bound once at allocation and never re-bound, so the swap is
+ *   invisible to the compute path). Every host-side accessor that reads
+ *   `block.dmacro` during the window (the base driver's macro copy at this
+ *   same OUT3D tick, the conservation reduction) consequently reads the
+ *   same frame-frozen bytes, matching the synchronous baseline.
+ *   `hmacro` receives only frame-identical bytes during the window, so the
+ *   serialization's reads are stable for the whole lifetime of the worker.
+ * - join points: the next \ref write3D_AMR call (its host refresh would
+ *   write different bytes into `hmacro`, and HDF5 is used from a single
+ *   thread here), and every call site of the hidden \ref waitForPendingIO
+ *   (core.h's wall-time / savestate / end-of-run joins, the latter also
+ *   covering the process-exit completeness of the last frame). The join
+ *   restores the real `dmacro` arrays, so post-join consumers
+ *   (checkpoints, `copyAllToHost`) see live state again. A worker-side
+ *   exception (e.g. a failed HDF5 create) is rethrown by the future at the
+ *   join, mirroring the base idiom's error handling.
+ * - the writer's own "VTKHDF AMR output written" log line is printed at the
+ *   call site instead (the baseline's stream position); the worker's
+ *   duplicate is dropped by the installed \ref installAMRWriteLogFilter.
  */
 template <typename NSE>
 void State_AMR<NSE>::write3D_AMR(real time, int cycle)
 {
 	if (this->nse.max_level == 0)
 		return;
+
+	// join the previous frame's writer before this frame's host refresh
+	// (and before reusing the snapshot storage); restores the real dmacro
+	// arrays swapped out at the previous launch
+	waitForPendingAMRIO();
 
 	// single-file VTKHDF per step; cycle is OUT3D's current counter
 	// (pre-increment - Base::AfterSimUpdate increments it later)
@@ -980,7 +1141,101 @@ void State_AMR<NSE>::write3D_AMR(real time, int cycle)
 	for (auto& block : this->nse.blocks)
 		block.copyMacroToHost();
 
-	OverlappingAMRWriter<TRAITS>::write(fname, this->nse, time);
+	// the FIRST frame stays synchronous: the base driver's first BP5 write
+	// follows on this same tick, and BP5's async-write aggregation
+	// machinery (AsyncWrite=true) is initialized lazily inside its first
+	// Put -- ANY std::async thread churn around that window (even fully
+	// joined) corrupted BP5's first marshal intermittently (a garbage
+	// object dereference inside CreateWriterRec). Later BP5 Puts reuse the
+	// initialized machinery, so only this frame foregoes its overlap
+	if (cycle == 0) {
+		OverlappingAMRWriter<TRAITS>::write(fname, this->nse, time);
+		return;
+	}
+
+	// the MPI_THREAD_MULTIPLE constraint behind Base::asyncIOAllowed does
+	// NOT gate this write: the worker performs no MPI calls at all (AMR is
+	// single-rank - createAMRBlocks rejects nproc > 1 - and the VTKHDF
+	// writer is a plain raw-HDF5 serializer), so the std::async overlap
+	// applies on every system
+	installAMRWriteLogFilter();
+
+	// freeze the device macros of this frame for the writer's internal
+	// refreshes: swap a deep per-block copy into block.dmacro (the real
+	// arrays stay live and kernel-written through the data.dmacro pointer
+	// bound at allocation)
+	amr_write_dmacro_snapshot_.resize(this->nse.blocks.size());
+	for (std::size_t b = 0; b < this->nse.blocks.size(); b++)
+		amr_write_dmacro_snapshot_[b] = this->nse.blocks[b].dmacro;
+	swapAMRWriteDMacroSnapshot();
+	amr_write_snapshot_active_ = true;
+
+	pendingAMRIO_ = std::async(
+		std::launch::async,
+		[this, fname, time]()
+		{
+			OverlappingAMRWriter<TRAITS>::write(fname, this->nse, time);
+		}
+	);
+
+	// keep the writer's completion line at the baseline's stream position;
+	// the worker's own copy is dropped by the installed filter
+	spdlog::info("VTKHDF AMR output written: {}", fname);
+}
+
+template <typename NSE>
+void State_AMR<NSE>::waitForPendingAMRIO()
+{
+	if (pendingAMRIO_.valid()) {
+		// restore the real arrays even when the worker threw (the exception
+		// is then rethrown through the future, mirroring the base idiom)
+		std::exception_ptr exception;
+		try {
+			pendingAMRIO_.get();
+		}
+		catch (...) {
+			exception = std::current_exception();
+		}
+		if (amr_write_snapshot_active_) {
+			swapAMRWriteDMacroSnapshot();
+			amr_write_snapshot_active_ = false;
+		}
+		if (exception)
+			std::rethrow_exception(exception);
+	}
+}
+
+template <typename NSE>
+void State_AMR<NSE>::installAMRWriteLogFilter()
+{
+	if (amr_write_log_filter_installed_)
+		return;
+	auto logger = spdlog::default_logger();
+	auto& sinks = logger->sinks();
+	// another State_AMR instance (unit-test binary with several states per
+	// process) may have installed the filter already
+	for (const auto& sink : sinks)
+		if (std::dynamic_pointer_cast<amr_detail::VTKHDFWriteLogFilter>(sink)) {
+			amr_write_log_filter_installed_ = true;
+			return;
+		}
+	std::vector<spdlog::sink_ptr> wrapped(sinks.begin(), sinks.end());
+	auto filter = std::make_shared<amr_detail::VTKHDFWriteLogFilter>(std::move(wrapped), spdlog::details::os::thread_id());
+	sinks.clear();
+	sinks.push_back(std::move(filter));
+	amr_write_log_filter_installed_ = true;
+}
+
+template <typename NSE>
+void State_AMR<NSE>::swapAMRWriteDMacroSnapshot()
+{
+	for (std::size_t b = 0; b < amr_write_dmacro_snapshot_.size(); b++) {
+		auto& snapshot = amr_write_dmacro_snapshot_[b];
+		auto& live = this->nse.blocks[b].dmacro;
+		typename TRAITS::dmacro_array_t tmp = std::move(snapshot);
+		snapshot = std::move(live);
+		live = std::move(tmp);
+	}
 }
 
 /**
@@ -2099,6 +2354,13 @@ void State_AMR<NSE>::SimUpdate()
 			if (this->cnt[c].action(this->nse.physTime()))
 				sync_macro = true;
 	bool compute_macro = NSE::MACRO::compute_in_each_iteration || sync_macro;
+	// bump the dmacro generation the conservation-stats cache keys on:
+	// every kernel of a macro-computing iteration refreshes the device
+	// macros (the inter-level transfers' per-cycle skin writes alone do not
+	// count - the frozen GEO_NOTHING cells they touch are excluded from the
+	// reduction, so the stats need no invalidation for them)
+	if (compute_macro)
+		macro_generation_++;
 
 	#ifdef HAVE_MPI
 		#ifdef AA_PATTERN
