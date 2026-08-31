@@ -231,7 +231,7 @@ FetchContent_MakeAvailable(TNL)
 
 if(TNL_LBM_BUILD_PYTHON AND NOT TNL_LBM_BUILD_HIP)
     # this must be called before find_package(nanobind)
-    find_package(Python COMPONENTS Interpreter Development REQUIRED)
+    find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
 
     FetchContent_Declare(nanobind
         GIT_REPOSITORY https://github.com/wjakob/nanobind.git
