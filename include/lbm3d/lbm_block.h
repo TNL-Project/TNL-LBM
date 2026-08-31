@@ -174,12 +174,15 @@ struct LBM_BLOCK
 
 	void copyMapToHost();
 	void copyMapToDevice();
-	// Verify that every outflow-pass cell has exactly one interior-side
-	// (fluid/symmetry) axis-neighbor - the neighbor from which the outflow
-	// pass detects the face; throws std::runtime_error otherwise.
-	// Ghost sites hold the reset-base map values, so the check is exact
-	// whenever a BC plane does not coincide with a subdomain seam.
-	void validateOutflowPassRegion();
+	// Verify that every BC site that needs face detection (outflow pass, moment inflow)
+	// has exactly one interior-side (fluid/symmetry) axis-neighbor - the
+	// neighbor from which the BC detects the face at runtime;
+	// throws std::runtime_error otherwise.
+	// Runs in the device map after the subdomain overlaps were synchronized
+	// (State::SimInit calls LBM::validateFaceDetectedBC right after LBM::synchronizeMapDevice),
+	// so the check is exact: it reads the same neighbor values the runtime detectBCFace does,
+	// also for BC planes coinciding with subdomain interfaces and periodic domain wraps.
+	void validateFaceDetectedBC();
 	// recompute the rectangle cover of outflow-pass sites from the host map
 	void updateOutflowPassRegion();
 	void copyMacroToHost();

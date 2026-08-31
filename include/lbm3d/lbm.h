@@ -66,6 +66,7 @@ struct LBM
 
 	void copyMapToHost();
 	void copyMapToDevice();
+	void validateFaceDetectedBC();
 	void copyMacroToHost();
 	void copyMacroToDevice();
 	void copyDFsToHost(uint8_t dfty);

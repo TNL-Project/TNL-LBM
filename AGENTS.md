@@ -180,7 +180,9 @@ provides the AB default when neither is set.
   indices are unclamped (`kernels.h`), so an edge BC wrap-writes into the
   opposite column/row. Apply the ghost-layer idiom: outermost plane
   `GEO_NOTHING`, BC on `1`/`N-2`.
-- Lateral `GEO_INFLOW_LEFT` moment BCs diverge under AA on ghost-adjacent planes.
+- `GEO_INFLOW_MOMENT` BC planes must not intersect with another inflow plain in a corner or edge:
+  the corner sites have no interior-side neighbor for the runtime face detection
+  and are rejected by `validateFaceDetectedBC`.
 - `GEO_OUTFLOW_RIGHT` and `GEO_OUTFLOW_RIGHT_INTERP` run through a
   deterministic two-pass scheme in *both* A-A and A-B streaming patterns
   (it replaced the legacy fused kernel path, which raced with same-launch
@@ -224,7 +226,7 @@ provides the AB default when neither is set.
   - native sm_120: the outflow pass is already bit-identical between patterns;
     the divergence seeds in the *main* kernel — predominantly the `D3Q27_CUM` collision core (`col_cum.h`),
     where NVVM makes per-expression FMA-contraction/CSE choices that differ between the AA and AB builds,
-    secondarily the `GEO_INFLOW_LEFT` moment BC;
+    secondarily the `GEO_INFLOW_MOMENT` moment BC;
     macro helpers and all init kernels are bit-identical
     and both streamings carry zero FP ops.
     First field diff at frame ~1 (≈step 40) in the inflow/baffle region x=1..33,

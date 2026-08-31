@@ -143,6 +143,13 @@ void LBM<CONFIG>::copyMapToDevice()
 }
 
 template <typename CONFIG>
+void LBM<CONFIG>::validateFaceDetectedBC()
+{
+	for (auto& block : blocks)
+		block.validateFaceDetectedBC();
+}
+
+template <typename CONFIG>
 void LBM<CONFIG>::copyMacroToHost()
 {
 	for (auto& block : blocks)

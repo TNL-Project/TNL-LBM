@@ -15,7 +15,7 @@
  *
  * Under the A-A pattern the gathers are parity-dependent and every case
  * runs for both parities; under A-B both subcases exercise the same
- * parity-free path. Face detection (BC::detectOutflowFace, host-side) is
+ * parity-free path. Face detection (BC::detectBCFace, host-side) is
  * covered for all faces including the symmetry-as-interior rule.
  */
 
@@ -51,6 +51,7 @@ using BC = typename CONFIG::BC;
 using KS = D2Q9_KernelStruct<typename TRAITS::dreal>;
 using idx = typename TRAITS::idx;
 using idx3d = typename TRAITS::idx3d;
+using bool3d = typename TRAITS::bool3d;
 
 // direction names in dir9 enum order (must match defs.h); the ground-truth
 // components are parsed from these, independently of the production tables
@@ -374,9 +375,130 @@ TEST_CASE("detect-faces")
 			block.hmap.setValue(BC::GEO_WALL);
 			block.hmap(x, y, z) = BC::GEO_OUTFLOW_RIGHT_INTERP;
 			block.hmap(c.ax, c.ay, z) = tag;
-			const int detected = BC::detectOutflowFace(block.data, x - 1, x, x + 1, y - 1, y, y + 1, z);
+			const int detected = BC::detectBCFace(block.data, x - 1, x, x + 1, y - 1, y, y + 1, z);
 			CHECK_EQ(detected, c.face);
 		}
+	}
+}
+
+// end-to-end check of the device-side validator: stamps the host map, copies
+// it to the device map, and runs the same validation State::SimInit
+// performs after the map overlap synchronization
+TEST_CASE("validate-face-detected")
+{
+	using BLOCK = LBM_BLOCK<CONFIG>;
+	const idx3d global{16, 16, 1};
+	BLOCK block{MPI_COMM_WORLD, global, global, idx3d{0, 0, 0}, 0};
+	block.allocateHostData();
+
+	auto wire = [&block]()
+	{
+		block.copyMapToDevice();
+#ifdef HAVE_MPI
+		block.data.indexer = block.dmap.getLocalView().getIndexer();
+#else
+		block.data.indexer = block.dmap.getIndexer();
+#endif
+		block.data.XYZ = block.data.indexer.getStorageSize();
+		block.data.dmap = block.dmap.getData();
+	};
+
+	const int y = 9;
+
+	// walls everywhere, one outflow site anchored to a single fluid cell: valid
+	block.hmap.setValue(BC::GEO_WALL);
+	block.hmap(8, y, 0) = BC::GEO_OUTFLOW_RIGHT_INTERP;
+	block.hmap(7, y, 0) = BC::GEO_FLUID;
+	wire();
+	CHECK_NOTHROW(block.validateFaceDetectedBC());
+
+	// no interior-side axis-neighbor: invalid
+	block.hmap.setValue(BC::GEO_WALL);
+	block.hmap(8, y, 0) = BC::GEO_OUTFLOW_RIGHT_INTERP;
+	wire();
+	CHECK_THROWS_AS(block.validateFaceDetectedBC(), std::runtime_error);
+
+	// two interior-side axis-neighbors: invalid
+	block.hmap.setValue(BC::GEO_WALL);
+	block.hmap(8, y, 0) = BC::GEO_OUTFLOW_RIGHT_INTERP;
+	block.hmap(7, y, 0) = BC::GEO_FLUID;
+	block.hmap(9, y, 0) = BC::GEO_SYMMETRY;
+	wire();
+	CHECK_THROWS_AS(block.validateFaceDetectedBC(), std::runtime_error);
+
+	// the periodic domain wrap counts as an interior-side neighbor
+	// (the runtime face detection reads the same wrapped neighbor)
+	block.hmap.setValue(BC::GEO_WALL);
+	block.hmap(0, y, 0) = BC::GEO_OUTFLOW_RIGHT_INTERP;
+	block.hmap(15, y, 0) = BC::GEO_FLUID;
+	block.data.periodic = bool3d{true, false, false};
+	wire();
+	CHECK_NOTHROW(block.validateFaceDetectedBC());
+	block.data.periodic = bool3d{false, false, false};
+
+	// all BC tags that need face detection are validated (valid and invalid anchor)
+	for (const typename BC::map_t tag : {BC::GEO_OUTFLOW_RIGHT, BC::GEO_OUTFLOW_RIGHT_INTERP, BC::GEO_INFLOW_MOMENT}) {
+		block.hmap.setValue(BC::GEO_WALL);
+		block.hmap(8, y, 0) = tag;
+		block.hmap(7, y, 0) = BC::GEO_FLUID;
+		wire();
+		CHECK_NOTHROW(block.validateFaceDetectedBC());
+
+		block.hmap.setValue(BC::GEO_WALL);
+		block.hmap(8, y, 0) = tag;
+		wire();
+		CHECK_THROWS_AS(block.validateFaceDetectedBC(), std::runtime_error);
+	}
+
+	// face-BC site on the outermost storage plane, anchored inwards: the
+	// clamped indices keep the reads in-bounds and the site is valid
+	block.hmap.setValue(BC::GEO_WALL);
+	block.hmap(0, y, 0) = BC::GEO_OUTFLOW_RIGHT_INTERP;
+	block.hmap(1, y, 0) = BC::GEO_FLUID;
+	wire();
+	CHECK_NOTHROW(block.validateFaceDetectedBC());
+
+	// ...and a malformed map (face-BC site in the corner, where all
+	// axis-neighbors clamp to the site itself) is rejected cleanly instead
+	// of reading out of bounds
+	block.hmap.setValue(BC::GEO_WALL);
+	block.hmap(0, 0, 0) = BC::GEO_OUTFLOW_RIGHT_INTERP;
+	wire();
+	CHECK_THROWS_AS(block.validateFaceDetectedBC(), std::runtime_error);
+
+	// BC plane coinciding with a subdomain seam: the interior-side neighbor
+	// lives in the overlap layer, where the map synchronization puts it
+	{
+		const idx3d sglobal{32, 16, 1};
+		const idx3d slocal{16, 16, 1};
+		BLOCK block{MPI_COMM_WORLD, sglobal, slocal, idx3d{16, 0, 0}, 0};
+		block.allocateHostData();
+		auto wire = [&block]()
+		{
+			block.copyMapToDevice();
+#ifdef HAVE_MPI
+			block.data.indexer = block.dmap.getLocalView().getIndexer();
+#else
+			block.data.indexer = block.dmap.getIndexer();
+#endif
+			block.data.XYZ = block.data.indexer.getStorageSize();
+			block.data.dmap = block.dmap.getData();
+		};
+
+		// the halo cell (normally synchronized from the neighboring rank)
+		// provides the interior-side neighbor across the seam
+		block.hmap.setValue(BC::GEO_WALL);
+		block.hmap(16, y, 0) = BC::GEO_OUTFLOW_RIGHT_INTERP;
+		block.hmap(15, y, 0) = BC::GEO_FLUID;
+		wire();
+		CHECK_NOTHROW(block.validateFaceDetectedBC());
+
+		// no interior-side neighbor in the halo: invalid
+		block.hmap.setValue(BC::GEO_WALL);
+		block.hmap(15, y, 0) = BC::GEO_WALL;
+		block.hmap(16, y, 0) = BC::GEO_OUTFLOW_RIGHT_INTERP;
+		wire();
+		CHECK_THROWS_AS(block.validateFaceDetectedBC(), std::runtime_error);
 	}
 }
 

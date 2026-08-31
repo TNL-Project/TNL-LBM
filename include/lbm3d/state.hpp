@@ -1225,6 +1225,10 @@ void State<NSE>::SimInit()
 			nse.synchronizeDFsAndMacroDevice(df_cur, true);
 		}
 #endif
+
+		// validate the face-detected BC sites in the complete device map
+		// (the overlaps were synchronized above, single-rank maps need no sync)
+		nse.validateFaceDetectedBC();
 	}
 
 	spdlog::info("Finished SimInit");

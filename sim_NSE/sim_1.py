@@ -38,7 +38,7 @@ class StateLocal(State):
         nse = self.nse
         lat = nse.lat
 
-        nse.setBoundaryX(0, nse.BC.GEO_INFLOW_LEFT)  # left
+        nse.setBoundaryX(0, nse.BC.GEO_INFLOW_MOMENT)  # left
         nse.setBoundaryX(lat.global_.x - 1, nse.BC.GEO_OUTFLOW_RIGHT)  # right
 
         nse.setBoundaryZ(1, nse.BC.GEO_WALL)  # top
