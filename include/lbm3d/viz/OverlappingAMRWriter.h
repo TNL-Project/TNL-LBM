@@ -74,6 +74,15 @@
  *   `MACRO::compute_in_each_iteration == false` (e.g. D3Q27_MACRO_Default),
  *   the emitted values are whatever is currently stored in `hmacro` -
  *   recomputation before output is the caller's responsibility (Wave 4).
+ *
+ * Threading: the per-level CellData packing (a pure host-side function of
+ * the block data) is parallelized with OpenMP over disjoint,
+ * data-determined cell chunks whose boundaries depend only on the emitted
+ * cell counts and the fixed \ref pack_chunk_cells constant, so the emitted
+ * bytes are independent of the runtime thread count. ALL HDF5 API calls
+ * (the raw C library is not thread-safe) remain on the thread that called
+ * \ref write, which is also the only thread the caller may drive it from;
+ * the workers touch nothing but the plain packing buffers.
  */
 template <typename TRAITS>
 class OverlappingAMRWriter
@@ -106,6 +115,11 @@ private:
 	static constexpr std::uint8_t vtk_visible = 0;		 // normal cell
 	static constexpr std::uint8_t vtk_refined_cell = 4;	 // REFINEDCELL (refined, covered by a finer level)
 	static constexpr std::uint8_t vtk_hidden_cell = 8;	 // HIDDENCELL
+
+	// fixed cell count per parallel packing chunk (see the class docstring):
+	// a compile-time constant so the chunk boundaries are a function of the
+	// data sizes only, never of the runtime thread count
+	static constexpr std::size_t pack_chunk_cells = 1 << 16;
 
 	/**
 	 * \brief Emitted-cell range of one block in the block's extended storage
