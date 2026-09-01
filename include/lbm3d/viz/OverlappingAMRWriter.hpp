@@ -1,6 +1,9 @@
 #pragma once
 
+#include <algorithm>
+#include <cstddef>
 #include <cstring>
+#include <memory>
 
 #include "OverlappingAMRWriter.h"
 
@@ -275,8 +278,17 @@ void OverlappingAMRWriter<TRAITS>::write(const std::string& filename, const LBM<
 			throw std::runtime_error(fmt::format("OverlappingAMRWriter: H5Gcreate2 failed for group '{}/CellData' in '{}'", level_name, filename));
 		}
 
-		// total number of cells at this level (sum over all blocks'
-		// emitted ranges, see \ref emitted_range)
+		// per-block packing descriptor: the emitted range plus the block's
+		// fixed cell offset in the concatenated per-level buffers (see the
+		// byte-identity contract of the parallel packing loop below)
+		struct EmittedBlock
+		{
+			const BLOCK* block;
+			idx3d ovl, e_lo, e_hi;
+			std::size_t cell_offset;
+		};
+		std::vector<EmittedBlock> emitted_blocks;
+		emitted_blocks.reserve(blocks.size());
 		std::size_t total_cells = 0;
 		for (const BLOCK* block : blocks) {
 			const idx3d ovl{
@@ -285,88 +297,110 @@ void OverlappingAMRWriter<TRAITS>::write(const std::string& filename, const LBM<
 			idx3d e_lo, e_hi;
 			emitted_range(block->local, ovl, e_lo, e_hi);
 			const idx3d e_ext = e_hi - e_lo;
+			emitted_blocks.push_back({block, ovl, e_lo, e_hi, total_cells});
 			total_cells += static_cast<std::size_t>(e_ext.x()) * static_cast<std::size_t>(e_ext.y()) * static_cast<std::size_t>(e_ext.z());
 		}
 
-		// concatenated scalar fields, cell order z*ny*nx + y*nx + x (x fastest)
-		// every emitted cell -- interior and footprint-covering ghost rows
-		// alike -- is read straight from the stored macro array: the last
-		// fine substep (widened extent, ghost_layers=1) computes dmacro on
-		// the inner ghost rows, so they carry kernel-computed values that
-		// lag the interior by exactly one fine substep; rows beyond the
-		// footprint are not emitted (see \ref emitted_range)
-		std::vector<double> buffer;
-		buffer.reserve(total_cells);
-		for (const auto& [quantity, name] : variables) {
-			buffer.clear();
-			for (const BLOCK* block : blocks) {
-				const idx3d ovl{
-					const_cast<BLOCK*>(block)->df_overlap_X(), const_cast<BLOCK*>(block)->df_overlap_Y(), const_cast<BLOCK*>(block)->df_overlap_Z()
-				};
-				idx3d e_lo, e_hi;
-				emitted_range(block->local, ovl, e_lo, e_hi);
-				for (idx z = e_lo.z(); z < e_hi.z(); z++)
-					for (idx y = e_lo.y(); y < e_hi.y(); y++)
-						for (idx x = e_lo.x(); x < e_hi.x(); x++)
-							buffer.push_back(
-								static_cast<double>(block->hmacro(
-									quantity, block->offset.x() - ovl.x() + x, block->offset.y() - ovl.y() + y, block->offset.z() - ovl.z() + z
-								))
-							);
+		// concatenated per-level packing buffers, one per emitted field
+		// (default-initialized: every element is written by the packing
+		// loop; the page faults then land on the worker threads)
+		const std::unique_ptr<double[]> var_buffers[4] = {
+			std::unique_ptr<double[]>(new double[total_cells]),
+			std::unique_ptr<double[]>(new double[total_cells]),
+			std::unique_ptr<double[]>(new double[total_cells]),
+			std::unique_ptr<double[]>(new double[total_cells]),
+		};
+		const std::unique_ptr<std::int32_t[]> map_buffer(new std::int32_t[total_cells]);
+		const std::unique_ptr<std::uint8_t[]> ghost(new std::uint8_t[total_cells]);
+
+		// packing tasks: variants 0..3 are the scalar macroscopic fields,
+		// 4 is the geometry map, 5 is vtkGhostType; each (variant, block)
+		// pair is split into fixed-size chunks of the block's emitted cell
+		// order z*ny*nx + y*nx + x (x fastest)
+		struct PackTask
+		{
+			int variant;
+			const EmittedBlock* target;
+			std::size_t begin, end;
+		};
+		std::vector<PackTask> tasks;
+		for (int variant = 0; variant < 6; variant++)
+			for (const EmittedBlock& emitted : emitted_blocks) {
+				const idx3d e_ext = emitted.e_hi - emitted.e_lo;
+				const std::size_t block_cells =
+					static_cast<std::size_t>(e_ext.x()) * static_cast<std::size_t>(e_ext.y()) * static_cast<std::size_t>(e_ext.z());
+				// the chunk size is a compile-time constant so the slice
+				// boundaries depend only on the data sizes -- never on the
+				// runtime thread count
+				for (std::size_t begin = 0; begin < block_cells; begin += pack_chunk_cells)
+					tasks.push_back({variant, &emitted, begin, std::min(begin + pack_chunk_cells, block_cells)});
 			}
-			write_dataset_f64(cell_data, name, buffer.data(), buffer.size());
-		}
 
-		// geometry map (int tags -- the "wall field" for masking in
-		// ParaView; values are the BC::GEO_* enum) -- always written
-		std::vector<std::int32_t> map_buffer;
-		map_buffer.reserve(total_cells);
-		for (const BLOCK* block : blocks) {
-			const idx3d ovl{
-				const_cast<BLOCK*>(block)->df_overlap_X(), const_cast<BLOCK*>(block)->df_overlap_Y(), const_cast<BLOCK*>(block)->df_overlap_Z()
-			};
-			idx3d e_lo, e_hi;
-			emitted_range(block->local, ovl, e_lo, e_hi);
-			for (idx z = e_lo.z(); z < e_hi.z(); z++)
-				for (idx y = e_lo.y(); y < e_hi.y(); y++)
-					for (idx x = e_lo.x(); x < e_hi.x(); x++)
-						map_buffer.push_back(
-							static_cast<std::int32_t>(
-								block->hmap(block->offset.x() - ovl.x() + x, block->offset.y() - ovl.y() + y, block->offset.z() - ovl.z() + z)
-							)
-						);
-		}
-		write_dataset_i32(cell_data, "map", map_buffer.data(), map_buffer.size(), 1);
+		// BYTE-IDENTITY CONTRACT of the parallel packing: every emitted cell
+		// is a pure function of its (variant, block, z, y, x) coordinates --
+		// a wholesale read of hmacro/hmap or the ghost-tag classification,
+		// whose fine-footprint scan runs in lbm.blocks order per cell with
+		// no cross-cell state -- and each task writes a disjoint,
+		// data-determined slice of the final per-level buffers at offsets
+		// fixed by EmittedBlock::cell_offset + the flat emitted index. The
+		// buffer contents therefore cannot depend on the thread count, the
+		// schedule, or the task completion order. All HDF5 calls stay OUT of
+		// this region on the calling thread (the raw HDF5 C API is not
+		// thread-safe) and issue the same sequence of creates/writes with
+		// the same shapes and contents as the serial packing did
+		const int level_id = level;
+#pragma omp parallel for schedule(dynamic, 1) default(none) shared(tasks, var_buffers, map_buffer, ghost, variables, lbm, level_id)
+		for (std::ptrdiff_t t = 0; t < static_cast<std::ptrdiff_t>(tasks.size()); t++) {
+			const PackTask& task = tasks[t];
+			const EmittedBlock& emitted = *task.target;
+			const BLOCK& block = *emitted.block;
+			const idx3d& ovl = emitted.ovl;
+			const idx nx = emitted.e_hi.x() - emitted.e_lo.x();
+			const idx ny = emitted.e_hi.y() - emitted.e_lo.y();
+			const idx3d storage_ext = block.local + idx3d{2 * ovl.x(), 2 * ovl.y(), 2 * ovl.z()};
 
-		// vtkGhostType: mark coarse cells that are covered by a finer-level
-		// block as REFINEDCELL(4); a finer block's footprint in the parent
-		// (this level's) lattice is [global_offset, global_offset + (local + 2)/2)
-		// -- the re-anchored interior local = 2*size - 2 is inset one fine
-		// cell per face, so the +2 restores the full requested footprint
-		std::vector<std::uint8_t> ghost;
-		ghost.reserve(total_cells);
-		for (const BLOCK* block : blocks) {
-			const idx3d ovl{
-				const_cast<BLOCK*>(block)->df_overlap_X(), const_cast<BLOCK*>(block)->df_overlap_Y(), const_cast<BLOCK*>(block)->df_overlap_Z()
-			};
-			const idx3d ext = block->local + idx3d{2 * ovl.x(), 2 * ovl.y(), 2 * ovl.z()};
-			idx3d e_lo, e_hi;
-			emitted_range(block->local, ovl, e_lo, e_hi);
-			for (idx z = e_lo.z(); z < e_hi.z(); z++)
-				for (idx y = e_lo.y(); y < e_hi.y(); y++)
-					for (idx x = e_lo.x(); x < e_hi.x(); x++) {
-						const idx3d cell{block->offset.x() - ovl.x() + x, block->offset.y() - ovl.y() + y, block->offset.z() - ovl.z() + z};
+			// decode the chunk's begin offset into emitted (z, y, x)
+			// coordinates, then walk the cell order with O(1) increments
+			idx ez = emitted.e_lo.z() + static_cast<idx>(task.begin) / (ny * nx);
+			const idx rem = static_cast<idx>(task.begin) % (ny * nx);
+			idx ey = emitted.e_lo.y() + rem / nx;
+			idx ex = emitted.e_lo.x() + rem % nx;
+			std::size_t i = task.begin;
+			while (i < task.end) {
+				const std::size_t x_left = static_cast<std::size_t>(emitted.e_hi.x() - ex);
+				const std::size_t run = std::min(x_left, task.end - i);
+				for (std::size_t r = 0; r < run; r++, ex++, i++) {
+					const std::size_t out = emitted.cell_offset + i;
+					const idx gx = block.offset.x() - ovl.x() + ex;
+					const idx gy = block.offset.y() - ovl.y() + ey;
+					const idx gz = block.offset.z() - ovl.z() + ez;
+					if (task.variant < 4) {
+						var_buffers[task.variant][out] = static_cast<double>(block.hmacro(variables[task.variant].first, gx, gy, gz));
+					}
+					else if (task.variant == 4) {
+						map_buffer[out] = static_cast<std::int32_t>(block.hmap(gx, gy, gz));
+					}
+					else {
+						// vtkGhostType: coarse cells covered by a finer-level
+						// block are REFINEDCELL(4); a finer block's footprint
+						// in the parent (this level's) lattice is
+						// [global_offset, global_offset + (local + 2)/2) -- the
+						// re-anchored interior local = 2*size - 2 is inset one
+						// fine cell per face, so the +2 restores the full
+						// requested footprint
+						const idx3d cell{gx, gy, gz};
 						std::uint8_t tag = vtk_visible;
 						const bool is_ghost =
-							(x < ovl.x() || x >= ext.x() - ovl.x() || y < ovl.y() || y >= ext.y() - ovl.y() || z < ovl.z() || z >= ext.z() - ovl.z());
+							(ex < ovl.x() || ex >= storage_ext.x() - ovl.x() || ey < ovl.y() || ey >= storage_ext.y() - ovl.y() || ez < ovl.z()
+							 || ez >= storage_ext.z() - ovl.z());
 						if (is_ghost) {
 							// ghost rows within the coarse footprint [offset-1, offset+local+1)
 							// in fine coords are valid C2F data — visible; rows beyond the
 							// footprint are no longer emitted (see \ref emitted_range), but
 							// keep the classification so the tag stays honest if the emitted
 							// range is ever widened
-							const idx3d fp_lo = block->offset - idx3d{1, 1, 1};
-							const idx3d fp_hi = block->offset + block->local + idx3d{1, 1, 1};
+							const idx3d fp_lo = block.offset - idx3d{1, 1, 1};
+							const idx3d fp_hi = block.offset + block.local + idx3d{1, 1, 1};
 							if (cell.x() >= fp_lo.x() && cell.x() < fp_hi.x() && cell.y() >= fp_lo.y() && cell.y() < fp_hi.y()
 								&& cell.z() >= fp_lo.z() && cell.z() < fp_hi.z())
 								tag = vtk_visible;
@@ -374,7 +408,7 @@ void OverlappingAMRWriter<TRAITS>::write(const std::string& filename, const LBM<
 								tag = vtk_hidden_cell;
 						}
 						for (const BLOCK& fine : lbm.blocks) {
-							if (fine.level != level + 1)
+							if (fine.level != level_id + 1)
 								continue;
 							const idx3d fp_lo = fine.global_offset;
 							const idx3d fp_size{(fine.local.x() + 2) / 2, (fine.local.y() + 2) / 2, (fine.local.z() + 2) / 2};
@@ -385,10 +419,23 @@ void OverlappingAMRWriter<TRAITS>::write(const std::string& filename, const LBM<
 								break;
 							}
 						}
-						ghost.push_back(tag);
+						ghost[out] = tag;
 					}
+				}
+				ex = emitted.e_lo.x();
+				if (++ey == emitted.e_hi.y()) {
+					ey = emitted.e_lo.y();
+					++ez;
+				}
+			}
 		}
-		write_dataset_u8(cell_data, "vtkGhostType", ghost.data(), ghost.size());
+
+		for (int variant = 0; variant < 4; variant++)
+			write_dataset_f64(cell_data, variables[variant].second, var_buffers[variant].get(), total_cells);
+		// geometry map (int tags -- the "wall field" for masking in
+		// ParaView; values are the BC::GEO_* enum) -- always written
+		write_dataset_i32(cell_data, "map", map_buffer.get(), total_cells, 1);
+		write_dataset_u8(cell_data, "vtkGhostType", ghost.get(), total_cells);
 
 		H5Gclose(cell_data);
 		H5Gclose(level_group);
