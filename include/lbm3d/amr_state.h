@@ -11,8 +11,6 @@
 #include <utility>
 #include <vector>
 
-#include <omp.h>
-
 #include <spdlog/spdlog.h>
 #include <spdlog/details/os.h>
 #include <spdlog/sinks/sink.h>
@@ -86,6 +84,89 @@ private:
 	std::vector<spdlog::sink_ptr> wrapped_sinks_;
 	std::size_t main_thread_id_;
 };
+
+// thread count of one cudaAMRConservationReduce launch block (the shared-memory
+// accumulation tree below is sized for exactly this width)
+inline constexpr int amr_conservation_reduce_threads = 256;
+
+/**
+ * \brief Per-CUDA-block partial sums of one lattice block's conservation
+ * quantities (see \ref State_AMR::computeConservationStats).
+ *
+ * Thread t sums the cells of the flat local index t + k * (gridDim.x *
+ * blockDim.x) (x fastest for storage-coalesced reads) for k = 0, 1, ...,
+ * skipping the `GEO_NOTHING` cells exactly like the host-side reference loop
+ * (frozen cells hidden under a fine footprint, whose solution is authoritative
+ * on the fine level). Out-of-range threads add zero and STILL run the tree,
+ * so the block reduction sees a fixed thread count regardless of the tail.
+ * The per-thread partials of one CUDA thread block are merged by the fixed
+ * shared-memory accumulation tree below and written as five consecutive
+ * doubles (`partials[5 * blockIdx.x + q]`); the fixed-order host merge across
+ * CUDA blocks and lattice blocks lives in \ref computeConservationStats.
+ * All arithmetic is double (device macros promote per value, mirroring the
+ * host loop's implicit conversion) and the per-cell terms multiply in the
+ * host loop's operand order.
+ *
+ * Run-to-run determinism: the launch geometry derives from the block's cell
+ * count only (the launcher fixes the thread-block size), the cell->thread
+ * assignment is fixed, and the tree below is fixed -- no atomics, no
+ * environment queries, no launch-time reassociation.
+ */
+template <typename CONFIG>
+__global__ void cudaAMRConservationReduce(
+	typename CONFIG::DATA SD, typename CONFIG::TRAITS::idx n_sites, typename CONFIG::TRAITS::idx3d local, double volume_factor, double* partials
+)
+{
+	using TRAITS = typename CONFIG::TRAITS;
+	using MACRO = typename CONFIG::MACRO;
+	using idx = typename TRAITS::idx;
+
+	const idx nx = local.x();
+	const idx nz = local.z();
+
+	double mass = 0.0, mx = 0.0, my = 0.0, mz = 0.0, ke = 0.0;
+	for (idx flat = threadIdx.x + blockIdx.x * blockDim.x; flat < n_sites; flat += gridDim.x * blockDim.x) {
+		const idx x = flat % nx;
+		const idx rem = flat / nx;
+		const idx z = rem % nz;
+		const idx y = rem / nz;
+		const idx si = SD.indexer.getStorageIndex(x, y, z);
+		if (SD.dmap[si] == CONFIG::BC::GEO_NOTHING)
+			continue;
+
+		// same values and operand order as the host-side reference loop
+		const double rho = SD.dmacro[MACRO::e_rho * SD.XYZ + si];
+		const double vx = SD.dmacro[MACRO::e_vx * SD.XYZ + si];
+		const double vy = SD.dmacro[MACRO::e_vy * SD.XYZ + si];
+		const double vz = SD.dmacro[MACRO::e_vz * SD.XYZ + si];
+
+		mass += rho * volume_factor;
+		mx += rho * vx * volume_factor;
+		my += rho * vy * volume_factor;
+		mz += rho * vz * volume_factor;
+		ke += 0.5 * rho * (vx * vx + vy * vy + vz * vz);
+	}
+
+	// fixed shared-memory accumulation tree: sh[i] += sh[i + stride] over
+	// halving strides, all five quantities in one fixed order
+	__shared__ double tree[5][amr_conservation_reduce_threads];
+	tree[0][threadIdx.x] = mass;
+	tree[1][threadIdx.x] = mx;
+	tree[2][threadIdx.x] = my;
+	tree[3][threadIdx.x] = mz;
+	tree[4][threadIdx.x] = ke;
+	__syncthreads();
+	for (int stride = amr_conservation_reduce_threads / 2; stride > 0; stride >>= 1) {
+		if (threadIdx.x < stride)
+			for (int q = 0; q < 5; q++)
+				tree[q][threadIdx.x] += tree[q][threadIdx.x + stride];
+		__syncthreads();
+	}
+	// one thread per quantity (the tree rows are final after the last
+	// __syncthreads above)
+	if (threadIdx.x < 5)
+		partials[5 * blockIdx.x + threadIdx.x] = tree[threadIdx.x][0];
+}
 }  // namespace amr_detail
 
 /**
@@ -528,7 +609,7 @@ struct State_AMR : State<NSE>
 	// range (a thin footprint carries no unreachable deep core at all)
 	static std::vector<std::pair<idx3d, idx3d>> wallPedestalPrismRects(const BLOCK_NSE& fine, std::uint8_t mask);
 
-	// host-side reduction over all blocks: volume-weighted global mass and
+	// device-side reduction over all blocks: volume-weighted global mass and
 	// momentum plus per-level kinetic energy (see AfterSimUpdate); kept
 	// public like the other implementation details above so that unit tests
 	// can drive it directly (test_amr_subcycling)
@@ -552,6 +633,12 @@ struct State_AMR : State<NSE>
 	long macro_generation_ = 0;
 	long conservation_stats_generation_ = -1;
 	AMRConservationStats cached_conservation_stats_;
+
+	// per-CUDA-block partial buffers of computeConservationStats (five
+	// doubles per launch block, `5 * blockIdx.x + q` layout); grown lazily
+	// to the largest launch of this state
+	TNL::Containers::Array<double, DeviceType> conservation_partials_device_;
+	TNL::Containers::Array<double, TNL::Devices::Host> conservation_partials_host_;
 
 	// join the pending async VTKHDF writer (future::get() propagates a
 	// worker-side exception on the main thread, mirroring the base idiom of
@@ -1062,13 +1149,13 @@ void State_AMR<NSE>::AfterSimUpdate()
 	if (! do_amr_report)
 		return;
 
-	// conservation statistics reuse: the host macro mirrors are immutable
-	// within a dmacro generation (no kernel with compute_macro == false
-	// writes dmacro; the inter-level transfers only write frozen
-	// GEO_NOTHING skin cells, which the reduction excludes), so a fresh
-	// copy plus the deterministic reduction reproduces bit-identical sums
-	// at every PRINT tick of the generation -- compute once per generation
-	// and reprint the cached values verbatim
+	// conservation statistics reuse: the device macros of the cells the
+	// reduction reads are immutable within a dmacro generation (no kernel
+	// with compute_macro == false writes dmacro; the inter-level transfers
+	// only write frozen GEO_NOTHING skin cells, which the reduction
+	// excludes), so the deterministic reduction reproduces bit-identical
+	// sums at every PRINT tick of the generation -- compute once per
+	// generation and reprint the cached values verbatim
 	if (conservation_stats_generation_ != macro_generation_) {
 		cached_conservation_stats_ = computeConservationStats();
 		conservation_stats_generation_ = macro_generation_;
@@ -1102,10 +1189,11 @@ void State_AMR<NSE>::AfterSimUpdate()
  *   launch: the writer's refreshes read the frozen private copy while the
  *   kernels keep writing the real storage (the kernel-facing `data.dmacro`
  *   pointer is bound once at allocation and never re-bound, so the swap is
- *   invisible to the compute path). Every host-side accessor that reads
- *   `block.dmacro` during the window (the base driver's macro copy at this
- *   same OUT3D tick, the conservation reduction) consequently reads the
- *   same frame-frozen bytes, matching the synchronous baseline.
+ *   invisible to the compute path). Every host-side or device-side accessor
+ *   addressed through `block.dmacro` during the window (the base driver's
+ *   macro copy at this same OUT3D tick, the device-side conservation
+ *   reduction) consequently reads the same frame-frozen bytes, matching the
+ *   synchronous baseline.
  *   `hmacro` receives only frame-identical bytes during the window, so the
  *   serialization's reads are stable for the whole lifetime of the worker.
  * - join points: the next \ref write3D_AMR call (its host refresh would
@@ -1147,7 +1235,14 @@ void State_AMR<NSE>::write3D_AMR(real time, int cycle)
 	// Put -- ANY std::async thread churn around that window (even fully
 	// joined) corrupted BP5's first marshal intermittently (a garbage
 	// object dereference inside CreateWriterRec). Later BP5 Puts reuse the
-	// initialized machinery, so only this frame foregoes its overlap
+	// initialized machinery, so only this frame foregoes its overlap.
+	// Deferred-launch variants (staging before or after the first Put)
+	// were ruled UNSAFE 2026-09-01: removing the full frame-0 HDF5 write
+	// from before the first Put crashes BP5's first wall marshal
+	// deterministically (BP5Serializer::Marshal wild dereference at the
+	// 5-level resolution; the window is fragile to process-state shaping,
+	// not just concurrency), so the complete HDF5 call sequence here is
+	// itself load-bearing for the first Put
 	if (cycle == 0) {
 		OverlappingAMRWriter<TRAITS>::write(fname, this->nse, time);
 		return;
@@ -1239,17 +1334,22 @@ void State_AMR<NSE>::swapAMRWriteDMacroSnapshot()
 }
 
 /**
- * \brief Host-side reduction of the conservation quantities over all blocks.
+ * \brief Device-side reduction of the conservation quantities over all
+ * blocks.
  *
- * Each block's macroscopic quantities are copied to the host and summed in
- * physical-volume units: the cell volume scales as `(1/2)^3` per refinement
- * level with the 2:1 ratio, so a level-L cell weights `1/8^L` of a coarse
- * cell. The per-level kinetic energy sums `0.5 * rho * |u|^2` without the
- * volume weight (per-level diagnostic).
+ * Each block's macro array is mirrored to the host first (the metric's
+ * documented freshening side effect the sentinel-injection unit tests rely
+ * on), then its conservation quantities are summed by one
+ * \ref amr_detail::cudaAMRConservationReduce launch directly from the
+ * block's device macros, in physical-volume units: the cell volume scales as
+ * `(1/2)^3` per refinement level with the 2:1 ratio, so a level-L cell
+ * weights `1/8^L` of a coarse cell. The per-level kinetic energy sums
+ * `0.5 * rho * |u|^2` without the volume weight (per-level diagnostic).
  *
  * Coarse cells tagged `GEO_NOTHING` (hidden under a fine footprint - the
  * fine level holds the authoritative solution there) are excluded from all
- * sums: counting them alongside the fine level would double-count the
+ * sums via the device map (markAMRInterface tags host-side before
+ * uploading): counting them alongside the fine level would double-count the
  * refined region. `GEO_AMR_INTERFACE` ring cells and physical-BC cells are
  * real coarse cells and keep contributing.
  *
@@ -1265,58 +1365,71 @@ void State_AMR<NSE>::swapAMRWriteDMacroSnapshot()
 template <typename NSE>
 auto State_AMR<NSE>::computeConservationStats() -> AMRConservationStats
 {
-	using MACRO = typename NSE::MACRO;
 	AMRConservationStats s;
 	s.per_level_kinetic_energy.resize(this->nse.max_level + 1, 0.0);
 
 	for (auto& block : this->nse.blocks) {
+		// refresh the host macro mirror (the metric's documented side
+		// effect the sentinel-injection unit tests build on); the SUMS
+		// below come from the device, so the mirror costs its DtoH copy
+		// but no longer feeds the hot arithmetic
 		block.copyMacroToHost();
 		// cell volume scales as (1/2)^3 per refinement level (2:1 ratio)
 		const double volume_factor = std::pow(0.5, 3.0 * block.level);
+		const idx n_sites = block.local.x() * block.local.y() * block.local.z();
+		if (n_sites == 0)
+			continue;
 
-		// conservation accumulated in a DETERMINISTIC order:
-		// forLocalLatticeSites is OpenMP-parallel with schedule(static), so
-		// the site->thread assignment is fixed; per-thread partials are
-		// written by their own thread only (no atomics, no arrival-order
-		// reassociation) and merged in thread-index order, reproducing one
-		// summation order bit-for-bit regardless of host timing (the
-		// previous atomic accumulations reassociated with the barrier
-		// timing of the asynchronous-coupling era)
-		const int threads = omp_get_max_threads();
-		std::vector<double> p_mass(threads, 0.0), p_mx(threads, 0.0), p_my(threads, 0.0), p_mz(threads, 0.0), p_ke(threads, 0.0);
+		// fixed launch geometry derived from the cell count only (never from
+		// device queries or the environment): one partial per CUDA block
+		const idx n_cuda_blocks = (n_sites + amr_detail::amr_conservation_reduce_threads - 1) / amr_detail::amr_conservation_reduce_threads;
+		const idx need = 5 * n_cuda_blocks;
+		if (conservation_partials_device_.getSize() < need) {
+			conservation_partials_device_.setSize(need);
+			conservation_partials_host_.setSize(need);
+		}
 
-		block.forLocalLatticeSites(
-			[&](BLOCK_NSE& b, idx x, idx y, idx z)
-			{
-				// hidden cells (frozen GEO_NOTHING under a fine footprint)
-				// are already counted on the fine level - skip them to avoid
-				// double-counting the refined region (see the docstring);
-				// the host map holds the tags (markAMRInterface tags
-				// host-side before uploading to the device)
-				if (b.hmap(x, y, z) == NSE::BC::GEO_NOTHING)
-					return;
+		// the kernel's map/indexer/XYZ metadata come from block.data, but
+		// the macro pointer must be refreshed from block.dmacro ITSELF:
+		// during an async VTKHDF write window the snapshot swap makes that
+		// the writer's frame-frozen copy (the former copyMacroToHost read
+		// the same bytes), while data.dmacro still binds the live storage
+		auto sd = block.data;
+		sd.dmacro = block.dmacro.getData();
 
-				const double rho = b.hmacro(MACRO::e_rho, x, y, z);
-				const double vx = b.hmacro(MACRO::e_vx, x, y, z);
-				const double vy = b.hmacro(MACRO::e_vy, x, y, z);
-				const double vz = b.hmacro(MACRO::e_vz, x, y, z);
-
-				const int t = omp_get_thread_num();
-				p_mass[t] += rho * volume_factor;
-				p_mx[t] += rho * vx * volume_factor;
-				p_my[t] += rho * vy * volume_factor;
-				p_mz[t] += rho * vz * volume_factor;
-				p_ke[t] += 0.5 * rho * (vx * vx + vy * vy + vz * vz);
-			}
+		TNL::Backend::LaunchConfiguration launch_config;
+		launch_config.blockSize = dim3(amr_detail::amr_conservation_reduce_threads);
+		launch_config.gridSize = dim3(static_cast<unsigned int>(n_cuda_blocks));
+		TNL::Backend::launchKernelAsync(
+			amr_detail::cudaAMRConservationReduce<NSE>,
+			launch_config,
+			sd,
+			n_sites,
+			block.local,
+			volume_factor,
+			conservation_partials_device_.getData()
 		);
+		// DtoH of the five doubles per CUDA block (the null-stream kernel is
+		// ordered before the blocking copy)
+		conservation_partials_host_ = conservation_partials_device_;
 
+		// conservation accumulated in a DETERMINISTIC order: the kernel's
+		// shared-memory tree is fixed for the launch geometry above and the
+		// per-CUDA-block partials merge here in CUDA-block index order,
+		// block by block in lattice order -- one summation order reproduced
+		// bit-for-bit regardless of host/device timing (no atomics
+		// anywhere); per-cell terms in the kernel multiply in the operand
+		// order of the former host loop, so the drift against any other
+		// deterministic order sits at reassociation scale (~1e-12 relative,
+		// far below the seven printed significant digits)
 		double block_ke = 0.0;
-		for (int t = 0; t < threads; t++) {
-			s.total_mass += p_mass[t];
-			s.total_momentum_x += p_mx[t];
-			s.total_momentum_y += p_my[t];
-			s.total_momentum_z += p_mz[t];
-			block_ke += p_ke[t];
+		const double* partials = conservation_partials_host_.getData();
+		for (idx b = 0; b < n_cuda_blocks; b++) {
+			s.total_mass += partials[5 * b + 0];
+			s.total_momentum_x += partials[5 * b + 1];
+			s.total_momentum_y += partials[5 * b + 2];
+			s.total_momentum_z += partials[5 * b + 3];
+			block_ke += partials[5 * b + 4];
 		}
 		s.per_level_kinetic_energy[block.level] += block_ke;
 	}
