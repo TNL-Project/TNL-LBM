@@ -243,7 +243,7 @@ if(TNL_LBM_BUILD_PYTHON AND NOT TNL_LBM_BUILD_HIP)
 
     FetchContent_Declare(PyTNL
         GIT_REPOSITORY https://gitlab.com/tnl-project/pytnl.git
-        GIT_TAG 0.0.12
+        GIT_TAG 0.0.13
         SYSTEM
         FIND_PACKAGE_ARGS
     )
