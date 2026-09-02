@@ -89,12 +89,12 @@ PINNED_METRICS: dict[str, list[tuple[str, str]]] = {
     "sim_AMR": [
         ("AMR conservation: mass", "2.649349e+05"),
         ("AMR level 0: kinetic energy", "1.751046e+00"),
-        ("AMR level 1: kinetic energy", "1.832126e+00"),
+        ("AMR level 1: kinetic energy", "1.832124e+00"),
     ],
     "sim_AMR_channel": [
         ("AMR conservation: mass", "1.866006e+04"),
-        ("AMR level 0: kinetic energy", "8.411523e+01"),
-        ("AMR level 1: kinetic energy", "5.097540e+01"),
+        ("AMR level 0: kinetic energy", "8.411522e+01"),
+        ("AMR level 1: kinetic energy", "5.097541e+01"),
     ],
 }
 
@@ -236,8 +236,10 @@ def _battery(root: pathlib.Path) -> Battery:
                 "AMR bit-identity reference digests (plan amr-nlevel-nesting "
                 "§7.5): md5 of normalized stdout and of VTKHDF dataset content "
                 "for the mock census suites and sim_AMR / sim_AMR_channel "
-                "short runs; recorded at the pre-refactor baseline and verified "
-                "by tests/regression/test_amr_bitidentity.py"
+                "short runs; re-recorded after the rebase onto main (TNL 0.4.2, "
+                "symmetry-corner and storage-aware BC changes shift the ulp "
+                "baseline) and verified by "
+                "tests/regression/test_amr_bitidentity.py"
             ),
             "artifacts": dict(sorted(battery.artifacts.items())),
         }
