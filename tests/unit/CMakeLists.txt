@@ -12,6 +12,18 @@ set(unit_test_sources
 add_executable(test_cpp_units ${unit_test_sources})
 target_link_libraries(test_cpp_units PUBLIC TNL::TNL_LBM PRIVATE doctest::doctest)
 
+# per-pattern test binaries: the AB-pinned targets cannot exist in an
+# AA-configured build tree (TNL_LBM propagates AA_PATTERN to every consumer,
+# colliding with the private AB_PATTERN pin), so they are created only in the
+# default A-B tree; the AA tree still gets the aa-pinned binaries and the
+# default-pattern test_cpp_units
+if(TNL_LBM_AA_PATTERN)
+    set(AMR_TEST_PATTERNS aa)
+    message(STATUS "tests/unit: AA-pattern build tree - skipping the AB-pinned per-pattern test targets")
+else()
+    set(AMR_TEST_PATTERNS ab aa)
+endif()
+
 # force language to HIP
 if(TNL_LBM_BUILD_HIP)
     set_source_files_properties(${unit_test_sources} PROPERTIES LANGUAGE HIP)
@@ -29,7 +41,7 @@ set(AMR_SUITE_SOURCES
     test_amr_nesting.cu
 )
 
-foreach(pattern IN ITEMS ab aa)
+foreach(pattern IN ITEMS ${AMR_TEST_PATTERNS})
     string(TOUPPER "${pattern}" pattern_upper)
     set(target "test_amr_units_${pattern}")
     add_executable(${target} doctest_main_amr.cu ${AMR_SUITE_SOURCES})
@@ -64,7 +76,7 @@ endforeach()
 set(C2F_SMOKE_NAMES eq dev norm shear)
 set(C2F_SMOKE_DEFINES C2F_EQ_ONLY C2F_DEV_ONLY C2F_NORM_ONLY C2F_SHEAR_ONLY)
 foreach(smoke_name smoke_define IN ZIP_LISTS C2F_SMOKE_NAMES C2F_SMOKE_DEFINES)
-    foreach(pattern IN ITEMS ab aa)
+    foreach(pattern IN ITEMS ${AMR_TEST_PATTERNS})
         string(TOUPPER "${pattern}" pattern_upper)
         set(target "test_amr_c2f_smoke_${smoke_name}_${pattern}")
         add_executable(${target} doctest_main_amr.cu test_amr_c2f_debug_smoke.cu)
@@ -79,7 +91,7 @@ foreach(smoke_name smoke_define IN ZIP_LISTS C2F_SMOKE_NAMES C2F_SMOKE_DEFINES)
     endforeach()
 endforeach()
 
-foreach(pattern IN ITEMS ab aa)
+foreach(pattern IN ITEMS ${AMR_TEST_PATTERNS})
     string(TOUPPER "${pattern}" pattern_upper)
     set(target "test_amr_f2c_schonherr_${pattern}")
     add_executable(${target} doctest_main_amr.cu test_amr_f2c_schonherr.cu)
@@ -92,3 +104,18 @@ foreach(pattern IN ITEMS ab aa)
         set_source_files_properties(test_amr_f2c_schonherr.cu PROPERTIES LANGUAGE HIP)
     endif()
 endforeach()
+
+# an AA-configured tree does not build the AB-pinned targets above: drop their
+# stale outputs left over from a previous A-B configure, so that test drivers
+# locating the binaries by path (e.g. tests/unit/test_amr_units.py) cannot
+# pick up outdated AB binaries that this tree no longer builds (a missing
+# binary is an honest hard failure; a stale one is silently wrong)
+if(TNL_LBM_AA_PATTERN)
+    file(REMOVE
+        ${CMAKE_BINARY_DIR}/tests/test_amr_units_ab
+        ${CMAKE_BINARY_DIR}/tests/test_amr_f2c_schonherr_ab
+    )
+    foreach(smoke_name IN ITEMS ${C2F_SMOKE_NAMES})
+        file(REMOVE ${CMAKE_BINARY_DIR}/tests/test_amr_c2f_smoke_${smoke_name}_ab)
+    endforeach()
+endif()
