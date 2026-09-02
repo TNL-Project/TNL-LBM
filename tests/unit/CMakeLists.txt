@@ -24,6 +24,18 @@ target_link_libraries(test_cpp_units PUBLIC TNL::TNL_LBM PRIVATE doctest::doctes
 # model: the per-pattern BC switch instantiations dominate the compile time,
 # and the split lets ninja schedule the model TUs in parallel
 
+# per-pattern test binaries: the AB-pinned targets cannot exist in an
+# AA-configured build tree (TNL_LBM propagates AA_PATTERN to every consumer,
+# colliding with the private AB_PATTERN pin), so they are created only in the
+# default A-B tree; the AA tree still gets the aa-pinned binaries and the
+# default-pattern test_cpp_units
+if(TNL_LBM_AA_PATTERN)
+    set(AMR_TEST_PATTERNS aa)
+    message(STATUS "tests/unit: AA-pattern build tree - skipping the AB-pinned per-pattern test targets")
+else()
+    set(AMR_TEST_PATTERNS ab aa)
+endif()
+
 # force language to HIP
 if(TNL_LBM_BUILD_HIP)
     set_source_files_properties(${unit_test_sources} PROPERTIES LANGUAGE HIP)
@@ -41,7 +53,7 @@ set(AMR_SUITE_SOURCES
     test_amr_nesting.cu
 )
 
-foreach(pattern IN ITEMS ab aa)
+foreach(pattern IN ITEMS ${AMR_TEST_PATTERNS})
     string(TOUPPER "${pattern}" pattern_upper)
     set(target "test_amr_units_${pattern}")
     add_executable(${target} doctest_main_amr.cu ${AMR_SUITE_SOURCES})
@@ -71,7 +83,7 @@ endforeach()
 # different body of the same kernel template symbol (ODR hazard), so the
 # define gets its own binary, built from doctest_main_amr.cu + the shared driver
 # TU. Driven by tests/unit/test_amr_f2c_schonherr.py, NOT by the gate module
-foreach(pattern IN ITEMS ab aa)
+foreach(pattern IN ITEMS ${AMR_TEST_PATTERNS})
     string(TOUPPER "${pattern}" pattern_upper)
     set(target "test_amr_f2c_schonherr_${pattern}")
     add_executable(${target} doctest_main_amr.cu test_amr_f2c_schonherr.cu)
@@ -84,3 +96,15 @@ foreach(pattern IN ITEMS ab aa)
         set_source_files_properties(doctest_main_amr.cu test_amr_f2c_schonherr.cu PROPERTIES LANGUAGE HIP)
     endif()
 endforeach()
+
+# an AA-configured tree does not build the AB-pinned targets above: drop their
+# stale outputs left over from a previous A-B configure, so that test drivers
+# locating the binaries by path (e.g. tests/unit/test_amr_units.py) cannot
+# pick up outdated AB binaries that this tree no longer builds (a missing
+# binary is an honest hard failure; a stale one is silently wrong)
+if(TNL_LBM_AA_PATTERN)
+    file(REMOVE
+        ${CMAKE_BINARY_DIR}/tests/test_amr_units_ab
+        ${CMAKE_BINARY_DIR}/tests/test_amr_f2c_schonherr_ab
+    )
+endif()
