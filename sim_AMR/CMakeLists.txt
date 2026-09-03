@@ -1,6 +1,7 @@
 set(TARGETS
         sim_AMR
         sim_AMR_channel
+        sim_AMR_ball
 )
 
 # optional C2F reconstruction strategy switch for AMR experiments (see
