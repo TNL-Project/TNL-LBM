@@ -1,7 +1,7 @@
 # D3Q27 LATTICE MODEL KNOWLEDGE BASE
 
-**Updated:** 2026-07-30
-**Branch:** lbm2d
+**Updated:** 2026-09-04
+**Branch:** fix/well-conditioning
 
 ## OVERVIEW
 
@@ -22,8 +22,7 @@ and macroscopic output for the 3D Navier-Stokes solver.
 ├── streaming_AB.h       # A-B pattern streaming (two-lattice swap)
 ├── bc.h                 # Boundary condition dispatch over GEO enum
 ├── macro.h              # Macroscopic quantity output and forcing hooks
-├── common.h             # Base mixin: density/velocity/equilibrium for standard operators
-├── common_well.h        # Base mixin for "well" formulations (density shifted by +1)
+├── common.h             # Base mixin: density/velocity/equilibrium; WELL_CONDITIONED param shifts density by +1
 └── common_adjoint.h     # Base mixin for adjoint sensitivity problems
 ```
 
@@ -40,22 +39,24 @@ and macroscopic output for the 3D Navier-Stokes solver.
 ## CONVENTIONS
 
 - **`col_*`** = collision operators;
-  `_well` variants use `D3Q27_COMMON_WELL` and shift density by one.
+  well-conditioned variants use the `D3Q27_COMMON_WELL` alias (`D3Q27_COMMON<TRAITS, EQ, true>`) and shift density by one.
+- **`D3Q27_COMMON_WELL`** = alias of `D3Q27_COMMON` with `WELL_CONDITIONED = true`;
+  stored DFs are `f - w` with `sum(w) = 1` and `fromStorage`/`toStorage` convert by `+/-w_i`.
 - **`eq_*`** = equilibrium distribution functions;
   called direction-by-direction by `setEquilibrium`.
 - **`streaming_*`** = streaming implementations;
   `AA_PATTERN` stores to same site/opposite direction on even iterations.
 - **`common*.h`** = base mixins providing `computeDensityAndVelocity`, `setEquilibrium`, and `setEquilibriumLat`.
 - Inheritance:
-  `D3Q27_COMMON` for standard operators,
-  `D3Q27_COMMON_WELL` for well-formulations,
-  `D3Q27_COMMON_ADJOINT` for adjoint problems.
+  derive standard operators from `D3Q27_COMMON<TRAITS, EQ>`,
+  well-conditioned formulations from the `D3Q27_COMMON_WELL` alias,
+  and adjoint problems from `D3Q27_COMMON_ADJOINT`.
 - Collision operators expose a `static constexpr const char* id` used for logging and configuration.
 - Direction naming follows `p`/`z`/`m` for +1/0/-1 along x/y/z (e.g., `ppp`, `zmz`, `mmm`).
 
 ## ANTI-PATTERNS
 
-- Mixing `*_well` collision operators with non-well equilibrium or common bases:
+- Mixing `*_well` collision operators with a non-well equilibrium:
   density shift must stay consistent.
 - Calling `EQ::eq_*` with wrong argument count:
   adjoint equilibria take both forward and adjoint macroscopic variables.
