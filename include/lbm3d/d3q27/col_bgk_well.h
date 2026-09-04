@@ -26,7 +26,7 @@ struct D3Q27_BGK_WELL : D3Q27_COMMON_WELL<TRAITS, LBM_EQ>
 						  + KS.f[zpp] + KS.f[zpz] + KS.f[pmm] + KS.f[pmp] + KS.f[pmz] + KS.f[ppm] + KS.f[ppp] + KS.f[ppz];
 		const dreal m_002 = KS.f[mmm] + KS.f[mmp] + KS.f[mzm] + KS.f[mzp] + KS.f[mpm] + KS.f[mpp] + KS.f[zmm] + KS.f[zmp] + KS.f[zzm] + KS.f[zzp]
 						  + KS.f[zpm] + KS.f[zpp] + KS.f[pmm] + KS.f[pmp] + KS.f[pzm] + KS.f[pzp] + KS.f[ppm] + KS.f[ppp];
-		const dreal drho = ((((KS.f[ppp] + KS.f[mmm]) + (KS.f[pmp] + KS.f[mpm])) + ((KS.f[ppm] + KS.f[mmp]) + (KS.f[ppm] + KS.f[mmp])))
+		const dreal drho = ((((KS.f[ppp] + KS.f[mmm]) + (KS.f[pmp] + KS.f[mpm])) + ((KS.f[ppm] + KS.f[mmp]) + (KS.f[mpp] + KS.f[pmm])))
 							+ (((KS.f[zpp] + KS.f[zmm]) + (KS.f[zpm] + KS.f[zmp])) + ((KS.f[pzp] + KS.f[mzm]) + (KS.f[pzm] + KS.f[mzp]))
 							   + ((KS.f[ppz] + KS.f[mmz]) + (KS.f[pmz] + KS.f[mpz])))
 							+ ((KS.f[pzz] + KS.f[mzz]) + (KS.f[zpz] + KS.f[zmz]) + (KS.f[zzp] + KS.f[zzm])))
