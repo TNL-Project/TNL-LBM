@@ -3,24 +3,25 @@
 [files]
 ignore-hidden = false
 extend-exclude = [
-   # Typos-specific ignore globs (gitignore syntax).
-   ".git/",
-   "*.vtk",
-   "*.vti",
-   "*.vtu",
-   "*.pvti",
-   "*.pvtu",
-   "*.csv",
+    # Typos-specific ignore globs (gitignore syntax).
+    ".git/",
+    "*.vtk",
+    "*.vti",
+    "*.vtu",
+    "*.pvti",
+    "*.pvtu",
+    "*.csv",
 ]
 
 [default]
 extend-ignore-re = [
-   # Custom ignore regex patterns: https://github.com/crate-ci/typos/blob/master/docs/reference.md#example-configurations
-   "(?Rm)^.*(#|//)\\s*spellchecker:disable-line$",
-   "(?s)(#|//)\\s*spellchecker:disable-next-line[^\\n]*\\n[^\\n]*",
+    # Custom ignore regex patterns: https://github.com/crate-ci/typos/blob/master/docs/reference.md#example-configurations
+    "(?Rm)^.*(#|//)\\s*spellchecker:disable-line$",
+    "(?s)(#|//)\\s*spellchecker:disable-next-line[^\\n]*\\n[^\\n]*",
 ]
 
 [default.extend-words]
-TKE = "TKE" # acronym
-ND = "ND"   # ignore "ND" -> "AND" hint
-tak = "tak" # Czech word
+TKE = "TKE"     # acronym
+ND = "ND"       # ignore "ND" -> "AND" hint
+tak = "tak"     # Czech word
+Hanel = "Hanel" # name
