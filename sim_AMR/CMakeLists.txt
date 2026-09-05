@@ -68,6 +68,32 @@ set(C2F_NORM_ONLY "" CACHE STRING "C2F normal-stress-only strain fill debug defi
 # diagonals; closes the NORM/SHEAR partition of the bias attribution)
 set(C2F_SHEAR_ONLY "" CACHE STRING "C2F shear-only strain fill debug define for AMR targets (enable with ON)")
 
+# 2026-09-05 frame/cycle-timing probe round (suspects T2/T1 of the 2026-09-03
+# probe synthesis for the parity-locked checkerboard artifact at the AMR
+# coarse/fine interface; arm semantics and the measured verdicts are documented
+# in the file docstring of include/lbm3d/d3q27/amr_coupling.h). All OFF by
+# default: with every option unset the sim targets compile the verbatim HEAD
+# text pinned by the bit-identity harness.
+set(AMR_C2F_READ_DF_CUR "" CACHE STRING "T2a frame-timing probe: the C2F fill reads the coarse pre-step frame df_cur instead of the post-step df_out (enable with ON)")
+set(AMR_F2C_READ_DF_CUR "" CACHE STRING "T2b frame-timing probe: the F2C skin feedback reads the fine pair-mid frame df_cur instead of the post-pair df_out (enable with ON)")
+set(AMR_C2F_WRITE_DF_OUT "" CACHE STRING "T2c frame-timing probe: the C2F fill writes the frame the next fine substep does not consume (enable with ON)")
+set(AMR_PASSIVE_BAND "" CACHE STRING "T1a cycle-timing probe: disarm the substep-1 widened extent (both substeps interior-only, frame-1 fill restored) (enable with ON)")
+set(AMR_SUBSTEP2_C2F_REFILL "" CACHE STRING "T1b cycle-timing probe: refill the substep-1 frame's ghost rows between the fine substeps (enable with ON)")
+
+# 2026-09-05 operator-parametrization probe (round 2b of the checkerboard
+# investigation -- hypothesis and measured verdict in col_cum.h next to the
+# pin, arm table in docs/AMR-seam-checkerboard-investigation.md §2): pin the
+# three Part-I-parametrized relaxation rates omega3/omega4/omega5 to exactly
+# 1 GLOBALLY in the D3Q27 cumulant collision (the Kutscher-2018 production
+# rates family; the GLOBAL counterpart of the round-1 band-local
+# AMR_BAND_OMEGA3 arm, with which stacking is a compile-time #error in
+# col_cum.h). The arm exists only under USE_GEIER_CUM_2017 -- of the AMR
+# targets only sim_AMR_ball compiles that mode, so it is a no-op define for
+# sim_AMR/sim_AMR_channel (same precedent as AMR_BAND_OMEGA3). OFF by
+# default: unset, the targets compile the verbatim HEAD text pinned by the
+# bit-identity harness.
+set(CUM_OMEGA345_ONE "" CACHE STRING "Round-2b operator-parametrization probe: pin omega3/omega4/omega5 to exactly 1 GLOBALLY in the D3Q27 cumulant collision (K2018 production rates family; exists only under USE_GEIER_CUM_2017 = sim_AMR_ball; mutually exclusive with AMR_BAND_OMEGA3) (enable with ON)")
+
 # 2026-08-16 (gate B ruling + D.1): the F2C skin feedback became the ONLY
 # fine-to-coarse channel -- the former F2C_SKIN_ONLY experiment define was
 # retired together with the ring-F2C code it gated, so there is no feedback
@@ -99,6 +125,32 @@ foreach(target IN ITEMS ${TARGETS})
 
     if(C2F_SHEAR_ONLY)
         target_compile_definitions(${target} PRIVATE C2F_SHEAR_ONLY)
+    endif()
+
+    # 2026-09-05 frame/cycle-timing probe round (see the block above)
+    if(AMR_C2F_READ_DF_CUR)
+        target_compile_definitions(${target} PRIVATE AMR_C2F_READ_DF_CUR)
+    endif()
+
+    if(AMR_F2C_READ_DF_CUR)
+        target_compile_definitions(${target} PRIVATE AMR_F2C_READ_DF_CUR)
+    endif()
+
+    if(AMR_C2F_WRITE_DF_OUT)
+        target_compile_definitions(${target} PRIVATE AMR_C2F_WRITE_DF_OUT)
+    endif()
+
+    if(AMR_PASSIVE_BAND)
+        target_compile_definitions(${target} PRIVATE AMR_PASSIVE_BAND)
+    endif()
+
+    if(AMR_SUBSTEP2_C2F_REFILL)
+        target_compile_definitions(${target} PRIVATE AMR_SUBSTEP2_C2F_REFILL)
+    endif()
+
+    # 2026-09-05 operator-parametrization probe (see the block above)
+    if(CUM_OMEGA345_ONE)
+        target_compile_definitions(${target} PRIVATE CUM_OMEGA345_ONE)
     endif()
 
     # force language to HIP
