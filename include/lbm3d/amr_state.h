@@ -402,6 +402,21 @@ struct State_AMR : State<NSE>
 	// ruling, D.1 hard-delete)
 	virtual void launchFineToCoarseTransfersInterior(int fine_level);
 
+#if defined(AMR_PASSIVE_BAND) || defined(AMR_SUBSTEP2_C2F_REFILL)
+	// 2026-09-05 frame/cycle-timing probe round (the parity-locked
+	// checkerboard suspects T1/T2 of the 2026-09-03 probe synthesis; arm
+	// semantics in the amr_coupling.h file docstring):
+	// fill the ghost rows of the OTHER AB frame of `fine_level` (the
+	// substep-1 rotation of the pair about to be consumed) by re-pointing
+	// the level rotation ONE odd count ahead (updateKernelDataForLevel is
+	// an absolute setter on substep mod 2 / mod DFMAX, so the count + 1
+	// selects the opposite frame and the identical count restores it).
+	// The substep count is always EVEN at the invocation points (pair
+	// boundaries and between-pair positions), so count + 1 is a valid
+	// substep index and the restore lands exactly on the pre-call state.
+	void launchCoarseToFineTransfersOtherFrame(int fine_level);
+#endif
+
 	// per-direction transfer streams of the asynchronous coupling overlap
 	// (Schönherr's F2C/C2F concurrency): the two directions' kernels touch
 	// disjoint cell sets (F2C writes the parent skin reading fine
@@ -689,6 +704,15 @@ void State_AMR<NSE>::launchLBMKernelForLevel(int level, bool compute_macro, int 
 		// overlap row as the streaming source, filled by the C2F transfer.
 		// An axis masked in fine_wall_masks is deepened to the fine wall's
 		// GEO_WALL row instead (see kernelLaunchWindow)
+#ifdef AMR_BAND_OMEGA3
+		// AMR_BAND_OMEGA3 probe (band-local third-order damping,
+		// 2026-09-03): refinement-level blocks carry the band-local
+		// omega_3/4/5 re-pin of col_cum.h via the SD flag consumed by the
+		// kernels.h predicate; the coarse level's boundary rows are
+		// physical BCs, not an AMR coupling band. Idempotent per-launch
+		// set (updateKernelDataForLevel never rebuilds block.data).
+		block->data.amr_band_omega3_active = level > 0;
+#endif
 		const auto [begin, size] = kernelLaunchWindow(*block, ghost_layers);
 		launch_config.gridSize = isInteriorLaunchWindow(begin, size, block->local) ? block->computeData.at(direction).gridSize
 																				   : block->getCudaGridSize(size, launch_config.blockSize);
@@ -818,6 +842,13 @@ void State_AMR<NSE>::SimInit()
 		// the same substep-0 rotation the positional preparation selected
 		this->nse.updateKernelDataForLevel(L, this->nse.totalSubstepCount[L]);
 		launchCoarseToFineTransfers(L);
+	#ifdef AMR_PASSIVE_BAND
+		// AMR_PASSIVE_BAND probe (T1a, 2026-09-05): with the widened
+		// extent disarmed the substep-1 frame's band is never
+		// kernel-updated, so cycle 0's substep 2 also reads a t_0 fill --
+		// restore the frame-1 fill of the same content
+		launchCoarseToFineTransfersOtherFrame(L);
+	#endif
 	}
 	// the SimInit fill's single sync point: the ghost-macro seeding below
 	// reads the filled ghost DFs, so both transfer streams must be drained
@@ -2175,6 +2206,25 @@ void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level)
 	// single barrier is the caller's synchronizeTransfers()
 }
 
+#if defined(AMR_PASSIVE_BAND) || defined(AMR_SUBSTEP2_C2F_REFILL)
+template <typename NSE>
+void State_AMR<NSE>::launchCoarseToFineTransfersOtherFrame(int fine_level)
+{
+	// 2026-09-05 frame/cycle-timing probe round: fill the OTHER AB frame's
+	// ghost rows of `fine_level` with the same launch geometry as
+	// launchCoarseToFineTransfers (the kernel stores through the logical
+	// df_cur slot, so re-pointing the rotation to the odd substep count
+	// redirects every destination of the pass into the substep-1 frame),
+	// then restore the pre-call rotation. The count is even at every
+	// invocation point, so count + 1 is the immediate odd substep's
+	// rotation and the restore is the identity re-set
+	const int s = this->nse.totalSubstepCount[fine_level];
+	this->nse.updateKernelDataForLevel(fine_level, s + 1);
+	launchCoarseToFineTransfers(fine_level);
+	this->nse.updateKernelDataForLevel(fine_level, s);
+}
+#endif
+
 // D.1 hard-delete (gate-B ruling, 2026-08-16): the ring fine-to-coarse
 // launch (`launchFineToCoarseTransfers` over the halo `patches`) was
 // removed -- the skin F2C of \ref launchFineToCoarseTransfersInterior is
@@ -2346,7 +2396,20 @@ void State_AMR<NSE>::advancePair(int level, bool compute_macro, bool sync_macro)
 	// updateKernelData() is driven by the coarse clock and must not drive
 	// the fine substeps), then the widened simulated-band launch
 	this->nse.updateKernelDataForLevel(level, this->nse.totalSubstepCount[level]);
+#ifdef AMR_PASSIVE_BAND
+	// AMR_PASSIVE_BAND probe (cycle-timing suspect T1a, 2026-09-05): the
+	// substep-1 WIDENED extent is disarmed -- both substeps launch on the
+	// interior-only window, so the inner ghost rows are never
+	// kernel-integrated; the band becomes a pure C2F-maintained Dirichlet
+	// shell. The substep-1-frame ghost rows are then never kernel-updated
+	// either, and the restored frame-1 fill (the
+	// launchCoarseToFineTransfersOtherFrame call sites of this file)
+	// keeps them C2F-authored for substep 2's streaming pull just like
+	// the substep-0 frame's fill serves substep 1.
+	launchLBMKernelForLevel(level, compute_macro, /*ghost_layers=*/0);
+#else
 	launchLBMKernelForLevel(level, compute_macro, /*ghost_layers=*/1);
+#endif
 	this->nse.totalSubstepCount[level]++;
 
 #ifdef HAVE_MPI
@@ -2372,12 +2435,34 @@ void State_AMR<NSE>::advancePair(int level, bool compute_macro, bool sync_macro)
 		launchFineToCoarseTransfersInterior(level + 1);
 		this->nse.updateKernelDataForLevel(level + 1, this->nse.totalSubstepCount[level + 1]);
 		launchCoarseToFineTransfers(level + 1);
+#ifdef AMR_PASSIVE_BAND
+		// AMR_PASSIVE_BAND probe (T1a, 2026-09-05): the mid-cycle fill for
+		// the finer pair #2 covers its substep-1 frame too under the
+		// passive band (same source: this level's post-substep-A state)
+		launchCoarseToFineTransfersOtherFrame(level + 1);
+#endif
 		// substep B reads the skin the F2C just wrote (its ring streams
 		// from it) and the finer pair #2 reads the ghost rows the C2F
 		// filled -- both must be complete
 		synchronizeTransfers();
 	}
 
+#ifdef AMR_SUBSTEP2_C2F_REFILL
+	// AMR_SUBSTEP2_C2F_REFILL probe (cycle-timing suspect T1b, 2026-09-05):
+	// refill the substep-1 frame's ghost rows BETWEEN the substeps,
+	// overwriting substep 1's kernel-integrated band product at the inner
+	// ghost row before substep 2 streams from it -- substep 2 then
+	// consumes fresh C2F-authored band content instead of the widened
+	// launch's output, while substep 1 is untouched. The fill sources the
+	// parent's current df_out (at max_level 1 the pre-step coarse state,
+	// i.e. one fine-substep stale against the substep-2 consumption; at
+	// nested levels the parent's post-substep-A frame). The rotation calls
+	// are the absolute setter on the already-incremented count, so the
+	// pre-fill and the substep-2 preparation select the same frame
+	this->nse.updateKernelDataForLevel(level, this->nse.totalSubstepCount[level]);
+	launchCoarseToFineTransfers(level);
+	synchronizeTransfers();
+#endif
 	// substep B: interior-only launch (on a face masked in fine_wall_masks
 	// the window still covers the GEO_WALL row: the bounce-back refreshes
 	// the wall's slots in every substep's frame)
@@ -2544,6 +2629,14 @@ void State_AMR<NSE>::SimUpdate()
 	for (int M = 1; M <= this->nse.max_level; M++) {
 		this->nse.updateKernelDataForLevel(M, this->nse.totalSubstepCount[M]);
 		launchCoarseToFineTransfers(M);
+	#ifdef AMR_PASSIVE_BAND
+		// AMR_PASSIVE_BAND probe (T1a, 2026-09-05): with both substeps
+		// interior-only the substep-1 frame's band is never
+		// kernel-updated, so the cascade fills BOTH frames' ghost rows for
+		// the next cycle (identical content, the historical frame-1 fill
+		// of the superseded passive-band cycle)
+		launchCoarseToFineTransfersOtherFrame(M);
+	#endif
 	}
 
 	// the cycle-end transfer phase's single sync point: the end-sync F2C(1)

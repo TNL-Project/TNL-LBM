@@ -158,6 +158,302 @@
  *   AMR_CM_THIRD_MOMENTS/AMR_CM_BACKTRANSFORM_GEIER (see above); defining
  *   `C2F_LAGRANGE`/`C2F_TRILINEAR` explicitly still reaches the
  *   per-direction interpolation branches.
+ *   Under `USE_GEIER_CUM_2017` (and outside the `C2F_EQ_ONLY` debug arm)
+ *   the compact-moment fill carries three Geier-regime forms, selected by
+ *   a further set of defines (2026-09-03, Oracle candidates 1a/1b for the
+ *   parity-locked checkerboard artifact of the per-parity fill; the
+ *   selectors are IGNORED with the macros undefined, so the macros-off
+ *   path always compiles the form-0 text pinned by the bit-identity
+ *   harness):
+ *   - `C2F_PER_PARITY` [DEFAULT]: the current form -- every fine
+ *     destination fits its own-parity 2x2x2 window (even fg {home-1,
+ *     home}, odd fg {home, home+1}) and evaluates at t = +-1/4; the two
+ *     subcells of one coarse cell therefore come from DIFFERENT
+ *     polynomials (adjacent vertex interpolation cells), which is the
+ *     period-2 window alternation the artifact was suspected to be
+ *     slaved to. [DEFAULT it remains: both parity-removing candidates
+ *     were measured on the sim_AMR_ball checkerboard case on 2026-09-03
+ *     and FALSIFIED as the artifact's seed (parity metric and seam |dvx|
+ *     moved ~10 %, an order of magnitude short of the >=10x / 2.6e-4
+ *     falsifier bars) -- the parity-locked amplifier is INTERNAL to the
+ *     band dynamics, not the fill's reconstruction evaluation; see the
+ *     candidate bullets.]
+ *   - `C2F_PARITY_AVERAGED`: Oracle candidate 1a (diagnostic, measured
+ *     2026-09-03, FALSIFIED) -- every destination is evaluated from BOTH
+ *     its own-parity window and the neighbor-parity window (the same
+ *     fit/evaluate/corrected-cumulants chain; the neighbor window's
+ *     source cells are read directly since the staged union need not
+ *     cover them) and the two evaluated moment states (macros, the six
+ *     second-order cumulants, the seven third-order cumulants) are
+ *     averaged before the back-transformation. Destinations whose own
+ *     window is not the nominal parity window (wall-shifted,
+ *     storage-clamped, degenerate) keep the pass-0 value. Verdict on the
+ *     sim_AMR_ball wall case (--resolution 2 --max-level 1, t = 1 s):
+ *     parity metric 3.25e-3 -> 2.95e-3 and seam mean|dvx| 1.53e-3 ->
+ *     1.29e-3, i.e. ~1.1x against the >=10x / 2.6e-4 falsifier bars —
+ *     the reconstruction's window parity is NOT the artifact's seed.
+ *   - `C2F_SHARED_FIT`: Oracle candidate 1b (measured as a diagnostic
+ *     2026-09-03; production adoption gated OFF by the falsifier) -- one
+ *     shared fit per coarse cell on the home-centered 3-node-per-axis
+ *     window {home-1, home, home+1} (27 nodes): the full
+ *     tensor-quadratic nodal interpolation (the unique per-axis
+ *     quadratic through 3 nodes, applied as a tensor product -- it
+ *     contains the former 8/11-coefficient bases, so the exactness
+ *     class EXTENDS to full tensor-quadratic per axis for density AND
+ *     velocity; the Kutscher-Geier-Krafczyk 2018 Eqs. 79-91 umbrella:
+ *     one shared quadratic fit per interpolation cell), evaluated at
+ *     both parity destinations (t = -1/4 even, +1/4 odd, measured from
+ *     the home cell center). The parity lock is removed by construction:
+ *     both subcells of a coarse cell are evaluated from the SAME
+ *     polynomial. The measured window means of the five second-order
+ *     non-equilibrium moments and the fitted derivative variations feed
+ *     the corrected cumulants through the same formulas as the
+ *     per-parity chain (the mean is the plain 27-node window mean; the
+ *     A011/A101/A110/corr_B/corr_C variation terms are the analytic
+ *     first-derivative differences of the tensor-quadratic fits between
+ *     the window center and the destination). Verdict on the same case:
+ *     parity metric 3.25e-3 -> 3.04e-3 and seam mean|dvx| 1.53e-3 ->
+ *     1.35e-3 — the same ~1.07x null as 1a: with both parity-removing
+ *     constructions inert, ~85 % of the seam bias is parity-INDEPENDENT
+ *     residual (the third-order-correlated content the shelved
+ *     omega_3-scaling candidate targets), and the fill evaluation is not
+ *     where the checkerboard is authored.
+ *   Precedence if several are given: `C2F_SHARED_FIT` >
+ *   `C2F_PARITY_AVERAGED` > `C2F_PER_PARITY` > [default].
+ *   Orthogonal to the FORM selection, the 2026-09-03 omega_3-persistence
+ *   probe (the parity-INDEPENDENT ~85 % residual the 1a/1b bullets
+ *   identify with third-order-correlated content: the seven transferred
+ *   third-order cumulants form a channel with ~17-coarse-step memory --
+ *   base omega_3 ~= 0.06 at omega_1 ~= 1.988, tau = 0.503 -- that
+ *   retains injected period-2 content inside the band) carries two
+ *   independently selectable arms, both OFF by default and both compiled
+ *   to the same tokens as HEAD with the macros undefined:
+ *   - `C2F_OMEGA3_DISCOUNT` (shape B, transfer-side third-order
+ *     discount): the seven destination cumulants of the Geier fill
+ *     (the AMR_CM_THIRD_MOMENTS interpolation product of every FORM
+ *     above) are scaled by the per-level retention ratio
+ *     g = (1 - omega_3_f)^2 / (1 - omega_3_c), where omega_3_{c,f} are
+ *     the two levels' base third-order rates recomputed EXACTLY as
+ *     col_cum.h L195-202 does for its own (omega_1 = 1/tau_level,
+ *     omega_2 = no1) inputs. Derivation of g: over one coarse step the
+ *     coarse operator retains (1 - omega_3_c) of its pre-step
+ *     third-order content while the fine operator, colliding twice at
+ *     2:1 subcycling, retains (1 - omega_3_f)^2 of the same pre-step
+ *     content; identity transfer therefore hands the fine band the
+ *     coarse-retained amplitude of a mode the fine operator would have
+ *     relaxed harder, and g maps it to what the fine operator would
+ *     retain anyway (numerically omega_3_c ~= 0.0585 vs omega_3_f ~=
+ *     0.1128 at tau 0.503/0.506, i.e. g ~= 0.836). Chosen over the
+ *     steady-state memory ratio (see the next bullet) because the band
+ *     state is deterministically RE-SEEDED by the fill every coarse
+ *     step (overwrite, not continuous accumulation), so the per-interval
+ *     retention map of the same ancestor content is the relevant
+ *     transfer correction. Measured on sim_AMR_ball 2026-09-03
+ *     (--resolution 2 --max-level 1, t = 1 s; baseline parity 3.249e-3,
+ *     seam mean|dvx| 1.526e-3): g = 0.8357 moved parity to 3.486e-3
+ *     (+7.3 %) and seam to 1.610e-3 (+5.5 %) -- WORSE, not collapsed;
+ *     the direction predicted by the amplifier hypothesis is opposite
+ *     to the measured response.
+ *   - `C2F_OMEGA3_DISCOUNT_MEMORY` (shape B, variant): the same scaling
+ *     site with the steady-state memory ratio g = omega_3_c /
+ *     (2 * omega_3_f) ~= 0.258 instead -- the retentions' inverse-rate
+ *     ratio per PHYSICAL time (a statistically-steady forcing-response
+ *     amplitude correction). Measured 2026-09-03: parity 4.370e-3
+ *     (+34.5 %), seam 1.892e-3 (+24 %) -- the worsening GROWS with the
+ *     discount strength; FALSIFIED together with the base form.
+ *   - `C2F_OMEGA3_DISCOUNT_INVERSE` (shape B, sign probe): the inverse
+ *     of the base form, g = (1 - omega_3_c) / (1 - omega_3_f)^2 ~=
+ *     1.197 -- over-retention AT the transfer, run to close the
+ *     dose-response direction of the two discount arms. Measured
+ *     2026-09-03: parity 2.975e-3 (-8.4 %), seam 1.423e-3 (-6.7 %) --
+ *     more retained content mildly SUPPRESSES the checkerboard.
+ *   - `AMR_BAND_OMEGA3` VALUE (shape A, band-local third-order damping;
+ *     the collision-side arm -- implementation in col_cum.h, kernels.h,
+ *     lbm_data.h, amr_state.h, documented here because it tests the
+ *     same channel): re-pins the seven limiter-adapted third-order
+ *     relaxation rates (the omega3/omega4/omega5 families of Geier 2017
+ *     Sec. 7, col_cum.h L201-216) to the define's kappa per cell at the
+ *     fine level's coupling-band rows (both ghost rows plus the first
+ *     interior row adjacent to the block's own boundary, i.e. the
+ *     coupling-maintained shell of the substep-1 widened extent
+ *     [-1, local+1)); kappa = 1 is the macros-off full relaxation
+ *     locally, 0.5 / 0.25 partial damping. Measured 2026-09-03: kappa = 1
+ *     gives parity 6.914e-3 (+112.8 %), seam 2.915e-3 (+91 %); kappa =
+ *     0.5 gives parity 4.959e-3 (+52.6 %) -- band-local damping
+ *     AMPLIFIES the artifact up to ~2x and weakens the recirculation
+ *     by ~45 %.
+ *   Probe synthesis (2026-09-03): the omega_3-persistence amplifier
+ *   hypothesis is FALSIFIED with a signed result. Across all retention-
+ *   scaling arms the parity/seam metrics respond MONOTONELY and with a
+ *   NEGATIVE sign to retained band third-order content (over-retained
+ *   transfer -8 %, identity transfer the baseline, discounted +7 %,
+ *   strongly discounted +35 %, band-half-relaxed +53 %, band-off
+ *   +113 %, discount+band-off additive at +127 %, seam 3.058e-3) --
+ *   the seven-cumulant channel is a partial SUPPRESSOR of the
+ *   checkerboard, not its amplifier; no arm reaches the >=5x parity
+ *   collapse / <= 4e-4 seam falsifier bars. Current FORM 0 (identity
+ *   transfer) remains the production form; the tightened suspects
+ *   handed back with the probe are the cycle timing of the substep-1
+ *   widened extent and the C2F/F2C frame timing.
+ *
+ * Frame/cycle-timing probe round (2026-09-05, the T2/T1 suspects above;
+ * all five arms OFF by default, implemented in this file (T2a/T2b/T2c)
+ * and in amr_state.h (T1a/T1b), with sim_AMR/CMakeLists.txt cache
+ * options of the same names; with the macros undefined every arm
+ * compiles the verbatim HEAD text pinned by the bit-identity harness):
+ * Mechanism trace the hypotheses stand on (AB pattern, DFMAX = 2,
+ * logical slots df_cur/df_out into the rotated data.dfs; the level
+ * rotation is the absolute setter of
+ * LBM::updateKernelDataForLevel(L, substep)):
+ * - substep 1 of the cycle (advancePair amr_state.h:~2390): rotation
+ *   EVEN (i=0), df_cur = the substep-0 frame. The widened kernel
+ *   [-1, local+1) reads both ghost rows (the C2F fill of the previous
+ *   cycle end) and the interior, integrates the inner ghost row and
+ *   writes df_out (the substep-1 frame) on the same window; the outer
+ *   ghost row of the written frame is left untouched and unreachable.
+ * - substep 2: rotation ODD (i=1, df_cur = the substep-1 frame),
+ *   interior-only kernel reads the integrated inner ghost row of the
+ *   substep-1 frame, writes the substep-0 frame's interior.
+ * - F2C at the pair-/cycle-sync (amr_state.h:~2255): the AB branch of
+ *   this kernel's read lambda takes fine_SD.df(df_out, ...) -- with the
+ *   substep-2 rotation still in force that is the POST-substep-2 array,
+ *   the fine state at the pair's end (time-aligned). The AB branch of
+ *   the store lambda writes the coarse skin cells of coarse df_out --
+ *   the array the next coarse step rotates into df_cur (one-step
+ *   freshness by design).
+ * - C2F at the cycle-end cascade (amr_state.h:~2590): the AB branch of
+ *   this kernel's read lambda takes coarse_SD.df(df_out, ...) -- with
+ *   the coarse rotation unchanged since the just-finished coarse step
+ *   that is the POST-step coarse state (time-aligned with the pair the
+ *   fill feeds); the store lambda writes fine df_cur after
+ *   updateKernelDataForLevel(M, even count) -- the exact frame the next
+ *   cycle's substep 1 rotates into df_cur and streams from. No
+ *   off-by-one: every consumer reads the frame produced at the matching
+ *   physical time.
+ * The five arms instrument the timing substitutions the suspects reduce
+ * to (each is one substitution against that trace; they are AB-branch
+ * gates only -- the AA branches are untouched, so the arms are no-ops
+ * in AA builds):
+ * - `AMR_C2F_READ_DF_CUR` (T2a, fill staleness by one full coarse
+ *   step): read_coarse_df takes coarse df_cur (the PRE-step state; the
+ *   SimInit cycle-0 fill is value-identical since setInitialCondition
+ *   holds both frames at the initial condition).
+ * - `AMR_F2C_READ_DF_CUR` (T2b, feedback staleness by one fine
+ *   substep): read_fine_df takes fine df_cur (the substep-1 output
+ *   of the pair, t + dt_f instead of the pair-end t + 2dt_f).
+ * - `AMR_C2F_WRITE_DF_OUT` (T2c, write-side one-cycle alternation):
+ *   store_fine_df writes logical df_out, so every fill lands in the
+ *   frame the consuming substep never rotates into df_cur; substep 1
+ *   degenerates to the t_0 initial-condition ghost rows for the whole
+ *   run (the most aggressive write-side displacement the suspect
+ *   admits).
+ * - `AMR_PASSIVE_BAND` (T1a, the widened extent itself): both substeps
+ *   launch interior-only and launchCoarseToFineTransfersOtherFrame
+ *   restores the frame-1 fill at SimInit / the mid-sync / the cycle-end
+ *   cascade, so the band is a pure C2F-maintained Dirichlet shell (
+ *   never kernel-integrated) -- the superseded passive-band cycle,
+ *   reached here as a define-gated arm.
+ * - `AMR_SUBSTEP2_C2F_REFILL` (T1b, substep 2's band source): refill
+ *   the substep-1 frame's ghost rows between the substeps, overwriting
+ *   the widened launch's integrated band product with a fresh fill
+ *   (parent-current df_out: at max_level 1 the pre-step coarse state,
+ *   one fine substep stale) so substep 2 consumes re-filled rather
+ *   than integrated band content; substep 1 is untouched.
+ * Measured verdicts on the canonical sim_AMR_ball case (2026-09-05,
+ * --resolution 2 --max-level 1 --phys-final-time 1.0, SP, AB, single
+ * rank, RTX 5080; metrics by the calibrated ball probe of the
+ * 2026-09-03 campaign: parity = |mean(vx:odd-fg) - mean(vx:even-fg)|
+ * over the three interior rows 1..3 fine cells inside the x-max seam,
+ * seam mean|dvx| over the downstream face from the last interior row +
+ * first band row vs the paired coarse columns; recorded 2026-09-03
+ * baseline reproduced this session bit-for-bit: parity 3.2487e-3, seam
+ * mean 1.5256e-3, seam max 2.3697e-3, rho std 5.0753e-4; falsifier
+ * bars: a genuine SEED collapses parity >= 5x (>= 10x for a full
+ * explanation) or drives seam <= 4e-4 (<= 2.6e-4 for a full one)):
+ * - `AMR_C2F_READ_DF_CUR` (T2a): parity 3.2502e-3 (+0.05 %), seam
+ *   1.5258e-3 (+0.01 %) -- METRIC-INERT: making the fill source the
+ *   pre-step coarse state (one full coarse step stale) moves nothing.
+ * - `AMR_F2C_READ_DF_CUR` (T2b): parity 2.3423e-3 (-28 % vs the >= 5x
+ *   collapse bar), seam 5.3805e-4 (-65 %, above the <= 4e-4 bar), with
+ *   development visibly altered (parity means 2.10e-2/2.33e-2 vs
+ *   1.26e-2/1.58e-2, centerline min vx -3.09e-3, interior rho std
+ *   2.567e-4 vs 2.411e-4): the pair-end freshness of the skin feedback
+ *   is a CARRIER the artifact partially rides, not its seed.
+ * - `AMR_C2F_WRITE_DF_OUT` (T2c): parity 4.5139e-3 (+39 %), seam
+ *   6.3169e-3 (+314 %), flow development destroyed (the write-side
+ *   one-cycle displacement leaves substep 1 on t_0 ghost rows
+ *   permanently) -- the current write frame is load-bearing CORRECT;
+ *   the direction opposite to confirmation.
+ *   T2 VERDICT (the C2F/F2C frame timing): FALSIFIED as the seed --
+ *   every frame-timing displacement probes inert or harmful, none comes
+ *   near the bars; the trace above is the correct one.
+ * - `AMR_PASSIVE_BAND` (T1a): parity 9.8458e-6 (-330x), interior rho
+ *   std 2.7069e-4 (vs baseline 2.4115e-4); the canonical seam/rho-std
+ *   metrics explode to 1.043e-2 / 1.93e-2, which is a PROBE-ARM
+ *   ARTIFACT: a never-integrated band is never macro-recomputed (the
+ *   fill does not write dmacro and no kernel covers the rows), so the
+ *   frame's band-row records go stale -- the factorization witnesses
+ *   below separate that from any physics blowup.
+ * - `AMR_SUBSTEP2_C2F_REFILL` (T1b): parity 9.7902e-6 (-332x, beyond
+ *   the >= 10x full-explanation bar), seam mean 2.7002e-4 (-82.3 %,
+ *   THROUGH the <= 4e-4 seed bar and at the historical Lagrange-arm
+ *   seam class ~2.6e-4), seam max 6.3400e-4 (-73 %), interior rho std
+ *   2.7098e-4 (+12 % vs baseline), rho std incl. band rows 2.8097e-4
+ *   (-45 %), development intact (max|vx| 2.5722e-2 = baseline's
+ *   2.5719e-2, centerline min vx -2.006e-3 vs -9.963e-4), deterministic
+ *   on a double run digit-for-digit.
+ *   Factorization witness (AMR_PASSIVE_BAND + AMR_SUBSTEP2_C2F_REFILL
+ *   combo): parity 9.7902e-6 and seam 1.0429e-2 / std 1.9302e-2 -- the
+ *   parity collapse occurs whenever substep 2 does NOT consume the
+ *   widened substep-1 launch's band-row output (both fill arms
+ *   collapse it; the interior dynamics of all three arms sit at
+ *   2.71e-4 rho std, so the T1a seam explosion really is the stale
+ *   band-macro artifact of disarming the widened launch), while the
+ *   widened substep-1 launch itself is load-bearing for the seam's
+ *   transport.
+ *   T1 VERDICT (the cycle timing of the substep-1 widened extent):
+ *   CONFIRMED and localized -- the checkerboard is AUTHORED in substep
+ *   2's consumption of the substep-1-integrated row at the inner ghost
+ *   line of the band: the widened launch's collision product at that
+ *   row is parity-structured (its input fill keeps the per-parity
+ *   window content that candidates 1a/1b showed inert at the fill
+ *   level; the structure is trafficked fine-substep-wise, not by any
+ *   frame off-by-one -- consistent with the T2 falsification) and its
+ *   ingestion as substep 2's boundary data sustains the period-2
+ *   decoupling; feeding substep 2 the fresh fill instead erases it at
+ *   330x with the seam error cut to the Lagrange-arm class as a
+ *   by-product.
+ * Production candidate (measured, define-gated as this round's T1b):
+ *   refill the consuming frame's ghost rows between the fine substeps
+ *   (one launchCoarseToFineTransfers of the pair level per pair,
+ *   sourcing the parent's current post-substep/pre-step frame), which
+ *   is exactly AMR_SUBSTEP2_C2F_REFILL. Cost signature: one extra C2F
+ *   launch set per pair (dead writes in the untouched outer row) and
+ *   interior rho std +12 % against the 5.65x seam / 332x parity gains.
+ *   Not merged as a default: the substitution demotes the band's role
+ *   from Schönherr's simulated destinations to a one-sided shell at
+ *   substep 2 (the class the ch7 conversion superseded at T16/T19 for
+ *   conservation reasons -- a default flip is a contract sec. 1/3
+ *   question for a user ruling, with the TGV decision table to be
+ *   re-run before adoption).
+ * Operator-parametrization probe (round 2b, 2026-09-05 -- implemented in
+ * col_cum.h with the measured record there; sim_AMR/CMakeLists.txt cache
+ * option CUM_OMEGA345_ONE, mutually exclusive with AMR_BAND_OMEGA3 by an
+ * #error in col_cum.h): the GLOBAL counterpart of the round-1 band-local
+ * kappa arm -- pin the three Part-I-parametrized relaxation rates
+ * omega3/omega4/omega5 to exactly 1 on all cells (the
+ * Kutscher-2018/Schönherr-school production rates family, which reports
+ * no seam artifact; hypothesis: the slow third-order channel then no
+ * longer retains or transports the band-injected parity mode). Measured
+ * on the canonical sim_AMR_ball case, same session/environment as the
+ * round-2 arms: parity 8.2085e-3 (+152.7 %), seam mean 3.5778e-3
+ * (+134.5 %) -- AMPLIFIED, the largest worsening of the campaign;
+ * fork (a) (parity collapse) REJECTED; the school's clean figures are
+ * NOT attributable to their omega2..10 = 1 rates (the artifact amplifies
+ * in their own rate family), so the fork-(b) reading (blind to it, e.g.
+ * turbulence masking) stands, strengthened. Dose-consistent with the
+ * round-1 retention family: the third-order channel is a partial
+ * SUPPRESSOR of the artifact on the global handle as well.
  * - `C2F_LAGRANGE`: opts out to the 3rd-order tensor-product Lagrange
  *   scheme described above (the pre-flip default; its 4-node window can
  *   read covered coarse cells).
@@ -1195,7 +1491,20 @@ __global__ void cudaAMR_CoarseToFine(
 		// AB: post-collision DF of direction q at the same site, natural
 		// orientation, is stored in df_out (coarse_even_iter is AA-only state)
 		static_cast<void>(coarse_even_iter);
+	#ifdef AMR_C2F_READ_DF_CUR
+		// AMR_C2F_READ_DF_CUR probe (frame-timing suspect T2a, 2026-09-05;
+		// see the file docstring's frame/cycle-timing round): read the coarse
+		// PRE-step frame df_cur instead of the post-collision output df_out.
+		// At the end-sync cascade the coarse rotation still points df_out at
+		// the array the just-finished coarse step wrote, so df_cur is the
+		// state one full coarse step stale (cycle n's fill carries t_n
+		// content rather than t_{n+1}); the SimInit cycle-0 fill is
+		// value-identical (setInitialCondition holds both frames at the
+		// initial condition). Ungated builds keep the verbatim HEAD read.
+		return coarse_SD.df(df_cur, q, cx, cy, cz);
+	#else
 		return coarse_SD.df(df_out, q, cx, cy, cz);
+	#endif
 #elif defined(AA_PATTERN)
 		if (coarse_even_iter)
 			// AA post-collision state (twisted): the post-collision DF of
@@ -1223,7 +1532,21 @@ __global__ void cudaAMR_CoarseToFine(
 	const auto store_fine_df = [&fine_SD](int q, idx x, idx y, idx z, dreal f) -> void
 	{
 #ifdef AB_PATTERN
+	#ifdef AMR_C2F_WRITE_DF_OUT
+		// AMR_C2F_WRITE_DF_OUT probe (write-side frame timing, suspect T2c,
+		// 2026-09-05): the fill lands in logical df_out -- the frame the
+		// next fine substep does NOT rotate into df_cur -- so the consumed
+		// substep-0 frame keeps whatever its ghost rows already held (the
+		// SimInit fill lands in dfs[1] too, leaving the initial-condition
+		// ghost rows in the consumed frame of every cycle: substep 1's
+		// band input degenerates to the t_0 state for the whole run while
+		// substep 2's band input is unchanged, since the widened substep-1
+		// launch overwrites the df_out inner row before substep 2 reads
+		// it). Ungated builds keep the verbatim HEAD store.
+		fine_SD.df(df_out, q, x, y, z) = f;
+	#else
 		fine_SD.df(df_cur, q, x, y, z) = f;
+	#endif
 #elif defined(AA_PATTERN)
 		fine_SD.df(df_cur, opposite_direction(q), x, y, z) = f;
 #endif
@@ -1327,7 +1650,9 @@ __global__ void cudaAMR_CoarseToFine(
 	// is mode-consistent under the macro instead: it transfers the seven
 	// persistent third-order cumulants and reconstructs with
 	// AMR_CM_BACKTRANSFORM_GEIER; the measured seam/noise floor stays
-	// meaningful (see the file docstring).)
+	// meaningful (see the file docstring). The Geier-regime fill carries
+	// the three C2F_PER_PARITY/C2F_PARITY_AVERAGED/C2F_SHARED_FIT forms of
+	// the file docstring, resolved into AMR_C2F_GEIER_FORM just below.)
 	// ---- Compact moment-based interpolation (Schönherr 2015 thesis,
 	// Sec. 7.2, Eqs. 7.10-7.48; see the file docstring for the outline):
 	// the fine ghost cell brackets its home window of 2x2x2 coarse source
@@ -1350,6 +1675,58 @@ __global__ void cudaAMR_CoarseToFine(
 	// relaxation rates of the source (coarse) and destination (fine) grids
 	const dreal omega_s = no1 / tau_coarse;
 	const dreal omega_d = no1 / tau_fine;
+
+	#if defined(USE_GEIER_CUM_2017) && ! defined(C2F_EQ_ONLY) \
+		&& (defined(C2F_OMEGA3_DISCOUNT) || defined(C2F_OMEGA3_DISCOUNT_MEMORY) || defined(C2F_OMEGA3_DISCOUNT_INVERSE))
+	// ---- C2F_OMEGA3_DISCOUNT/C2F_OMEGA3_DISCOUNT_MEMORY (shape B of the
+	// 2026-09-03 omega_3-persistence probe; selector doc in the file
+	// docstring): the per-level retention ratio g discounting the seven
+	// transferred third-order cumulants ----
+	// per-level base third-order rates recomputed EXACTLY as col_cum.h
+	// L195-202 does for its own (omega_1, omega_2) inputs: omega_1 = 1/tau
+	// is the level's omega_s/omega_d above, omega_2 = no1 there (so the
+	// omega2 * X terms collapse to X)
+	const auto omega3_base = [](dreal om1) -> dreal
+	{
+		// col_cum.h L201-202 with omega2 = no1 substituted verbatim
+		return no8 * (om1 - no2) * ((no3 * om1 - no1) - no5 * om1) / (no8 * (no5 - no2 * om1) * om1 + (no8 + om1 * (no9 * om1 - no26)));
+	};
+	const dreal omega3_c = omega3_base(omega_s);
+	const dreal omega3_f = omega3_base(omega_d);
+		#if defined(C2F_OMEGA3_DISCOUNT_INVERSE)
+	// inverse of the base form: over-retention at the transfer (the sign
+	// probe closing the discount-arms' dose-response direction)
+	const dreal amr_c2f_omega3_g = (no1 - omega3_c) / ((no1 - omega3_f) * (no1 - omega3_f));
+		#elif defined(C2F_OMEGA3_DISCOUNT_MEMORY)
+	// steady-state memory ratio per PHYSICAL time: the coarse channel
+	// retains injected content over 1/omega_3_c coarse steps, the fine
+	// channel over 1/omega_3_f fine substeps = 2/omega_3_f coarse steps
+	// (2:1 subcycling)
+	const dreal amr_c2f_omega3_g = omega3_c / (no2 * omega3_f);
+		#else
+	// per-interval retention ratio: over one coarse step the coarse
+	// operator retains (1 - omega_3_c) of its pre-step content, the fine
+	// operator (colliding twice) (1 - omega_3_f)^2 of the same content
+	const dreal amr_c2f_omega3_g = ((no1 - omega3_f) * (no1 - omega3_f)) / (no1 - omega3_c);
+		#endif
+	#endif
+
+	// Geier-regime fill form resolution (2026-09-03, Oracle candidates 1a/1b;
+	// the selector semantics are documented in the file docstring): 0 =
+	// per-parity (current form), 1 = parity-averaged diagnostic, 2 = shared
+	// 27-node fit. With the macros undefined every selector compiles away and
+	// form 0 is used verbatim (bit-identity harness contract).
+	#if defined(USE_GEIER_CUM_2017) && ! defined(C2F_EQ_ONLY)
+		#if defined(C2F_SHARED_FIT)
+			#define AMR_C2F_GEIER_FORM 2
+		#elif defined(C2F_PARITY_AVERAGED)
+			#define AMR_C2F_GEIER_FORM 1
+		#else
+			#define AMR_C2F_GEIER_FORM 0
+		#endif
+	#else
+		#define AMR_C2F_GEIER_FORM 0
+	#endif
 
 	// Per-destination axis window (nodes only; the Lagrange weights of the
 	// default branch are not needed): the nominal window is
@@ -1537,14 +1914,17 @@ __global__ void cudaAMR_CoarseToFine(
 	// Read each coarse source cell of the group's union window ONCE (DF
 	// loads, macros, the five second-order non-equilibrium moments) and
 	// stage the rows every destination's donation chain consumes;
-	// per-axis span is at most 3 (two parities' 2-cell windows)
+	// per-axis span is at most 3 (two parities' 2-cell windows).
+	// The C2F_SHARED_FIT arm (AMR_C2F_GEIER_FORM 2) reads its home-centered
+	// 27-node windows directly in Phase 3 and skips the staging entirely.
+	#if AMR_C2F_GEIER_FORM != 2
 	dreal su_rho[3][3][3], su_vx[3][3][3], su_vy[3][3][3], su_vz[3][3][3];
 	dreal su_kxy[3][3][3], su_kyz[3][3][3], su_kxz[3][3][3], su_kxxyy[3][3][3], su_kxxzz[3][3][3];
-	#if defined(USE_GEIER_CUM_2017) && ! defined(C2F_EQ_ONLY)
+		#if defined(USE_GEIER_CUM_2017) && ! defined(C2F_EQ_ONLY)
 	// Geier 2017 mode consistency: the seven persistent third-order
 	// cumulants per staged source cell (AMR_CM_THIRD_MOMENTS docstring)
 	dreal su_c120[3][3][3], su_c210[3][3][3], su_c201[3][3][3], su_c102[3][3][3], su_c012[3][3][3], su_c021[3][3][3], su_c111[3][3][3];
-	#endif
+		#endif
 	for (int ju_z = 0; ju_z <= umax[2] - umin[2]; ju_z++) {
 		const idx cz = umin[2] + ju_z;
 		for (int ju_y = 0; ju_y <= umax[1] - umin[1]; ju_y++) {
@@ -1552,20 +1932,20 @@ __global__ void cudaAMR_CoarseToFine(
 			for (int ju_x = 0; ju_x <= umax[0] - umin[0]; ju_x++) {
 				const idx cx = umin[0] + ju_x;
 				AMR_CM_MACROS_AND_KMOMENTS(read_coarse_df, cx, cy, cz);
-	#ifndef C2F_EQ_ONLY
+		#ifndef C2F_EQ_ONLY
 				// (skipped under the C2F_EQ_ONLY debug experiment, as in
 				// the single-destination branch)
 				AMR_CM_PI_NEQ;
-	#endif
-	#ifdef C2F_DEV_ONLY
+		#endif
+		#ifdef C2F_DEV_ONLY
 				AMR_CM_PI_DEV;
-	#endif
-	#ifdef C2F_NORM_ONLY
+		#endif
+		#ifdef C2F_NORM_ONLY
 				AMR_CM_PI_NORM;
-	#endif
-	#ifdef C2F_SHEAR_ONLY
+		#endif
+		#ifdef C2F_SHEAR_ONLY
 				AMR_CM_PI_SHEAR;
-	#endif
+		#endif
 				AMR_CM_KMOMENTS(omega_s);
 				su_rho[ju_z][ju_y][ju_x] = rho_n;
 				su_vx[ju_z][ju_y][ju_x] = u;
@@ -1576,7 +1956,7 @@ __global__ void cudaAMR_CoarseToFine(
 				su_kxz[ju_z][ju_y][ju_x] = k_xz;
 				su_kxxyy[ju_z][ju_y][ju_x] = k_xx_yy;
 				su_kxxzz[ju_z][ju_y][ju_x] = k_xx_zz;
-	#if defined(USE_GEIER_CUM_2017) && ! defined(C2F_EQ_ONLY)
+		#if defined(USE_GEIER_CUM_2017) && ! defined(C2F_EQ_ONLY)
 				AMR_CM_THIRD_MOMENTS;
 				su_c120[ju_z][ju_y][ju_x] = k_120;
 				su_c210[ju_z][ju_y][ju_x] = k_210;
@@ -1585,10 +1965,11 @@ __global__ void cudaAMR_CoarseToFine(
 				su_c012[ju_z][ju_y][ju_x] = k_012;
 				su_c021[ju_z][ju_y][ju_x] = k_021;
 				su_c111[ju_z][ju_y][ju_x] = k_111;
-	#endif
+		#endif
 			}
 		}
 	}
+	#endif	// AMR_C2F_GEIER_FORM != 2
 
 	// (the former map-based carve pre-pass was removed on 2026-08-23 after
 	// the simulated-band conversion: under the ch7 band map every nominal
@@ -1602,7 +1983,12 @@ __global__ void cudaAMR_CoarseToFine(
 	// synthesis with the donations taken from the shared staged union
 	// rows (Steps B-D accumulators, the coefficient fits, the corrected
 	// cumulants and the back-transformation); the donation slot order is
-	// the destination's own window order
+	// the destination's own window order. The FORM 0 arm below is the
+	// text every non-Geier build and the C2F_PER_PARITY/default Geier
+	// configuration expands (bit-identity harness contract); the FORM 1
+	// (C2F_PARITY_AVERAGED) and FORM 2 (C2F_SHARED_FIT) arms carry the
+	// 2026-09-03 Oracle candidates and exist only under the Geier macros.
+	#if AMR_C2F_GEIER_FORM == 0
 	for (int d = 0; d < 8; d++) {
 		if (! dst_in[d])
 			continue;
@@ -1660,7 +2046,7 @@ __global__ void cudaAMR_CoarseToFine(
 		// at the destination (Eqs. 7.38-7.48); sigma_{c->f} = 1/2
 		AMR_CM_CORRECTED_CUMULANTS(n1o2);
 
-	#if defined(USE_GEIER_CUM_2017) && ! defined(C2F_EQ_ONLY)
+		#if defined(USE_GEIER_CUM_2017) && ! defined(C2F_EQ_ONLY)
 		// Geier 2017 mode consistency: the seven persistent third-order
 		// cumulants at the destination, evaluated with the same trilinear
 		// nodal fit as the density (Eqs. 7.10-7.17 at (tx,ty,tz) -- the
@@ -1688,7 +2074,20 @@ __global__ void cudaAMR_CoarseToFine(
 				}
 			}
 		}
-	#endif
+			#if defined(C2F_OMEGA3_DISCOUNT) || defined(C2F_OMEGA3_DISCOUNT_MEMORY) || defined(C2F_OMEGA3_DISCOUNT_INVERSE)
+		// transfer-side third-order discount (shape B of the 2026-09-03
+		// omega_3-persistence probe, its own selector's bullet in the file
+		// docstring): pre-discount the interpolated cumulants to what the
+		// fine operator would retain anyway
+		k120_f *= amr_c2f_omega3_g;
+		k210_f *= amr_c2f_omega3_g;
+		k201_f *= amr_c2f_omega3_g;
+		k102_f *= amr_c2f_omega3_g;
+		k012_f *= amr_c2f_omega3_g;
+		k021_f *= amr_c2f_omega3_g;
+		k111_f *= amr_c2f_omega3_g;
+			#endif
+		#endif
 
 		// Steps G-H: cumulant/central-moment state and the cumulant
 		// back-transformation into the destination DFs (Geier 2015 Eqs.
@@ -1700,30 +2099,582 @@ __global__ void cudaAMR_CoarseToFine(
 			// D3Q27_COMMON_WELL (the KWC/KC terms of AMR_CM_BACKTRANSFORM)
 			store_fine_df(q, fx, fy, fz, f);
 		};
-	#if defined(USE_GEIER_CUM_2017) && ! defined(C2F_EQ_ONLY)
+		#if defined(USE_GEIER_CUM_2017) && ! defined(C2F_EQ_ONLY)
 		AMR_CM_BACKTRANSFORM_GEIER(store_df_cell);
-	#else
+		#else
 		AMR_CM_BACKTRANSFORM(store_df_cell);
-	#endif
+		#endif
 
 		write_fine_macro(fx, fy, fz, rho_f, vx_f, vy_f, vz_f);
 	}
 
+	#elif AMR_C2F_GEIER_FORM == 1
+	// ---- Phase 3 (C2F_PARITY_AVERAGED -- Oracle candidate 1a, 2026-09-03
+	// diagnostic): two evaluations per destination, averaged before the
+	// reconstruction ----
+	// Pass 0 recomputes the per-parity chain of the FORM 0 arm verbatim
+	// (own-parity window, staged union donations). Pass 1 repeats the same
+	// chain on the neighbor-parity window -- per axis the own window
+	// shifted one coarse cell towards the home (even fg: {home, home+1},
+	// odd fg: {home-1, home}) with the evaluation point following the
+	// window center (t_pass1 = t_own - shift, i.e. the destination's true
+	// -3/4/+3/4 position in the neighbor window's frame) -- reading the
+	// source cells DIRECTLY, since the staged union spans the group's
+	// own-parity windows only. The 17 evaluated state components (rho_f,
+	// vx_f..vz_f, the six corrected second-order cumulants, the seven
+	// third-order cumulants) are averaged and reconstructed once.
+	// Destinations whose own window is NOT the nominal parity window
+	// (wall-shifted, storage-clamped, degenerate) and destinations whose
+	// neighbor window would leave the coarse storage extent or cover a
+	// non-live cell keep the pass-0 value (the pass-1 stash mirrors it,
+	// so the average degenerates exactly); the parity diagnostic targets
+	// the clean interior registrations where the period-2 injection lives.
+	for (int d = 0; d < 8; d++) {
+		if (! dst_in[d])
+			continue;
+		const idx fx = gx0 + (d & 1);
+		const idx fy = gy0 + ((d >> 1) & 1);
+		const idx fz = gz0 + ((d >> 2) & 1);
+
+		// ---- pass 0: the own-parity evaluation ----
+		dreal rho_p0, vx_p0, vy_p0, vz_p0;
+		dreal C200_p0, C020_p0, C002_p0, C110_p0, C101_p0, C011_p0;
+		dreal k120_p0, k210_p0, k201_p0, k102_p0, k012_p0, k021_p0, k111_p0;
+		{
+			dreal rho_f = 0, vx_f = 0, vy_f = 0, vz_f = 0;
+			dreal sd0 = 0, sdx = 0, sdy = 0, sdz = 0, sdxy = 0, sdyz = 0, sdxz = 0, sdxyz = 0;
+			dreal sa0 = 0, sax = 0, say = 0, saz = 0, saxx = 0, sayy = 0, sazz = 0, saxy = 0, sayz = 0, saxz = 0, saxyz = 0;
+			dreal sb0 = 0, sbx = 0, sby = 0, sbz = 0, sbxx = 0, sbyy = 0, sbzz = 0, sbxy = 0, sbxz = 0, sbyz = 0, sbxyz = 0;
+			dreal sc0 = 0, scx = 0, scy = 0, scz = 0, scxx = 0, scyy = 0, sczz = 0, scxy = 0, scyz = 0, scxz = 0, scxyz = 0;
+			dreal sk_xy = 0, sk_yz = 0, sk_xz = 0, sk_xx_yy = 0, sk_xx_zz = 0;
+			for (int ibz = 0; ibz < 2; ibz++) {
+				const dreal zn = static_cast<dreal>(ibz) - n1o2;
+				const idx ju_z = dst_n[d][2][ibz] - umin[2];
+				for (int iby = 0; iby < 2; iby++) {
+					const dreal yn = static_cast<dreal>(iby) - n1o2;
+					const idx ju_y = dst_n[d][1][iby] - umin[1];
+					for (int ibx = 0; ibx < 2; ibx++) {
+						const dreal xn = static_cast<dreal>(ibx) - n1o2;
+						const idx ju_x = dst_n[d][0][ibx] - umin[0];
+
+						const dreal rho_n = su_rho[ju_z][ju_y][ju_x];
+						const dreal u = su_vx[ju_z][ju_y][ju_x];
+						const dreal v = su_vy[ju_z][ju_y][ju_x];
+						const dreal w = su_vz[ju_z][ju_y][ju_x];
+						const dreal k_xy = su_kxy[ju_z][ju_y][ju_x];
+						const dreal k_yz = su_kyz[ju_z][ju_y][ju_x];
+						const dreal k_xz = su_kxz[ju_z][ju_y][ju_x];
+						const dreal k_xx_yy = su_kxxyy[ju_z][ju_y][ju_x];
+						const dreal k_xx_zz = su_kxxzz[ju_z][ju_y][ju_x];
+						AMR_CM_FIT_ACCUMULATE;
+					}
+				}
+			}
+
+			const dreal tx = dst_t[d][0];
+			const dreal ty = dst_t[d][1];
+			const dreal tz = dst_t[d][2];
+			AMR_CM_FIT_COEFFICIENTS(tx, ty, tz);
+			AMR_CM_EVALUATE(tx, ty, tz);
+			AMR_CM_CORRECTED_CUMULANTS(n1o2);
+
+			dreal k120_f = 0, k210_f = 0, k201_f = 0, k102_f = 0, k012_f = 0, k021_f = 0, k111_f = 0;
+			for (int i3z = 0; i3z < 2; i3z++) {
+				const dreal w3z = n1o2 + no2 * (static_cast<dreal>(i3z) - n1o2) * tz;
+				const idx j3z = dst_n[d][2][i3z] - umin[2];
+				for (int i3y = 0; i3y < 2; i3y++) {
+					const dreal w3y = n1o2 + no2 * (static_cast<dreal>(i3y) - n1o2) * ty;
+					const idx j3y = dst_n[d][1][i3y] - umin[1];
+					const dreal w3yz = w3y * w3z;
+					for (int i3x = 0; i3x < 2; i3x++) {
+						const dreal w3 = (n1o2 + no2 * (static_cast<dreal>(i3x) - n1o2) * tx) * w3yz;
+						const idx j3x = dst_n[d][0][i3x] - umin[0];
+						k120_f += w3 * su_c120[j3z][j3y][j3x];
+						k210_f += w3 * su_c210[j3z][j3y][j3x];
+						k201_f += w3 * su_c201[j3z][j3y][j3x];
+						k102_f += w3 * su_c102[j3z][j3y][j3x];
+						k012_f += w3 * su_c012[j3z][j3y][j3x];
+						k021_f += w3 * su_c021[j3z][j3y][j3x];
+						k111_f += w3 * su_c111[j3z][j3y][j3x];
+					}
+				}
+			}
+
+			rho_p0 = rho_f;
+			vx_p0 = vx_f;
+			vy_p0 = vy_f;
+			vz_p0 = vz_f;
+			C200_p0 = C200;
+			C020_p0 = C020;
+			C002_p0 = C002;
+			C110_p0 = C110;
+			C101_p0 = C101;
+			C011_p0 = C011;
+			k120_p0 = k120_f;
+			k210_p0 = k210_f;
+			k201_p0 = k201_f;
+			k102_p0 = k102_f;
+			k012_p0 = k012_f;
+			k021_p0 = k021_f;
+			k111_p0 = k111_f;
+		}
+
+		// ---- pass 1: the neighbor-parity evaluation (direct coarse
+		// reads); eligibility: nominal own window per axis, neighbor window
+		// inside the coarse storage extent and all-live ----
+		const idx fga[3] = {fx + fine_off.x(), fy + fine_off.y(), fz + fine_off.z()};
+		bool pass1 = true;
+		idx nb_n[3][2];
+		dreal nb_t[3];
+		for (int a = 0; a < 3; a++) {
+			const idx p = fga[a] & 1;
+			const idx shift = 1 - 2 * p;
+			if (dst_n[d][a][0] != dst_home[d][a] - 1 + p || dst_n[d][a][1] != dst_home[d][a] + p)
+				pass1 = false;
+			nb_n[a][0] = dst_n[d][a][0] + shift;
+			nb_n[a][1] = dst_n[d][a][1] + shift;
+			nb_t[a] = dst_t[d][a] - static_cast<dreal>(shift);
+		}
+		{
+			const idx csize[3] = {coarse_SD.X(), coarse_SD.Y(), coarse_SD.Z()};
+			const idx cov[3] = {
+				coarse_SD.indexer.template getOverlap<0>(), coarse_SD.indexer.template getOverlap<1>(), coarse_SD.indexer.template getOverlap<2>()
+			};
+			for (int a = 0; a < 3; a++)
+				if (nb_n[a][0] < -cov[a] || nb_n[a][1] > csize[a] - 1 + cov[a])
+					pass1 = false;
+		}
+		if (pass1)
+			for (int ibz = 0; ibz < 2 && pass1; ibz++)
+				for (int iby = 0; iby < 2 && pass1; iby++)
+					for (int ibx = 0; ibx < 2 && pass1; ibx++) {
+						const auto mapgi = coarse_SD.map(nb_n[0][ibx], nb_n[1][iby], nb_n[2][ibz]);
+						pass1 = BC::isFluid(mapgi) || mapgi == BC::GEO_AMR_INTERFACE || mapgi == BC::GEO_NOTHING;
+					}
+
+		dreal rho_p1 = rho_p0, vx_p1 = vx_p0, vy_p1 = vy_p0, vz_p1 = vz_p0;
+		dreal C200_p1 = C200_p0, C020_p1 = C020_p0, C002_p1 = C002_p0;
+		dreal C110_p1 = C110_p0, C101_p1 = C101_p0, C011_p1 = C011_p0;
+		dreal k120_p1 = k120_p0, k210_p1 = k210_p0, k201_p1 = k201_p0, k102_p1 = k102_p0;
+		dreal k012_p1 = k012_p0, k021_p1 = k021_p0, k111_p1 = k111_p0;
+		if (pass1) {
+			dreal rho_f = 0, vx_f = 0, vy_f = 0, vz_f = 0;
+			dreal sd0 = 0, sdx = 0, sdy = 0, sdz = 0, sdxy = 0, sdyz = 0, sdxz = 0, sdxyz = 0;
+			dreal sa0 = 0, sax = 0, say = 0, saz = 0, saxx = 0, sayy = 0, sazz = 0, saxy = 0, sayz = 0, saxz = 0, saxyz = 0;
+			dreal sb0 = 0, sbx = 0, sby = 0, sbz = 0, sbxx = 0, sbyy = 0, sbzz = 0, sbxy = 0, sbxz = 0, sbyz = 0, sbxyz = 0;
+			dreal sc0 = 0, scx = 0, scy = 0, scz = 0, scxx = 0, scyy = 0, sczz = 0, scxy = 0, scyz = 0, scxz = 0, scxyz = 0;
+			dreal sk_xy = 0, sk_yz = 0, sk_xz = 0, sk_xx_yy = 0, sk_xx_zz = 0;
+			dreal k120_f = 0, k210_f = 0, k201_f = 0, k102_f = 0, k012_f = 0, k021_f = 0, k111_f = 0;
+			const dreal tx = nb_t[0];
+			const dreal ty = nb_t[1];
+			const dreal tz = nb_t[2];
+			for (int ibz = 0; ibz < 2; ibz++) {
+				const dreal zn = static_cast<dreal>(ibz) - n1o2;
+				const idx cz = nb_n[2][ibz];
+				const dreal w3z = n1o2 + no2 * (static_cast<dreal>(ibz) - n1o2) * tz;
+				for (int iby = 0; iby < 2; iby++) {
+					const dreal yn = static_cast<dreal>(iby) - n1o2;
+					const idx cy = nb_n[1][iby];
+					const dreal w3y = n1o2 + no2 * (static_cast<dreal>(iby) - n1o2) * ty;
+					const dreal w3yz = w3y * w3z;
+					for (int ibx = 0; ibx < 2; ibx++) {
+						const dreal xn = static_cast<dreal>(ibx) - n1o2;
+						const idx cx = nb_n[0][ibx];
+						const dreal w3 = (n1o2 + no2 * (static_cast<dreal>(ibx) - n1o2) * tx) * w3yz;
+
+						AMR_CM_MACROS_AND_KMOMENTS(read_coarse_df, cx, cy, cz);
+						AMR_CM_PI_NEQ;
+		#ifdef C2F_DEV_ONLY
+						AMR_CM_PI_DEV;
+		#endif
+		#ifdef C2F_NORM_ONLY
+						AMR_CM_PI_NORM;
+		#endif
+		#ifdef C2F_SHEAR_ONLY
+						AMR_CM_PI_SHEAR;
+		#endif
+						AMR_CM_KMOMENTS(omega_s);
+						AMR_CM_FIT_ACCUMULATE;
+						AMR_CM_THIRD_MOMENTS;
+						k120_f += w3 * k_120;
+						k210_f += w3 * k_210;
+						k201_f += w3 * k_201;
+						k102_f += w3 * k_102;
+						k012_f += w3 * k_012;
+						k021_f += w3 * k_021;
+						k111_f += w3 * k_111;
+					}
+				}
+			}
+			AMR_CM_FIT_COEFFICIENTS(tx, ty, tz);
+			AMR_CM_EVALUATE(tx, ty, tz);
+			AMR_CM_CORRECTED_CUMULANTS(n1o2);
+
+			rho_p1 = rho_f;
+			vx_p1 = vx_f;
+			vy_p1 = vy_f;
+			vz_p1 = vz_f;
+			C200_p1 = C200;
+			C020_p1 = C020;
+			C002_p1 = C002;
+			C110_p1 = C110;
+			C101_p1 = C101;
+			C011_p1 = C011;
+			k120_p1 = k120_f;
+			k210_p1 = k210_f;
+			k201_p1 = k201_f;
+			k102_p1 = k102_f;
+			k012_p1 = k012_f;
+			k021_p1 = k021_f;
+			k111_p1 = k111_f;
+		}
+
+		// ---- average the two evaluations (bitwise identity to the pass-0
+		// value when pass 1 was skipped) and reconstruct ----
+		const dreal rho_f = n1o2 * (rho_p0 + rho_p1);
+		const dreal vx_f = n1o2 * (vx_p0 + vx_p1);
+		const dreal vy_f = n1o2 * (vy_p0 + vy_p1);
+		const dreal vz_f = n1o2 * (vz_p0 + vz_p1);
+		const dreal C200 = n1o2 * (C200_p0 + C200_p1);
+		const dreal C020 = n1o2 * (C020_p0 + C020_p1);
+		const dreal C002 = n1o2 * (C002_p0 + C002_p1);
+		const dreal C110 = n1o2 * (C110_p0 + C110_p1);
+		const dreal C101 = n1o2 * (C101_p0 + C101_p1);
+		const dreal C011 = n1o2 * (C011_p0 + C011_p1);
+		const dreal k120_f = n1o2 * (k120_p0 + k120_p1);
+		const dreal k210_f = n1o2 * (k210_p0 + k210_p1);
+		const dreal k201_f = n1o2 * (k201_p0 + k201_p1);
+		const dreal k102_f = n1o2 * (k102_p0 + k102_p1);
+		const dreal k012_f = n1o2 * (k012_p0 + k012_p1);
+		const dreal k021_f = n1o2 * (k021_p0 + k021_p1);
+		const dreal k111_f = n1o2 * (k111_p0 + k111_p1);
+
+		#if defined(C2F_OMEGA3_DISCOUNT) || defined(C2F_OMEGA3_DISCOUNT_MEMORY) || defined(C2F_OMEGA3_DISCOUNT_INVERSE)
+		// transfer-side third-order discount (shape B; selector doc in the
+		// file docstring; same site and factor as the FORM 0 arm)
+		k120_f *= amr_c2f_omega3_g;
+		k210_f *= amr_c2f_omega3_g;
+		k201_f *= amr_c2f_omega3_g;
+		k102_f *= amr_c2f_omega3_g;
+		k012_f *= amr_c2f_omega3_g;
+		k021_f *= amr_c2f_omega3_g;
+		k111_f *= amr_c2f_omega3_g;
+		#endif
+		const auto store_df_cell = [&store_fine_df, fx, fy, fz](int q, dreal f) -> void
+		{
+			// (storage-convention emission, see the FORM 0 arm)
+			store_fine_df(q, fx, fy, fz, f);
+		};
+		AMR_CM_BACKTRANSFORM_GEIER(store_df_cell);
+
+		write_fine_macro(fx, fy, fz, rho_f, vx_f, vy_f, vz_f);
+	}
+
+	#else
+	// ---- Phase 3 (C2F_SHARED_FIT -- Oracle candidate 1b, gated OFF as a
+	// production form by the 2026-09-03 falsifier measurement, kept as a
+	// selectable diagnostic): one shared 27-node tensor-quadratic fit per
+	// coarse cell, both parity destinations evaluated from it ----
+	// Per destination the window is the home-centered 3-cell tuple
+	// {home-1, home, home+1} per axis (read directly -- the union staging
+	// is skipped above); the nodal field fits are the unique per-axis
+	// quadratic interpolations through the 3 window nodes applied as a
+	// tensor product (the full tensor-quadratic basis {1,xi,xi^2} x
+	// {1,eta,eta^2} x {1,zeta,zeta^2}: it CONTAINS the former
+	// 8/11-coefficient bases, so the exactness class extends to full
+	// tensor-quadratic per axis for density AND velocity), evaluated at
+	// the destination's true position (home -+ 1/4 by fine parity). Since
+	// the fit depends only on the window's nodal content, the two
+	// subcells of one coarse cell always come from the SAME polynomial —
+	// there is no period-2 window alternation left to lock onto the
+	// coarse parity. The corrected second-order cumulants keep the
+	// per-parity chain's structure: the plain window mean of the five
+	// measured non-equilibrium moments plus the ANALYTIC first-derivative
+	// difference of the fitted velocity polynomials between the window
+	// center and the destination (the roles of the
+	// A011/A101/A110/corr_B/corr_C terms), and the seven persistent
+	// third-order cumulants take the same 27-node tensor-quadratic nodal
+	// evaluation (mode state, no rescaling). The window shifts per axis
+	// into the coarse storage extent and away from a tainted end
+	// (thesis-7.3 end rule, one cell; a residual mid-window taint
+	// collapses to the home cell) — never fires at a valid interior
+	// registration.
+	for (int d = 0; d < 8; d++) {
+		if (! dst_in[d])
+			continue;
+		const idx fx = gx0 + (d & 1);
+		const idx fy = gy0 + ((d >> 1) & 1);
+		const idx fz = gz0 + ((d >> 2) & 1);
+		const idx fga[3] = {fx + fine_off.x(), fy + fine_off.y(), fz + fine_off.z()};
+
+		// destination position in the coarse indexer frame (home +- 1/4 by
+		// fine parity) and the home-centered 3-node window per axis
+		const double pos[3] = {
+			static_cast<double>(dst_home[d][0]) + ((fga[0] & 1) ? 0.25 : -0.25),
+			static_cast<double>(dst_home[d][1]) + ((fga[1] & 1) ? 0.25 : -0.25),
+			static_cast<double>(dst_home[d][2]) + ((fga[2] & 1) ? 0.25 : -0.25)
+		};
+		const idx csize[3] = {coarse_SD.X(), coarse_SD.Y(), coarse_SD.Z()};
+		const idx cov[3] = {
+			coarse_SD.indexer.template getOverlap<0>(), coarse_SD.indexer.template getOverlap<1>(), coarse_SD.indexer.template getOverlap<2>()
+		};
+		idx w_lo[3];
+		int w_n[3];
+		double ctr[3];
+		for (int a = 0; a < 3; a++) {
+			const int extent = static_cast<int>(csize[a] + 2 * cov[a]);
+			const int n = 3 < extent ? 3 : extent;
+			const idx lo = -cov[a];
+			const idx hi = csize[a] - 1 + cov[a] - (n - 1);
+			idx s = dst_home[d][a] - 1;
+			s = s < lo ? lo : (s > hi ? hi : s);
+			w_lo[a] = s;
+			w_n[a] = n;
+			ctr[a] = static_cast<double>(s) + 0.5 * (n - 1);
+		}
+
+		// taint scan of the nominal 27-tuple (thesis Sec. 7.3 end rule,
+		// generalized to the 3-cell window: shift the whole window one
+		// cell away from a tainted END, following the form-0 wall guard;
+		// live tags are GEO_FLUID, GEO_AMR_INTERFACE and GEO_NOTHING)
+		bool inv[3][3][3];
+		bool tainted = false;
+		for (int k = 0; k < w_n[2]; k++)
+			for (int j = 0; j < w_n[1]; j++)
+				for (int i = 0; i < w_n[0]; i++) {
+					const auto mapgi = coarse_SD.map(w_lo[0] + i, w_lo[1] + j, w_lo[2] + k);
+					inv[i][j][k] = ! (BC::isFluid(mapgi) || mapgi == BC::GEO_AMR_INTERFACE || mapgi == BC::GEO_NOTHING);
+					tainted = tainted || inv[i][j][k];
+				}
+		if (tainted) {
+			for (int a = 0; a < 3; a++) {
+				if (w_n[a] < 3)
+					continue;
+				// a-normal end slabs of the window tuple
+				bool t_lo = false, t_hi = false;
+				for (int k = 0; k < w_n[2]; k++)
+					for (int j = 0; j < w_n[1]; j++)
+						for (int i = 0; i < w_n[0]; i++) {
+							const int na = (a == 0) ? i : (a == 1) ? j : k;
+							if (na == 0)
+								t_lo = t_lo || inv[i][j][k];
+							if (na == w_n[a] - 1)
+								t_hi = t_hi || inv[i][j][k];
+						}
+				if (t_lo == t_hi)
+					continue;
+				const idx start = t_hi ? w_lo[a] - 1 : w_lo[a] + 1;
+				const idx lo = -cov[a];
+				const idx hi = csize[a] - 1 + cov[a] - (w_n[a] - 1);
+				if (start < lo || start > hi) {
+					// storage edge within one cell of the face: degenerate
+					// collapse to the home cell
+					w_lo[a] = dst_home[d][a];
+					w_n[a] = 1;
+					ctr[a] = static_cast<double>(dst_home[d][a]);
+					continue;
+				}
+				w_lo[a] = start;
+				ctr[a] = static_cast<double>(start) + 0.5 * (w_n[a] - 1);
+			}
+
+			// residual scan of the shifted tuple: a mid-window straddle
+			// collapses to the home cell (rejected at SimInit)
+			bool residual = false;
+			for (int k = 0; k < w_n[2] && ! residual; k++)
+				for (int j = 0; j < w_n[1] && ! residual; j++)
+					for (int i = 0; i < w_n[0] && ! residual; i++) {
+						const auto mapgi = coarse_SD.map(w_lo[0] + i, w_lo[1] + j, w_lo[2] + k);
+						residual = ! (BC::isFluid(mapgi) || mapgi == BC::GEO_AMR_INTERFACE || mapgi == BC::GEO_NOTHING);
+					}
+			if (residual) {
+				for (int a = 0; a < 3; a++) {
+					w_lo[a] = dst_home[d][a];
+					w_n[a] = 1;
+					ctr[a] = static_cast<double>(dst_home[d][a]);
+				}
+			}
+		}
+
+		// nodal and first-derivative weights of the per-axis Lagrange
+		// bases at the destination (pos) and at the window center (ctr),
+		// computed in double; the nodes are consecutive integers and the
+		// evaluation points quarter-integers, so the reachable weights are
+		// exact dyadics
+		const auto lag_weights = [](double p, idx s, int n, dreal* w, dreal* dw) -> void
+		{
+			for (int i = 0; i < n; i++) {
+				double wi = 1;
+				for (int j = 0; j < n; j++)
+					if (j != i)
+						wi *= (p - static_cast<double>(s + j)) / static_cast<double>(i - j);
+				// dL_i/dp = sum_m prod_{j not in {i,m}} (p - n_j) / prod_{j != i} (i - j)
+				// -- the product form (no division by p - n_m, which is 0/0
+				// when p sits on a node, e.g. at the 3-window's center)
+				double sw = 0;
+				for (int m = 0; m < n; m++) {
+					if (m == i)
+						continue;
+					double term = 1;
+					for (int j = 0; j < n; j++)
+						if (j != i && j != m)
+							term *= p - static_cast<double>(s + j);
+					for (int j = 0; j < n; j++)
+						if (j != i)
+							term /= static_cast<double>(i - j);
+					sw += term;
+				}
+				w[i] = static_cast<dreal>(wi);
+				dw[i] = static_cast<dreal>(sw);
+			}
+		};
+		dreal wnd[3][3], wdd[3][3];
+		dreal wnc[3][3], wdc[3][3];
+		for (int a = 0; a < 3; a++) {
+			lag_weights(pos[a], w_lo[a], w_n[a], wnd[a], wdd[a]);
+			lag_weights(ctr[a], w_lo[a], w_n[a], wnc[a], wdc[a]);
+		}
+
+		// single-pass node accumulation: nodal-weight products deliver the
+		// tensor-quadratic evaluations (macros and the seven third-order
+		// cumulants), the unweighted sums the window means of the five
+		// second-order non-equilibrium moments, and the derivative-weight
+		// products the fitted first derivatives at pos and ctr
+		dreal rho_f = 0, vx_f = 0, vy_f = 0, vz_f = 0;
+		dreal k120_f = 0, k210_f = 0, k201_f = 0, k102_f = 0, k012_f = 0, k021_f = 0, k111_f = 0;
+		dreal sk_xy = 0, sk_yz = 0, sk_xz = 0, sk_xx_yy = 0, sk_xx_zz = 0;
+		dreal dUx_t = 0, dUx_c = 0, dUy_t = 0, dUy_c = 0, dUz_t = 0, dUz_c = 0;
+		dreal dVx_t = 0, dVx_c = 0, dVy_t = 0, dVy_c = 0, dVz_t = 0, dVz_c = 0;
+		dreal dWx_t = 0, dWx_c = 0, dWy_t = 0, dWy_c = 0, dWz_t = 0, dWz_c = 0;
+		for (int k = 0; k < w_n[2]; k++) {
+			const idx cz = w_lo[2] + k;
+			for (int j = 0; j < w_n[1]; j++) {
+				const idx cy = w_lo[1] + j;
+				for (int i = 0; i < w_n[0]; i++) {
+					const idx cx = w_lo[0] + i;
+					AMR_CM_MACROS_AND_KMOMENTS(read_coarse_df, cx, cy, cz);
+					AMR_CM_PI_NEQ;
+		#ifdef C2F_DEV_ONLY
+					AMR_CM_PI_DEV;
+		#endif
+		#ifdef C2F_NORM_ONLY
+					AMR_CM_PI_NORM;
+		#endif
+		#ifdef C2F_SHEAR_ONLY
+					AMR_CM_PI_SHEAR;
+		#endif
+					AMR_CM_KMOMENTS(omega_s);
+					AMR_CM_THIRD_MOMENTS;
+
+					const dreal wn = wnd[0][i] * wnd[1][j] * wnd[2][k];
+					rho_f += wn * rho_n;
+					vx_f += wn * u;
+					vy_f += wn * v;
+					vz_f += wn * w;
+					k120_f += wn * k_120;
+					k210_f += wn * k_210;
+					k201_f += wn * k_201;
+					k102_f += wn * k_102;
+					k012_f += wn * k_012;
+					k021_f += wn * k_021;
+					k111_f += wn * k_111;
+					sk_xy += k_xy;
+					sk_yz += k_yz;
+					sk_xz += k_xz;
+					sk_xx_yy += k_xx_yy;
+					sk_xx_zz += k_xx_zz;
+
+					const dreal wdxt = wdd[0][i] * wnd[1][j] * wnd[2][k];
+					const dreal wdyt = wnd[0][i] * wdd[1][j] * wnd[2][k];
+					const dreal wdzt = wnd[0][i] * wnd[1][j] * wdd[2][k];
+					const dreal wdxc = wdc[0][i] * wnc[1][j] * wnc[2][k];
+					const dreal wdyc = wnc[0][i] * wdc[1][j] * wnc[2][k];
+					const dreal wdzc = wnc[0][i] * wnc[1][j] * wdc[2][k];
+					dUx_t += wdxt * u;
+					dUx_c += wdxc * u;
+					dUy_t += wdyt * u;
+					dUy_c += wdyc * u;
+					dUz_t += wdzt * u;
+					dUz_c += wdzc * u;
+					dVx_t += wdxt * v;
+					dVx_c += wdxc * v;
+					dVy_t += wdyt * v;
+					dVy_c += wdyc * v;
+					dVz_t += wdzt * v;
+					dVz_c += wdzc * v;
+					dWx_t += wdxt * w;
+					dWx_c += wdxc * w;
+					dWy_t += wdyt * w;
+					dWy_c += wdyc * w;
+					dWz_t += wdzt * w;
+					dWz_c += wdzc * w;
+				}
+			}
+		}
+
+		// the corrected second-order cumulants at the destination (the
+		// per-parity chain's Eqs. 7.38-7.48 with the measured window means
+		// standing in for the center derivatives and the fitted
+		// derivative differences playing the A011/A101/A110/corr_B/corr_C
+		// roles); sigma_{c->f} = 1/2
+		const dreal ncn = static_cast<dreal>(w_n[0] * w_n[1] * w_n[2]);
+		const dreal mean_k_xy = sk_xy / ncn;
+		const dreal mean_k_yz = sk_yz / ncn;
+		const dreal mean_k_xz = sk_xz / ncn;
+		const dreal mean_k_xx_yy = sk_xx_yy / ncn;
+		const dreal mean_k_xx_zz = sk_xx_zz / ncn;
+		const dreal sigma = n1o2;
+		const dreal off_factor = sigma * rho_f / (no3 * omega_d);
+		const dreal diag_factor = no2 * sigma * rho_f / (no9 * omega_d);
+		const dreal diag_eq = rho_f * n1o3;
+		const dreal C011 = -off_factor * (mean_k_yz + (dVz_t + dWy_t) - (dVz_c + dWy_c));
+		const dreal C101 = -off_factor * (mean_k_xz + (dUz_t + dWx_t) - (dUz_c + dWx_c));
+		const dreal C110 = -off_factor * (mean_k_xy + (dUy_t + dVx_t) - (dUy_c + dVx_c));
+		const dreal X = mean_k_xx_yy + (dUx_t - dVy_t) - (dUx_c - dVy_c);
+		const dreal Y = mean_k_xx_zz + (dUx_t - dWz_t) - (dUx_c - dWz_c);
+		const dreal C200 = diag_eq - diag_factor * (X + Y);
+		const dreal C020 = diag_eq - diag_factor * (-no2 * X + Y);
+		const dreal C002 = diag_eq - diag_factor * (X - no2 * Y);
+
+		#if defined(C2F_OMEGA3_DISCOUNT) || defined(C2F_OMEGA3_DISCOUNT_MEMORY) || defined(C2F_OMEGA3_DISCOUNT_INVERSE)
+		// transfer-side third-order discount (shape B; selector doc in the
+		// file docstring; same site and factor as the FORM 0 arm)
+		k120_f *= amr_c2f_omega3_g;
+		k210_f *= amr_c2f_omega3_g;
+		k201_f *= amr_c2f_omega3_g;
+		k102_f *= amr_c2f_omega3_g;
+		k012_f *= amr_c2f_omega3_g;
+		k021_f *= amr_c2f_omega3_g;
+		k111_f *= amr_c2f_omega3_g;
+		#endif
+		const auto store_df_cell = [&store_fine_df, fx, fy, fz](int q, dreal f) -> void
+		{
+			// (storage-convention emission, see the FORM 0 arm)
+			store_fine_df(q, fx, fy, fz, f);
+		};
+		AMR_CM_BACKTRANSFORM_GEIER(store_df_cell);
+
+		write_fine_macro(fx, fy, fz, rho_f, vx_f, vy_f, vz_f);
+	}
+
+	#endif	// AMR_C2F_GEIER_FORM
+	#undef AMR_C2F_GEIER_FORM
+
 #else  // (C2F_LAGRANGE || C2F_TRILINEAR)
-	// ---- Interpolation strategies (opt-in since the 2026-08-18 flip:
-	// 3rd-order Lagrange; 2nd-order trilinear under C2F_TRILINEAR) ----
-	// Per-axis interpolation stencils and weights in the GLOBAL frame (see
-	// the file docstring): fine global coordinate fg = coord + fine_off; the
-	// home coarse cell is floor(fg/2) and the fine cell center sits at
-	// +-1/4 of the home cell's width from its center. The nominal per-axis
-	// stencil covers the C2F_STENCIL coarse cell centers
-	// `home - C2F_STENCIL/2 + (fg&1) + {0..C2F_STENCIL-1}` and is shifted
-	// (and shortened if the per-axis storage extent is smaller) so that all
-	// nodes are valid coarse storage indices -- the storability guard. The
-	// Lagrange weights are evaluated at runtime in double precision and
-	// normalized to sum to one; for the centered 4-node windows they round
-	// to the exact dyadic rationals {-5,35,105,-7}/128 (even fg) and
-	// {-7,105,35,-5}/128 (odd fg).
+	   // ---- Interpolation strategies (opt-in since the 2026-08-18 flip:
+	   // 3rd-order Lagrange; 2nd-order trilinear under C2F_TRILINEAR) ----
+	   // Per-axis interpolation stencils and weights in the GLOBAL frame (see
+	   // the file docstring): fine global coordinate fg = coord + fine_off; the
+	   // home coarse cell is floor(fg/2) and the fine cell center sits at
+	   // +-1/4 of the home cell's width from its center. The nominal per-axis
+	   // stencil covers the C2F_STENCIL coarse cell centers
+	   // `home - C2F_STENCIL/2 + (fg&1) + {0..C2F_STENCIL-1}` and is shifted
+	   // (and shortened if the per-axis storage extent is smaller) so that all
+	   // nodes are valid coarse storage indices -- the storability guard. The
+	   // Lagrange weights are evaluated at runtime in double precision and
+	   // normalized to sum to one; for the centered 4-node windows they round
+	   // to the exact dyadic rationals {-5,35,105,-7}/128 (even fg) and
+	   // {-7,105,35,-5}/128 (odd fg).
 	#ifdef C2F_TRILINEAR
 	// 2nd-order trilinear fallback (the original scheme): 2-point per-axis
 	// stencil {home-1+(fg&1), home+(fg&1)} with 3/4:1/4 weights
@@ -2020,7 +2971,19 @@ __global__ void cudaAMR_FineToCoarse(
 		// AB: post-collision DF of direction q at the same site, natural
 		// orientation, is stored in df_out (fine_even_iter is AA-only state)
 		static_cast<void>(fine_even_iter);
+	#ifdef AMR_F2C_READ_DF_CUR
+		// AMR_F2C_READ_DF_CUR probe (frame-timing suspect T2b, 2026-09-05):
+		// read the fine df_cur frame instead of the post-substep-2 output
+		// df_out. At every pair sync point the fine rotation still holds
+		// the substep-2 preparation (odd count), where df_cur is the
+		// pair's substep-1 output -- the skin feedback then injects the
+		// fine state of one fine substep stale (t + dt_f instead of
+		// t + 2dt_f = the time-aligned end of the pair). Ungated builds
+		// keep the verbatim HEAD read.
+		return fine_SD.df(df_cur, q, fx, fy, fz);
+	#else
 		return fine_SD.df(df_out, q, fx, fy, fz);
+	#endif
 #elif defined(AA_PATTERN)
 		if (fine_even_iter)
 			// AA post-collision state (twisted): the post-collision DF of
