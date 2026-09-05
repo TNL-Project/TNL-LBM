@@ -3,6 +3,20 @@
 #include "common.h"
 #include "eq.h"
 
+// 2026-09-05 relaxation-rate probe selectors (AMR seam checkerboard
+// investigation, docs/AMR-seam-checkerboard-investigation.md §2;
+// sim_AMR/CMakeLists.txt cache options): CUM_OMEGA345_ONE (round 2b) pins the
+// three Part-I-parametrized rates omega3/omega4/omega5 to exactly 1 GLOBALLY;
+// AMR_BAND_OMEGA3 (round 1) re-pins the seven limiter-adapted third-order
+// rates to a kappa BAND-LOCALLY. The two are opposite regimes (global
+// rates-to-one vs band-local) and must never stack: the band override reads
+// the limiter variables the global pin replaces, so a combined build tests
+// nothing and reads as either.
+#if defined(CUM_OMEGA345_ONE) && defined(AMR_BAND_OMEGA3)
+	#error \
+		"CUM_OMEGA345_ONE and AMR_BAND_OMEGA3 are mutually exclusive: the global rates-to-one pin (round 2b, 2026-09-05) and the round-1 band-local kappa override are opposite regimes and must never stack."
+#endif
+
 template <typename TRAITS, typename LBM_EQ = D3Q27_EQ<TRAITS>>
 struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 {
@@ -195,6 +209,7 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal omega1 = no1 / (no3 * KS.lbmViscosity + n1o2);	// shear viscosity
 		const dreal omega2 = no1;  //(no3*KS.lbmViscosity*no2 + n1o2); // bulkViscosity > Viscosity ... test: bulkViscosity = 2/3 shearViscosity
 #ifdef USE_GEIER_CUM_2017
+	#ifndef CUM_OMEGA345_ONE
 		const dreal lambda3 = (dreal) (0.01);  // Section 7 @ Geier 2017 http://dx.doi.org/10.1016/j.jcp.2017.05.040
 		const dreal lambda4 = (dreal) (0.01);
 		const dreal lambda5 = (dreal) (0.01);
@@ -214,6 +229,93 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 			/ (no16 * omega1 * omega1 * (omega1 - no6) - no2 * omega1 * omega2 * (no216 + no5 * omega1 * (no9 * omega1 - no46))
 			   + omega2 * omega2 * (omega1 * (no3 * omega1 - no10) * (no15 * omega1 - no28) - no48));
 		const dreal omega111 = omega5 + (no1 - omega5) * fabs(C_111) / (rho * lambda5 + fabs(C_111));  // limiter
+	#else
+		// CUM_OMEGA345_ONE global rates-to-one arm (operator-parametrization
+		// suspect of the AMR seam checkerboard investigation, round 2b,
+		// 2026-09-05 -- docs/AMR-seam-checkerboard-investigation.md §2;
+		// sim_AMR/CMakeLists.txt cache option of the same name): pin the
+		// three Part-I-parametrized relaxation rates omega3/omega4/omega5 to
+		// exactly 1 GLOBALLY (all cells, unconditional). With omega2 (:196)
+		// and omega6..omega10 (:237-241 of HEAD) already no1 this reproduces
+		// the Kutscher-2018/Schönherr-school production rates family (their
+		// runs used omega2..omega10 = 1, `44_...:1185-1187`, and report no
+		// seam artifact). Hypothesis under test: with omega3/4/5 = 1 the
+		// slow third-order kinetic channel (base omega3 ~= 0.06 at omega1
+		// ~= 1.988, tau = 0.503, i.e. ~17-coarse-step memory) no longer
+		// retains or transports the parity-locked (-1)^n mode the band
+		// collision injects -- unlike the round-1 AMR_BAND_OMEGA3 arm this
+		// is the GLOBAL switch of the whole parametrization, not a
+		// band-local override.
+		// The Sec.-7 limiter (the #ifndef branch above) is an EXACT no-op
+		// when the base rate is 1 ((no1-1) = 0 kills the fabs ratio), so
+		// the seven limiter-adapted rates are pinned to no1 directly;
+		// lambda3/4/5 and the three parametrization formulas are dead
+		// constants of the parametrization and are not instantiated in
+		// this branch. rates=1 also zeroes every third/fourth-order
+		// collision product below (Eq117-122, Cs_111, Cs_22x,
+		// Cs_211/121/112 -> 0), matching the plain-2015 #else arm on those
+		// channels -- but ks_122/212/221 still rebuild from 2nd-order
+		// products (Eq. 83 below) and the A/B anisotropy terms of Eqs.
+		// 43-48 still act via the USE_GEIER_CUM_ANTIALIAS derivatives: this
+		// arm is NOT the Geier-2015 operator, it is the school-production
+		// regime.
+		// Measured verdict (2026-09-05, canonical case sim_AMR_ball
+		// --resolution 2 --lattice-viscosity 0.001 --phys-final-time 1.0
+		// --max-level 1, SP, AB, single rank, RTX 5080; metrics by the
+		// calibrated ball probe of the 2026-09-03 campaign on
+		// output_amr_0020.vtkhdf, run dir
+		// /tmp/opencode/band_probe/run_ratesone; baseline of the same
+		// session: parity 3.2487e-3, seam mean|dvx| 1.5256e-3, interior rho
+		// std 2.4115e-4): parity 8.2085e-3 (+152.7 % -- AMPLIFIED, not
+		// collapsed; mid-run frame 0010 reads 8.2823e-3, systematic),
+		// seam mean 3.5778e-3 (+134.5 %), seam max 5.5476e-3 (+134.1 %),
+		// interior rho std 3.0475e-4 (+26.4 %), rho std incl. band rows
+		// 3.2470e-4 (-36.0 % vs 5.0753e-4), development intact but costlier
+		// (max|vx| 2.6810e-2 vs 2.5719e-2, centerline min vx -1.8803e-3 vs
+		// -9.963e-4, level-1 kinetic energy 1.0597e+1 vs 1.2942e+1 = -18
+		// %). Fork (a) of the round-2b hypothesis (parity collapses in the
+		// rates-to-one regime) is REJECTED with the largest worsening of
+		// the campaign; the response is dose-consistent with the round-1
+		// retention family (over-retention -8.4 %, baseline, discount
+		// +7.3 %, memory-discount +34.5 %, band-0.5 +52.6 %, band-1
+		// +112.8 %, now GLOBAL rates-to-one +152.7 %): the third-order
+		// channel is a partial SUPPRESSOR of the artifact on every handle
+		// tried (transfer-side, band-local, global). The school's clean
+		// figure record is therefore NOT attributable to their omega2..10
+		// = 1 rates -- in their own rate family the artifact amplifies --
+		// the fork-(b) reading (their figures were blind to it) stands,
+		// strengthened.
+		const dreal omega3 = no1;
+		const dreal omega4 = no1;
+		const dreal omega5 = no1;
+		const dreal omega120p102 = no1;	 // Sec.-7 limiter is a no-op at base rate 1
+		const dreal omega210p012 = no1;
+		const dreal omega201p021 = no1;
+		const dreal omega120m102 = no1;
+		const dreal omega210m012 = no1;
+		const dreal omega201m021 = no1;
+		const dreal omega111 = no1;
+	#endif
+	#ifdef AMR_BAND_OMEGA3
+		// AMR_BAND_OMEGA3 probe (band-local third-order damping, 2026-09-03):
+		// re-pin the SEVEN limiter-adapted third-order relaxation rates
+		// above (the omega3/omega4/omega5 families of the Geier 2017 Sec. 7
+		// limiter, lines omega120p102 .. omega111 here) to the define's
+		// kappa at AMR coupling-band cells (KS.amr_band, the kernels.h
+		// predicate). kappa = 1 is the macros-off behaviour locally (the
+		// whole channel's post-collision cumulants vanish); 0.5 / 0.25 are
+		// partial damping for the sweep. The override point is AFTER the
+		// limiter computed the level rates, per the probe plan; non-band
+		// cells see the verbatim limiter values.
+		const dreal amr_omega3_band_kappa = (dreal) (AMR_BAND_OMEGA3);
+		const dreal oe_120p102 = KS.amr_band ? amr_omega3_band_kappa : omega120p102;
+		const dreal oe_210p012 = KS.amr_band ? amr_omega3_band_kappa : omega210p012;
+		const dreal oe_201p021 = KS.amr_band ? amr_omega3_band_kappa : omega201p021;
+		const dreal oe_120m102 = KS.amr_band ? amr_omega3_band_kappa : omega120m102;
+		const dreal oe_210m012 = KS.amr_band ? amr_omega3_band_kappa : omega210m012;
+		const dreal oe_201m021 = KS.amr_band ? amr_omega3_band_kappa : omega201m021;
+		const dreal oe_111 = KS.amr_band ? amr_omega3_band_kappa : omega111;
+	#endif
 		const dreal omega6 = no1;
 		const dreal omega7 = no1;
 		const dreal omega8 = no1;
@@ -260,12 +362,24 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 
 #ifdef USE_GEIER_CUM_2017
 		// Limiter for omegas
+	#ifdef AMR_BAND_OMEGA3
+		// (AMR_BAND_OMEGA3 wires: the oe_* re-pins above stand in for the
+		// limiter's own rates at band cells; identical wiring to the #else
+		// arm everywhere else)
+		const dreal Eq117 = (no1 - oe_120p102) * (C_120 + C_102);
+		const dreal Eq118 = (no1 - oe_210p012) * (C_210 + C_012);
+		const dreal Eq119 = (no1 - oe_201p021) * (C_201 + C_021);
+		const dreal Eq120 = (no1 - oe_120m102) * (C_120 - C_102);
+		const dreal Eq121 = (no1 - oe_210m012) * (C_210 - C_012);
+		const dreal Eq122 = (no1 - oe_201m021) * (C_201 - C_021);
+	#else
 		const dreal Eq117 = (no1 - omega120p102) * (C_120 + C_102);
 		const dreal Eq118 = (no1 - omega210p012) * (C_210 + C_012);
 		const dreal Eq119 = (no1 - omega201p021) * (C_201 + C_021);
 		const dreal Eq120 = (no1 - omega120m102) * (C_120 - C_102);
 		const dreal Eq121 = (no1 - omega210m012) * (C_210 - C_012);
 		const dreal Eq122 = (no1 - omega201m021) * (C_201 - C_021);
+	#endif
 
 		const dreal Cs_120 = n1o2 * (Eq120 + Eq117);
 		const dreal Cs_102 = n1o2 * (-Eq120 + Eq117);
@@ -274,7 +388,11 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal Cs_021 = n1o2 * (-Eq122 + Eq119);
 		const dreal Cs_201 = n1o2 * (Eq122 + Eq119);
 		// Eq 42
+	#ifdef AMR_BAND_OMEGA3
+		const dreal Cs_111 = (no1 - oe_111) * C_111;
+	#else
 		const dreal Cs_111 = (no1 - omega111) * C_111;
+	#endif
 
 		// Eqs 43-45
 		const dreal Eq43RHS =
