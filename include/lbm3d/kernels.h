@@ -105,6 +105,20 @@ CUDA_HOSTDEV void LBMKernel(
 
 	typename NSE::template KernelStruct<dreal> KS;
 
+#ifdef AMR_BAND_OMEGA3
+	// AMR_BAND_OMEGA3 probe (band-local third-order damping, 2026-09-03):
+	// mark the cell as an AMR coupling-band cell when the block's launch
+	// carries the refinement-level band override and the cell sits in the
+	// coupling-maintained boundary shell -- per axis the outer/inner ghost
+	// rows plus the first interior row adjacent to the block's own
+	// footprint boundary. The substep-1 widened launch extent is
+	// [-1, local+1) (amr_state.h kernelLaunchWindow), so the predicate can
+	// fire on {-2, -1, 0} and {local-1, local, local+1} per axis; the
+	// never-launched outer rows {-2, local+1} are inert. X()/Y()/Z()
+	// exclude the overlaps. Ungated builds compile the verbatim HEAD text.
+	KS.amr_band = SD.amr_band_omega3_active && (x <= 0 || x >= SD.X() - 1 || y <= 0 || y >= SD.Y() - 1 || z <= 0 || z >= SD.Z() - 1);
+#endif
+
 	// copy quantities
 	NSE::MACRO::copyQuantities(SD, KS, x, y, z);
 

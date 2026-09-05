@@ -275,6 +275,16 @@ struct D3Q27_KernelStruct
 	REAL vx = 0, vy = 0, vz = 0;
 	REAL rho = 1.0, lbmViscosity = 1.0;
 
+#ifdef AMR_BAND_OMEGA3
+	// AMR_BAND_OMEGA3 probe (band-local third-order damping, 2026-09-03):
+	// per-cell marker that this site belongs to an AMR coupling band (set by
+	// cudaLBMKernel from SD.amr_band_omega3_active and the positional band
+	// predicate of kernels.h); gates the band-local re-pin of the
+	// Geier-2017 third-order family rates in col_cum.h. Present only under
+	// the probe define -- ungated builds carry the verbatim HEAD struct.
+	bool amr_band = false;
+#endif
+
 #if defined(USE_CYMODEL) || defined(USE_CASSON)
 	REAL S11 = 0., S12 = 0., S22 = 0., S32 = 0., S13 = 0., S33 = 0.;
 

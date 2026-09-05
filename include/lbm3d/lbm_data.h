@@ -39,6 +39,15 @@ struct LBM_Data
 	// markAMRInterface (amr_decomposition.h); nullptr keeps non-AMR runs fast.
 	std::uint32_t* dinterface_dir = nullptr;
 
+#ifdef AMR_BAND_OMEGA3
+	// AMR_BAND_OMEGA3 probe (band-local third-order damping, 2026-09-03):
+	// per-block activation of the band-local omega_3/4/5 re-pin of
+	// col_cum.h. Set by State_AMR::launchLBMKernelForLevel on refinement
+	// levels only (the coarse level's boundary rows carry physical BCs, not
+	// an AMR coupling band). Present only under the probe define.
+	bool amr_band_omega3_active = false;
+#endif
+
 	// sizes NOT including overlaps
 	CUDA_HOSTDEV idx X()
 	{
