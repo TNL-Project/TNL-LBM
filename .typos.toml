@@ -24,3 +24,4 @@ extend-ignore-re = [
 TKE = "TKE"  # acronym
 ND = "ND"  # ignore "ND" -> "AND" hint
 tak = "tak"  # Czech word
+Hanel = "Hanel" # name
