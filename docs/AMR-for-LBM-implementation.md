@@ -554,8 +554,8 @@ A follow-up variant — **post-collision Pi^neq rescale** — hypothesized that 
 
 ### 12.8 References
 
-- Astoul, T., Wissocq, G., Boussuge, J.-F., Sengissen, A., & Sagaut, P. (2021a). Analysis and reduction of spurious noise generated at grid refinement interfaces with the lattice Boltzmann method. *J. Computational Physics*, 425, 109949.
-- Astoul, T., Wissocq, G., Boussuge, J.-F., Sengissen, A., & Sagaut, P. (2021b). Lattice Boltzmann method for computational aeroacoustics on non-uniform meshes: A direct grid coupling approach. *J. Computational Physics*, 430, 110667.
+- Astoul, T., Wissocq, G., Sengissen, A., Boussuge, J.-F., & Sagaut, P. (2021a). Analysis and reduction of spurious noise generated at grid refinement interfaces with the lattice Boltzmann method. arXiv preprint arXiv:2004.11863 [physics.comp-ph].
+- Astoul, T., Wissocq, G., Sengissen, A., Boussuge, J.-F., & Sagaut, P. (2021b). Lattice Boltzmann method for computational aeroacoustics on non-uniform meshes: A direct grid coupling approach. *J. Computational Physics*, 430, 110667.
 - Berger, M. J., & Colella, P. (1989). Local adaptive mesh refinement for shock hydrodynamics. *J. Computational Physics*, 82(1), 64–84.
 - Chen, H. (1998). Volumetric formulation of the lattice Boltzmann method for fluid dynamics: Basic concept. *Physical Review E*, 58(3), 3955–3963.
 - Chen, H., Filippova, O., Hoch, J., Molvig, K., Shock, R., Teixeira, C., & Zhang, R. (2006). Grid refinement in lattice Boltzmann methods based on volumetric formulation. *Physica A*, 362(1), 158–167.
