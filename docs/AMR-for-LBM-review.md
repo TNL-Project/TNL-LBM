@@ -286,9 +286,9 @@ An, B., Chen, K., & Bergadà, J. M. (2025). Grid technologies in lattice Boltzma
 
 Feng, Y., Guo, S., Jacob, J., & Sagaut, P. (2020). Grid refinement in the three-dimensional hybrid recursive regularized lattice Boltzmann method for compressible aerodynamics. *Physical Review E, 101*, 063302. https://doi.org/10.1103/PhysRevE.101.063302
 
-Astoul, T., Wissocq, G., Boussuge, J.-F., Sengissen, A., & Sagaut, P. (2021a). Analysis and reduction of spurious noise generated at grid refinement interfaces with the lattice Boltzmann method. *Journal of Computational Physics, 425*, 109949. https://doi.org/10.1016/j.jcp.2020.109949
+Astoul, T., Wissocq, G., Sengissen, A., Boussuge, J.-F., & Sagaut, P. (2021a). Analysis and reduction of spurious noise generated at grid refinement interfaces with the lattice Boltzmann method. arXiv preprint arXiv:2004.11863 [physics.comp-ph].
 
-Astoul, T., Wissocq, G., Boussuge, J.-F., Sengissen, A., & Sagaut, P. (2021b). Lattice Boltzmann method for computational aeroacoustics on non-uniform meshes: A direct grid coupling approach. *Journal of Computational Physics, 430*, 110667. https://doi.org/10.1016/j.jcp.2021.110667
+Astoul, T., Wissocq, G., Sengissen, A., Boussuge, J.-F., & Sagaut, P. (2021b). Lattice Boltzmann method for computational aeroacoustics on non-uniform meshes: A direct grid coupling approach. *Journal of Computational Physics, 430*, 110667. https://doi.org/10.1016/j.jcp.2021.110667
 
 Bauer, M., Eibl, S., Godenschwager, C., Kohl, N., Kuron, M., Rettinger, C., Schornbaum, F., Schwarzmeier, C., Thönnes, D., Köstler, H., & Rüde, U. (2020). waLBerla: A block-structured high-performance framework for multiphysics simulations. *Computers & Mathematics with Applications, 81*, 423–451. https://doi.org/10.1016/j.camwa.2020.01.007
 
