@@ -20,3 +20,16 @@ using SP_D3Q27_CUM_ConstInflow = LBM_CONFIG<
 	D3Q27_STREAMING<TRAITS>,
 	D3Q27_BC_All,
 	D3Q27_MACRO_Default<TRAITS>>;
+
+// openings-capable twin of the above: same collision/streaming/BC/macro, only
+// the DATA carries the inflow-openings device state, so the legacy ConstInflow
+// instantiation keeps its exact kernel-argument layout
+using SP_D3Q27_CUM_OpeningInflow = LBM_CONFIG<
+	TRAITS,
+	D3Q27_KernelStruct,
+	NSE_Data_OpeningInflow,
+	COLL,
+	typename COLL::EQ,
+	D3Q27_STREAMING<TRAITS>,
+	D3Q27_BC_All,
+	D3Q27_MACRO_Default<TRAITS>>;
