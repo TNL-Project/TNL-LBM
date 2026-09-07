@@ -10,6 +10,7 @@
 #include "lbm3d/py_lbm.h"
 #include "lbm3d/py_state.h"
 #include "lbm3d/py_UniformDataWriter.h"
+#include "lbm3d/py_inlet_regions.h"
 #include "typedefs.h"
 
 NB_MODULE(pytnl_lbm, m)
@@ -46,7 +47,19 @@ NB_MODULE(pytnl_lbm, m)
 	export_State<SP_D3Q27_CUM_ConstInflow>(m, "State_SP_D3Q27_CUM_ConstInflow");
 	export_UniformDataWriter<TRAITS>(m, "UniformDataWriter");
 
+	// inlet-region-capable instantiation: the macro arrays, the lattice, the
+	// UniformDataWriter and getMacroView resolve to the same TRAITS-based
+	// types already exported above, only the config-specific classes and the
+	// inlet regions management are new (execute registers an overload dispatched
+	// on the state's type)
+	export_LBM_Data<SP_D3Q27_CUM_InletRegions>(m, "LBM_Data_SP_D3Q27_CUM_InletRegions");
+	export_LBM_BLOCK<SP_D3Q27_CUM_InletRegions>(m, "LBM_BLOCK_SP_D3Q27_CUM_InletRegions");
+	export_LBM<SP_D3Q27_CUM_InletRegions>(m, "LBM_SP_D3Q27_CUM_InletRegions");
+	export_State<SP_D3Q27_CUM_InletRegions>(m, "State_SP_D3Q27_CUM_InletRegions");
+	export_InletRegions<SP_D3Q27_CUM_InletRegions>(m);
+
 	m.def("execute", execute<State<SP_D3Q27_CUM_ConstInflow>>);
+	m.def("execute", execute<State<SP_D3Q27_CUM_InletRegions>>);
 	m.def("getMacroView", getMacroView<SP_D3Q27_CUM_ConstInflow::TRAITS, SP_D3Q27_CUM_ConstInflow::TRAITS::hmacro_array_t>);
 
 	using macro_indexer_t = SP_D3Q27_CUM_ConstInflow::TRAITS::__hmacro_array_t::IndexerType;

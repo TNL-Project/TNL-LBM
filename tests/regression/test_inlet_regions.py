@@ -1,4 +1,4 @@
-"""Inflow-inlet regions regression tests (authored inlet regions in real simulations).
+"""Inlet-region regression tests (authored inlet regions in real simulations).
 
 End-to-end coverage of the authored inlet-region stack (addInletRegion in
 setupBoundaries -> discovery/complement gating -> scale normalization -> the
