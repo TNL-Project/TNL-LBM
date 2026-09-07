@@ -3,6 +3,7 @@ set(TARGETS
     sim2d_2
     sim2d_Taylor_Green
     sim2d_hills
+    sim2d_openings
 )
 
 foreach(target IN ITEMS ${TARGETS})
