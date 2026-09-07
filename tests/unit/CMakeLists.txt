@@ -6,6 +6,7 @@ set(unit_test_sources
     test_outflow_gather3d.cu
     test_streaming_patterns.cu
     test_inflow_moment.cu
+    test_inflow_openings.cu
     test_decomposition.cu
     test_bc_symmetry.cu
     test_streaming_mpi.cu
