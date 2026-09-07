@@ -6,6 +6,7 @@ set(TARGETS
     sim_IBM1
     sim_IBM2
     sim_IBM4
+    sim_inlet_regions
 )
 
 foreach(target IN ITEMS ${TARGETS})
