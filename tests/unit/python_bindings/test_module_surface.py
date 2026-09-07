@@ -33,6 +33,14 @@ EXPECTED_EXPORTS = [
     "hmacro_view_SP_D3Q27_CUM_ConstInflow",
     "dmacro_view_SP_D3Q27_CUM_ConstInflow",
     "macro_indexer_SP_D3Q27_CUM_ConstInflow",
+    "LBM_SP_D3Q27_CUM_OpeningInflow",
+    "LBM_BLOCK_SP_D3Q27_CUM_OpeningInflow",
+    "LBM_Data_SP_D3Q27_CUM_OpeningInflow",
+    "State_SP_D3Q27_CUM_OpeningInflow",
+    "InflowOpeningsState",
+    "ProfileType",
+    "addInflowPlane",
+    "finalizeInflowOpenings",
 ]
 
 ACTION_VALUES = {
