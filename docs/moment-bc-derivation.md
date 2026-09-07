@@ -305,6 +305,9 @@ The remaining faces have no legacy bitwise requirement; their closed forms were 
   the 3D suite additionally shear and the 3rd/4th-order cross moments `q112`/`q122`/`m22`; written layer exactly `cn == -s`;
   untouched slots bit-exact), 0 failures in A-B and A-A builds.
 
+The `GEO_INFLOW_MOMENT` case additionally carries the inflow-openings gate (per-opening imposed velocity and face provenance);
+see *Inflow/outflow openings* below.
+
 ### Balanced-pairing construction (bitwise isomorphism on the legacy face)
 
 The generalized bodies reproduce the *computed values* of the pre-generalization XM body bit-exactly on the legacy face (D3Q27's
@@ -353,3 +356,187 @@ $\Pi_{yz}$, $Q_{yyz}$, $Q_{yzz}$, $S_{yyzz}$ in 3D).
 The non-equilibrium corrections (proportional to viscosity τ) are neglected, which is the standard leading-order closure.
 This approximation is valid for low-Mach, near-equilibrium flows and introduces O(τ) errors at the boundary,
 consistent with the second-order accuracy of the LBM.
+
+## Inflow/outflow openings
+
+The moment inflow boundary above imposes one uniform velocity per domain face.
+Real geometries need more: several inflows sharing a face (T-junctions), interior inlets away from the bounding box
+(the inlet of an S-shaped pipe voxelized inside its bounding box), and a profile and amplitude per opening.
+The *opening* is the unit that provides all three, layered on top of the unchanged moment reconstruction.
+
+### Concept: planes and openings
+
+An inflow boundary lives on a directed lattice **plane**: the triple (`axis`, `sign`, `planeOffset`), where `planeOffset`
+indexes the plane perpendicular to `axis` and `sign` ($\pm 1$) is the outward normal of the boundary (the imposed flow
+points along `-sign`).
+Bounding-box faces are the planes with `planeOffset` at the domain boundary; interior planes sit anywhere in
+$[0, N_{axis})$.
+An **opening** is one connected cell set on one plane, carrying one profile and one amplitude.
+The gating rules never mix cells across planes, which structurally prevents cross-plane merge hazards.
+
+### Data model
+
+`LBM_INFLOW_OPENING<TRAITS>` is a plain HOST-side record:
+`id` (index into the openings vector), `axis`/`sign`/`planeOffset` (plane identity),
+`lo`/`hi` (the touching rect on the plane, in global coordinates; the bounding rect for discovered runs),
+`amplitude`, `profile` (`ProfileType::UNIFORM` or `ProfileType::PARABOLIC`), `scale` (the resolved normalization,
+computed at init), and `origin` (`OpeningOrigin::AUTHORED` or `OpeningOrigin::DISCOVERED`).
+Records live only in the sim-side `InflowOpeningsState` (see *Kernel integration*); nothing is uploaded to the device -
+the per-cell claim map (`int` site id, `-1` elsewhere, distributed per block exactly like `hmap`) and the compressed
+velocity table carry everything the kernel needs.
+
+### Authored API and gating rules
+
+`addInflowPlane(nse, os, axis, sign, planeOffset, lo, hi, profile, amplitude)` (a universal free function) registers one
+opening in `os.openings` and immediately claims its rect: every local
+block stamps `hmap` (`GEO_INFLOW_MOMENT`) and the claim map (the opening id, re-stamped to the site id at finalize) over
+its share of the rect, last-write-wins exactly like `setBoundary*`.
+The explicit (`axis`, `sign`) is authoritative provenance, mandatory for interior planes, because interior geometry cannot
+infer the flow direction (a T-junction ties, and both sides of the plane are
+fluid).
+The intended call site is the simulation's `setupBoundaries()` override inside its `StateLocal`, which `State::reset()`
+invokes between `resetMap(GEO_FLUID)` and `copyMapToDevice()`; the same override ends with
+`finalizeInflowOpenings(nse, os)`, which first carves the authored outward layers into `GEO_NOTHING` (walls yield;
+anything else throws) and then validates every live claimed cell against the boundary contract - interior inward
+neighbor, ghost/out-of-domain outward neighbor, and a detected face matching the opening's own (axis, sign) - throwing
+`std::runtime_error` on any violation.
+
+Discovery then labels the complement: per boundary plane, 4-connected components of inflow-tagged cells claimed by no
+authored opening become `DISCOVERED` openings with the default UNIFORM profile and zero amplitude.
+The gating rules, in resolution order:
+
+1. **R1**: gating is scoped per plane; authored and discovered openings coexist on a plane only on disjoint cells.
+2. **R2**: authored claims stamp immediately; overlapping authored rects resolve last-write-wins.
+3. **R3**: discovery labels 4-connected components of unclaimed inflow cells, per plane.
+4. **R4**: the `discover` flag on the sim's `InflowOpeningsState` (default true) gates the discovery pass; false with nothing authored keeps
+   the legacy uniform inflow path, bit-identical.
+5. **R5**: rank 0 prints one report line per plane that has authored or discovered openings; legacy runs enumerate no
+   plane and stay silent:
+
+```
+inflow openings: per-plane discovery report
+  plane (axis=0 sign=-1 offset=1): authored=1 discovered=0 cells=<n> (<n> authored, 0 discovered)
+```
+
+### Normalization and the velocity bake
+
+The imposed velocity at a claimed cell is precomputed on the host and stored in the compressed table; in the kernel it is
+a pure array read.
+For **UNIFORM** openings the baked velocity is the authored amplitude along the inward normal (`-sign` along the plane
+axis) and the `NSE_Data_OpeningInflow::inflow_vx/vy/vz` defaults on the other components; a zero amplitude means "no
+authored velocity" and bakes the defaults verbatim (the discovered case).
+For **PARABOLIC** openings the amplitude is the target volumetric flux across the opening (unit cell area), and the baked
+velocity is defaults * `scale` * profile weight, with the scale resolved at init,
+
+$$\mathrm{scale} = \frac{\mathrm{amplitude}}{\sum_c w_c}$$
+
+where the sum runs over the opening's claimed cells. Both the sum and the bake run on the replicated plane pictures, so
+every rank produces bitwise-identical values with no collective at all.
+The cell weight $w_c$ is the product paraboloid in cell-centered normalized coordinates over the opening's tangential
+bounds $[u_0, u_1] \times [v_0, v_1]$ (the `openingProfileWeight` host helper):
+
+$$\xi = \frac{u - u_0 + 1/2}{u_1 - u_0 + 1}, \qquad \eta = \frac{v - v_0 + 1/2}{v_1 - v_0 + 1}, \qquad w = (1 - (2\xi - 1)^2)(1 - (2\eta - 1)^2)$$
+
+Cell-centered normalization makes a rect that is a single cell wide along a tangential direction contribute factor 1 along
+that direction.
+
+### Kernel integration
+
+Every per-cell quantity is resolved at init on the host; the kernel reads no records, evaluates no profile and multiplies
+no factors. The only device-side openings state lives on the openings-capable DATA struct
+`NSE_Data_OpeningInflow` (legacy DATA structs carry nothing - see the AGENTS.md note on why state must stay out of the
+universal kernel-argument struct): a per-cell **site id** map (`int`, `-1` = no opening, allocated per block by the
+`has_inflow_openings_v` trait) and one **compressed velocity table** (`sites * D` values, `site * D + component`),
+precomputed by `finalizeInflowOpenings`.
+`NSE_Data_OpeningInflow::inflow()` is then just: claimed cell -> `KS.velocity = table[site]`; unclaimed cell -> the
+struct's `inflow_vx/vy/vz` defaults.
+The fused `GEO_INFLOW_MOMENT` case keeps exactly the legacy shape - `SD.inflow(...)`, `detectBCFace`, body - and on legacy
+simulations the kernel binary is bit-identical to the pre-feature one.
+All the init-time management is sim-side and universal: the sim's `StateLocal` owns an `InflowOpeningsState` (records,
+discovery flag, host/device velocity arrays) and calls the universal free functions -
+`addInflowPlane` to stamp claims in `setupBoundaries()`, then `finalizeInflowOpenings` after all other
+boundary stamps, which performs the outward-ghost carve, the detector-mirror validation, the optional discovery, and the
+site/velocity resolution. The velocity bake is computed on the replicated plane pictures, so every rank
+produces bitwise-identical arrays with no collective: UNIFORM imposes the authored amplitude along the inward normal
+(DATA defaults on the tangential components, and the defaults everywhere when the amplitude is 0), PARABOLIC imposes
+defaults * `scale` * `openingProfileWeight(cell)` with `scale = amplitude / Σw` over the opening's cells.
+The dispatch face comes from `detectBCFace` for claimed and unclaimed cells alike: the boundary contract gives every
+opening an interior inward side and a `GEO_NOTHING` outward side, so the detector's interior-side scan - also its form
+before this feature - resolves the face from the map alone and placement on the bounding box versus an interior plane does
+not matter.
+The dispatch shapes of the generalization above are preserved: D2Q9 keeps the `inflowMoment<AXIS, SIGN>` per-face
+instantiations behind a `switch (face)`; D3Q27 keeps its single runtime body, `inflowMoment(face, KS)`.
+
+### Boundary contract: the outward ghost layer and face provenance
+
+Every inflow boundary - authored or discovered, bounding-plane or interior - must present the fluid domain on its inward
+side and `GEO_NOTHING` (or the domain edge) on its outward side, which is what makes `detectBCFace` total.
+`finalizeInflowOpenings` enforces the contract on the final stamped map, in two passes before any discovery:
+
+1. **Carve**: each authored opening whose outward side lies inside the domain has that one-cell layer converted to
+   `GEO_NOTHING`.
+   The layer may only contain `GEO_WALL` (carved away) or an existing `GEO_NOTHING` (idempotent); interior tags, other
+   boundary stamps, or claims on the outward side mean the plane is not a boundary of the fluid domain and abort init
+   with a rank-uniform `std::runtime_error`.
+   The carve runs after `setupBoundaries()`, so it wins over earlier wall stamps, and it makes the authored order of
+   `addInflowPlane` versus wall stamping irrelevant.
+2. **Detector mirror**: for every live claimed cell the validator replays `detectBCFace` on the host (first interior
+   side in the kernel's fixed axis order, face = its opposite) and requires an interior inward neighbor, a ghost (or
+   out-of-domain) outward neighbor, and the detected face equal to the opening's own (axis, sign) bit.
+   A mismatch means the map would dispatch the cell to another face than the authored one - for example two openings
+   whose carved layers meet at a corner - and aborts init with the cell position and both face bits.
+
+### Discovery specifics
+
+- The per-plane labeling is gather-based: each rank packs its owned tagged cells as coordinate triplets and one
+  `MPI_Allgatherv` reconstructs the global plane picture; disjoint ownership yields a byte-identical picture and identical
+  component ids on every rank.
+- Connectivity is 4-connected: cells touching only diagonally do not merge (8-connectivity would merge openings that meet
+  at a corner); authored openings are the override for openings that meet at an edge.
+- Interior provenance is mandatory: a `GEO_INFLOW_MOMENT`-tagged cell on no bounding-face plane and no authored plane
+  throws on every rank (the violation bit is folded into the same collective as the face-existence bits), with a message
+  pointing at `addInflowPlane` and the `os.discover = false` escape hatch on the sim's `InflowOpeningsState`.
+
+### Outflow parity
+
+Interior outflow planes (an S-pipe outlet) get the same enumeration and report: `State::discoverOutflowPlanes` groups
+each rank's owned outflow cells by (axis, sign, plane offset) with a face-detection rule
+mirroring the inflow pass, merged through the same collective pattern, and rank 0 prints
+`outflow openings: interior planes report` with one `plane (axis=... sign=... offset=...): cells=...` line per plane.
+Execution needs nothing new: interior outflow cells are already covered by the `updateOutflowPassRegion` rectangle cover
+that feeds the outflow pass kernel.
+The report is interior-only: a plane counts as interior when the coordinate one step outward lies strictly inside
+$(0, N_{axis} - 1)$;
+direct stamps on the bounding plane and ghost-idiom stamps on plane `1`/`N-2` are bounding-plane geometry, already known to
+the legacy path, and print nothing.
+
+### Known limitations (v1)
+
+- Boundary discovery fires only for tags on the bounding plane itself (`0`/`N-1`).
+  Ghost-idiom stamping (tags at plane `1`/`N-2`, the convention used by the legacy C++ simulations) yields no openings: the
+  authored API is the supported path there.
+   A follow-up candidate treats the face-adjacent ghost plane as the discovery plane when the bounding plane carries no
+   tags.
+- The `loadState` restart path does not re-resolve openings: claims, scales, and the device upload run only on the
+  fresh-start `reset()`.
+  Openings are derived configuration, not checkpoint state.
+- The PARABOLIC scale summation rounds per MPI partition: per-rank partial sums are deterministic, but the `MPI_SUM` across
+  different partitions can drift the scale at ulp level (accepted).
+- Slanted (staircase) inlets: a staircase-voxelized oblique inlet becomes one opening per plane step, each normalized
+  independently; there is no cross-plane profile continuity.
+- Per-cell arbitrary profile arrays (`FROM_ARRAY`) are deferred; the per-cell factor path is designed to accept them later.
+
+### Coverage
+
+- Unit: two dedicated doctest suites, `inflow_openings_labeling` (component labeling,
+  7 cases) and `inflow_openings_weight` (the profile-weight helper, 5 cases).
+  The full unit binary stands at 72 cases / 2472 assertions in the MPI trees (A-B and A-A) and 67 / 2248 without MPI.
+- Regression: a dedicated pytest module drives the 2D and 3D openings demos in
+  both streaming patterns:
+  `TestParabolicPoiseuilleD2Q9` (a flux-matched PARABOLIC opening recovers the `sim2d_2` Poiseuille error band),
+  `TestDualOpeningAmplitudesD2Q9` (two UNIFORM openings impose their per-opening amplitudes exactly, plus the outlet flux
+  balance),
+  `TestParabolicFluxD3Q27` (the integrated opening-plane flux recovers the authored flux),
+  and `TestLegacyNoOpeningsSilence` (plain `sim2d_2` prints no opening lines).
+  Full suite: 187 passed in A-B, 174 passed + 13 skipped in A-A (the skips are `sim_adjoint`, excluded from A-A builds by
+  design).
