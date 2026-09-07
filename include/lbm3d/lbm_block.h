@@ -1,6 +1,7 @@
 #pragma once
 
 #include "defs.h"
+#include "lbm_data.h"
 #include "lattice.h"
 #include <vector>
 
@@ -20,6 +21,8 @@ struct LBM_BLOCK
 
 	using hmap_array_t = typename TRAITS::hmap_array_t;
 	using dmap_array_t = typename TRAITS::dmap_array_t;
+	using hintmap_array_t = typename TRAITS::hintmap_array_t;
+	using dintmap_array_t = typename TRAITS::dintmap_array_t;
 	using hlat_array_t = typename TRAITS::hlat_array_t;
 	using dlat_array_t = typename TRAITS::dlat_array_t;
 	using dlat_view_t = typename TRAITS::dlat_view_t;
@@ -36,6 +39,11 @@ struct LBM_BLOCK
 
 	hmap_array_t hmap;
 	dmap_array_t dmap;
+
+	// inflow opening site index per cell, -1 = no opening; allocated only when
+	// the kernel DATA carries openings (has_inflow_openings_v)
+	hintmap_array_t hinflow_opening_map;
+	dintmap_array_t dinflow_opening_map;
 
 	// macroscopic quantities
 	hmacro_array_t hmacro;
@@ -207,6 +215,8 @@ struct LBM_BLOCK
 	void setBoundaryX(idx x, map_t value);
 	void setBoundaryY(idx y, map_t value);
 	void setBoundaryZ(idx z, map_t value);
+	// same guarded single-cell stamp as setMap, but for the inflow opening site map
+	void setInflowOpeningMap(idx x, idx y, idx z, int value);
 
 	void resetMap(map_t geo_type);
 	void setEquilibrium(real rho, real vx, real vy, real vz);
