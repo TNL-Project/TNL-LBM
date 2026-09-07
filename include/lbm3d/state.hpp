@@ -1,8 +1,12 @@
 #pragma once
 
+#include <algorithm>
 #include <fstream>
 #include <iomanip>
+#include <limits>
+#include <map>
 #include <stdexcept>
+#include <tuple>
 
 #include <nlohmann/json.hpp>
 #include <png.h>
@@ -1132,6 +1136,11 @@ void State<NSE>::reset()
 	// so it can override the defaults with different initial condition
 	setupBoundaries();
 
+	// outflow parity: enumerate and report interior outflow planes
+	// (report-only; execution coverage of interior outflow comes from
+	// updateOutflowPassRegion inside copyMapToDevice below)
+	discoverOutflowPlanes();
+
 	nse.copyMapToDevice();
 
 	// compute initial macroscopic quantities on GPU and copy to CPU
@@ -1145,6 +1154,200 @@ void State<NSE>::resetDFs()
 	// compute initial DFs on GPU and copy to CPU
 	nse.setEquilibrium(1, 0, 0, 0);	 // rho, vx, vy, vz
 	nse.copyDFsToHost();
+}
+
+// One outflow plane: the set of outflow-tagged cells sharing the same
+// detected face (axis, sign) and the same plane offset along that axis.
+// sign is the OUTWARD normal of the outlet - it points away from the
+// interior (fluid/symmetry) axis-neighbor, in the same sense as the bc_face
+// constants the outflow pass dispatches on. cells counts the outflow cells
+// attributed to the plane within the enumeration box that produced it (the
+// caller merges per-rank boxes; cell ownership is disjoint, so summed counts
+// are partition-independent).
+struct OutflowPlane
+{
+	short axis = 0;	 // 0 = x, 1 = y, 2 = z
+	short sign = 0;	 // outward normal, +1/-1
+	int plane = 0;	 // cell coordinate along the axis
+	int cells = 0;	 // attributed outflow cells
+};
+
+// Enumerates outflow planes over the sub-box [begin, end) (global
+// coordinates, end exclusive) of a global_dim grid; isOutflowCell(x, y, z)
+// decides the outflow tag-set membership (BC::isOutflowPassBC equivalent).
+// Each tagged cell's face is detected with the same 6-neighbor rule as the
+// inflow-openings discovery and LBM_BLOCK::validateFaceDetectedBC: the
+// unique axis-neighbor acting as interior (isInteriorNeighbor(x, y, z), i.e.
+// the BC::isOutflowInterior equivalent) marks the interior side, and the
+// plane's outward normal points the other way. Neighbor positions outside
+// the global grid count as non-interior (the ghost frame and degenerate axes
+// like z in D2Q9 never yield a face). Cells with an ambiguous detection
+// (zero or multiple interior axis-neighbors) are skipped - the strict
+// verdict for such maps belongs to validateFaceDetectedBC, which runs later
+// in the same reset(). The result is sorted by (axis, sign, plane).
+template <typename F, typename G>
+std::vector<OutflowPlane>
+enumerateOutflowPlanes(const int global_dim[3], const int begin[3], const int end[3], F&& isOutflowCell, G&& isInteriorNeighbor)
+{
+	std::map<std::tuple<short, short, int>, int> counts;
+	for (int z = begin[2]; z < end[2]; z++)
+		for (int y = begin[1]; y < end[1]; y++)
+			for (int x = begin[0]; x < end[0]; x++) {
+				if (! isOutflowCell(x, y, z))
+					continue;
+				int det_axis = -1, det_sign = 0, interior_count = 0;
+				for (int a = 0; a < 3 && interior_count <= 1; a++)
+					for (int s = -1; s <= 1; s += 2) {
+						int gn[3] = {x, y, z};
+						gn[a] += s;
+						bool interior = false;
+						if (gn[a] >= 0 && gn[a] < global_dim[a])
+							interior = isInteriorNeighbor(gn[0], gn[1], gn[2]);
+						if (interior) {
+							interior_count++;
+							det_axis = a;
+							det_sign = s;
+						}
+					}
+				if (interior_count != 1)
+					continue;
+				const int g[3] = {x, y, z};
+				counts[{static_cast<short>(det_axis), static_cast<short>(-det_sign), g[det_axis]}]++;
+			}
+
+	std::vector<OutflowPlane> planes;
+	planes.reserve(counts.size());
+	for (const auto& [key, cells] : counts)
+		planes.push_back(OutflowPlane{std::get<0>(key), std::get<1>(key), std::get<2>(key), cells});
+	return planes;
+}
+
+template <typename NSE>
+void State<NSE>::discoverOutflowPlanes()
+{
+	// no outflow-pass machinery -> no outflow planes to enumerate (mirrors
+	// the if constexpr guard of updateOutflowPassRegion; the discarded
+	// branch keeps BCs without the isOutflowPassBC predicate compilable)
+	if constexpr (NSE::BC::use_outflow_pass) {
+		const idx3d global = nse.lat.global;
+
+		// the gathered plane records pack the offset into int; the replicated
+		// global extents bound every offset, checked here so all ranks throw
+		// identically before any collective
+		for (int d = 0; d < 3; d++)
+			if (static_cast<long>(global[d]) > static_cast<long>(std::numeric_limits<int>::max()))
+				throw std::runtime_error("discoverOutflowPlanes: global extent does not fit the int outflow-plane records");
+
+		// per-rank plane counts over OWNED cells only (the enumeration
+		// boxes are the blocks' owned ranges, which are disjoint); the
+		// per-cell face detection reads block.hmap exactly like
+		// validateFaceDetectedBC, which runs from copyMapToDevice() right
+		// after this method and guarantees exactly one interior axis-neighbor
+		// per outflow cell on every map that survives reset()
+		std::map<std::tuple<short, short, int>, long> local_counts;
+		for (const auto& block : nse.blocks) {
+			const int global_dim[3] = {static_cast<int>(global.x()), static_cast<int>(global.y()), static_cast<int>(global.z())};
+			const int begin[3] = {static_cast<int>(block.offset.x()), static_cast<int>(block.offset.y()), static_cast<int>(block.offset.z())};
+			const int end[3] = {
+				static_cast<int>(block.offset.x() + block.local.x()),
+				static_cast<int>(block.offset.y() + block.local.y()),
+				static_cast<int>(block.offset.z() + block.local.z())
+			};
+			auto planes = enumerateOutflowPlanes(
+				global_dim,
+				begin,
+				end,
+				[&](int x, int y, int z)
+				{
+					return NSE::BC::isOutflowPassBC(block.hmap(x, y, z));
+				},
+				[&](int x, int y, int z)
+				{
+					return NSE::BC::isOutflowInterior(block.hmap(x, y, z));
+				}
+			);
+			for (const auto& s : planes)
+				local_counts[{s.axis, s.sign, s.plane}] += s.cells;
+		}
+
+		// one has-cells mask settles the fast exit on all ranks: zero
+		// outflow-tagged cells anywhere -> nothing to gather, nothing to
+		// report
+		int has_cells = local_counts.empty() ? 0 : 1;
+#ifdef HAVE_MPI
+		MPI_Allreduce(MPI_IN_PLACE, &has_cells, 1, MPI_INT, MPI_BOR, nse.communicator);
+#endif
+		if (! has_cells)
+			return;
+
+		// fixed 4-int records (axis, sign, plane, count) feed ONE
+		// Allgather+Allgatherv round; per-rank cells of one plane fit int
+		// by construction (an allocated lattice cannot exceed 2^31 cells)
+		std::vector<int> records;
+		records.reserve(local_counts.size() * 4);
+		for (const auto& [key, count] : local_counts) {
+			records.push_back(static_cast<int>(std::get<0>(key)));
+			records.push_back(static_cast<int>(std::get<1>(key)));
+			records.push_back(std::get<2>(key));
+			records.push_back(static_cast<int>(count));
+		}
+
+		std::vector<int> all_records;
+#ifdef HAVE_MPI
+		std::vector<int> counts(nse.nproc), displs(nse.nproc);
+		const int my_count = static_cast<int>(records.size());
+		MPI_Allgather(&my_count, 1, MPI_INT, counts.data(), 1, MPI_INT, nse.communicator);
+		int total = 0;
+		for (int r = 0; r < nse.nproc; r++) {
+			displs[r] = total;
+			total += counts[r];
+		}
+		all_records.resize(total);
+		MPI_Allgatherv(records.data(), my_count, MPI_INT, all_records.data(), counts.data(), displs.data(), MPI_INT, nse.communicator);
+#else
+		all_records = std::move(records);
+#endif
+
+		// sum the merged records per key (cell ownership is disjoint, so the
+		// sums are identical for any rank partition); the map iteration is
+		// the deterministic (axis, sign, plane) order, identical on every
+		// rank - a cap violation therefore throws identically everywhere
+		std::map<std::tuple<short, short, int>, long> merged;
+		for (std::size_t i = 0; i + 3 < all_records.size(); i += 4)
+			merged[{static_cast<short>(all_records[i]), static_cast<short>(all_records[i + 1]), all_records[i + 2]}] += all_records[i + 3];
+		if (merged.size() > 4096)
+			throw std::runtime_error(
+				fmt::format("discoverOutflowPlanes: {} distinct outflow planes exceed the reporting cap of 4096", merged.size())
+			);
+
+		// bounding outflow planes are legacy-known - both the direct stamp
+		// at offset 0/N-1 and the ghost-layer idiom at offset 1/N-2 keep
+		// the outward coordinate outside [1, global-2]; only interior
+		// planes are news, and without any the report stays silent so
+		// legacy stdout is byte-identical
+		if (nse.rank != 0)
+			return;
+		struct InteriorPlane
+		{
+			short axis, sign;
+			int plane;
+			long cells;
+		};
+		std::vector<InteriorPlane> interior;
+		for (const auto& [key, cells] : merged) {
+			const short axis = std::get<0>(key);
+			const short sign = std::get<1>(key);
+			const int plane = std::get<2>(key);
+			const long outward = static_cast<long>(plane) + sign;
+			if (outward > 0 && outward < static_cast<long>(global[axis]) - 1)
+				interior.push_back(InteriorPlane{axis, sign, plane, cells});
+		}
+		if (interior.empty())
+			return;
+		spdlog::info("outflow openings: interior planes report");
+		for (const auto& s : interior)
+			spdlog::info("  plane (axis={} sign={:+d} offset={}): cells={}", s.axis, s.sign, s.plane, s.cells);
+	}
 }
 
 template <typename NSE>

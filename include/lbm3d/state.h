@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 
+#include <TNL/Containers/Array.h>
 #include <TNL/Containers/StaticVector.h>
 #include <TNL/Timer.h>
 #include <adios2.h>
@@ -266,6 +267,25 @@ struct State
 	double getWallTime(
 		bool collective = false
 	);	// collective: must be true when called by all MPI ranks and false otherwise (e.g. when called only by rank 0)
+
+private:
+	// per-plane enumeration + report of outflow openings: groups the
+	// outflow-tagged cells (exactly the BC::isOutflowPassBC tag set the
+	// outflow-pass machinery sees) by their detected (axis, sign) face and
+	// plane offset, and merges the per-rank counts with one
+	// Allgather/Allgatherv round (disjoint cell ownership makes the sums
+	// partition-independent). Report-only - execution coverage of interior
+	// outflow already comes from updateOutflowPassRegion in
+	// copyMapToDevice(); nothing is stamped, no map is written. Rank 0
+	// reports only planes NOT on a bounding plane (interior outlets, e.g.
+	// an S-pipe outlet voxelized inside the domain); bounding planes
+	// (direct stamp at 0/N-1 and the ghost-layer idiom at 1/N-2) are
+	// legacy-known and stay silent, so legacy stdout is unchanged. Runs
+	// unconditionally (independent of the inflow gating flag) but exits
+	// early when no rank owns any outflow-tagged cell. Invoked from
+	// reset() after setupBoundaries(), before copyMapToDevice() - the host
+	// hmap is final there.
+	void discoverOutflowPlanes();
 };
 
 #include "state.hpp"
