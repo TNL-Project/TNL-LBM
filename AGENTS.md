@@ -1,6 +1,6 @@
 # TNL-LBM PROJECT KNOWLEDGE BASE
 
-**Updated:** 2026-08-20
+**Updated:** 2026-09-02
 **Branch:** main
 
 ## OVERVIEW
@@ -47,7 +47,7 @@ with optional Python bindings via nanobind and distributed execution through CUD
 | Change 3D streaming pattern | `include/lbm3d/d3q27/streaming_AA.h` / `streaming_AB.h` | AB is default; define `AA_PATTERN` or `AB_PATTERN` before including core LBM headers |
 | Change 2D streaming pattern | `include/lbm3d/d2q9/streaming_AA.h` / `streaming_AB.h` | AB is default; define `AA_PATTERN` or `AB_PATTERN` before including core LBM headers |
 | Simulation driver loop | `include/lbm3d/core.h` | `execute<STATE>(state)` orchestrates init/update/finalize |
-| Python binding surface | `pytnl_lbm/pytnl_lbm.cpp` | Exports one concrete `SP_D3Q27_CUM_ConstInflow` instantiation |
+| Python binding surface | `pytnl_lbm/pytnl_lbm.cpp` | Exports the `SP_D3Q27_CUM_ConstInflow` and `SP_D3Q27_CUM_OpeningInflow` instantiations; shared BC/MACRO aux types are attached from a type-indexed cache (nanobind registers each C++ type once) |
 | 3D example simulations | `sim_NSE/*.cu`, `sim_NSE_ADE/*.cu`, `sim_adjoint/*.cu` | Each `int main()` is a standalone CMake executable |
 | 2D example simulations | `sim_2D/*.cu` | sim2d_1 (channel+hole), sim2d_2 (Poiseuille), sim2d_Taylor_Green, sim2d_hills |
 | Unit-test C++ binary | `tests/unit/*.cu` | doctest cases compiled into one binary |
@@ -103,6 +103,10 @@ with optional Python bindings via nanobind and distributed execution through CUD
 - **Python**: `pyproject.toml` targets Python 3.12; bindings are optional via `TNL_LBM_BUILD_PYTHON`.
 - **No CTest**: Tests are shell scripts invoked post-build, not registered with CMake.
 - **doctest**: C++ unit tests (tests/unit/*.cu) use doctest `TEST_SUITE_BEGIN`/`TEST_SUITE_END`; one binary per module (`test_cpp_units`).
+ - **Interior planes need explicit (axis, sign) provenance**: interior geometry (a voxelized pipe inlet) cannot infer the flow direction from neighbors, so interior inflow planes must be authored via `addInflowPlane(axis, sign, ...)`; only bounding-face planes can be discovered.
+   Every inflow opening must have the fluid domain on its inward side and `GEO_NOTHING` on its outward side — authored openings get that outward one-cell layer carved for them (walls yield; anything else throws) —
+   and every claimed cell is validated on the final map (right after `setupBoundaries()`) by replaying
+   `detectBCFace` and requiring the detected face to equal the opening's own (axis, sign), throwing on violation.
 
 ## ANTI-PATTERNS (THIS PROJECT)
 
@@ -130,6 +134,30 @@ with optional Python bindings via nanobind and distributed execution through CUD
   runtime-parameterized body called directly in both patterns; D2Q9 carries
   a `template <int AXIS, int SIGN>` body (constexpr slot arithmetic)
   instantiated per face in the preCollision switch.
+- **Widening the universal kernel-argument struct pays on EVERY kernel**:
+  the openings design (extra per-cell maps and records inside `LBM_Data`)
+  cost -2.4% on the hills A-B benchmark in every source shape tried (packed
+  face / ghost-scan / SD.inflow gate moved out of the fused case): the
+  fused D2Q9 kernel went REG 40->44 with a +32B argument block, and the
+  SASS of all three shapes is byte-identical to "committed + 32B of
+  payload" — ptxas reseats around the bigger param block regardless of what
+  the added members are for (evidence .omo/evidence/bench-glups/20260903-*,
+  probe binary SASS diff = 0 lines). The rule drawn from it: **only
+  openings-capable DATA structs may carry openings state**. The claim map
+  and the compressed per-site velocity table live in
+  `NSE_Data_OpeningInflow` (`LBM_Data`/`NSE_Data` carry nothing, the
+  `has_inflow_openings_v` trait gates the block's claim-map allocation,
+  upload, and publication); with the payload out of the universal path the
+  legacy fused kernel is bit-identical to committed (sha256-verified SASS).
+   Init-time management is sim-side: the sim's StateLocal owns an
+   `InflowOpeningsState` and drives the universal free functions
+   (`addInflowPlane`,
+   `finalizeInflowOpenings` = ghost carve + detector-mirror validation +
+   discovery + replicated bake of the site velocities); velocity semantics
+  (UNIFORM amplitude on the inward normal, PARABOLIC scale·weight over the
+  DATA base) are resolved fully on the host, so the kernel reads exactly
+  one per-cell site id plus D velocity components and never touches a
+  record or a factor.
 - **Verifying FP-bitwise contracts in test kernels only**: `lbm_fma_rn` pins
   tuned against fp-contract fusion spots in a small test kernel do not
   guarantee the same contractions in the larger fused production kernel; the
