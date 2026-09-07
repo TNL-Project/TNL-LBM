@@ -121,6 +121,8 @@ struct Traits
 
 	using __hmap_array_t = array3d<map_t, TNL::Devices::Host>;
 	using __dmap_array_t = array3d<map_t, DeviceType>;
+	using __hintmap_array_t = array3d<int, TNL::Devices::Host>;
+	using __dintmap_array_t = array3d<int, DeviceType>;
 	using __hbool_array_t = array3d<bool, TNL::Devices::Host>;
 	using __dbool_array_t = array3d<bool, DeviceType>;
 	using __hreal_array_t = array3d<dreal, TNL::Devices::Host>;
@@ -137,6 +139,8 @@ struct Traits
 #ifdef HAVE_MPI
 	using hmap_array_t = TNL::Containers::DistributedNDArray<__hmap_array_t>;
 	using dmap_array_t = TNL::Containers::DistributedNDArray<__dmap_array_t>;
+	using hintmap_array_t = TNL::Containers::DistributedNDArray<__hintmap_array_t>;
+	using dintmap_array_t = TNL::Containers::DistributedNDArray<__dintmap_array_t>;
 	using hbool_array_t = TNL::Containers::DistributedNDArray<__hbool_array_t>;
 	using dbool_array_t = TNL::Containers::DistributedNDArray<__dbool_array_t>;
 	using dreal_array_t = TNL::Containers::DistributedNDArray<__dreal_array_t>;
@@ -152,6 +156,8 @@ struct Traits
 #else
 	using hmap_array_t = __hmap_array_t;
 	using dmap_array_t = __dmap_array_t;
+	using hintmap_array_t = __hintmap_array_t;
+	using dintmap_array_t = __dintmap_array_t;
 	using hbool_array_t = __hbool_array_t;
 	using dbool_array_t = __dbool_array_t;
 	using dreal_array_t = __dreal_array_t;

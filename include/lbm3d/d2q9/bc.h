@@ -52,18 +52,23 @@ struct D2Q9_BC_All
 		return mapgi == GEO_OUTFLOW_RIGHT || mapgi == GEO_OUTFLOW_RIGHT_INTERP;
 	}
 
-	// Outflow face detection from the map: the interior side of the outlet is
-	// the axis-neighbor acting as fluid (GEO_FLUID, or GEO_SYMMETRY which acts
-	// as a fluid cell - outflow planes may cover the full face including
-	// symmetry-row corners), the outward normal points away from it.
-	// LBM_BLOCK::validateOutflowPassRegion (called from copyMapToDevice)
-	// guarantees exactly one such axis-neighbor per outflow cell, so the
-	// check order only matters for unvalidated maps.
+	// interior side of a boundary plane: fluid, or symmetry (which acts as a
+	// fluid cell - planes may cover the full face including symmetry-row
+	// corners)
 	__cuda_callable__ static bool isOutflowInterior(map_t mapgi)
 	{
 		return mapgi == GEO_FLUID || mapgi == GEO_SYMMETRY;
 	}
 
+	// BC face detection from the map, hot path of the main kernel: locate the
+	// interior side and point the outward normal away from it. This is
+	// sufficient because the validated-map preconditions do the work:
+	// GEO_NOTHING (never interior) lies on the outward side of every
+	// face-detected BC cell - LBM_BLOCK::validateOutflowPassRegion (called
+	// from copyMapToDevice) guarantees that and exactly one interior
+	// axis-neighbor per outflow cell, and State::discoverInflowOpenings
+	// guarantees it for every claimed inflow cell. Map-level invariants
+	// therefore decide, and the check order only matters for unvalidated maps.
 	__cuda_callable__ static int detectBCFace(DATA& SD, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx z)
 	{
 		if (isOutflowInterior(SD.map(xm, y, z)))

@@ -95,6 +95,63 @@ struct NSE_Data_ConstInflow : NSE_Data<TRAITS>
 	}
 };
 
+// Openings-capable inflow DATA: carries the openings' device state so that
+// every other DATA struct keeps its exact legacy kernel-argument layout (the
+// four members here would otherwise widen the payload of ALL kernels and
+// perturb ptxas register allocation even on maps that never touch an
+// opening). The device side is intentionally minimal - a per-cell site index
+// plus one compressed array of velocities PRECOMPUTED at init by
+// finalizeInflowOpenings (all amplitude/scale/profile math is host-side; the
+// kernel never reads a record and never multiplies a factor).
+template <typename TRAITS>
+struct NSE_Data_OpeningInflow : NSE_Data<TRAITS>
+{
+	using idx = typename TRAITS::idx;
+	using dreal = typename TRAITS::dreal;
+
+	// base imposed velocity used for cells without a claim and as the
+	// pre-profile base folded into the precomputed velocities
+	dreal inflow_vx = 0;
+	dreal inflow_vy = 0;
+	dreal inflow_vz = 0;
+
+	// per-cell compressed-velocity site index (-1 = no opening), and the
+	// compressed velocities themselves (site * KS::D + component); the
+	// velocities stay null until finalizeInflowOpenings publishes a non-empty
+	// table, so a null check on them selects the legacy uniform path
+	const int* inflow_opening_map = nullptr;
+	const dreal* inflow_opening_velocities = nullptr;
+
+	template <typename LBM_KS>
+	CUDA_HOSTDEV void inflow(LBM_KS& KS, idx x, idx y, idx z)
+	{
+		if (inflow_opening_map != nullptr && inflow_opening_velocities != nullptr) {
+			const idx gi = this->indexer.getStorageIndex(x, y, z);
+			const int site = inflow_opening_map[gi];
+			if (site >= 0) {
+				const dreal* w = inflow_opening_velocities + site * LBM_KS::D;
+				KS.vx = w[0];
+				KS.vy = w[1];
+				if constexpr (LBM_KS::D == 3)
+					KS.vz = w[2];
+				return;
+			}
+		}
+		KS.vx = inflow_vx;
+		KS.vy = inflow_vy;
+		if constexpr (LBM_KS::D == 3)
+			KS.vz = inflow_vz;
+	}
+};
+
+// DATA structs whose kernel-argument block carries inflow-opening device
+// state (claim map allocation, uploads, and pointer publication are gated on
+// this so every other DATA keeps its legacy kernel-argument layout)
+template <typename DATA>
+inline constexpr bool has_inflow_openings_v = false;
+template <typename TRAITS>
+inline constexpr bool has_inflow_openings_v<NSE_Data_OpeningInflow<TRAITS>> = true;
+
 template <typename TRAITS>
 struct NSE_Data_InflowProfile : NSE_Data<TRAITS>
 {

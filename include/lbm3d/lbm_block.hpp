@@ -347,6 +347,13 @@ void LBM_BLOCK<CONFIG>::setMap(idx x, idx y, idx z, map_t value)
 }
 
 template <typename CONFIG>
+void LBM_BLOCK<CONFIG>::setInflowOpeningMap(idx x, idx y, idx z, int value)
+{
+	if (isLocalIndex(x, y, z))
+		hinflow_opening_map(x, y, z) = value;
+}
+
+template <typename CONFIG>
 void LBM_BLOCK<CONFIG>::setBoundaryX(idx x, map_t value)
 {
 	if (isLocalX(x))
@@ -377,6 +384,10 @@ template <typename CONFIG>
 void LBM_BLOCK<CONFIG>::resetMap(map_t geo_type)
 {
 	hmap.setValue(geo_type);
+	// claims are re-stamped each reset() by the sim's own add/finalize calls
+	if constexpr (has_inflow_openings_v<typename CONFIG::DATA>)
+		if (hinflow_opening_map.getData() != nullptr)
+			hinflow_opening_map.setValue(-1);
 }
 
 template <typename CONFIG>
@@ -391,6 +402,8 @@ template <typename CONFIG>
 void LBM_BLOCK<CONFIG>::copyMapToDevice()
 {
 	dmap = hmap;
+	if constexpr (has_inflow_openings_v<typename CONFIG::DATA>)
+		dinflow_opening_map = hinflow_opening_map;
 	ddiffusionCoeff = hdiffusionCoeff;
 	dphiTransferDirection = hphiTransferDirection;
 
@@ -783,6 +796,23 @@ void LBM_BLOCK<CONFIG>::allocateHostData()
 	hmap.allocate();
 #endif
 
+	if constexpr (has_inflow_openings_v<typename CONFIG::DATA>) {
+		hinflow_opening_map.setSizes(global.x(), global.y(), global.z());
+#ifdef HAVE_MPI
+		if (local.x() != global.x())
+			hinflow_opening_map.getOverlaps().template setSize<0>(overlap_width);
+		if (local.y() != global.y())
+			hinflow_opening_map.getOverlaps().template setSize<1>(overlap_width);
+		if (local.z() != global.z())
+			hinflow_opening_map.getOverlaps().template setSize<2>(overlap_width);
+		hinflow_opening_map.template setDistribution<0>(offset.x(), offset.x() + local.x(), communicator);
+		hinflow_opening_map.template setDistribution<1>(offset.y(), offset.y() + local.y(), communicator);
+		hinflow_opening_map.template setDistribution<2>(offset.z(), offset.z() + local.z(), communicator);
+		hinflow_opening_map.allocate();
+#endif
+		hinflow_opening_map.setValue(-1);
+	}
+
 	hmacro.setSizes(CONFIG::MACRO::N, global.x(), global.y(), global.z());
 #ifdef HAVE_MPI
 	if (local.x() != global.x())
@@ -817,6 +847,22 @@ void LBM_BLOCK<CONFIG>::allocateDeviceData()
 	dmap.template setDistribution<2>(offset.z(), offset.z() + local.z(), communicator);
 	dmap.allocate();
 	#endif
+	if constexpr (has_inflow_openings_v<typename CONFIG::DATA>) {
+		dinflow_opening_map.setSizes(global.x(), global.y(), global.z());
+	#ifdef HAVE_MPI
+		if (local.x() != global.x())
+			dinflow_opening_map.getOverlaps().template setSize<0>(overlap_width);
+		if (local.y() != global.y())
+			dinflow_opening_map.getOverlaps().template setSize<1>(overlap_width);
+		if (local.z() != global.z())
+			dinflow_opening_map.getOverlaps().template setSize<2>(overlap_width);
+		dinflow_opening_map.template setDistribution<0>(offset.x(), offset.x() + local.x(), communicator);
+		dinflow_opening_map.template setDistribution<1>(offset.y(), offset.y() + local.y(), communicator);
+		dinflow_opening_map.template setDistribution<2>(offset.z(), offset.z() + local.z(), communicator);
+		dinflow_opening_map.allocate();
+	#endif
+		dinflow_opening_map.setValue(-1);
+	}
 
 	for (auto& df : dfs) {
 		df.setSizes(CONFIG::Q, global.x(), global.y(), global.z());
@@ -867,6 +913,8 @@ void LBM_BLOCK<CONFIG>::allocateDeviceData()
 #endif
 	data.XYZ = data.indexer.getStorageSize();
 	data.dmap = dmap.getData();
+	if constexpr (has_inflow_openings_v<typename CONFIG::DATA>)
+		data.inflow_opening_map = dinflow_opening_map.getData();
 	data.dmacro = dmacro.getData();
 }
 
