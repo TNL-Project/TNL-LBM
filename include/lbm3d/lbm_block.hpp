@@ -3,6 +3,7 @@
 #include "lbm_block.h"
 #include "block_size_optimizer.h"
 #include "kernels.h"
+#include "lbm_data.h"
 
 #include <TNL/Atomic.h>
 
@@ -771,6 +772,13 @@ void LBM_BLOCK<CONFIG>::setMap(idx x, idx y, idx z, map_t value)
 }
 
 template <typename CONFIG>
+void LBM_BLOCK<CONFIG>::setInletRegionMap(idx x, idx y, idx z, int value)
+{
+	if (isLocalIndex(x, y, z))
+		hinlet_region_map(x, y, z) = value;
+}
+
+template <typename CONFIG>
 void LBM_BLOCK<CONFIG>::setBoundaryX(idx x, map_t value)
 {
 	if (isLocalX(x))
@@ -801,6 +809,10 @@ template <typename CONFIG>
 void LBM_BLOCK<CONFIG>::resetMap(map_t geo_type)
 {
 	hmap.setValue(geo_type);
+	// claims are re-stamped each reset() by the sim's own add/finalize calls
+	if constexpr (has_inlet_regions_v<typename CONFIG::DATA>)
+		if (hinlet_region_map.getData() != nullptr)
+			hinlet_region_map.setValue(-1);
 }
 
 template <typename CONFIG>
@@ -815,6 +827,8 @@ template <typename CONFIG>
 void LBM_BLOCK<CONFIG>::copyMapToDevice()
 {
 	dmap = hmap;
+	if constexpr (has_inlet_regions_v<typename CONFIG::DATA>)
+		dinlet_region_map = hinlet_region_map;
 	ddiffusionCoeff = hdiffusionCoeff;
 	dphiTransferDirection = hphiTransferDirection;
 
@@ -1322,6 +1336,23 @@ void LBM_BLOCK<CONFIG>::allocateHostData()
 	hmap.allocate();
 #endif
 
+	if constexpr (has_inlet_regions_v<typename CONFIG::DATA>) {
+		hinlet_region_map.setSizes(global.x(), global.y(), global.z());
+#ifdef HAVE_MPI
+		if (local.x() != global.x())
+			hinlet_region_map.getOverlaps().template setSize<0>(overlap_width);
+		if (local.y() != global.y())
+			hinlet_region_map.getOverlaps().template setSize<1>(overlap_width);
+		if (local.z() != global.z())
+			hinlet_region_map.getOverlaps().template setSize<2>(overlap_width);
+		hinlet_region_map.template setDistribution<0>(offset.x(), offset.x() + local.x(), communicator);
+		hinlet_region_map.template setDistribution<1>(offset.y(), offset.y() + local.y(), communicator);
+		hinlet_region_map.template setDistribution<2>(offset.z(), offset.z() + local.z(), communicator);
+		hinlet_region_map.allocate();
+#endif
+		hinlet_region_map.setValue(-1);
+	}
+
 	hmacro.setSizes(CONFIG::MACRO::N, global.x(), global.y(), global.z());
 #ifdef HAVE_MPI
 	if (local.x() != global.x())
@@ -1356,6 +1387,22 @@ void LBM_BLOCK<CONFIG>::allocateDeviceData()
 	dmap.template setDistribution<2>(offset.z(), offset.z() + local.z(), communicator);
 	dmap.allocate();
 	#endif
+	if constexpr (has_inlet_regions_v<typename CONFIG::DATA>) {
+		dinlet_region_map.setSizes(global.x(), global.y(), global.z());
+	#ifdef HAVE_MPI
+		if (local.x() != global.x())
+			dinlet_region_map.getOverlaps().template setSize<0>(overlap_width);
+		if (local.y() != global.y())
+			dinlet_region_map.getOverlaps().template setSize<1>(overlap_width);
+		if (local.z() != global.z())
+			dinlet_region_map.getOverlaps().template setSize<2>(overlap_width);
+		dinlet_region_map.template setDistribution<0>(offset.x(), offset.x() + local.x(), communicator);
+		dinlet_region_map.template setDistribution<1>(offset.y(), offset.y() + local.y(), communicator);
+		dinlet_region_map.template setDistribution<2>(offset.z(), offset.z() + local.z(), communicator);
+		dinlet_region_map.allocate();
+	#endif
+		dinlet_region_map.setValue(-1);
+	}
 
 	for (auto& df : dfs) {
 		df.setSizes(CONFIG::Q, global.x(), global.y(), global.z());
@@ -1406,6 +1453,8 @@ void LBM_BLOCK<CONFIG>::allocateDeviceData()
 #endif
 	data.XYZ = data.indexer.getStorageSize();
 	data.dmap = dmap.getData();
+	if constexpr (has_inlet_regions_v<typename CONFIG::DATA>)
+		data.inlet_region_map = dinlet_region_map.getData();
 	data.dmacro = dmacro.getData();
 }
 
