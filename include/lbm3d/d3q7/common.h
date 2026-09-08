@@ -54,7 +54,7 @@ struct D3Q7_COMMON
 		if constexpr (twisted_layout_v<STREAMING>) {
 			// Twisted orientation: store in the opposite DF direction so that
 			// the first spatial sub-step reads the correct streamed values.
-			// (Mirrors D3Q27_COMMON::setEquilibriumLat under AA_PATTERN.)
+			// (Mirrors D3Q27_COMMON::setEquilibriumLat under the A-A pattern.)
 			f(pzz, x, y, z) = EQ::eq_mzz(phi, vx, vy, vz);
 			f(zpz, x, y, z) = EQ::eq_zmz(phi, vx, vy, vz);
 			f(zzp, x, y, z) = EQ::eq_zzm(phi, vx, vy, vz);

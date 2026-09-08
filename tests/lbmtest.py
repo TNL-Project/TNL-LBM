@@ -46,21 +46,22 @@ class SimRun:
 _SIM_RUNS: list[SimRun] = []
 
 
-def _aa_pattern_enabled() -> bool:
-    """Detect TNL_LBM_AA_PATTERN=ON in BUILD_DIR's CMakeCache."""
+def _streaming_pattern() -> str:
+    """Detect the streaming pattern selected in BUILD_DIR's CMakeCache."""
     cache = BUILD_DIR / "CMakeCache.txt"
     try:
         for line in cache.read_text().splitlines():
-            if line.strip() == "TNL_LBM_AA_PATTERN:BOOL=ON":
-                return True
+            key, sep, value = line.partition("=")
+            if sep and key.strip() == "TNL_LBM_STREAMING_PATTERN:STRING":
+                return value.strip()
     except OSError:
         pass
-    return False
+    return "AB_PULL"
 
 
-# True when the sim binaries use the A-A streaming pattern (some boundary
-# conditions are known to not be faithful under it; see AGENTS.md).
-AA_PATTERN = _aa_pattern_enabled()
+# Streaming pattern the sim binaries were built with (some boundary conditions
+# are known to not be faithful under A-A; see AGENTS.md).
+STREAMING_PATTERN = _streaming_pattern()
 
 
 def run_sim(

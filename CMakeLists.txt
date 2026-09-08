@@ -14,7 +14,12 @@ option(TNL_LBM_USE_HIP "Build with HIP support" ON)
 option(TNL_LBM_USE_MPI "Build with MPI support, if available" ON)
 option(TNL_LBM_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 option(TNL_LBM_BUILD_PYTHON "Build Python bindings" ON)
-option(TNL_LBM_AA_PATTERN "Build simulations with the A-A streaming pattern (default is A-B)" OFF)
+# Streaming pattern selection (used by the legacy D{Q}_STREAMING aliases)
+set(TNL_LBM_STREAMING_PATTERN "AB_PULL" CACHE STRING "Streaming pattern: AA, AB_PULL, or AB_PUSH")
+set_property(CACHE TNL_LBM_STREAMING_PATTERN PROPERTY STRINGS AA AB_PULL AB_PUSH)
+if(NOT TNL_LBM_STREAMING_PATTERN MATCHES "^(AA|AB_PULL|AB_PUSH)$")
+    message(FATAL_ERROR "Invalid TNL_LBM_STREAMING_PATTERN='${TNL_LBM_STREAMING_PATTERN}' (expected AA, AB_PULL, or AB_PUSH)")
+endif()
 
 # Require C++17, and disable compiler-specific extensions (if possible).
 set(CMAKE_CXX_STANDARD 17)
@@ -300,9 +305,7 @@ else()
 endif()
 # Add special flags used in lbm3d
 target_compile_definitions(TNL_LBM INTERFACE "-DUSE_CUDA")
-if(TNL_LBM_AA_PATTERN)
-    target_compile_definitions(TNL_LBM INTERFACE AA_PATTERN)
-endif()
+target_compile_definitions(TNL_LBM INTERFACE TNL_LBM_STREAMING_PATTERN_${TNL_LBM_STREAMING_PATTERN})
 
 # Add project subdirectories
 add_subdirectory(include)
