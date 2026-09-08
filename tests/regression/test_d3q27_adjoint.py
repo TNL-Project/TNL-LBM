@@ -23,9 +23,9 @@ import numpy as np
 import pytest
 
 from tests.lbmtest import (
-    AA_PATTERN,
     BUILD_DIR,
     PROJECT_ROOT,
+    STREAMING_PATTERN,
     assert_all_finite,
     assert_mass_conserved,
     run_sim,
@@ -36,7 +36,8 @@ if TYPE_CHECKING:
     import pathlib
 
 pytestmark = pytest.mark.skipif(
-    AA_PATTERN, reason="sim_adjoint requires the A-B streaming pattern"
+    STREAMING_PATTERN != "AB_PULL",
+    reason="sim_adjoint requires the A-B pull streaming pattern",
 )
 
 # D3Q27 GEO enum (subset relevant to adjoint sims)

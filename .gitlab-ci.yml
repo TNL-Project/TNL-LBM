@@ -46,7 +46,7 @@ build_CUDA:
   parallel:
     matrix:
       - CMAKE_BUILD_TYPE: ["Release", "Debug"]
-        TNL_LBM_AA_PATTERN: ["OFF", "ON"]
+        TNL_LBM_STREAMING_PATTERN: ["AB_PULL", "AB_PUSH", "AA"]
   script:
     # extra dependencies for the test suite
     # ParaView provides the libcatalyst-paraview.so implementation required by the inline Catalyst plugin test.
@@ -56,7 +56,7 @@ build_CUDA:
     - cmake -B build -S . -G Ninja
             -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
             -DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCH}
-            -DTNL_LBM_AA_PATTERN=${TNL_LBM_AA_PATTERN}
+            -DTNL_LBM_STREAMING_PATTERN=${TNL_LBM_STREAMING_PATTERN}
     - cmake --build build
     # pytest test suite
     - pytest
