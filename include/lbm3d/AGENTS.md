@@ -37,7 +37,7 @@ include/lbm3d/
 ├── obstacles_ibm.h          # Lagrangian obstacle setup (rectangle, cylinder)
 ├── block_size_optimizer.h   # Heuristics for optimal CUDA block size
 ├── DataWriter.h             # ADIOS2 writer base
-└── defs.h                   # Traits, policy config, streaming pattern defaults, dir9 enum
+└── defs.h                   # Traits, policy config, DF slot indices, dir9 enum
 ```
 
 ## WHERE TO LOOK
@@ -60,7 +60,9 @@ include/lbm3d/
 ## CONVENTIONS
 
 - **`core.h` is the umbrella include** for the default D3Q27 model;
-  include it after defining `AA_PATTERN` or `AB_PATTERN`.
+  it also pulls in `d3q27/streaming.h` (both streaming patterns plus the
+  legacy alias, which follows the `TNL_LBM_STREAMING_PATTERN` CMake selection
+  and defaults to A-B pull).
 - **`.hpp` files are private implementations** included from their `.h` counterpart;
   never include them directly.
 - **New lattice models live in mirrored subpackages** (`d3q27/`, `d3q7/`, `d2q9/`)
@@ -80,7 +82,7 @@ include/lbm3d/
 - **Treating `LBM_Data` as a concrete model**;
   it is a base type that needs a model-specific subclass.
 - **Hard-coding `DFMAX` or distribution-function indices**;
-  use `df_cur`, `df_out`, and `df_prev`.
+  use `df_cur`, `df_out`, and `CONFIG::DFMAX` for the array count.
 - **Mixing physical and lattice units outside `Lattice`**;
   use `phys2lbmPoint`, `lbm2physPoint`, and the viscosity helpers.
 - **Using `bool` for periodicity instead of `bool3d`** in decomposition or kernel code;

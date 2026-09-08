@@ -44,8 +44,8 @@ with optional Python bindings via nanobind and distributed execution through CUD
 | Add a 2D collision operator | `include/lbm3d/d2q9/col_*.h` | Inherit from `D2Q9_COMMON` |
 | Add a 3D boundary condition | `include/lbm3d/d3q27/bc.h` | Extend `D3Q27_BC_All::GEO` enum and handlers |
 | Add a 2D boundary condition | `include/lbm3d/d2q9/bc.h` | Extend `D2Q9_BC_All::GEO` enum and handlers |
-| Change 3D streaming pattern | `include/lbm3d/d3q27/streaming_AA.h` / `streaming_AB.h` | AB is default; define `AA_PATTERN` or `AB_PATTERN` before including core LBM headers |
-| Change 2D streaming pattern | `include/lbm3d/d2q9/streaming_AA.h` / `streaming_AB.h` | AB is default; define `AA_PATTERN` or `AB_PATTERN` before including core LBM headers |
+| Change 3D streaming pattern | `include/lbm3d/d3q27/streaming_*.h` | Select `D3Q27_STREAMING_{AA,AB_PULL,AB_PUSH}` in the sim's CONFIG; the `D3Q27_STREAMING` alias in `streaming.h` (A-B pull default) follows the `TNL_LBM_STREAMING_PATTERN` CMake selection |
+| Change 2D streaming pattern | `include/lbm3d/d2q9/streaming_*.h` | Select `D2Q9_STREAMING_{AA,AB_PULL,AB_PUSH}` in the sim's CONFIG; the `D2Q9_STREAMING` alias in `streaming.h` (A-B pull default) follows the `TNL_LBM_STREAMING_PATTERN` CMake selection |
 | Simulation driver loop | `include/lbm3d/core.h` | `execute<STATE>(state)` orchestrates init/update/finalize |
 | Python binding surface | `pytnl_lbm/pytnl_lbm.cpp` | Exports one concrete `SP_D3Q27_CUM_ConstInflow` instantiation |
 | 3D example simulations | `sim_NSE/*.cu`, `sim_NSE_ADE/*.cu`, `sim_adjoint/*.cu` | Each `int main()` is a standalone CMake executable |
@@ -67,8 +67,8 @@ with optional Python bindings via nanobind and distributed execution through CUD
 | `D3Q27_CUM` / `D3Q27_CLBM` / `D3Q27_KBC_*` | struct | `include/lbm3d/d3q27/col_*.h` | 3D collision operators (cumulant, cascaded LBM, KBC) |
 | `D2Q9_CLBM` / `D2Q9_CLBM_Straka2016` | struct | `include/lbm3d/d2q9/col_clbm.h` | 2D CLBM: Geier 2017 (Galilean invariant) and Straka 2016 (anisotropic, legacy) |
 | `D2Q9_SRT` | struct | `include/lbm3d/d2q9/col_srt.h` | 2D single-relaxation-time BGK |
-| `D3Q27_STREAMING` | struct | `include/lbm3d/d3q27/streaming_*.h` | 3D AA or AB streaming implementation |
-| `D2Q9_STREAMING` | struct | `include/lbm3d/d2q9/streaming_*.h` | 2D AA or AB streaming implementation |
+| `D3Q27_STREAMING_{AA,AB_PULL,AB_PUSH}` | struct | `include/lbm3d/d3q27/streaming_*.h` | 3D streaming implementations (all co-includable); `D3Q27_STREAMING` in `streaming.h` is a macro-selected legacy alias |
+| `D2Q9_STREAMING_{AA,AB_PULL,AB_PUSH}` | struct | `include/lbm3d/d2q9/streaming_*.h` | 2D streaming implementations (all co-includable); `D2Q9_STREAMING` in `streaming.h` is a macro-selected legacy alias |
 | `D3Q27_BC_All` | struct | `include/lbm3d/d3q27/bc.h` | 3D boundary condition dispatch for all GEO tags |
 | `D2Q9_BC_All` | struct | `include/lbm3d/d2q9/bc.h` | 2D boundary condition dispatch for all GEO tags |
 | `D3Q27_MACRO_Default` | struct | `include/lbm3d/d3q27/macro.h` | 3D default macroscopic output: density + velocity |
@@ -140,7 +140,7 @@ with optional Python bindings via nanobind and distributed execution through CUD
 - **Simulation-centric layout**: Example executables live in domain-named directories (`sim_NSE`, `sim_NSE_ADE`, `sim_adjoint`, `sim_2D`)
   rather than a single `apps/` folder.
 - **Lattice-model subpackages**: `d3q27/`, `d3q7/`, and `d2q9/` mirror each other with `col_*`, `eq_*`, `streaming_*`, `bc.h`, `macro.h`, `common*.h`.
-- **Streaming pattern compile-time switch**: `AA_PATTERN` or `AB_PATTERN` must be defined before `core.h` is included.
+- **Streaming pattern as a template policy**: every `*_STREAMING_*` struct carries `DFMAX` (number of DF arrays) and `output_df`; pattern predicates are variable templates specialized next to each struct — `is_AA_v` / `is_AB_PULL_v` / `is_AB_PUSH_v` (identity), `twisted_layout_v` (twisted initial DF storage), `requires_ghost_layer_v` (cross-site streaming requires the ghost-layer idiom) — and all pattern-dependent branches are `if constexpr` on them. `LBM_CONFIG` instantiates `DATA = _DATA<TRAITS, STREAMING::DFMAX>` so the kernel-argument `dfs[]` array is pattern-sized. The legacy `TNL_LBM_STREAMING_PATTERN_*` macros are consulted only by the three `streaming.h` umbrella aliases.
 - **Traits-driven arrays**: Type aliases encode host/device and content (`__hmap_array_t`, `__dlat_array_t`, `__hmacro_array_t`).
 - **nanobind exports**: All export functions follow `export_<Thing>(m, "Name")`;
   the module exposes one fully-instantiated D3Q27 cumulant configuration.
@@ -182,13 +182,18 @@ PYTHONPATH=build/pytnl_lbm python -c "import pytnl_lbm"
 typos --color always --sort
 ```
 
-## A-A STREAMING PATTERN (TNL_LBM_AA_PATTERN)
+## STREAMING PATTERN SELECTION (TNL_LBM_STREAMING_PATTERN)
 
-`-DTNL_LBM_AA_PATTERN=ON` (root CMakeLists.txt) compiles all simulations
-(except `sim_adjoint`, see below) and the Python bindings with the
-single-array A-A pattern; default OFF keeps A-B. The pattern must be selected
-via CMake — per-file `#define AB_PATTERN` was removed; `include/lbm3d/defs.h`
-provides the AB default when neither is set.
+`-DTNL_LBM_STREAMING_PATTERN=<AA|AB_PULL|AB_PUSH>` (root CMakeLists.txt)
+selects which streaming pattern all simulations and the Python bindings are
+compiled with; default `AB_PULL` (e.g. configure the A-A tree with
+`cmake -B build-aa -S . -G Ninja -DTNL_LBM_STREAMING_PATTERN=AA`).
+The variable only defines the
+`TNL_LBM_STREAMING_PATTERN_{AA,AB_PULL,AB_PUSH}` macro via the `TNL_LBM`
+interface target, which the `streaming.h` umbrellas read to pick the
+`D{3Q27,3Q7,2Q9}_STREAMING` aliases — library headers themselves are
+pattern-agnostic, and all three patterns can be instantiated in one
+translation unit via the explicit `*_STREAMING_{AA,AB_PULL,AB_PUSH}` types.
 
 **Considerations for boundary conditions under A-A:**
 
@@ -219,7 +224,7 @@ provides the AB default when neither is set.
 - NSE_ADE (`sim_T1`, `sim_T2`) is NOT covered by the two-pass scheme
   (state_NSE_ADE.h launches no outflow kernel and its BC placement ignores
   the ghost-layer idiom) — do not run these under AA.
-- `sim_adjoint` requires the A-B pattern and is EXCLUDED from AA builds (CMake-level; its pytest module skips via `AA_PATTERN`).
+- `sim_adjoint` requires the A-B pull pattern and is EXCLUDED from non-`AB_PULL` builds (CMake-level; its pytest module skips when `STREAMING_PATTERN != "AB_PULL"`).
   Findings for a future AA-native adjoint design:
   `streamingAdjoint` even-phase two-step reads escape the 1-cell ghost layer (CUDA 700 at boundary-adjacent sites);
   the reversed gather races with same-launch `postCollisionStreaming` writers in the single array (nondeterministic garbage profiles);
