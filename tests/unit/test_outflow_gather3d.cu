@@ -42,6 +42,7 @@ using CONFIG = LBM_CONFIG<
 	D3Q27_BC_All,
 	D3Q27_MACRO_Default<TRAITS>>;
 using STREAM_AB_PULL = D3Q27_STREAMING_AB_PULL<TRAITS>;
+using STREAM_AB_PUSH = D3Q27_STREAMING_AB_PUSH<TRAITS>;
 using STREAM_AA = D3Q27_STREAMING_AA<TRAITS>;
 using BC = typename CONFIG::BC;
 using KS = D3Q27_KernelStruct<typename TRAITS::dreal>;
@@ -209,9 +210,23 @@ static void computeExpected(int face, bool interp, bool even, int x, int y, int 
 					s[d] = co[d];
 			return pat(slot, s[0], s[1], s[2]);
 		};
+		// own-column site shifted along the normal axis with own tangential coordinates
+		auto ownPat = [&](int slot, int normalOffset) -> double
+		{
+			int s[3];
+			s[axis] = co[axis] + normalOffset;
+			for (int d = 0; d < 3; d++)
+				if (d != axis)
+					s[d] = co[d];
+			return pat(slot, s[0], s[1], s[2]);
+		};
 		if (! interp) {
-			if constexpr (! is_AA_v<STREAMING>) {
+			if constexpr (is_AB_PULL_v<STREAMING>) {
 				exp[i] = sitePat(i, anchor);
+			}
+			else if constexpr (is_AB_PUSH_v<STREAMING>) {
+				// post-stream layout: anchor + c_i[normal], own tangential (alias of the A-A even case)
+				exp[i] = anchorPat(i, c[axis]);
 			}
 			else {
 				if (even) {
@@ -226,7 +241,7 @@ static void computeExpected(int face, bool interp, bool even, int x, int y, int 
 			}
 		}
 		else {
-			if constexpr (! is_AA_v<STREAMING>) {
+			if constexpr (is_AB_PULL_v<STREAMING>) {
 				// outward population: anchor column; perpendicular: own column;
 				// inward: anchor-column postcoll blended with the own-column postcoll
 				if (cn == sgn)
@@ -237,6 +252,18 @@ static void computeExpected(int face, bool interp, bool even, int x, int y, int 
 					isBlend[i] = 1;
 					blendA[i] = sitePat(i, anchor);
 					blendB[i] = sitePat(i, co[axis]);
+				}
+			}
+			else if constexpr (is_AB_PUSH_v<STREAMING>) {
+				// post-stream layout: mapped anchor/own columns
+				if (cn == sgn)
+					exp[i] = anchorPat(i, cn);
+				else if (cn == 0)
+					exp[i] = ownPat(i, cn);
+				else {
+					isBlend[i] = 1;
+					blendA[i] = anchorPat(i, cn);
+					blendB[i] = ownPat(i, cn);
 				}
 			}
 			else {
@@ -298,12 +325,14 @@ static void checkGatherFaces(bool interp)
 TEST_CASE("gather-plain-faces")
 {
 	checkGatherFaces<STREAM_AB_PULL>(/*interp=*/false);
+	checkGatherFaces<STREAM_AB_PUSH>(/*interp=*/false);
 	checkGatherFaces<STREAM_AA>(/*interp=*/false);
 }
 
 TEST_CASE("gather-interp-faces")
 {
 	checkGatherFaces<STREAM_AB_PULL>(/*interp=*/true);
+	checkGatherFaces<STREAM_AB_PUSH>(/*interp=*/true);
 	checkGatherFaces<STREAM_AA>(/*interp=*/true);
 }
 

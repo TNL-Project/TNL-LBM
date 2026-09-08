@@ -40,6 +40,7 @@ using COLL = D2Q9_SRT<TRAITS>;
 using CONFIG =
 	LBM_CONFIG<TRAITS, D2Q9_KernelStruct, NSE_Data, COLL, typename COLL::EQ, D2Q9_STREAMING<TRAITS>, D2Q9_BC_All, D2Q9_MACRO_Default<TRAITS>>;
 using STREAM_AB_PULL = D2Q9_STREAMING_AB_PULL<TRAITS>;
+using STREAM_AB_PUSH = D2Q9_STREAMING_AB_PUSH<TRAITS>;
 using STREAM_AA = D2Q9_STREAMING_AA<TRAITS>;
 using BC = typename CONFIG::BC;
 using KS = D2Q9_KernelStruct<typename TRAITS::dreal>;
@@ -186,10 +187,17 @@ static void computeExpected(int face, bool interp, bool even, int x, int y, int 
 		const int tang = co[1 - axis] - c[1 - axis];  // tangential -c offset (pull scheme)
 		const int cn = c[axis];
 		if (! interp) {
-			if constexpr (! is_AA_v<STREAMING>) {
+			if constexpr (is_AB_PULL_v<STREAMING>) {
 				int s[2];
 				s[axis] = anchor;
 				s[1 - axis] = tang;
+				exp[i] = pat(i, s[0], s[1], z);
+			}
+			else if constexpr (is_AB_PUSH_v<STREAMING>) {
+				// post-stream layout: slot (i, anchor + c_i[normal], tangential own)
+				int s[2];
+				s[axis] = anchor + c[axis];
+				s[1 - axis] = co[1 - axis];
 				exp[i] = pat(i, s[0], s[1], z);
 			}
 			else {
@@ -211,7 +219,7 @@ static void computeExpected(int face, bool interp, bool even, int x, int y, int 
 			}
 		}
 		else {
-			if constexpr (! is_AA_v<STREAMING>) {
+			if constexpr (is_AB_PULL_v<STREAMING>) {
 				// outward population: anchor column; perpendicular: own column;
 				// inward: anchor-column postcoll blended with the own-column postcoll
 				if (cn == sgn) {
@@ -233,6 +241,24 @@ static void computeExpected(int face, bool interp, bool even, int x, int y, int 
 					int so[2];
 					so[axis] = co[axis];
 					so[1 - axis] = tang;
+					isBlend[i] = 1;
+					blendA[i] = pat(i, sn[0], sn[1], z);
+					blendB[i] = pat(i, so[0], so[1], z);
+				}
+			}
+			else if constexpr (is_AB_PUSH_v<STREAMING>) {
+				// post-stream layout: mapped anchor-column and own-column slots
+				int sn[2];
+				sn[axis] = anchor + cn;
+				sn[1 - axis] = co[1 - axis];
+				int so[2];
+				so[axis] = co[axis] + cn;
+				so[1 - axis] = co[1 - axis];
+				if (cn == sgn)
+					exp[i] = pat(i, sn[0], sn[1], z);
+				else if (cn == 0)
+					exp[i] = pat(i, so[0], so[1], z);
+				else {
 					isBlend[i] = 1;
 					blendA[i] = pat(i, sn[0], sn[1], z);
 					blendB[i] = pat(i, so[0], so[1], z);
@@ -317,12 +343,14 @@ static void checkGatherFaces(bool interp)
 TEST_CASE("gather-plain-faces")
 {
 	checkGatherFaces<STREAM_AB_PULL>(/*interp=*/false);
+	checkGatherFaces<STREAM_AB_PUSH>(/*interp=*/false);
 	checkGatherFaces<STREAM_AA>(/*interp=*/false);
 }
 
 TEST_CASE("gather-interp-faces")
 {
 	checkGatherFaces<STREAM_AB_PULL>(/*interp=*/true);
+	checkGatherFaces<STREAM_AB_PUSH>(/*interp=*/true);
 	checkGatherFaces<STREAM_AA>(/*interp=*/true);
 }
 
