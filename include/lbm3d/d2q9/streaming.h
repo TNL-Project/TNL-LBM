@@ -5,6 +5,7 @@
 // only here and in the d3q27/d3q7 streaming headers' umbrellas)
 #include "streaming_AA.h"
 #include "streaming_AB_PULL.h"
+#include "streaming_AB_PUSH.h"
 
 #ifdef AA_PATTERN
 template <typename TRAITS>

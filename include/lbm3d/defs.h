@@ -47,6 +47,7 @@ enum : std::uint8_t
 // specializes the traits that apply in its streaming_*.h header.
 // - is_AA_v: pattern identity (the A-A pattern with a single in-place DF array)
 // - is_AB_PULL_v: pattern identity (the two-array A-B pull scheme)
+// - is_AB_PUSH_v: pattern identity (the two-array A-B push scheme)
 // - twisted_layout_v: sites store post-collision populations under the OPPOSITE
 //   direction index, so initialization must read/write with twisted directions
 // - requires_ghost_layer_v: streaming accesses neighbor sites within the same
@@ -56,6 +57,8 @@ template <typename STREAMING>
 inline constexpr bool is_AA_v = false;
 template <typename STREAMING>
 inline constexpr bool is_AB_PULL_v = false;
+template <typename STREAMING>
+inline constexpr bool is_AB_PUSH_v = false;
 template <typename STREAMING>
 inline constexpr bool twisted_layout_v = false;
 template <typename STREAMING>

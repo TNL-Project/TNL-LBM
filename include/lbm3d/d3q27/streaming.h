@@ -5,6 +5,7 @@
 // only in the three streaming.h umbrellas)
 #include "streaming_AA.h"
 #include "streaming_AB_PULL.h"
+#include "streaming_AB_PUSH.h"
 
 #ifdef AA_PATTERN
 template <typename TRAITS>
