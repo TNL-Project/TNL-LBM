@@ -177,12 +177,8 @@ struct State_NSE_ADE : State<NSE>
 		bool compute_macro = NSE::MACRO::compute_in_each_iteration || ADE::MACRO::compute_in_each_iteration || sync_macro;
 
 #ifdef HAVE_MPI
-	#ifdef AA_PATTERN
-		uint8_t output_df = df_cur;
-	#endif
-	#ifdef AB_PATTERN
-		uint8_t output_df = df_out;
-	#endif
+		constexpr std::uint8_t nse_output_df = NSE::STREAMING::output_df;
+		constexpr std::uint8_t ade_output_df = ADE::STREAMING::output_df;
 #endif
 
 		if (nse.blocks.size() != ade.blocks.size())
@@ -288,8 +284,8 @@ struct State_NSE_ADE : State<NSE>
 			// exchange the latest DFs and dmacro on overlaps between blocks
 			// (it is important to wait for the communication before waiting for the computation, otherwise MPI won't progress)
 			// TODO: merge the pipelining of the communication in the NSE and ADE into one
-			nse.synchronizeDFsAndMacroDevice(output_df, sync_macro);
-			ade.synchronizeDFsAndMacroDevice(output_df, sync_macro);
+			nse.synchronizeDFsAndMacroDevice(nse_output_df, sync_macro);
+			ade.synchronizeDFsAndMacroDevice(ade_output_df, sync_macro);
 
 			// wait for the computation on the interior to finish
 			for (auto& block : nse.blocks) {
@@ -313,8 +309,8 @@ struct State_NSE_ADE : State<NSE>
 		}
 	#ifdef HAVE_MPI
 		// TODO: overlap computation with synchronization, just like above
-		nse.synchronizeDFsAndMacroDevice(output_df, sync_macro);
-		ade.synchronizeDFsAndMacroDevice(output_df, sync_macro);
+		nse.synchronizeDFsAndMacroDevice(nse_output_df, sync_macro);
+		ade.synchronizeDFsAndMacroDevice(ade_output_df, sync_macro);
 	#endif
 #endif
 	}

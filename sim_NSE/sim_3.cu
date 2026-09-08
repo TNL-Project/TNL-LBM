@@ -193,7 +193,7 @@ void run(const std::string& adiosConfigPath, int resolution, double Re)
 	using NSE_CONFIG = LBM_CONFIG<
 		TRAITS,
 		D3Q27_KernelStruct,
-		NSE_Data_ConstInflow<TRAITS>,
+		NSE_Data_ConstInflow,
 		COLL,
 		typename COLL::EQ,
 		D3Q27_STREAMING<TRAITS>,

@@ -20,20 +20,14 @@
 #include "lbm3d/d2q9/col_srt.h"
 #include "lbm3d/d2q9/macro.h"
 
-// exactly one streaming header must be included
-#ifdef AA_PATTERN
-	#include "lbm3d/d2q9/streaming_AA.h"
-#endif
-#ifdef AB_PATTERN
-	#include "lbm3d/d2q9/streaming_AB.h"
-#endif
+#include "lbm3d/d2q9/streaming.h"
 
 #include "lbm3d/lbm_block.h"
 
 using TRAITS = Traits<float, double, int>;
 using COLL = D2Q9_SRT<TRAITS>;
 using CONFIG =
-	LBM_CONFIG<TRAITS, D2Q9_KernelStruct, NSE_Data<TRAITS>, COLL, typename COLL::EQ, D2Q9_STREAMING<TRAITS>, D2Q9_BC_All, D2Q9_MACRO_Default<TRAITS>>;
+	LBM_CONFIG<TRAITS, D2Q9_KernelStruct, NSE_Data, COLL, typename COLL::EQ, D2Q9_STREAMING<TRAITS>, D2Q9_BC_All, D2Q9_MACRO_Default<TRAITS>>;
 using BLOCK = LBM_BLOCK<CONFIG>;
 using idx = typename TRAITS::idx;
 using idx3d = typename TRAITS::idx3d;
@@ -254,24 +248,12 @@ TEST_SUITE_END();
 #include "lbm3d/d3q27/col_srt.h"
 #include "lbm3d/d3q27/macro.h"
 
-#ifdef AA_PATTERN
-	#include "lbm3d/d3q27/streaming_AA.h"
-#endif
-#ifdef AB_PATTERN
-	#include "lbm3d/d3q27/streaming_AB.h"
-#endif
+#include "lbm3d/d3q27/streaming.h"
 
 using TRAITS3 = Traits<float, double, int>;
 using COLL3 = D3Q27_SRT<TRAITS3>;
-using CONFIG3 = LBM_CONFIG<
-	TRAITS3,
-	D3Q27_KernelStruct,
-	NSE_Data<TRAITS3>,
-	COLL3,
-	typename COLL3::EQ,
-	D3Q27_STREAMING<TRAITS3>,
-	D3Q27_BC_All,
-	D3Q27_MACRO_Default<TRAITS3>>;
+using CONFIG3 =
+	LBM_CONFIG<TRAITS3, D3Q27_KernelStruct, NSE_Data, COLL3, typename COLL3::EQ, D3Q27_STREAMING<TRAITS3>, D3Q27_BC_All, D3Q27_MACRO_Default<TRAITS3>>;
 using BLOCK3 = LBM_BLOCK<CONFIG3>;
 using BC3 = typename CONFIG3::BC;
 using KS3 = D3Q27_KernelStruct<typename TRAITS3::dreal>;

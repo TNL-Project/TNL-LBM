@@ -10,16 +10,10 @@
 #include "lbm3d/d2q9/col_clbm.h"
 #include "lbm3d/d2q9/macro.h"
 
-// exactly one streaming header must be included
-#ifdef AA_PATTERN
-	#include "lbm3d/d2q9/streaming_AA.h"
-#endif
-#ifdef AB_PATTERN
-	#include "lbm3d/d2q9/streaming_AB.h"
-#endif
+#include "lbm3d/d2q9/streaming.h"
 
-template <typename TRAITS>
-struct NSE2D_Data_Periodic : NSE_Data<TRAITS>
+template <typename TRAITS, int DFS_COUNT>
+struct NSE2D_Data_Periodic : NSE_Data<TRAITS, DFS_COUNT>
 {
 	using idx = typename TRAITS::idx;
 	using dreal = typename TRAITS::dreal;
@@ -136,12 +130,12 @@ struct StateLocal : State<NSE>
 					const dreal vy = -V_0 * TNL::cos(2 * TNL::pi * px) * TNL::sin(2 * TNL::pi * py);
 					const dreal vz = 0;
 
-					NSE::COLL::setEquilibriumLat(local_df, x_lat, y_lat, z_lat, rho_0, vx, vy, vz);
+					NSE::COLL::template setEquilibriumLat<typename NSE::STREAMING>(local_df, x_lat, y_lat, z_lat, rho_0, vx, vy, vz);
 				}
 			);
 
 			// copy the initialized DFs so that they are not overridden
-			for (uint8_t dftype = 1; dftype < DFMAX; dftype++)
+			for (uint8_t dftype = 1; dftype < NSE::DFMAX; dftype++)
 				block.dfs[dftype] = block.dfs[0];
 		}
 
@@ -382,7 +376,7 @@ void run(const std::string& adios_config, int RES)
 	using NSE_CONFIG = LBM_CONFIG<
 		TRAITS,
 		D2Q9_KernelStruct,
-		NSE2D_Data_Periodic<TRAITS>,
+		NSE2D_Data_Periodic,
 		COLL,
 		typename COLL::EQ,
 		D2Q9_STREAMING<TRAITS>,

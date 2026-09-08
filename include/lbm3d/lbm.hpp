@@ -328,10 +328,10 @@ void LBM<CONFIG>::updateKernelData()
 		block.data.even_iter = (iterations % 2) == 1;
 
 		// rotation (no-op for A-A pattern ... DFMAX=1)
-		int i = iterations % DFMAX;	 // i = 0, 1, 2, ... DMAX-1
+		int i = iterations % CONFIG::DFMAX;	 // i = 0, 1, 2, ... DFMAX-1
 
-		for (int k = 0; k < DFMAX; k++) {
-			int knew = (k - i) <= 0 ? (k - i + DFMAX) % DFMAX : k - i;
+		for (int k = 0; k < CONFIG::DFMAX; k++) {
+			int knew = (k - i) <= 0 ? (k - i + CONFIG::DFMAX) % CONFIG::DFMAX : k - i;
 			//block.data.dfs[k] = block.dfs[knew];
 			block.data.dfs[k] = block.dfs[knew].getData();
 			//printf("updateKernelData:: assigning data.dfs[%d] = dfs[%d]\n",k, knew);

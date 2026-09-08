@@ -17,13 +17,7 @@
 
 #include "d3q27/eq_adjoint.h"
 
-// exactly one streaming header must be included
-#ifdef AA_PATTERN
-	#include "d3q27/streaming_AA.h"
-#endif
-#ifdef AB_PATTERN
-	#include "d3q27/streaming_AB.h"
-#endif
+#include "d3q27/streaming.h"
 
 #include "d3q27/col_cum.h"
 #include "d3q27/col_bgk.h"

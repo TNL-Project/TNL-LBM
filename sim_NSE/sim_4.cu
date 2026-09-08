@@ -155,12 +155,12 @@ struct StateLocal : State<NSE>
 					const dreal w = 0;
 					// 3 = 1/c_s^2
 					const dreal rho = rho_0 + 3 * (V_0 * V_0 / 16) * (TNL::cos(2 * x / L) + TNL::cos(2 * y / L)) * (TNL::cos(2 * z / L) + 2);
-					NSE::COLL::setEquilibriumLat(local_df, x_lat, y_lat, z_lat, rho, u, v, w);
+					NSE::COLL::template setEquilibriumLat<typename NSE::STREAMING>(local_df, x_lat, y_lat, z_lat, rho, u, v, w);
 				}
 			);
 
 			// copy the initialized DFs so that they are not overridden
-			for (uint8_t dftype = 1; dftype < DFMAX; dftype++)
+			for (uint8_t dftype = 1; dftype < NSE::DFMAX; dftype++)
 				block.dfs[dftype] = block.dfs[0];
 		}
 
@@ -380,7 +380,7 @@ void run(const std::string& adios_config, int resolution, double Re, double lbm_
 	using NSE_CONFIG = LBM_CONFIG<
 		TRAITS,
 		D3Q27_KernelStruct,
-		NSE_Data_ConstInflow<TRAITS>,
+		NSE_Data_ConstInflow,
 		COLL,
 		typename COLL::EQ,
 		D3Q27_STREAMING<TRAITS>,

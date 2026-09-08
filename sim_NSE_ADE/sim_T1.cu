@@ -5,20 +5,14 @@
 #include "lbm3d/d3q7/col_srt.h"
 #include "lbm3d/d3q7/col_mrt.h"
 #include "lbm3d/d3q7/col_clbm.h"
-// exactly one streaming header must be included
-#ifdef AA_PATTERN
-	#include "lbm3d/d3q7/streaming_AA.h"
-#endif
-#ifdef AB_PATTERN
-	#include "lbm3d/d3q7/streaming_AB.h"
-#endif
+#include "lbm3d/d3q7/streaming.h"
 #include "lbm3d/d3q7/bc.h"
 #include "lbm3d/d3q7/macro.h"
 #include "lbm3d/state_NSE_ADE.h"
 #include "lbm3d/obstacles_lbm.h"
 
-template <typename TRAITS>
-struct NSE_Data_FreeRhoConstInflow : NSE_Data<TRAITS>
+template <typename TRAITS, int DFS_COUNT>
+struct NSE_Data_FreeRhoConstInflow : NSE_Data<TRAITS, DFS_COUNT>
 {
 	using dreal = typename TRAITS::dreal;
 	using idx = typename TRAITS::idx;
@@ -575,7 +569,7 @@ void run(const std::string& adios_config, int resolution)
 		D3Q27_KernelStruct,
 		//NSE_Data_ConstInflow<TRAITS>,
 		// FIXME: FreeRho inflow condition leads to lower velocity in the domain (approx 70%)
-		NSE_Data_FreeRhoConstInflow<TRAITS>,
+		NSE_Data_FreeRhoConstInflow,
 		NSE_COLL,
 		typename NSE_COLL::EQ,
 		D3Q27_STREAMING<TRAITS>,
@@ -590,7 +584,7 @@ void run(const std::string& adios_config, int resolution)
 	using ADE_CONFIG = LBM_CONFIG<
 		TRAITS,
 		D3Q7_KernelStruct,
-		ADE_Data_ConstInflow<TRAITS>,
+		ADE_Data_ConstInflow,
 		ADE_COLL,
 		typename ADE_COLL::EQ,
 		D3Q7_STREAMING<TRAITS>,
