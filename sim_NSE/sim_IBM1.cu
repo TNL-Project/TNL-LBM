@@ -54,8 +54,8 @@ struct MacroLocal : D3Q27_MACRO_Base<TRAITS>
 	}
 };
 
-template <typename TRAITS>
-struct NSE_Data_SpecialInflow : NSE_Data<TRAITS>
+template <typename TRAITS, int DFS_COUNT>
+struct NSE_Data_SpecialInflow : NSE_Data<TRAITS, DFS_COUNT>
 {
 	using dreal = typename TRAITS::dreal;
 	using idx = typename TRAITS::idx;
@@ -368,7 +368,7 @@ void run(const std::string& adios_config, int resolution, double Re, double disc
 	using NSE_CONFIG = LBM_CONFIG<
 		TRAITS,
 		D3Q27_KernelStruct,
-		NSE_Data_SpecialInflow<TRAITS>,
+		NSE_Data_SpecialInflow,
 		COLL,
 		typename COLL::EQ,
 		D3Q27_STREAMING<TRAITS>,

@@ -275,12 +275,12 @@ void LBM_BLOCK<CONFIG>::setEquilibrium(real rho, real vx, real vy, real vz)
 		[local_df, rho, vx, vy, vz] __cuda_callable__(idx3d yzx) mutable
 		{
 			const auto& [y, z, x] = yzx;
-			CONFIG::COLL::setEquilibriumLat(local_df, x, y, z, rho, vx, vy, vz);
+			CONFIG::COLL::template setEquilibriumLat<typename CONFIG::STREAMING>(local_df, x, y, z, rho, vx, vy, vz);
 		}
 	);
 
 	// copy the initialized DFs so that they are not overridden
-	for (uint8_t dftype = 1; dftype < DFMAX; dftype++)
+	for (uint8_t dftype = 1; dftype < CONFIG::DFMAX; dftype++)
 		dfs[dftype] = dfs[0];
 }
 
@@ -300,13 +300,15 @@ void LBM_BLOCK<CONFIG>::computeInitialMacro()
 		{
 			const auto& [y, z, x] = yzx;
 			typename CONFIG::template KernelStruct<dreal> KS;
-#ifdef AA_PATTERN
-			for (int i = 0; i < CONFIG::Q; i++)
-				KS.f[i] = SD.df(df_cur, opposite_direction(i), x, y, z);
-#else
-			for (int i = 0; i < CONFIG::Q; i++)
-				KS.f[i] = SD.df(df_cur, i, x, y, z);
-#endif
+			if constexpr (twisted_layout_v<typename CONFIG::STREAMING>) {
+				// DFs are stored in twisted orientation (opposite directions)
+				for (int i = 0; i < CONFIG::Q; i++)
+					KS.f[i] = SD.df(df_cur, opposite_direction(i), x, y, z);
+			}
+			else {
+				for (int i = 0; i < CONFIG::Q; i++)
+					KS.f[i] = SD.df(df_cur, i, x, y, z);
+			}
 
 			CONFIG::MACRO::copyQuantities(SD, KS, x, y, z);
 			CONFIG::MACRO::zeroForcesInKS(KS);
@@ -718,14 +720,14 @@ void LBM_BLOCK<CONFIG>::copyDFsToDevice(uint8_t dfty)
 template <typename CONFIG>
 void LBM_BLOCK<CONFIG>::copyDFsToHost()
 {
-	for (uint8_t dfty = 0; dfty < DFMAX; dfty++)
+	for (uint8_t dfty = 0; dfty < CONFIG::DFMAX; dfty++)
 		hfs[dfty] = dfs[dfty];
 }
 
 template <typename CONFIG>
 void LBM_BLOCK<CONFIG>::copyDFsToDevice()
 {
-	for (uint8_t dfty = 0; dfty < DFMAX; dfty++)
+	for (uint8_t dfty = 0; dfty < CONFIG::DFMAX; dfty++)
 		dfs[dfty] = hfs[dfty];
 }
 
@@ -751,21 +753,21 @@ void LBM_BLOCK<CONFIG>::start4DArraySynchronization(
 		// determine sync direction - use D2Q9 array for Q=9, otherwise D3Q27/D3Q7 array
 		const TNL::Containers::SyncDirection* dirs = (CONFIG::Q == 9) ? df_sync_directions_d2q9 : df_sync_directions;
 		TNL::Containers::SyncDirection sync_direction = (is_df) ? dirs[i] : TNL::Containers::SyncDirection::All;
-	#ifdef AA_PATTERN
-		// reset shift of the lattice sites
-		sync[i].setBufferOffsets(0);
-		if (is_df) {
-			if (data.even_iter) {
-				// lattice sites for synchronization are not shifted, but DFs have opposite directions
-				sync_direction = opposite(sync_direction);
-			}
-			else {
-				// DFs have canonical directions, but lattice sites for synchronization are shifted
-				// (values to be synchronized were written to the neighboring sites)
-				sync[i].setBufferOffsets(1);
+		if constexpr (is_AA_v<typename CONFIG::STREAMING>) {
+			// reset shift of the lattice sites
+			sync[i].setBufferOffsets(0);
+			if (is_df) {
+				if (data.even_iter) {
+					// lattice sites for synchronization are not shifted, but DFs have opposite directions
+					sync_direction = opposite(sync_direction);
+				}
+				else {
+					// DFs have canonical directions, but lattice sites for synchronization are shifted
+					// (values to be synchronized were written to the neighboring sites)
+					sync[i].setBufferOffsets(1);
+				}
 			}
 		}
-	#endif
 		// start the synchronization
 		// NOTE: we don't use synchronize with policy because we need pipelining
 		// NOTE: we could use only synchronize with policy=deferred, because threadpool and async require MPI_THREAD_MULTIPLE which is slow
@@ -907,7 +909,7 @@ void LBM_BLOCK<CONFIG>::allocateDeviceData()
 #endif
 
 	// initialize data pointers
-	for (uint8_t dfty = 0; dfty < DFMAX; dfty++)
+	for (uint8_t dfty = 0; dfty < CONFIG::DFMAX; dfty++)
 		data.dfs[dfty] = dfs[dfty].getData();
 #ifdef HAVE_MPI
 	data.indexer = dmap.getLocalView().getIndexer();

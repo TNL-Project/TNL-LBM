@@ -442,7 +442,7 @@ void computeNonNewtonianKernels(STATE& state)
 
 	// exchange macroscopic quantities on overlaps between blocks
 	// TODO: avoid communication of DFs here
-	nse.synchronizeDFsAndMacroDevice(df_out);
+	nse.synchronizeDFsAndMacroDevice(NSE::STREAMING::output_df);
 
 	// wait for the computation on the interior to finish
 	for (auto& block : nse.blocks) {
@@ -502,7 +502,7 @@ void computeNonNewtonianKernels(STATE& state)
 
 	// exchange macroscopic quantities on overlaps between blocks
 	// TODO: avoid communication of DFs here
-	nse.synchronizeDFsAndMacroDevice(df_out);
+	nse.synchronizeDFsAndMacroDevice(NSE::STREAMING::output_df);
 
 	// wait for the computation on the interior to finish
 	for (auto& block : nse.blocks) {
@@ -525,8 +525,8 @@ void computeNonNewtonianKernels(STATE& state)
 
 #include "lbm_data.h"
 
-template <typename TRAITS>
-struct LBM_Data_NonNewtonian : NSE_Data<TRAITS>
+template <typename TRAITS, int DFS_COUNT>
+struct LBM_Data_NonNewtonian : NSE_Data<TRAITS, DFS_COUNT>
 {
 	using dreal = typename TRAITS::dreal;
 
@@ -768,8 +768,7 @@ struct MacroNonNewtonianDefault : D3Q27_MACRO_Default<TRAITS>
 		dreal gamma = sqrt(KS.S11 * KS.S11 + KS.S22 * KS.S22 + KS.S33 * KS.S33 + no2 * (KS.S12 * KS.S12 + KS.S13 * KS.S13 + KS.S32 * KS.S32));
 
 #ifdef USE_CYMODEL
-		dreal nu =
-			KS.lbmViscosity + (KS.lbm_nu0 - KS.lbmViscosity) * powf((no1 + powf((gamma * KS.lbm_lambda), KS.lbm_a)), (KS.lbm_n - no1) / KS.lbm_a);
+		dreal nu = KS.lbmViscosity + (KS.lbm_nu0 - KS.lbmViscosity) * powf(no1 + powf(gamma * KS.lbm_lambda, KS.lbm_a), (KS.lbm_n - no1) / KS.lbm_a);
 #elif USE_CASSON
 		dreal nu;
 		if (sqrt(gamma) > 1e-10) {

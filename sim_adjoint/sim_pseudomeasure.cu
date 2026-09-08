@@ -1,7 +1,3 @@
-#ifndef AA_PATTERN
-	#define AB_PATTERN
-#endif
-
 #include <argparse/argparse.hpp>
 #include <magic_enum/magic_enum.hpp>
 
@@ -233,10 +229,10 @@ void run(int resolution, double vy_amplitude, VelocityProfile vy_profile, const 
 	using NSE_CONFIG = LBM_CONFIG<
 		TRAITS,
 		D3Q27_KernelStruct,
-		NSE_Data_InflowProfile<TRAITS>,
+		NSE_Data_InflowProfile,
 		COLL,
 		typename COLL::EQ,
-		D3Q27_STREAMING<TRAITS>,
+		D3Q27_STREAMING_AB_PULL<TRAITS>,
 		D3Q27_BC_All,
 		D3Q27_MACRO_Default<TRAITS>>;
 

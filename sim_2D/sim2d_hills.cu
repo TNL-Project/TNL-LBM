@@ -9,16 +9,10 @@
 #include "lbm3d/d2q9/col_clbm.h"
 #include "lbm3d/d2q9/macro.h"
 
-// exactly one streaming header must be included
-#ifdef AA_PATTERN
-	#include "lbm3d/d2q9/streaming_AA.h"
-#endif
-#ifdef AB_PATTERN
-	#include "lbm3d/d2q9/streaming_AB.h"
-#endif
+#include "lbm3d/d2q9/streaming.h"
 
-template <typename TRAITS>
-struct NSE2D_Data_ConstInflow : NSE_Data<TRAITS>
+template <typename TRAITS, int DFS_COUNT>
+struct NSE2D_Data_ConstInflow : NSE_Data<TRAITS, DFS_COUNT>
 {
 	using idx = typename TRAITS::idx;
 	using dreal = typename TRAITS::dreal;
@@ -60,7 +54,7 @@ struct StateLocal : State<NSE>
 	void setupBoundaries() override
 	{
 		// symmetry first, so inflow/outflow overwrite it at corners
-		nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_SYMMETRY);	// top: symmetry
+		nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_SYMMETRY);	 // top: symmetry
 
 		// inflow/outflow next, so they win over symmetry at corners
 		nse.setBoundaryX(1, BC::GEO_INFLOW_MOMENT);								 // left: inflow
@@ -208,7 +202,7 @@ void run(const std::string& adios_config, int RES, typename TRAITS::real Re)
 	using NSE_CONFIG = LBM_CONFIG<
 		TRAITS,
 		D2Q9_KernelStruct,
-		NSE2D_Data_ConstInflow<TRAITS>,
+		NSE2D_Data_ConstInflow,
 		COLL,
 		typename COLL::EQ,
 		D2Q9_STREAMING<TRAITS>,

@@ -188,9 +188,12 @@ struct D3Q27_COMMON_ADJOINT
 #endif
 	}
 
-	template <typename LAT_DFS>
+	template <typename STREAMING, typename LAT_DFS>
 	__cuda_callable__ static void setEquilibriumLat(LAT_DFS& f, idx x, idx y, idx z, real rho, real vx, real vy, real vz)
 	{
+		// the adjoint reversed gather races in a single DF array
+		static_assert(STREAMING::DFMAX >= 2, "the adjoint model requires a two-array streaming pattern (e.g. A-B)");
+
 		//! only called during initialization
 		// TODO: initialize adjoint dfs - 0, before any calculation, there is collision step,
 		// where the measured data sets initial dfs for adjoint problem

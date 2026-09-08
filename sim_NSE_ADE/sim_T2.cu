@@ -5,13 +5,7 @@
 #include "lbm3d/d3q7/col_srt.h"
 #include "lbm3d/d3q7/col_mrt.h"
 #include "lbm3d/d3q7/col_clbm.h"
-// exactly one streaming header must be included
-#ifdef AA_PATTERN
-	#include "lbm3d/d3q7/streaming_AA.h"
-#endif
-#ifdef AB_PATTERN
-	#include "lbm3d/d3q7/streaming_AB.h"
-#endif
+#include "lbm3d/d3q7/streaming.h"
 #include "lbm3d/d3q7/bc.h"
 #include "lbm3d/d3q7/macro.h"
 #include "lbm3d/state_NSE_ADE.h"
@@ -124,15 +118,15 @@ struct StateLocal : State_NSE_ADE<NSE, ADE>
 #endif
 				// TODO: phys -> lbm conversion for concentration?
 				if (x < center_x)
-					ADE::COLL::setEquilibriumLat(local_df, x, y, z, phi_left, 0, 0, 0);	 // phi, vx, vy, vz
+					ADE::COLL::template setEquilibriumLat<typename ADE::STREAMING>(local_df, x, y, z, phi_left, 0, 0, 0);  // phi, vx, vy, vz
 				else
-					ADE::COLL::setEquilibriumLat(local_df, x, y, z, phi_right, 0, 0, 0);  // phi, vx, vy, vz
+					ADE::COLL::template setEquilibriumLat<typename ADE::STREAMING>(local_df, x, y, z, phi_right, 0, 0, 0);	// phi, vx, vy, vz
 			}
 		);
 
 		// copy the initialized DFs so that they are not overridden
 		for (auto& block : ade.blocks)
-			for (uint8_t dftype = 1; dftype < DFMAX; dftype++)
+			for (uint8_t dftype = 1; dftype < ADE::DFMAX; dftype++)
 				block.hfs[dftype] = block.hfs[0];
 		ade.copyDFsToDevice();
 	}
@@ -269,7 +263,7 @@ void run(const std::string& adios_config, int resolution)
 	using NSE_CONFIG = LBM_CONFIG<
 		TRAITS,
 		D3Q27_KernelStruct,
-		NSE_Data_ConstInflow<TRAITS>,
+		NSE_Data_ConstInflow,
 		NSE_COLL,
 		typename NSE_COLL::EQ,
 		D3Q27_STREAMING<TRAITS>,
@@ -282,7 +276,7 @@ void run(const std::string& adios_config, int resolution)
 	using ADE_CONFIG = LBM_CONFIG<
 		TRAITS,
 		D3Q7_KernelStruct,
-		ADE_Data_ConstInflow<TRAITS>,
+		ADE_Data_ConstInflow,
 		ADE_COLL,
 		typename ADE_COLL::EQ,
 		D3Q7_STREAMING<TRAITS>,

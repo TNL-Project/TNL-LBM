@@ -24,12 +24,7 @@
 #include "lbm3d/defs.h"
 #include "lbm3d/lbm_data.h"
 
-#ifdef AB_PATTERN
-	#include "lbm3d/d2q9/streaming_AB.h"
-#endif
-#ifdef AA_PATTERN
-	#include "lbm3d/d2q9/streaming_AA.h"
-#endif
+#include "lbm3d/d2q9/streaming.h"
 #include "lbm3d/d2q9/bc.h"
 #include "lbm3d/d2q9/col_srt.h"
 #include "lbm3d/d2q9/macro.h"
@@ -92,7 +87,7 @@ using COLL3 = D3Q27_SRT<TRAITS3>;
 using CONFIG3 = LBM_CONFIG<
 	TRAITS3,
 	D3Q27_KernelStruct,
-	NSE_Data<TRAITS3>,
+	NSE_Data,
 	COLL3,
 	typename COLL3::EQ,
 	D3Q27_STREAMING<TRAITS3>,
@@ -212,7 +207,7 @@ TEST_SUITE_END();
 using KS2 = D2Q9_KernelStruct<typename TRAITS::dreal>;
 using COLL2 = D2Q9_SRT<TRAITS, D2Q9_EQ<TRAITS>>;
 using CONFIG2 =
-	LBM_CONFIG<TRAITS, D2Q9_KernelStruct, NSE_Data<TRAITS>, COLL2, typename COLL2::EQ, D2Q9_STREAMING<TRAITS>, D2Q9_BC_All, D2Q9_MACRO_Default<TRAITS>>;
+	LBM_CONFIG<TRAITS, D2Q9_KernelStruct, NSE_Data, COLL2, typename COLL2::EQ, D2Q9_STREAMING<TRAITS>, D2Q9_BC_All, D2Q9_MACRO_Default<TRAITS>>;
 using BC2 = typename CONFIG2::BC;
 
 __global__ void runInflowMoment2D(int face, KS2 in, KS2* out)

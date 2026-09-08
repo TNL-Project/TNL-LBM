@@ -4,8 +4,12 @@
 
 // pull-scheme
 template <typename TRAITS>
-struct D3Q7_STREAMING
+struct D3Q7_STREAMING_AB_PULL
 {
+	static constexpr int DFMAX = 2;
+	// DF slot that holds the freshly written field after a kernel launch
+	static constexpr std::uint8_t output_df = df_out;
+
 	using idx = typename TRAITS::idx;
 	using dreal = typename TRAITS::dreal;
 
@@ -30,3 +34,6 @@ struct D3Q7_STREAMING
 		KS.f[pzz] = SD.df(df_cur, pzz, xm, y, z);
 	}
 };
+
+template <typename TRAITS>
+inline constexpr bool is_AB_PULL_v<D3Q7_STREAMING_AB_PULL<TRAITS>> = true;

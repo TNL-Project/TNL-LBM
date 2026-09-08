@@ -32,21 +32,15 @@
 #include "lbm3d/d2q9/macro.h"
 #include "lbm_common/rounding.h"
 
-// exactly one streaming header must be included
-#ifdef AA_PATTERN
-	#include "lbm3d/d2q9/streaming_AA.h"
-#endif
-#ifdef AB_PATTERN
-	#include "lbm3d/d2q9/streaming_AB.h"
-#endif
-
+#include "lbm3d/d2q9/streaming.h"
 #include "lbm3d/lbm_block.h"
 
 using TRAITS = Traits<double>;	// dreal = double: exact comparisons against the double ground truth
 using COLL = D2Q9_SRT<TRAITS>;
 using CONFIG =
-	LBM_CONFIG<TRAITS, D2Q9_KernelStruct, NSE_Data<TRAITS>, COLL, typename COLL::EQ, D2Q9_STREAMING<TRAITS>, D2Q9_BC_All, D2Q9_MACRO_Default<TRAITS>>;
-using STREAM = D2Q9_STREAMING<TRAITS>;
+	LBM_CONFIG<TRAITS, D2Q9_KernelStruct, NSE_Data, COLL, typename COLL::EQ, D2Q9_STREAMING<TRAITS>, D2Q9_BC_All, D2Q9_MACRO_Default<TRAITS>>;
+using STREAM_AB_PULL = D2Q9_STREAMING_AB_PULL<TRAITS>;
+using STREAM_AA = D2Q9_STREAMING_AA<TRAITS>;
 using BC = typename CONFIG::BC;
 using KS = D2Q9_KernelStruct<typename TRAITS::dreal>;
 using idx = typename TRAITS::idx;
@@ -106,15 +100,16 @@ struct GatherMock
 };
 
 // device driver: run one outflow gather and copy the kernel struct out
+template <typename STREAMING>
 __global__ void gatherKernel(GatherMock sd, KS* out, int face, bool interp, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx z)
 {
 	KS ks;
 	for (int i = 0; i < 9; i++)
 		ks.f[i] = std::numeric_limits<double>::quiet_NaN();
 	if (interp)
-		STREAM::streamingOutflowInterp(sd, ks, face, xm, x, xp, ym, y, yp, z);
+		STREAMING::streamingOutflowInterp(sd, ks, face, xm, x, xp, ym, y, yp, z);
 	else
-		STREAM::streamingOutflow(sd, ks, face, xm, x, xp, ym, y, yp, z);
+		STREAMING::streamingOutflow(sd, ks, face, xm, x, xp, ym, y, yp, z);
 	*out = ks;
 }
 
@@ -155,6 +150,7 @@ static void resolveBlends(double* exp, const double* blendA, const double* blend
 		exp[slots[j]] = res[j];
 }
 
+template <typename STREAMING>
 static void runGather(int face, bool interp, bool even, int x, int y, int z, KS& out)
 {
 	std::vector<double> host((size_t) 9 * MS * MS * MS);
@@ -172,12 +168,13 @@ static void runGather(int face, bool interp, bool even, int x, int y, int z, KS&
 	TNL::Containers::Array<KS, TNL::Devices::Cuda> devOut(1);
 
 	GatherMock sd{dev.getData(), even};
-	gatherKernel<<<1, 1>>>(sd, devOut.getData(), face, interp, x - 1, x, x + 1, y - 1, y, y + 1, z);
+	gatherKernel<STREAMING><<<1, 1>>>(sd, devOut.getData(), face, interp, x - 1, x, x + 1, y - 1, y, y + 1, z);
 	TNL::Backend::deviceSynchronize();
 	TNL::Backend::memcpy(&out, devOut.getData(), sizeof(KS), TNL::Backend::MemcpyDeviceToHost);
 }
 
 // independent ground truth for all 9 slots of one gather
+template <typename STREAMING>
 static void computeExpected(int face, bool interp, bool even, int x, int y, int z, double* exp, double* blendA, double* blendB, char* isBlend)
 {
 	const int axis = (face & (bc_face::XP | bc_face::XM)) ? 0 : 1;
@@ -189,90 +186,45 @@ static void computeExpected(int face, bool interp, bool even, int x, int y, int 
 		const int tang = co[1 - axis] - c[1 - axis];  // tangential -c offset (pull scheme)
 		const int cn = c[axis];
 		if (! interp) {
-#ifdef AB_PATTERN
-			int s[2];
-			s[axis] = anchor;
-			s[1 - axis] = tang;
-			exp[i] = pat(i, s[0], s[1], z);
-#else
-			if (even) {
-				// natural layout: slot (i, t + c_i) = postcoll_{n-1}(i, t); the
-				// tangential offsets cancel, the normal coordinate is anchor + c_i
-				int s[2];
-				s[axis] = anchor + c[axis];
-				s[1 - axis] = co[1 - axis];
-				exp[i] = pat(i, s[0], s[1], z);
-			}
-			else {
-				// twist layout: slot (opp(i), t) = postcoll_{n-1}(i, t)
-				int s[2];
-				s[axis] = anchor;
-				s[1 - axis] = tang;
-				exp[i] = pat(opp9(i), s[0], s[1], z);
-			}
-#endif
-		}
-		else {
-#ifdef AB_PATTERN
-			// outward population: anchor column; perpendicular: own column;
-			// inward: anchor-column postcoll blended with the own-column postcoll
-			if (cn == sgn) {
+			if constexpr (! is_AA_v<STREAMING>) {
 				int s[2];
 				s[axis] = anchor;
 				s[1 - axis] = tang;
 				exp[i] = pat(i, s[0], s[1], z);
 			}
-			else if (cn == 0) {
-				int s[2];
-				s[axis] = co[axis];
-				s[1 - axis] = tang;
-				exp[i] = pat(i, s[0], s[1], z);
-			}
 			else {
-				int sn[2];
-				sn[axis] = anchor;
-				sn[1 - axis] = tang;
-				int so[2];
-				so[axis] = co[axis];
-				so[1 - axis] = tang;
-				isBlend[i] = 1;
-				blendA[i] = pat(i, sn[0], sn[1], z);
-				blendB[i] = pat(i, so[0], so[1], z);
-			}
-#else  // AA
-			if (even) {
-				// outward- and perpendicular-moving populations take the cell's
-				// own postcoll; the inward-moving population blends the
-				// pre-anchor column with the anchor column
-				if (cn == sgn || cn == 0)
-					exp[i] = pat(i, x, y, z);
+				if (even) {
+					// natural layout: slot (i, t + c_i) = postcoll_{n-1}(i, t); the
+					// tangential offsets cancel, the normal coordinate is anchor + c_i
+					int s[2];
+					s[axis] = anchor + c[axis];
+					s[1 - axis] = co[1 - axis];
+					exp[i] = pat(i, s[0], s[1], z);
+				}
 				else {
-					int sa[2];
-					sa[axis] = anchor + c[axis];
-					sa[1 - axis] = co[1 - axis];
-					int sb[2];
-					sb[axis] = anchor;
-					sb[1 - axis] = co[1 - axis];
-					isBlend[i] = 1;
-					blendA[i] = pat(i, sa[0], sa[1], z);
-					blendB[i] = pat(i, sb[0], sb[1], z);
+					// twist layout: slot (opp(i), t) = postcoll_{n-1}(i, t)
+					int s[2];
+					s[axis] = anchor;
+					s[1 - axis] = tang;
+					exp[i] = pat(opp9(i), s[0], s[1], z);
 				}
 			}
-			else {
-				// twist layout: outward from the anchor column, perpendicular
-				// from the own column, inward blends the two
-				const int slot = opp9(i);
+		}
+		else {
+			if constexpr (! is_AA_v<STREAMING>) {
+				// outward population: anchor column; perpendicular: own column;
+				// inward: anchor-column postcoll blended with the own-column postcoll
 				if (cn == sgn) {
 					int s[2];
 					s[axis] = anchor;
 					s[1 - axis] = tang;
-					exp[i] = pat(slot, s[0], s[1], z);
+					exp[i] = pat(i, s[0], s[1], z);
 				}
 				else if (cn == 0) {
 					int s[2];
 					s[axis] = co[axis];
 					s[1 - axis] = tang;
-					exp[i] = pat(slot, s[0], s[1], z);
+					exp[i] = pat(i, s[0], s[1], z);
 				}
 				else {
 					int sn[2];
@@ -282,18 +234,66 @@ static void computeExpected(int face, bool interp, bool even, int x, int y, int 
 					so[axis] = co[axis];
 					so[1 - axis] = tang;
 					isBlend[i] = 1;
-					blendA[i] = pat(slot, sn[0], sn[1], z);
-					blendB[i] = pat(slot, so[0], so[1], z);
+					blendA[i] = pat(i, sn[0], sn[1], z);
+					blendB[i] = pat(i, so[0], so[1], z);
 				}
 			}
-#endif
+			else {
+				if (even) {
+					// outward- and perpendicular-moving populations take the cell's
+					// own postcoll; the inward-moving population blends the
+					// pre-anchor column with the anchor column
+					if (cn == sgn || cn == 0)
+						exp[i] = pat(i, x, y, z);
+					else {
+						int sa[2];
+						sa[axis] = anchor + c[axis];
+						sa[1 - axis] = co[1 - axis];
+						int sb[2];
+						sb[axis] = anchor;
+						sb[1 - axis] = co[1 - axis];
+						isBlend[i] = 1;
+						blendA[i] = pat(i, sa[0], sa[1], z);
+						blendB[i] = pat(i, sb[0], sb[1], z);
+					}
+				}
+				else {
+					// twist layout: outward from the anchor column, perpendicular
+					// from the own column, inward blends the two
+					const int slot = opp9(i);
+					if (cn == sgn) {
+						int s[2];
+						s[axis] = anchor;
+						s[1 - axis] = tang;
+						exp[i] = pat(slot, s[0], s[1], z);
+					}
+					else if (cn == 0) {
+						int s[2];
+						s[axis] = co[axis];
+						s[1 - axis] = tang;
+						exp[i] = pat(slot, s[0], s[1], z);
+					}
+					else {
+						int sn[2];
+						sn[axis] = anchor;
+						sn[1 - axis] = tang;
+						int so[2];
+						so[axis] = co[axis];
+						so[1 - axis] = tang;
+						isBlend[i] = 1;
+						blendA[i] = pat(slot, sn[0], sn[1], z);
+						blendB[i] = pat(slot, so[0], so[1], z);
+					}
+				}
+			}
 		}
 	}
 }
 
 TEST_SUITE_BEGIN("outflowgather2d");
 
-TEST_CASE("gather-plain-faces")
+template <typename STREAMING>
+static void checkGatherFaces(bool interp)
 {
 	const int x = 8, y = 9, z = 3;
 	const int faces[4] = {bc_face::XP, bc_face::XM, bc_face::YP, bc_face::YM};
@@ -302,11 +302,11 @@ TEST_CASE("gather-plain-faces")
 		for (bool even : {true, false}) {
 			INFO("even=", even);
 			KS ks;
-			runGather(face, /*interp=*/false, even, x, y, z, ks);
+			runGather<STREAMING>(face, interp, even, x, y, z, ks);
 			double exp[9];
 			double blendA[9] = {}, blendB[9] = {};
 			char isBlend[9] = {};
-			computeExpected(face, /*interp=*/false, even, x, y, z, exp, blendA, blendB, isBlend);
+			computeExpected<STREAMING>(face, interp, even, x, y, z, exp, blendA, blendB, isBlend);
 			resolveBlends(exp, blendA, blendB, isBlend, 9);
 			for (int i = 0; i < 9; i++)
 				CHECK_EQ(ks.f[i], exp[i]);
@@ -314,25 +314,16 @@ TEST_CASE("gather-plain-faces")
 	}
 }
 
+TEST_CASE("gather-plain-faces")
+{
+	checkGatherFaces<STREAM_AB_PULL>(/*interp=*/false);
+	checkGatherFaces<STREAM_AA>(/*interp=*/false);
+}
+
 TEST_CASE("gather-interp-faces")
 {
-	const int x = 8, y = 9, z = 3;
-	const int faces[4] = {bc_face::XP, bc_face::XM, bc_face::YP, bc_face::YM};
-	for (int face : faces) {
-		INFO("face=", face);
-		for (bool even : {true, false}) {
-			INFO("even=", even);
-			KS ks;
-			runGather(face, /*interp=*/true, even, x, y, z, ks);
-			double exp[9];
-			double blendA[9] = {}, blendB[9] = {};
-			char isBlend[9] = {};
-			computeExpected(face, /*interp=*/true, even, x, y, z, exp, blendA, blendB, isBlend);
-			resolveBlends(exp, blendA, blendB, isBlend, 9);
-			for (int i = 0; i < 9; i++)
-				CHECK_EQ(ks.f[i], exp[i]);
-		}
-	}
+	checkGatherFaces<STREAM_AB_PULL>(/*interp=*/true);
+	checkGatherFaces<STREAM_AA>(/*interp=*/true);
 }
 
 // host-side face detection through the real DATA type: the block's host map

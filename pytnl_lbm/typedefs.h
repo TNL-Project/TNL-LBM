@@ -5,13 +5,7 @@
 #include "lbm3d/d3q27/col_cum.h"
 #include "lbm3d/d3q27/eq_inv_cum.h"
 #include "lbm3d/d3q27/macro.h"
-// exactly one streaming header must be included
-#ifdef AA_PATTERN
-	#include "lbm3d/d3q27/streaming_AA.h"
-#endif
-#ifdef AB_PATTERN
-	#include "lbm3d/d3q27/streaming_AB.h"
-#endif
+#include "lbm3d/d3q27/streaming.h"
 #include "lbm3d/lbm_data.h"
 
 using TRAITS = TraitsSP;
@@ -20,7 +14,7 @@ using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
 using SP_D3Q27_CUM_ConstInflow = LBM_CONFIG<
 	TRAITS,
 	D3Q27_KernelStruct,
-	NSE_Data_ConstInflow<TRAITS>,
+	NSE_Data_ConstInflow,
 	COLL,
 	typename COLL::EQ,
 	D3Q27_STREAMING<TRAITS>,

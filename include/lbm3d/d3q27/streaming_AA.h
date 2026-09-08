@@ -20,8 +20,12 @@
 // df_cur and synchronized before the main kernel).  Do NOT move these calls
 // into the main LBM kernel or any other kernel that writes df_cur.
 template <typename TRAITS>
-struct D3Q27_STREAMING
+struct D3Q27_STREAMING_AA
 {
+	static constexpr int DFMAX = 1;
+	// DF slot that holds the freshly written field after a kernel launch
+	static constexpr std::uint8_t output_df = df_cur;
+
 	using idx = typename TRAITS::idx;
 	using dreal = typename TRAITS::dreal;
 
@@ -737,3 +741,10 @@ struct D3Q27_STREAMING
 		}
 	}
 };
+
+template <typename TRAITS>
+inline constexpr bool is_AA_v<D3Q27_STREAMING_AA<TRAITS>> = true;
+template <typename TRAITS>
+inline constexpr bool twisted_layout_v<D3Q27_STREAMING_AA<TRAITS>> = true;
+template <typename TRAITS>
+inline constexpr bool requires_ghost_layer_v<D3Q27_STREAMING_AA<TRAITS>> = true;

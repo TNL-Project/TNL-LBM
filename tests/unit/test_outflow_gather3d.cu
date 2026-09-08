@@ -35,13 +35,14 @@ using COLL = D3Q27_SRT<TRAITS>;
 using CONFIG = LBM_CONFIG<
 	TRAITS,
 	D3Q27_KernelStruct,
-	NSE_Data<TRAITS>,
+	NSE_Data,
 	COLL,
 	typename COLL::EQ,
 	D3Q27_STREAMING<TRAITS>,
 	D3Q27_BC_All,
 	D3Q27_MACRO_Default<TRAITS>>;
-using STREAM = D3Q27_STREAMING<TRAITS>;
+using STREAM_AB_PULL = D3Q27_STREAMING_AB_PULL<TRAITS>;
+using STREAM_AA = D3Q27_STREAMING_AA<TRAITS>;
 using BC = typename CONFIG::BC;
 using KS = D3Q27_KernelStruct<typename TRAITS::dreal>;
 using idx = typename TRAITS::idx;
@@ -103,15 +104,16 @@ struct GatherMock
 };
 
 // device driver: run one outflow gather and copy the kernel struct out
+template <typename STREAMING>
 __global__ void gatherKernel(GatherMock sd, KS* out, int face, bool interp, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 {
 	KS ks;
 	for (int i = 0; i < 27; i++)
 		ks.f[i] = std::numeric_limits<double>::quiet_NaN();
 	if (interp)
-		STREAM::streamingOutflowInterp(sd, ks, face, xm, x, xp, ym, y, yp, zm, z, zp);
+		STREAMING::streamingOutflowInterp(sd, ks, face, xm, x, xp, ym, y, yp, zm, z, zp);
 	else
-		STREAM::streamingOutflow(sd, ks, face, xm, x, xp, ym, y, yp, zm, z, zp);
+		STREAMING::streamingOutflow(sd, ks, face, xm, x, xp, ym, y, yp, zm, z, zp);
 	*out = ks;
 }
 
@@ -152,6 +154,7 @@ static void resolveBlends(double* exp, const double* blendA, const double* blend
 		exp[slots[j]] = res[j];
 }
 
+template <typename STREAMING>
 static void runGather(int face, bool interp, bool even, int x, int y, int z, KS& out)
 {
 	std::vector<double> host((size_t) 27 * MS * MS * MS);
@@ -169,12 +172,13 @@ static void runGather(int face, bool interp, bool even, int x, int y, int z, KS&
 	TNL::Containers::Array<KS, TNL::Devices::Cuda> devOut(1);
 
 	GatherMock sd{dev.getData(), even};
-	gatherKernel<<<1, 1>>>(sd, devOut.getData(), face, interp, x - 1, x, x + 1, y - 1, y, y + 1, z - 1, z, z + 1);
+	gatherKernel<STREAMING><<<1, 1>>>(sd, devOut.getData(), face, interp, x - 1, x, x + 1, y - 1, y, y + 1, z - 1, z, z + 1);
 	TNL::Backend::deviceSynchronize();
 	TNL::Backend::memcpy(&out, devOut.getData(), sizeof(KS), TNL::Backend::MemcpyDeviceToHost);
 }
 
 // independent ground truth for all 27 slots of one gather
+template <typename STREAMING>
 static void computeExpected(int face, bool interp, bool even, int x, int y, int z, double* exp, double* blendA, double* blendB, char* isBlend)
 {
 	const int axis = (face & (bc_face::XP | bc_face::XM)) ? 0 : (face & (bc_face::YP | bc_face::YM)) ? 1 : 2;
@@ -206,68 +210,71 @@ static void computeExpected(int face, bool interp, bool even, int x, int y, int 
 			return pat(slot, s[0], s[1], s[2]);
 		};
 		if (! interp) {
-#ifdef AB_PATTERN
-			exp[i] = sitePat(i, anchor);
-#else
-			if (even) {
-				// natural layout: slot (i, t + c_i) = postcoll_{n-1}(i, t); the
-				// tangential offsets cancel, the normal coordinate is anchor + c_i
-				exp[i] = anchorPat(i, c[axis]);
+			if constexpr (! is_AA_v<STREAMING>) {
+				exp[i] = sitePat(i, anchor);
 			}
 			else {
-				// twist layout: slot (opp(i), t) = postcoll_{n-1}(i, t)
-				exp[i] = sitePat(opp27(i), anchor);
+				if (even) {
+					// natural layout: slot (i, t + c_i) = postcoll_{n-1}(i, t); the
+					// tangential offsets cancel, the normal coordinate is anchor + c_i
+					exp[i] = anchorPat(i, c[axis]);
+				}
+				else {
+					// twist layout: slot (opp(i), t) = postcoll_{n-1}(i, t)
+					exp[i] = sitePat(opp27(i), anchor);
+				}
 			}
-#endif
 		}
 		else {
-#ifdef AB_PATTERN
-			// outward population: anchor column; perpendicular: own column;
-			// inward: anchor-column postcoll blended with the own-column postcoll
-			if (cn == sgn)
-				exp[i] = sitePat(i, anchor);
-			else if (cn == 0)
-				exp[i] = sitePat(i, co[axis]);
-			else {
-				isBlend[i] = 1;
-				blendA[i] = sitePat(i, anchor);
-				blendB[i] = sitePat(i, co[axis]);
-			}
-#else  // AA
-			if (even) {
-				// outward- and perpendicular-moving populations take the cell's
-				// own postcoll; the inward-moving population blends the
-				// pre-anchor column with the anchor column
-				if (cn == sgn || cn == 0)
-					exp[i] = pat(i, x, y, z);
-				else {
-					isBlend[i] = 1;
-					blendA[i] = anchorPat(i, c[axis]);
-					blendB[i] = anchorPat(i, 0);
-				}
-			}
-			else {
-				// twist layout: outward from the anchor column, perpendicular
-				// from the own column, inward blends the two
-				const int slot = opp27(i);
+			if constexpr (! is_AA_v<STREAMING>) {
+				// outward population: anchor column; perpendicular: own column;
+				// inward: anchor-column postcoll blended with the own-column postcoll
 				if (cn == sgn)
-					exp[i] = sitePat(slot, anchor);
+					exp[i] = sitePat(i, anchor);
 				else if (cn == 0)
-					exp[i] = sitePat(slot, co[axis]);
+					exp[i] = sitePat(i, co[axis]);
 				else {
 					isBlend[i] = 1;
-					blendA[i] = sitePat(slot, anchor);
-					blendB[i] = sitePat(slot, co[axis]);
+					blendA[i] = sitePat(i, anchor);
+					blendB[i] = sitePat(i, co[axis]);
 				}
 			}
-#endif
+			else {
+				if (even) {
+					// outward- and perpendicular-moving populations take the cell's
+					// own postcoll; the inward-moving population blends the
+					// pre-anchor column with the anchor column
+					if (cn == sgn || cn == 0)
+						exp[i] = pat(i, x, y, z);
+					else {
+						isBlend[i] = 1;
+						blendA[i] = anchorPat(i, c[axis]);
+						blendB[i] = anchorPat(i, 0);
+					}
+				}
+				else {
+					// twist layout: outward from the anchor column, perpendicular
+					// from the own column, inward blends the two
+					const int slot = opp27(i);
+					if (cn == sgn)
+						exp[i] = sitePat(slot, anchor);
+					else if (cn == 0)
+						exp[i] = sitePat(slot, co[axis]);
+					else {
+						isBlend[i] = 1;
+						blendA[i] = sitePat(slot, anchor);
+						blendB[i] = sitePat(slot, co[axis]);
+					}
+				}
+			}
 		}
 	}
 }
 
 TEST_SUITE_BEGIN("outflowgather3d");
 
-TEST_CASE("gather-plain-faces")
+template <typename STREAMING>
+static void checkGatherFaces(bool interp)
 {
 	const int x = 8, y = 9, z = 10;
 	const int faces[6] = {bc_face::XP, bc_face::XM, bc_face::YP, bc_face::YM, bc_face::ZP, bc_face::ZM};
@@ -276,11 +283,11 @@ TEST_CASE("gather-plain-faces")
 		for (bool even : {true, false}) {
 			INFO("even=", even);
 			KS ks;
-			runGather(face, /*interp=*/false, even, x, y, z, ks);
+			runGather<STREAMING>(face, interp, even, x, y, z, ks);
 			double exp[27];
 			double blendA[27] = {}, blendB[27] = {};
 			char isBlend[27] = {};
-			computeExpected(face, /*interp=*/false, even, x, y, z, exp, blendA, blendB, isBlend);
+			computeExpected<STREAMING>(face, interp, even, x, y, z, exp, blendA, blendB, isBlend);
 			resolveBlends(exp, blendA, blendB, isBlend, 27);
 			for (int i = 0; i < 27; i++)
 				CHECK_EQ(ks.f[i], exp[i]);
@@ -288,25 +295,16 @@ TEST_CASE("gather-plain-faces")
 	}
 }
 
+TEST_CASE("gather-plain-faces")
+{
+	checkGatherFaces<STREAM_AB_PULL>(/*interp=*/false);
+	checkGatherFaces<STREAM_AA>(/*interp=*/false);
+}
+
 TEST_CASE("gather-interp-faces")
 {
-	const int x = 8, y = 9, z = 10;
-	const int faces[6] = {bc_face::XP, bc_face::XM, bc_face::YP, bc_face::YM, bc_face::ZP, bc_face::ZM};
-	for (int face : faces) {
-		INFO("face=", face);
-		for (bool even : {true, false}) {
-			INFO("even=", even);
-			KS ks;
-			runGather(face, /*interp=*/true, even, x, y, z, ks);
-			double exp[27];
-			double blendA[27] = {}, blendB[27] = {};
-			char isBlend[27] = {};
-			computeExpected(face, /*interp=*/true, even, x, y, z, exp, blendA, blendB, isBlend);
-			resolveBlends(exp, blendA, blendB, isBlend, 27);
-			for (int i = 0; i < 27; i++)
-				CHECK_EQ(ks.f[i], exp[i]);
-		}
-	}
+	checkGatherFaces<STREAM_AB_PULL>(/*interp=*/true);
+	checkGatherFaces<STREAM_AA>(/*interp=*/true);
 }
 
 // host-side face detection through the real DATA type: the block's host map

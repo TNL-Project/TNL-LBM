@@ -17,14 +17,6 @@
 #include <TNL/MPI.h>
 #include <TNL/MPI/ScopedInitializer.h>
 
-#if ! defined(AB_PATTERN) && ! defined(AA_PATTERN)
-	// TODO: update multidimensional MPI synchronization for AA pattern
-	// (for the even time step which is similar to a "push scheme", we need to
-	// avoid race conditions on the corners - set smaller buffer size and adjust the offsets)
-	//#define AA_PATTERN
-	#define AB_PATTERN
-#endif
-
 #if ! defined(__CUDACC__) && ! defined(__HIP__)
 using TNL::dim3;
 #endif
@@ -41,30 +33,33 @@ using TNLMPI_INIT = TNL::MPI::ScopedInitializer;
 	#include <cuda_profiler_api.h>
 #endif
 
-// number of dist. functions, default=2
-// quick fix, use templates to define DFMAX ... through TRAITS maybe ?
-#ifdef USE_DFMAX3  // special 3 dfs
+// DF slot indices. The number of slots that a simulation actually uses is a
+// property of the streaming pattern (LBM_CONFIG::DFMAX): A-A uses df_cur only,
+// A-B uses df_cur + df_out.
 enum : std::uint8_t
 {
 	df_cur,
 	df_out,
-	df_prev,
-	DFMAX
 };
-#elif defined(AB_PATTERN)  // default 2 dfs
-enum : std::uint8_t
-{
-	df_cur,
-	df_out,
-	DFMAX
-};
-#elif defined(AA_PATTERN)
-enum : std::uint8_t
-{
-	df_cur,
-	DFMAX
-};
-#endif
+
+// Streaming-pattern traits as variable templates: a new pattern to be added in
+// the future does not inherit any member constants it cannot honor — it only
+// specializes the traits that apply in its streaming_*.h header.
+// - is_AA_v: pattern identity (the A-A pattern with a single in-place DF array)
+// - is_AB_PULL_v: pattern identity (the two-array A-B pull scheme)
+// - twisted_layout_v: sites store post-collision populations under the OPPOSITE
+//   direction index, so initialization must read/write with twisted directions
+// - requires_ghost_layer_v: streaming accesses neighbor sites within the same
+//   kernel launch, so a valid one-cell ghost layer must exist in all directions
+//   and neighbor indices need no boundary clamping
+template <typename STREAMING>
+inline constexpr bool is_AA_v = false;
+template <typename STREAMING>
+inline constexpr bool is_AB_PULL_v = false;
+template <typename STREAMING>
+inline constexpr bool twisted_layout_v = false;
+template <typename STREAMING>
+inline constexpr bool requires_ghost_layer_v = false;
 
 #ifdef USE_CUDA
 using DeviceType = TNL::Devices::Cuda;
@@ -302,7 +297,7 @@ struct D3Q27_KernelStruct_Adjoint : public D3Q27_KernelStruct<REAL>
 template <
 	typename _TRAITS,
 	template <typename> class _KERNEL_STRUCT,
-	typename _DATA,
+	template <typename, int> class _DATA,
 	typename _COLL,
 	typename _EQ,
 	typename _STREAMING,
@@ -313,12 +308,15 @@ struct LBM_CONFIG
 	using TRAITS = _TRAITS;
 	template <typename REAL>
 	using KernelStruct = _KERNEL_STRUCT<REAL>;
-	using DATA = _DATA;
 	using COLL = _COLL;
 	using EQ = _EQ;
 	using STREAMING = _STREAMING;
 	using BC = _BC<LBM_CONFIG>;
 	using MACRO = _MACRO;
+
+	// number of DF arrays used by the streaming pattern (1 for A-A, 2 for A-B)
+	static constexpr int DFMAX = STREAMING::DFMAX;
+	using DATA = _DATA<TRAITS, DFMAX>;
 
 	static constexpr int D = KernelStruct<typename TRAITS::dreal>::D;
 	static constexpr int Q = KernelStruct<typename TRAITS::dreal>::Q;

@@ -57,8 +57,8 @@ struct LBM_BLOCK
 	dboollat_array_t dphiTransferDirection;
 
 	// distribution functions
-	hlat_array_t hfs[DFMAX];
-	dlat_array_t dfs[DFMAX];
+	hlat_array_t hfs[CONFIG::DFMAX];
+	dlat_array_t dfs[CONFIG::DFMAX];
 
 	// MPI
 	TNL::MPI::Comm communicator = MPI_COMM_WORLD;

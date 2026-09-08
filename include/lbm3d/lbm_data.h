@@ -4,7 +4,10 @@
 #include "lbm_common/ciselnik.h"
 
 // only a base type - common for all D3Q* models, cannot be used directly
-template <typename TRAITS>
+// DFS_COUNT is the number of DF arrays (a property of the streaming pattern,
+// see LBM_CONFIG::DFMAX): it sizes the dfs pointer array inside the
+// kernel-argument block, so it must match the streaming pattern exactly
+template <typename TRAITS, int DFS_COUNT>
 struct LBM_Data
 {
 	using idx = typename TRAITS::idx;
@@ -28,7 +31,7 @@ struct LBM_Data
 	int stat_counter = 0;  // counter for computing mean quantities in D3Q27_MACRO_Mean - must be set in StateLocal::updateKernelVelocities
 
 	// array pointers
-	dreal* dfs[DFMAX];
+	dreal* dfs[DFS_COUNT];
 	dreal* dmacro;
 	map_t* dmap;
 
@@ -65,10 +68,10 @@ struct LBM_Data
 };
 
 // base type for all NSE_Data_* types
-template <typename TRAITS>
-struct NSE_Data : LBM_Data<TRAITS>
+template <typename TRAITS, int DFS_COUNT>
+struct NSE_Data : LBM_Data<TRAITS, DFS_COUNT>
 {
-	using dreal = typename LBM_Data<TRAITS>::dreal;
+	using dreal = typename LBM_Data<TRAITS, DFS_COUNT>::dreal;
 
 	// homogeneous force field
 	dreal fx = 0;
@@ -76,8 +79,8 @@ struct NSE_Data : LBM_Data<TRAITS>
 	dreal fz = 0;
 };
 
-template <typename TRAITS>
-struct NSE_Data_ConstInflow : NSE_Data<TRAITS>
+template <typename TRAITS, int DFS_COUNT>
+struct NSE_Data_ConstInflow : NSE_Data<TRAITS, DFS_COUNT>
 {
 	using idx = typename TRAITS::idx;
 	using dreal = typename TRAITS::dreal;
@@ -95,8 +98,8 @@ struct NSE_Data_ConstInflow : NSE_Data<TRAITS>
 	}
 };
 
-template <typename TRAITS>
-struct NSE_Data_InflowProfile : NSE_Data<TRAITS>
+template <typename TRAITS, int DFS_COUNT>
+struct NSE_Data_InflowProfile : NSE_Data<TRAITS, DFS_COUNT>
 {
 	using idx = typename TRAITS::idx;
 	using dreal = typename TRAITS::dreal;
@@ -136,8 +139,8 @@ struct NSE_Data_InflowProfile : NSE_Data<TRAITS>
 	}
 };
 
-template <typename TRAITS>
-struct NSE_Data_Adjoint : NSE_Data<TRAITS>
+template <typename TRAITS, int DFS_COUNT>
+struct NSE_Data_Adjoint : NSE_Data<TRAITS, DFS_COUNT>
 {
 	using idx = typename TRAITS::idx;
 	using dreal = typename TRAITS::dreal;
@@ -213,11 +216,11 @@ struct NSE_Data_Adjoint : NSE_Data<TRAITS>
 };
 
 // base type for all ADE_Data_* types
-template <typename TRAITS>
-struct ADE_Data : LBM_Data<TRAITS>
+template <typename TRAITS, int DFS_COUNT>
+struct ADE_Data : LBM_Data<TRAITS, DFS_COUNT>
 {
-	using idx = typename LBM_Data<TRAITS>::idx;
-	using dreal = typename LBM_Data<TRAITS>::dreal;
+	using idx = typename LBM_Data<TRAITS, DFS_COUNT>::idx;
+	using dreal = typename LBM_Data<TRAITS, DFS_COUNT>::dreal;
 
 	// pointer for the variable diffusion coefficient array
 	// (can be nullptr in which case it is unused and the lbmViscosity
@@ -249,8 +252,8 @@ struct ADE_Data : LBM_Data<TRAITS>
 	}
 };
 
-template <typename TRAITS>
-struct ADE_Data_ConstInflow : ADE_Data<TRAITS>
+template <typename TRAITS, int DFS_COUNT>
+struct ADE_Data_ConstInflow : ADE_Data<TRAITS, DFS_COUNT>
 {
 	using idx = typename TRAITS::idx;
 	using dreal = typename TRAITS::dreal;
