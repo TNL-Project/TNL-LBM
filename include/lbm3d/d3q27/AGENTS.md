@@ -18,8 +18,7 @@ and macroscopic output for the 3D Navier-Stokes solver.
 .
 ├── col_*.h              # Collision operators (CUM, BGK, CLBM, MRT, SRT, KBC, adjoint variants)
 ├── eq_*.h               # Equilibrium distributions (standard, well, entropic, adjoint, inverse-cumulant)
-├── streaming_AA.h       # A-A pattern streaming (single lattice, lower memory)
-├── streaming_AB.h       # A-B pattern streaming (two-lattice swap)
+├── streaming_*.h        # Streaming pattern implementations (A-A, A-B pull/push, esoteric in-place)
 ├── bc.h                 # Boundary condition dispatch over GEO enum
 ├── macro.h              # Macroscopic quantity output and forcing hooks
 ├── common.h             # Base mixin: density/velocity/equilibrium for standard operators
@@ -33,7 +32,7 @@ and macroscopic output for the 3D Navier-Stokes solver.
 |------|----------|-------|
 | Add a collision operator | `col_*.h` | Inherit from `D3Q27_COMMON<TRAITS, EQ>` or `D3Q27_COMMON_WELL<TRAITS, EQ>`; set a static `id` string |
 | Add a boundary condition | `bc.h` | Extend `D3Q27_BC_All::GEO` and add a handler in `preCollision` / `postCollision` |
-| Switch streaming pattern | `streaming_AA.h` / `streaming_AB.h` | Define `AA_PATTERN` or `AB_PATTERN` before including `lbm3d/core.h` |
+| Switch streaming pattern | `streaming_*.h` | Each file defines an independent streaming class such as `D3Q27_STREAMING_AA` or `D3Q27_STREAMING_AB_PULL` (all headers are co-includable via `streaming.h` umbrella) |
 | Customize macro output | `macro.h` | Inherit from `D3Q27_MACRO_Base`; `outputMacro` writes to `SD.macro` |
 | Change equilibrium | `eq_*.h` | Each file provides `eq_<dir>(rho, vx, vy, vz, ...)` for all 27 directions |
 
@@ -43,8 +42,7 @@ and macroscopic output for the 3D Navier-Stokes solver.
   `_well` variants use `D3Q27_COMMON_WELL` and shift density by one.
 - **`eq_*`** = equilibrium distribution functions;
   called direction-by-direction by `setEquilibrium`.
-- **`streaming_*`** = streaming implementations;
-  `AA_PATTERN` stores to same site/opposite direction on even iterations.
+- **`streaming_*`** = streaming pattern implementations.
 - **`common*.h`** = base mixins providing `computeDensityAndVelocity`, `setEquilibrium`, and `setEquilibriumLat`.
 - Inheritance:
   `D3Q27_COMMON` for standard operators,
