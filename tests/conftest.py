@@ -7,7 +7,27 @@ import pathlib
 import cuda.bindings.driver as cuda_driver
 import pytest
 
+from tests import lbmtest
 from tests.lbmtest import _SIM_RUNS, SimRun
+
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--build-dir",
+        type=pathlib.Path,
+        default=PROJECT_ROOT / "build",
+        help="Build directory with the compiled executables (default: %(default)s)",
+    )
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    # Must run before test modules import BUILD_DIR / STREAMING_PATTERN from lbmtest.
+    build_dir = config.getoption("build_dir")
+    assert isinstance(build_dir, pathlib.Path)
+    lbmtest.BUILD_DIR = build_dir.resolve()
+    lbmtest.STREAMING_PATTERN = lbmtest._streaming_pattern()
 
 
 def _gpu_available() -> bool:

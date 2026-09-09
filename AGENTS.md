@@ -173,7 +173,7 @@ pytest
 pytest tests/unit tests/integration  # skip the heavier regression suite
 pytest tests/regression  # simulation result checks only
 # Test the A-B reference build without moving directories:
-TNL_LBM_BUILD_DIR=build-ab pytest
+pytest --build-dir build-ab
 
 # Python bindings (after build)
 PYTHONPATH=build/pytnl_lbm python -c "import pytnl_lbm"

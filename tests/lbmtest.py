@@ -16,10 +16,9 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
-# overridable so different configurations can be tested without moving build directories
-BUILD_DIR = pathlib.Path(
-    os.environ.get("TNL_LBM_BUILD_DIR", PROJECT_ROOT / "build")
-).resolve()
+# Overridable via the --build-dir pytest option (registered in conftest.py) so
+# different configurations can be tested without moving build directories.
+BUILD_DIR = (PROJECT_ROOT / "build").resolve()
 
 ADIOS_CONFIG = PROJECT_ROOT / "adios2.xml"
 ADIOS_CONFIG_SST = PROJECT_ROOT / "adios2_sst.xml"
