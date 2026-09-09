@@ -3,6 +3,10 @@
 #include "lbm_block.h"
 #include "block_size_optimizer.h"
 
+#include <TNL/Atomic.h>
+
+#include <fmt/core.h>
+
 #include <map>
 #include <tuple>  // std::tie
 
@@ -393,6 +397,107 @@ void LBM_BLOCK<CONFIG>::copyMapToDevice()
 	dphiTransferDirection = hphiTransferDirection;
 
 	updateOutflowPassRegion();
+}
+
+template <typename CONFIG>
+void LBM_BLOCK<CONFIG>::validateFaceDetectedBC()
+{
+	if constexpr (CONFIG::BC::use_outflow_pass) {
+		// failure buffer: [0] = number of failing sites, [1..3] = global
+		// coordinates of the first recorded failure, [4] = its interior-side
+		// axis-neighbor count
+		TNL::Containers::Array<TNL::Atomic<int, DeviceType>, DeviceType> dfailure(5);
+		dfailure.setValue(0);
+		TNL::Atomic<int, DeviceType>* failure = dfailure.getData();
+
+		// SD carries the device map pointer and the local indexer; the lambda
+		// runs on the device, so everything it touches must be captured by value
+		typename CONFIG::DATA SD = data;
+		const bool3d distributed = is_distributed();
+		const idx3d goffset = offset;
+#ifdef HAVE_MPI
+		dmap.getLocalView().forAll(
+#else
+		dmap.getView().forAll(
+#endif
+			[SD, distributed, goffset, failure] __cuda_callable__(idx x, idx y, idx z) mutable
+			{
+				const map_t gi_map = SD.map(x, y, z);
+				if (! CONFIG::BC::needsFaceDetection(gi_map))
+					return;
+
+				// neighbor indices clamped to the map storage (local extent plus
+				// the synchronized halos): the validator must stay in-bounds also
+				// on malformed maps, where the unclamped A-A indices would read
+				// outside the map storage; wrap across the global seam in
+				// domain-periodic directions (unless distributed, where the
+				// periodic exchange goes through the inter-rank halos)
+				const idx overlap_x = SD.indexer.template getOverlap<0>();
+				const idx overlap_y = SD.indexer.template getOverlap<1>();
+				const idx overlap_z = SD.indexer.template getOverlap<2>();
+				idx xp = TNL::min(x + 1, SD.X() - 1 + overlap_x);
+				idx xm = TNL::max(x - 1, -overlap_x);
+				idx yp = TNL::min(y + 1, SD.Y() - 1 + overlap_y);
+				idx ym = TNL::max(y - 1, -overlap_y);
+				idx zp = TNL::min(z + 1, SD.Z() - 1 + overlap_z);
+				idx zm = TNL::max(z - 1, -overlap_z);
+				if (SD.periodic.x() && ! distributed.x()) {
+					if (x == 0)
+						xm = SD.X() - 1;
+					if (x == SD.X() - 1)
+						xp = 0;
+				}
+				if (SD.periodic.y() && ! distributed.y()) {
+					if (y == 0)
+						ym = SD.Y() - 1;
+					if (y == SD.Y() - 1)
+						yp = 0;
+				}
+				if (SD.periodic.z() && ! distributed.z()) {
+					if (z == 0)
+						zm = SD.Z() - 1;
+					if (z == SD.Z() - 1)
+						zp = 0;
+				}
+
+				int interior_neighbors = 0;
+				if (CONFIG::BC::isOutflowInterior(SD.map(xm, y, z)))
+					interior_neighbors++;
+				if (CONFIG::BC::isOutflowInterior(SD.map(xp, y, z)))
+					interior_neighbors++;
+				if (CONFIG::BC::isOutflowInterior(SD.map(x, ym, z)))
+					interior_neighbors++;
+				if (CONFIG::BC::isOutflowInterior(SD.map(x, yp, z)))
+					interior_neighbors++;
+				if (CONFIG::BC::isOutflowInterior(SD.map(x, y, zm)))
+					interior_neighbors++;
+				if (CONFIG::BC::isOutflowInterior(SD.map(x, y, zp)))
+					interior_neighbors++;
+
+				if (interior_neighbors != 1) {
+					if (failure[0].fetch_add(1) == 0) {
+						failure[1] = goffset.x() + x;
+						failure[2] = goffset.y() + y;
+						failure[3] = goffset.z() + z;
+						failure[4] = interior_neighbors;
+					}
+				}
+			}
+		);
+
+		TNL::Backend::streamSynchronize(0);
+		TNL::Containers::Array<TNL::Atomic<int, DeviceType>, TNL::Devices::Host> hfailure(dfailure);
+		if (hfailure[0] > 0)
+			throw std::runtime_error(
+				fmt::format(
+					"boundary site at global ({},{},{}) has {} interior-side (fluid/symmetry) axis-neighbors (expected exactly 1)",
+					hfailure[1].load(),
+					hfailure[2].load(),
+					hfailure[3].load(),
+					hfailure[4].load()
+				)
+			);
+	}
 }
 
 template <typename CONFIG>

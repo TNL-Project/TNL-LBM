@@ -50,7 +50,7 @@ with optional Python bindings via nanobind and distributed execution through CUD
 | Python binding surface | `pytnl_lbm/pytnl_lbm.cpp` | Exports one concrete `SP_D3Q27_CUM_ConstInflow` instantiation |
 | 3D example simulations | `sim_NSE/*.cu`, `sim_NSE_ADE/*.cu`, `sim_adjoint/*.cu` | Each `int main()` is a standalone CMake executable |
 | 2D example simulations | `sim_2D/*.cu` | sim2d_1 (channel+hole), sim2d_2 (Poiseuille), sim2d_Taylor_Green, sim2d_hills |
-| Unit-test C++ binary | `tests/unit/*.cu` | doctest cases compiled into one binary; `test_outflowcover.cu` (`TEST_SUITE("outflowcover")`), `test_decomposition.cu` (`TEST_SUITE("decomposition")`) |
+| Unit-test C++ binary | `tests/unit/*.cu` | doctest cases compiled into one binary |
 | Regression tests | `tests/regression/` | pytest suites: IBM matrices vs `baseline_ibm_matrices/` + IBM flow-field checks, D3Q27 NSE (sim_1..sim_4 + forcing variants) checks, D2Q9 verification checks + forcing variant, MPI multi-rank checks (test_mpi.py) |
 | Output-data pipeline test | `tests/integration/` | pytest suite driving `test_outputdata` (BP5, SST, Catalyst inline/plugin engines) |
 | External consumption test | `tests/subproject/` | Verifies TNL-LBM works via CMake `FetchContent` |
@@ -118,6 +118,22 @@ with optional Python bindings via nanobind and distributed execution through CUD
   Set `GEO_SYMMETRY` planes first, inflow/outflow next, then walls, and the `GEO_NOTHING` ghost layer always last
   — otherwise symmetry tags capture the inflow/outflow face edges.
 - **Fenced comments**: Do not add decorative comments with "fences", e.g. `# -----------------` or `// -----------------`.
+- **Inlining many heavy per-face BC bodies into the fused A-A kernel**: ptxas
+  trades registers for local-memory spills (proven by ncu on sim_2 AA: 96->80
+  regs, ~1.2 GB/launch spill traffic, -6.8% GLUPS). The symmetric failure is
+  a runtime-face BC body in D2Q9's small fused kernels: defeats constant
+  folding (hills AA -5%, and drifts values off the legacy FP contractions
+  until the mass-conservation regression fails at final time). Neither
+  extreme works: `__noinline__` outlines collapse D2Q9 AA 26.2 -> 11.0 GLUPS
+  (ABI overhead); one runtime-generic body for all models regresses D3Q27 AB
+  -3.5%. The tuned dispatch lives in `bc.h`: D3Q27 carries one
+  runtime-parameterized body called directly in both patterns; D2Q9 carries
+  a `template <int AXIS, int SIGN>` body (constexpr slot arithmetic)
+  instantiated per face in the preCollision switch.
+- **Verifying FP-bitwise contracts in test kernels only**: `lbm_fma_rn` pins
+  tuned against fp-contract fusion spots in a small test kernel do not
+  guarantee the same contractions in the larger fused production kernel; the
+  production regression suites are the gate.
 
 ## UNIQUE STYLES
 
@@ -180,7 +196,9 @@ provides the AB default when neither is set.
   indices are unclamped (`kernels.h`), so an edge BC wrap-writes into the
   opposite column/row. Apply the ghost-layer idiom: outermost plane
   `GEO_NOTHING`, BC on `1`/`N-2`.
-- Lateral `GEO_INFLOW_LEFT` moment BCs diverge under AA on ghost-adjacent planes.
+- `GEO_INFLOW_MOMENT` BC planes must not intersect with another inflow plain in a corner or edge:
+  the corner sites have no interior-side neighbor for the runtime face detection
+  and are rejected by `validateFaceDetectedBC`.
 - `GEO_OUTFLOW_RIGHT` and `GEO_OUTFLOW_RIGHT_INTERP` run through a
   deterministic two-pass scheme in *both* A-A and A-B streaming patterns
   (it replaced the legacy fused kernel path, which raced with same-launch
@@ -224,7 +242,7 @@ provides the AB default when neither is set.
   - native sm_120: the outflow pass is already bit-identical between patterns;
     the divergence seeds in the *main* kernel — predominantly the `D3Q27_CUM` collision core (`col_cum.h`),
     where NVVM makes per-expression FMA-contraction/CSE choices that differ between the AA and AB builds,
-    secondarily the `GEO_INFLOW_LEFT` moment BC;
+    secondarily the `GEO_INFLOW_MOMENT` moment BC;
     macro helpers and all init kernels are bit-identical
     and both streamings carry zero FP ops.
     First field diff at frame ~1 (≈step 40) in the inflow/baffle region x=1..33,

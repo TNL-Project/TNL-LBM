@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 
 # GEO enum values (must match include/lbm3d/d2q9/bc.h)
 GEO_WALL = 1
-GEO_INFLOW_LEFT = 3
+GEO_INFLOW_MOMENT = 3
 GEO_OUTFLOW_RIGHT_INTERP = 6
 GEO_NOTHING = 7
 GEO_SYMMETRY = 8
@@ -118,7 +118,7 @@ class TestSim2d1:
 
     def test_inflow_uniform(self, data: FieldData) -> None:
         vx, wall = data["velocity_x"], data["wall"]
-        inflow_mask = wall[:, 1] == GEO_INFLOW_LEFT
+        inflow_mask = wall[:, 1] == GEO_INFLOW_MOMENT
         assert inflow_mask.any(), "no inflow cells found at x=1"
         inflow_vx = vx[inflow_mask, 1]
         spread = float(np.max(inflow_vx) - np.min(inflow_vx))
@@ -226,7 +226,7 @@ class TestSim2dHills:
 
     def test_inflow_uniform(self, data: FieldData) -> None:
         vx, wall = data["velocity_x"], data["wall"]
-        inflow_mask = wall[:, 1] == GEO_INFLOW_LEFT
+        inflow_mask = wall[:, 1] == GEO_INFLOW_MOMENT
         assert inflow_mask.any(), "no inflow cells found at x=1"
         inflow_vx = vx[inflow_mask, 1]
         spread = float(np.max(inflow_vx) - np.min(inflow_vx))
@@ -248,7 +248,7 @@ class TestSim2dHills:
         inflow_col = wall[:, 1]
         assert inflow_col[0] == GEO_NOTHING
         assert inflow_col[1] == GEO_WALL, "bottom wall must win at the inflow corner"
-        assert np.all(inflow_col[2 : ny - 1] == GEO_INFLOW_LEFT), (
+        assert np.all(inflow_col[2 : ny - 1] == GEO_INFLOW_MOMENT), (
             "inflow must cover the full face including the top row "
             f"(tags: {np.unique(inflow_col[2 : ny - 1])})"
         )

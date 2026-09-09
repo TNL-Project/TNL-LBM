@@ -117,6 +117,10 @@ struct State_NSE_ADE : State<NSE>
 		}
 #endif
 
+		// validate the face-detected BC sites in the complete device map
+		// (the overlaps were synchronized above, single-rank maps need no sync)
+		nse.validateFaceDetectedBC();
+
 		spdlog::info("Finished SimInit");
 	}
 

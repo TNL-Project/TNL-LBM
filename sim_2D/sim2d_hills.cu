@@ -63,7 +63,7 @@ struct StateLocal : State<NSE>
 		nse.setBoundaryY(nse.lat.global.y() - 2, BC::GEO_SYMMETRY);	// top: symmetry
 
 		// inflow/outflow next, so they win over symmetry at corners
-		nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT);								 // left: inflow
+		nse.setBoundaryX(1, BC::GEO_INFLOW_MOMENT);								 // left: inflow
 		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT_INTERP);	 // right: outflow
 
 		// walls last — walls take priority over inflow/outflow at corners
