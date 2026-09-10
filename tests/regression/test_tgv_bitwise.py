@@ -135,17 +135,21 @@ def test_tgv2d_mpi_bitwise_identical(tmp_path: pathlib.Path) -> None:
     )
 
 
-def test_tgv2d_mpi4_bitwise_identical(tmp_path: pathlib.Path) -> None:
+def test_tgv2d_mpi4_bitwise_identical(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """2D TGV under mpirun -np 4 (2x2 decomposition): final fields bitwise identical.
 
     A 1D decomposition only ever allocates face buffers in the distributed
     axis - the synchronizer skips all corner buffers when a single axis
-    carries the overlap. The 2x2 decomposition (the optimal split of the
-    square TGV domain into 4 blocks) distributes both lattice axes, so the
-    diagonal ghost-corner exchanges fire for the first time: per-slot corner
-    buffers with mixed-pass face axes under EsoTwist's staged passes, and
-    the combined-mask corner geometry of the esoteric pull/push schemes.
+    carries the overlap. The forced 2x2 layout distributes both lattice axes,
+    so the diagonal ghost-corner exchanges fire for the first time: per-slot
+    corner buffers with mixed-pass face axes under EsoTwist's staged passes,
+    and the combined-mask corner geometry of the esoteric pull/push schemes.
+    (The interface-optimal split of the square TGV domain is 4x1x1 along the
+    cheapest axis, hence the TNL_LBM_FORCE_DECOMPOSITION override.)
     """
+    monkeypatch.setenv("TNL_LBM_FORCE_DECOMPOSITION", "2,2,1")
     results_dir = _run_sim_to_results(
         BUILD_DIR / "sim_2D" / "sim2d_Taylor_Green",
         ["--resolution", "1", "--adios-config", ADIOS_CONFIG],

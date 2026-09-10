@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include <map>
 
@@ -295,7 +297,28 @@ LBM_BLOCK<CONFIG> decomposeLattice_D3Q27(
 	// find optimal decomposition
 	const TNL::Containers::Block<3, idx> globalBoundingBox = {idx3d{0, 0, 0}, global_size};
 	using Permutation = typename CONFIG::TRAITS::xyz_permutation;
-	const auto decomposition = decomposeBlockOptimalWithPermutation<Permutation>(globalBoundingBox, idx(nproc));
+
+	// Test hook: force a specific block layout ("nx,ny,nz") instead of the
+	// interface-optimal decomposition. The optimal split of an (almost) square
+	// LBM domain is always 1D along the cheapest-interface axis, which leaves
+	// the diagonal corner exchanges of multi-dimensional decompositions
+	// unreachable by tests; the override makes them exercisable. The product
+	// must match the communicator size and no axis may be split beyond its
+	// global extent.
+	std::array<idx, 3> forced = {0, 0, 0};
+	if (const char* spec = std::getenv("TNL_LBM_FORCE_DECOMPOSITION")) {
+		int nx, ny, nz;
+		if (std::sscanf(spec, "%d,%d,%d", &nx, &ny, &nz) != 3)
+			throw std::runtime_error(fmt::format("TNL_LBM_FORCE_DECOMPOSITION: cannot parse '{}'", spec));
+		if (idx(nx) * ny * nz != idx(nproc))
+			throw std::runtime_error(fmt::format("TNL_LBM_FORCE_DECOMPOSITION: {}x{}x{} does not match {} ranks", nx, ny, nz, nproc));
+		if (nx > global_size.x() || ny > global_size.y() || nz > global_size.z())
+			throw std::runtime_error(fmt::format("TNL_LBM_FORCE_DECOMPOSITION: {}x{}x{} splits an axis beyond its extent", nx, ny, nz));
+		forced = {idx(nx), idx(ny), idx(nz)};
+	}
+	const std::vector<TNL::Containers::Block<3, idx>> decomposition =
+		(forced[0] > 0) ? TNL::Containers::decomposeBlock(globalBoundingBox, forced[0], forced[1], forced[2])
+						: decomposeBlockOptimalWithPermutation<Permutation>(globalBoundingBox, idx(nproc));
 	const TNL::Containers::Block<3, idx>& localBoundingBox = decomposition.at(rank);
 
 	// local size of the block
