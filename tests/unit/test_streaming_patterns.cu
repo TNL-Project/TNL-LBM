@@ -1,6 +1,6 @@
 /*
  * Type-parametrized unit test for all streaming patterns (A-A, A-B pull,
- * A-B push) over all lattice models (D2Q9, D3Q7, D3Q27).
+ * A-B push, esoteric pull/push/twist) over all lattice models (D2Q9, D3Q7, D3Q27).
  *
  * Each pattern is initialized in its own DF layout (twisted for A-A, pre-stream
  * for A-B pull, post-stream for A-B push) so that the first collide reads
@@ -145,6 +145,33 @@ static void runRoundTrip(int x, int y, int z, typename DIRS::ks_t& ks1, typename
 						// twisted initial layout: slot opposite(i) holds pat(i, s)
 						v = pat(opposite_direction(slot), xx, yy, zz);
 					}
+					else if constexpr (is_esoteric_in_place_v<STREAMING>) {
+						// parity-0 initial placements (see LBM_BLOCK::setInitialCondition)
+						if constexpr (is_ESO_TWIST_v<STREAMING>) {
+							// slot (i, s) holds pat(i, s - p(c_i)), p(c) = max(c, 0)
+							v =
+								pat(slot,
+									clampMS(xx - (DIRS::cx(slot) > 0 ? 1 : 0)),
+									clampMS(yy - (DIRS::cy(slot) > 0 ? 1 : 0)),
+									clampMS(zz - (DIRS::cz(slot) > 0 ? 1 : 0)));
+						}
+						else if constexpr (is_ESO_PULL_v<STREAMING>) {
+							// heads shifted by -c_i, tails natural
+							if (is_pair_head(slot))
+								v = pat(slot, clampMS(xx - DIRS::cx(slot)), clampMS(yy - DIRS::cy(slot)), clampMS(zz - DIRS::cz(slot)));
+							else
+								v = pat(slot, xx, yy, zz);
+						}
+						else {
+							// ESO_PUSH: head slot holds the tail's population shifted by +c_h,
+							// tail slot the head's population at the own site
+							const int pair = opposite_direction(slot);
+							if (is_pair_head(slot))
+								v = pat(pair, clampMS(xx + DIRS::cx(slot)), clampMS(yy + DIRS::cy(slot)), clampMS(zz + DIRS::cz(slot)));
+							else
+								v = pat(pair, xx, yy, zz);
+						}
+					}
 					else if constexpr (is_AB_PUSH_v<STREAMING>) {
 						// post-stream layout: slot (i, s) holds the population that arrived from s - c_i
 						v = pat(slot, clampMS(xx - DIRS::cx(slot)), clampMS(yy - DIRS::cy(slot)), clampMS(zz - DIRS::cz(slot)));
@@ -171,8 +198,8 @@ static void runRoundTrip(int x, int y, int z, typename DIRS::ks_t& ks1, typename
 	streamCollideKernel<STREAMING, DIRS><<<grid, block>>>(sd, devOut.getData(), x, y, z);
 	TNL::Backend::deviceSynchronize();
 
-	if constexpr (is_AA_v<STREAMING>) {
-		// the second A-A sub-step runs with the opposite parity on the same array
+	if constexpr (is_AA_v<STREAMING> || is_esoteric_in_place_v<STREAMING>) {
+		// the second sub-step runs with the opposite parity on the same array
 		sd.even_iter = true;
 	}
 	else {
@@ -235,12 +262,21 @@ TEST_CASE_TEMPLATE(
 	D2Q9Case<D2Q9_STREAMING_AA<TraitsDP>>,
 	D2Q9Case<D2Q9_STREAMING_AB_PULL<TraitsDP>>,
 	D2Q9Case<D2Q9_STREAMING_AB_PUSH<TraitsDP>>,
+	D2Q9Case<D2Q9_STREAMING_ESO_PULL<TraitsDP>>,
+	D2Q9Case<D2Q9_STREAMING_ESO_PUSH<TraitsDP>>,
+	D2Q9Case<D2Q9_STREAMING_ESO_TWIST<TraitsDP>>,
 	D3Q7Case<D3Q7_STREAMING_AA<TraitsDP>>,
 	D3Q7Case<D3Q7_STREAMING_AB_PULL<TraitsDP>>,
 	D3Q7Case<D3Q7_STREAMING_AB_PUSH<TraitsDP>>,
+	D3Q7Case<D3Q7_STREAMING_ESO_PULL<TraitsDP>>,
+	D3Q7Case<D3Q7_STREAMING_ESO_PUSH<TraitsDP>>,
+	D3Q7Case<D3Q7_STREAMING_ESO_TWIST<TraitsDP>>,
 	D3Q27Case<D3Q27_STREAMING_AA<TraitsDP>>,
 	D3Q27Case<D3Q27_STREAMING_AB_PULL<TraitsDP>>,
-	D3Q27Case<D3Q27_STREAMING_AB_PUSH<TraitsDP>>
+	D3Q27Case<D3Q27_STREAMING_AB_PUSH<TraitsDP>>,
+	D3Q27Case<D3Q27_STREAMING_ESO_PULL<TraitsDP>>,
+	D3Q27Case<D3Q27_STREAMING_ESO_PUSH<TraitsDP>>,
+	D3Q27Case<D3Q27_STREAMING_ESO_TWIST<TraitsDP>>
 )
 {
 	INFO("site=(8,9,10)");
