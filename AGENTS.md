@@ -1,6 +1,6 @@
 # TNL-LBM PROJECT KNOWLEDGE BASE
 
-**Updated:** 2026-08-20
+**Updated:** 2026-09-11
 **Branch:** main
 
 ## OVERVIEW
@@ -44,8 +44,8 @@ with optional Python bindings via nanobind and distributed execution through CUD
 | Add a 2D collision operator | `include/lbm3d/d2q9/col_*.h` | Inherit from `D2Q9_COMMON` |
 | Add a 3D boundary condition | `include/lbm3d/d3q27/bc.h` | Extend `D3Q27_BC_All::GEO` enum and handlers |
 | Add a 2D boundary condition | `include/lbm3d/d2q9/bc.h` | Extend `D2Q9_BC_All::GEO` enum and handlers |
-| Change 3D streaming pattern | `include/lbm3d/d3q27/streaming_*.h` | Select `D3Q27_STREAMING_{AA,AB_PULL,AB_PUSH}` in the sim's CONFIG; the `D3Q27_STREAMING` alias in `streaming.h` (A-B pull default) follows the `TNL_LBM_STREAMING_PATTERN` CMake selection |
-| Change 2D streaming pattern | `include/lbm3d/d2q9/streaming_*.h` | Select `D2Q9_STREAMING_{AA,AB_PULL,AB_PUSH}` in the sim's CONFIG; the `D2Q9_STREAMING` alias in `streaming.h` (A-B pull default) follows the `TNL_LBM_STREAMING_PATTERN` CMake selection |
+| Change 3D streaming pattern | `include/lbm3d/d3q27/streaming_*.h` | Select `D3Q27_STREAMING_{AA,AB_PULL,AB_PUSH,ESO_TWIST,ESO_PULL,ESO_PUSH}` in the sim's CONFIG; the `D3Q27_STREAMING` alias in `streaming.h` (A-B pull default) follows the `TNL_LBM_STREAMING_PATTERN` CMake selection |
+| Change 2D streaming pattern | `include/lbm3d/d2q9/streaming_*.h` | Select `D2Q9_STREAMING_{AA,AB_PULL,AB_PUSH,ESO_TWIST,ESO_PULL,ESO_PUSH}` in the sim's CONFIG; the `D2Q9_STREAMING` alias in `streaming.h` (A-B pull default) follows the `TNL_LBM_STREAMING_PATTERN` CMake selection |
 | Simulation driver loop | `include/lbm3d/core.h` | `execute<STATE>(state)` orchestrates init/update/finalize |
 | Python binding surface | `pytnl_lbm/pytnl_lbm.cpp` | Exports one concrete `SP_D3Q27_CUM_ConstInflow` instantiation |
 | 3D example simulations | `sim_NSE/*.cu`, `sim_NSE_ADE/*.cu`, `sim_adjoint/*.cu` | Each `int main()` is a standalone CMake executable |
@@ -67,8 +67,8 @@ with optional Python bindings via nanobind and distributed execution through CUD
 | `D3Q27_CUM` / `D3Q27_CLBM` / `D3Q27_KBC_*` | struct | `include/lbm3d/d3q27/col_*.h` | 3D collision operators (cumulant, cascaded LBM, KBC) |
 | `D2Q9_CLBM` / `D2Q9_CLBM_Straka2016` | struct | `include/lbm3d/d2q9/col_clbm.h` | 2D CLBM: Geier 2017 (Galilean invariant) and Straka 2016 (anisotropic, legacy) |
 | `D2Q9_SRT` | struct | `include/lbm3d/d2q9/col_srt.h` | 2D single-relaxation-time BGK |
-| `D3Q27_STREAMING_{AA,AB_PULL,AB_PUSH}` | struct | `include/lbm3d/d3q27/streaming_*.h` | 3D streaming implementations (all co-includable); `D3Q27_STREAMING` in `streaming.h` is a macro-selected legacy alias |
-| `D2Q9_STREAMING_{AA,AB_PULL,AB_PUSH}` | struct | `include/lbm3d/d2q9/streaming_*.h` | 2D streaming implementations (all co-includable); `D2Q9_STREAMING` in `streaming.h` is a macro-selected legacy alias |
+| `D3Q27_STREAMING_{AA,AB_PULL,AB_PUSH,ESO_TWIST,ESO_PULL,ESO_PUSH}` | struct | `include/lbm3d/d3q27/streaming_*.h` | 3D streaming implementations (all co-includable); `D3Q27_STREAMING` in `streaming.h` is a macro-selected legacy alias |
+| `D2Q9_STREAMING_{AA,AB_PULL,AB_PUSH,ESO_TWIST,ESO_PULL,ESO_PUSH}` | struct | `include/lbm3d/d2q9/streaming_*.h` | 2D streaming implementations (all co-includable); `D2Q9_STREAMING` in `streaming.h` is a macro-selected legacy alias |
 | `D3Q27_BC_All` | struct | `include/lbm3d/d3q27/bc.h` | 3D boundary condition dispatch for all GEO tags |
 | `D2Q9_BC_All` | struct | `include/lbm3d/d2q9/bc.h` | 2D boundary condition dispatch for all GEO tags |
 | `D3Q27_MACRO_Default` | struct | `include/lbm3d/d3q27/macro.h` | 3D default macroscopic output: density + velocity |
@@ -140,7 +140,7 @@ with optional Python bindings via nanobind and distributed execution through CUD
 - **Simulation-centric layout**: Example executables live in domain-named directories (`sim_NSE`, `sim_NSE_ADE`, `sim_adjoint`, `sim_2D`)
   rather than a single `apps/` folder.
 - **Lattice-model subpackages**: `d3q27/`, `d3q7/`, and `d2q9/` mirror each other with `col_*`, `eq_*`, `streaming_*`, `bc.h`, `macro.h`, `common*.h`.
-- **Streaming pattern as a template policy**: every `*_STREAMING_*` struct carries `DFMAX` (number of DF arrays) and `output_df`; pattern predicates are variable templates specialized next to each struct — `is_AA_v` / `is_AB_PULL_v` / `is_AB_PUSH_v` (identity), `twisted_layout_v` (twisted initial DF storage), `requires_ghost_layer_v` (cross-site streaming requires the ghost-layer idiom) — and all pattern-dependent branches are `if constexpr` on them. `LBM_CONFIG` instantiates `DATA = _DATA<TRAITS, STREAMING::DFMAX>` so the kernel-argument `dfs[]` array is pattern-sized. The legacy `TNL_LBM_STREAMING_PATTERN_*` macros are consulted only by the three `streaming.h` umbrella aliases.
+- **Streaming pattern as a template policy**: every `*_STREAMING_*` struct carries `DFMAX` (number of DF arrays) and `output_df`; pattern predicates are variable templates specialized next to each struct — `is_AA_v` / `is_AB_PULL_v` / `is_AB_PUSH_v` (identity), `twisted_layout_v` (twisted initial DF storage), `requires_ghost_layer_v` (cross-site streaming requires the ghost-layer idiom) — and all pattern-dependent branches are `if constexpr` on them. The esoteric patterns add `is_ESO_TWIST_v` / `is_ESO_PULL_v` / `is_ESO_PUSH_v` (identity) and `is_esoteric_in_place_v` (all three in-place pairs schemes) with an `is_pair_head` helper (odd-numbered slot of each opposite direction pair). `LBM_CONFIG` instantiates `DATA = _DATA<TRAITS, STREAMING::DFMAX>` so the kernel-argument `dfs[]` array is pattern-sized. The legacy `TNL_LBM_STREAMING_PATTERN_*` macros are consulted only by the three `streaming.h` umbrella aliases.
 - **Traits-driven arrays**: Type aliases encode host/device and content (`__hmap_array_t`, `__dlat_array_t`, `__hmacro_array_t`).
 - **nanobind exports**: All export functions follow `export_<Thing>(m, "Name")`;
   the module exposes one fully-instantiated D3Q27 cumulant configuration.
@@ -184,16 +184,150 @@ typos --color always --sort
 
 ## STREAMING PATTERN SELECTION (TNL_LBM_STREAMING_PATTERN)
 
-`-DTNL_LBM_STREAMING_PATTERN=<AA|AB_PULL|AB_PUSH>` (root CMakeLists.txt)
-selects which streaming pattern all simulations and the Python bindings are
-compiled with; default `AB_PULL` (e.g. configure the A-A tree with
-`cmake -B build-aa -S . -G Ninja -DTNL_LBM_STREAMING_PATTERN=AA`).
+`-DTNL_LBM_STREAMING_PATTERN=<AA|AB_PULL|AB_PUSH|ESO_TWIST|ESO_PULL|ESO_PUSH>`
+(root CMakeLists.txt) selects which streaming pattern all simulations and the
+Python bindings are compiled with; default `AB_PULL` (e.g. configure the A-A
+tree with `cmake -B build-aa -S . -G Ninja -DTNL_LBM_STREAMING_PATTERN=AA`).
 The variable only defines the
-`TNL_LBM_STREAMING_PATTERN_{AA,AB_PULL,AB_PUSH}` macro via the `TNL_LBM`
-interface target, which the `streaming.h` umbrellas read to pick the
-`D{3Q27,3Q7,2Q9}_STREAMING` aliases — library headers themselves are
-pattern-agnostic, and all three patterns can be instantiated in one
-translation unit via the explicit `*_STREAMING_{AA,AB_PULL,AB_PUSH}` types.
+`TNL_LBM_STREAMING_PATTERN_{AA,AB_PULL,AB_PUSH,ESO_TWIST,ESO_PULL,ESO_PUSH}`
+macro via the `TNL_LBM` interface target, which the `streaming.h` umbrellas
+read to pick the `D{3Q27,3Q7,2Q9}_STREAMING` aliases — library headers
+themselves are pattern-agnostic, and all six patterns can be instantiated in
+one translation unit via the explicit
+`*_STREAMING_{AA,AB_PULL,AB_PUSH,ESO_TWIST,ESO_PULL,ESO_PUSH}` types.
+
+**Esoteric in-place patterns (ESO_TWIST, ESO_PULL, ESO_PUSH):**
+
+- Three single-array, in-place patterns after Lehmann 2022 (esoteric pull and
+  push) and Geier & Schönherr 2017 (esoteric twist), available for D2Q9, D3Q7
+  and D3Q27 (`streaming_ESO_{PULL,PUSH,TWIST}.h` next to the other patterns in
+  each lattice-model directory, `DFMAX = 1`, `output_df = df_cur`,
+  `requires_ghost_layer_v = true`). Each alternates two parity phases on one
+  DF array on the same `even_iter = (iterations % 2) == 1` schedule as A-A;
+  pairs of opposite slots (heads = odd-numbered directions) cover memory the
+  way the A-A twist does, but tensor-ordered pairwise exchange instead of a
+  direction swap.
+- Bitwise-identical physics to A-B pull by construction: the initialization
+  runs as a virtual "-1 → 0" iteration in
+  `LBM_BLOCK::setInitialCondition(ic)` (called from `State::reset()` via the
+  scalar-constant `setEquilibrium(rho, vx, vy, vz)` convenience or a
+  site-wise IC functor `(KS&, gx, gy, gz)`): collision is replaced by
+  equilibrium evaluation and the pattern's own `postCollisionStreaming`
+  writes the parity-0 placement at the layout-authoring parity
+  (`even_iter = true`), so launches read identical populations from
+  launch 0. Kernel A first stamps the analytic-IC equilibrium at the own
+  site, all Q slots in the natural layout, over the halo-padded range (the
+  boundary fallback: never-transported cells keep it) and writes the
+  initial macro from the analytic condition directly (exact for every
+  pattern and decomposition); kernel B then replays the streaming write on
+  the owned range (A-A: halo-padded, its twisted own-site mapping covers
+  the ghost cells it reads) temporarily binding `df_out` to the live array
+  for the two-array patterns. `ESO_TWIST` is the exception: its p(c) =
+  max(c, 0) componentwise placement cannot be assembled by the pairwise
+  exchange (which moves each pair by the FULL head velocity - mixed-sign
+  diagonals disagree), so it stages the natural field and gathers the
+  placement directly. Under MPI, `State::reset()` then finalizes the ghost
+  planes with the regular per-slot DF+macro exchange at `even_iter = true`
+  (there is no separate natural-layout init exchange). The two-pass
+  outflow scheme and `GEO_WALL` swap are pattern-agnostic; the outflow
+  pass uses per-pattern `streamingOutflow{,Interp}` gathers in each
+  esoteric struct.
+- Verified: final TGV fields are bitwise identical to A-B pull for all three
+  esoteric patterns (and A-B push) in 2D (sim2d_Taylor_Green, 64², 25 000
+  iterations) and 3D (sim_4, 32³), single-rank, under `mpirun -np 2` (1D
+  decomposition), under `mpirun -np 4` with a forced 2×2 decomposition, and
+  in 3D under `mpirun -np 8` with a forced 2×2×2 decomposition;
+  `tests/regression/test_tgv_bitwise.py` (2D single-rank + 2D np=2 MPI +
+  2D np=4 multi-dim + 3D single-rank + 3D np=8 multi-dim gates, frame 0 and
+  final fields) enforces it against a reference build
+  (`TGV_REFERENCE_BUILD_DIR`, default `build`). The multi-dim gates need a
+  truly multi-dimensional split, but the interface-optimal decomposer always
+  1D-splits a square domain, so the gates force 2×2 / 2×2×2 via the
+  `TNL_LBM_FORCE_DECOMPOSITION="nx,ny,nz"` env hook in
+  `lattice_decomposition.h` — only multi-dimensional decompositions allocate
+  corner exchange buffers at all. Scope of the bitwise claim: it is these TGV
+  gates only — the residual AA-vs-AB D3Q27 codegen divergence below is a
+  separate, known issue that does not involve the esoteric patterns.
+- DF halo exchange uses per-slot, per-axis, parity-dependent
+  `STREAMING::dfSyncDirection(dir, axis, even)`/`dfSyncOffset` descriptors
+  (parity of the launch that authored the layout): PULL and PUSH use one
+  combined-mask synchronization per slot with a slot-uniform buffer offset;
+  TWIST needs a different offset per axis, which one combined mask cannot
+  express, so `start4DArraySynchronization` runs two staged combined-mask
+  passes per slot — the offset-1 axes first (their receive planes are interior
+  sites that the offset-0 pass of a neighbor may source), the offset-0 axes
+  second (post-phase-A: offset-1 = axes with c<0; post-phase-B mirrored).
+  The combined masks carry the sync pattern's diagonal buffers, so ghost
+  edges and corners are exchanged too (a per-axis chain could not reach the
+  diagonal ghost cells at all). The external stage_2/3/4 loop then sees the
+  parked None mask and does nothing. All patterns apply their buffer
+  offsets AFTER stage_0: on the synchronizer's first use its allocateHelper
+  resets the offsets to the default, and only stages 1/3 consume them, so
+  the re-set keeps them effective also on the first call.
+- Multi-dimensional decompositions exposed two further synchronizer defect
+  classes, both invisible under 1D splits (which never allocate corner
+  buffers) and both guarded by the np=4 gate:
+  - Buffer over-activation by mask bitmasking: the TNL synchronizer
+    activates an exchange buffer whenever the runtime mask shares any face
+    bit with the buffer's direction, so a slot's combined multi-face mask
+    also fired partially-overlapping corner buffers whose shifted send
+    regions carried stale diagonal-halo values into the neighbor's owned
+    cells.     `LBM_BLOCK::setLatticeDecomposition` restricts the per-slot
+    `df_sync[i]` patterns to buffers fully contained in one of the slot's
+    masks (plus the opposite closure the synchronizer's opposite-buffer
+    lookups need).
+  - Corner/face unpack race under shift-1 exchanges: the synchronizer
+    unpacks each buffer on its own CUDA stream, and a face buffer's shifted
+    receive region covers the corner cell owned by a corner buffer's
+    receive region, so which message landed last in the shared cell was
+    nondeterministic — diagonal-junction owned corner cells (each block's
+    local (0,0) slot pp) kept their previous-phase values, an init-time
+    seed that decays over iterations and broke the np=4 bitwise gate.
+    All buffers of the esoteric per-iteration synchronizers now share one
+    sequencing stream (`df_seq_stream` in `LBM_BLOCK`): kernel execution
+    then follows the std::map (enum) order, which places subset directions
+    before their supersets — faces first, then edges, then corners — so the
+    corner's overwrite is deterministic. The compute boundary kernels are
+    already host-synchronized before the DF exchange starts (SimUpdate), so
+    collapsing the buffer streams cannot race the pack side.
+  - Contiguous-recv direct placement vs kernel unpacks (3-cut-axis
+    decompositions, np=8 gate): the TNL synchronizer's `copyHelper` binds
+    contiguous receive views directly into the array, so MPI delivered
+    fresh edge/corner payloads (x/z-thin y-full edge lines, single-cell
+    corners — regions that only exist when all three axes are cut) during
+    stage_2, and stage_3's copy-kernel unpacks of colliding non-contiguous
+    faces then overwrote them with stale face-routed content — the
+    subset-before-superset stream ordering cannot order direct MPI writes.
+    Fixed by a TNL patch (recv side always staged + copy kernel; contiguous
+    direct-bind kept for sends only), applied to the fetched
+    `build*/_deps/tnl-src/src/TNL/Containers/DistributedNDArraySynchronizer.h`
+    copies. IMPORTANT: a fresh clone/CI refetches unpatched TNL — the np=8
+    gate fails there until the patch is merged upstream into TNL and the
+    FetchContent tag is bumped (patch copy: `patches/tnl-recv-staging.patch`).
+  - ESO_TWIST spurious third exchange: after the two staged TWIST passes,
+    `start4DArraySynchronization` must park the None mask and skip the
+    shared stage_0/stage_1 tail (`continue`) — re-arming with the canonical
+    slot direction ran a duplicate exchange with the last pass' buffer
+    offsets, whose shift-1 receivers hit owned planes and overwrote freshly
+    authored values (deterministic seam corruption, NaN by ~500 iterations
+    under `mpirun -np 2`).
+- A-B push (`streaming_AB_PUSH.h`): the pattern's identity `streaming()` read
+  expects the post-stream layout (slot `(i, s)` = population that arrived at
+  `s` from `s - c_i`, the same field the A-B pull launch-0 gather reads),
+  which the init-time `postCollisionStreaming` replay of
+  `setInitialCondition` produces directly. The per-slot DF halo exchange
+  keeps the canonical slot
+  direction with `setBufferOffsets(1)` — push arrivals live in the rank's
+  ghost planes and must land in the neighbor's OWNED planes — and restricts
+  each slot's sync pattern to the buffers fully contained in the canonical
+  slot direction or its opposite (a partially-overlapping buffer of a
+  shift-1 exchange ships un-authored ghost values; the opposite buffer must
+  stay in the pattern or stage_2's receive has no tags and is silently
+  skipped; the containment also keeps the face/edge sub-buffers of a
+  diagonal canonical direction, without which the push-arrival region
+  spanning the ghost column, row and corner could not be exchanged),
+  sequenced on the shared `df_seq_stream`. `tests/regression/test_tgv_bitwise.py`
+  asserts A-B push bitwise-equal to A-B pull like every other pattern.
 
 **Considerations for boundary conditions under A-A:**
 
@@ -223,13 +357,23 @@ translation unit via the explicit `*_STREAMING_{AA,AB_PULL,AB_PUSH}` types.
 
 - NSE_ADE (`sim_T1`, `sim_T2`) is NOT covered by the two-pass scheme
   (state_NSE_ADE.h launches no outflow kernel and its BC placement ignores
-  the ghost-layer idiom) — do not run these under AA.
+  the ghost-layer idiom) — do not run these under AA or the esoteric
+  in-place patterns (they share the single-array + ghost-layer constraints);
+  enforced by a `static_assert` in `State_NSE_ADE` (only the two-array
+  A-B patterns compile).
 - `sim_adjoint` requires the A-B pull pattern and is EXCLUDED from non-`AB_PULL` builds (CMake-level; its pytest module skips when `STREAMING_PATTERN != "AB_PULL"`).
   Findings for a future AA-native adjoint design:
   `streamingAdjoint` even-phase two-step reads escape the 1-cell ghost layer (CUDA 700 at boundary-adjacent sites);
   the reversed gather races with same-launch `postCollisionStreaming` writers in the single array (nondeterministic garbage profiles);
   the `GEO_ADJOINT_INFLOW_BB_LEFT` refill in d3q27/bc.h must be parity-aware
   (m-family from the site's own slot after an even/twisted write, matching p-slot one hop downstream after an odd push).
+- A-A fails the 2D TGV bitwise gate under multi-dimensional MPI
+  decompositions (np=4 forced 2×2 via `TNL_LBM_FORCE_DECOMPOSITION`,
+  max|diff| on the order of 1.4e-4 across the field; the 3D np=8 2×2×2 gate
+  fails with ~7.1e-4): pre-existing defect,
+  strictly out of scope for the esoteric work — do not run A-A with
+  multi-dimensional decompositions when bitwise identity to A-B pull is
+  required. The esoteric in-place patterns pass the same gates.
 - Residual AA-vs-AB divergence in D3Q27
   (open; root cause known on both arch classes studied; fix decision *deferred*):
   after the blend pin both patterns are individually mirror-perfect,
@@ -261,4 +405,4 @@ translation unit via the explicit `*_STREAMING_{AA,AB_PULL,AB_PUSH}` types.
 - `CUDA` is always defined for `lbm3d` (`-DUSE_CUDA`), even when compiling with HIP.
 - When both CUDA and HIP compilers are detected, CMake enables CUDA and disables HIP (mirrors TNL's own handling); HIP is only enabled when no CUDA compiler is found.
 - Python bindings (`pytnl_lbm`) are built only for CUDA builds; HIP builds skip them entirely.
-- The CI matrix exercises CUDA Release/Debug, HIP Release/Debug, non-MPI, and subproject consumption.
+- The CI matrix exercises CUDA Release/Debug (all six streaming patterns), HIP Release/Debug, non-MPI, and subproject consumption.

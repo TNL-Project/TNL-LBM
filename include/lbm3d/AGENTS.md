@@ -60,7 +60,7 @@ include/lbm3d/
 ## CONVENTIONS
 
 - **`core.h` is the umbrella include** for the default D3Q27 model;
-  it also pulls in `d3q27/streaming.h` (both streaming patterns plus the
+  it also pulls in `d3q27/streaming.h` (all six streaming patterns plus the
   legacy alias, which follows the `TNL_LBM_STREAMING_PATTERN` CMake selection
   and defaults to A-B pull).
 - **`.hpp` files are private implementations** included from their `.h` counterpart;
