@@ -47,7 +47,7 @@
  * passes and the shared per-buffer sequencing stream apply. The A-A
  * multi-dimensional cases are separate test cases on purpose: A-A was the
  * last pattern to fail bitwise identity under multi-dimensional
- * decompositions (see AGENTS.md, "Known limitations under A-A"), and with
+ * decompositions (see AGENTS.md, "Known limitations"), and with
  * the include/lbm3d/ fix these rows assert the correct behavior
  * unconditionally - their isolation keeps a regression attributable to A-A
  * alone.

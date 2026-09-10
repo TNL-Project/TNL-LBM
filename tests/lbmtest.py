@@ -59,8 +59,7 @@ def _streaming_pattern() -> str:
     return "AB_PULL"
 
 
-# Streaming pattern the sim binaries were built with (some boundary conditions
-# are known to not be faithful under A-A; see AGENTS.md).
+# Streaming pattern the sim binaries were built with
 STREAMING_PATTERN = _streaming_pattern()
 
 
