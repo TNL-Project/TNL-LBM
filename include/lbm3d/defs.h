@@ -42,12 +42,20 @@ enum : std::uint8_t
 	df_out,
 };
 
-// Streaming-pattern traits as variable templates: a new pattern to be added in
-// the future does not inherit any member constants it cannot honor — it only
-// specializes the traits that apply in its streaming_*.h header.
+// Streaming-pattern traits as variable templates: a new pattern does not inherit
+// any member constants it cannot honor — it only specializes the traits that
+// apply in its streaming_*.h header.
 // - is_AA_v: pattern identity (the A-A pattern with a single in-place DF array)
 // - is_AB_PULL_v: pattern identity (the two-array A-B pull scheme)
 // - is_AB_PUSH_v: pattern identity (the two-array A-B push scheme)
+// - is_ESO_TWIST_v: pattern identity (EsoTwist, Geier & Schönherr 2017)
+// - is_ESO_PULL_v: pattern identity (Esoteric Pull, Lehmann 2022)
+// - is_ESO_PUSH_v: pattern identity (Esoteric Push, Lehmann 2022)
+// - is_esoteric_in_place_v: group identity for the three esoteric in-place
+//   patterns above (EsoTwist/EsoPull/EsoPush): a single DF array whose layout
+//   is not a plain slot-indexed pre-coll population field, so initial-state
+//   placement, initial macro extraction and DF halo exchange need
+//   pattern-specific handling (the A-A pattern keeps its own handling)
 // - twisted_layout_v: sites store post-collision populations under the OPPOSITE
 //   direction index, so initialization must read/write with twisted directions
 // - requires_ghost_layer_v: streaming accesses neighbor sites within the same
@@ -59,6 +67,14 @@ template <typename STREAMING>
 inline constexpr bool is_AB_PULL_v = false;
 template <typename STREAMING>
 inline constexpr bool is_AB_PUSH_v = false;
+template <typename STREAMING>
+inline constexpr bool is_ESO_TWIST_v = false;
+template <typename STREAMING>
+inline constexpr bool is_ESO_PULL_v = false;
+template <typename STREAMING>
+inline constexpr bool is_ESO_PUSH_v = false;
+template <typename STREAMING>
+inline constexpr bool is_esoteric_in_place_v = false;
 template <typename STREAMING>
 inline constexpr bool twisted_layout_v = false;
 template <typename STREAMING>
@@ -645,6 +661,14 @@ constexpr int dir27_cz(int dir)
 constexpr int opposite_direction(int dir)
 {
 	return dir == 0 ? 0 : (dir & 1) ? dir + 1 : dir - 1;
+}
+
+// head slot of an opposite-direction pair: the odd-numbered slot of each
+// consecutive pair (the "positive" direction in the esoteric patterns' split:
+// pairs (h, t) with h & 1 == 1 and t = opposite_direction(h))
+constexpr bool is_pair_head(int dir)
+{
+	return (dir & 1) == 1;
 }
 
 // array of sync directions for the MPI synchronizer
