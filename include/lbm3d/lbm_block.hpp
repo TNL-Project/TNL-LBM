@@ -24,6 +24,68 @@ LBM_BLOCK<CONFIG>::LBM_BLOCK(const TNL::MPI::Comm& communicator, idx3d global, i
 	nproc = communicator.size();
 }
 
+// Combined exchange mask of one EsoTwist synchronization pass for the given
+// slot: the face bits of the slot's non-zero lattice-axis components that
+// belong to the pass. Post-phase-A (even_iter false), the axes with c < 0
+// take buffer offset 1 and the axes with c > 0 take offset 0; post-phase-B
+// (even_iter true) is the mirror image. Shared by the two-pass exchange in
+// start4DArraySynchronization and by the per-slot pattern restriction in
+// setLatticeDecomposition.
+template <typename CONFIG>
+TNL::Containers::SyncDirection eso_twist_pass_mask(int slot, int pass, bool even_iter)
+{
+	constexpr int DIMS = (CONFIG::Q == 9) ? 2 : 3;
+	TNL::Containers::SyncDirection mask = TNL::Containers::SyncDirection::None;
+	for (int a = 0; a < DIMS; a++) {
+		const int c = (CONFIG::Q == 9) ? (a == 0 ? dir9_cx(slot) : dir9_cy(slot))
+									   : (a == 0   ? dir27_cx(slot)
+										  : a == 1 ? dir27_cy(slot)
+												   : dir27_cz(slot));
+		if (c == 0)
+			continue;
+		const bool offset1 = (c < 0) != even_iter;
+		if ((pass == 0) != offset1)
+			continue;
+		const bool pos_side = (c > 0) == even_iter;
+		if (a == 0)
+			mask = mask | (pos_side ? TNL::Containers::SyncDirection::Right : TNL::Containers::SyncDirection::Left);
+		else if (a == 1)
+			mask = mask | (pos_side ? TNL::Containers::SyncDirection::Top : TNL::Containers::SyncDirection::Bottom);
+		else
+			mask = mask | (pos_side ? TNL::Containers::SyncDirection::Front : TNL::Containers::SyncDirection::Back);
+	}
+	return mask;
+}
+
+// All exchange masks the given slot of an esoteric in-place pattern ever
+// uses, across both parities (and both EsoTwist passes). A slot exchanges
+// at most 4 distinct masks; the count is returned, unused entries untouched.
+template <typename CONFIG>
+int eso_sync_masks(int slot, std::array<TNL::Containers::SyncDirection, 4>& masks)
+{
+	using S = typename CONFIG::STREAMING;
+	int n = 0;
+	if constexpr (is_ESO_TWIST_v<S>) {
+		for (const bool even_iter : {false, true})
+			for (int pass = 0; pass < 2; pass++) {
+				const auto mask = eso_twist_pass_mask<CONFIG>(slot, pass, even_iter);
+				if (mask != TNL::Containers::SyncDirection::None)
+					masks[n++] = mask;
+			}
+	}
+	else if constexpr (is_esoteric_in_place_v<S>) {
+		constexpr int DIMS = (CONFIG::Q == 9) ? 2 : 3;
+		for (const bool even_iter : {false, true}) {
+			TNL::Containers::SyncDirection mask = TNL::Containers::SyncDirection::None;
+			for (int a = 0; a < DIMS; a++)
+				mask = mask | S::dfSyncDirection(slot, a, even_iter);
+			if (mask != TNL::Containers::SyncDirection::None)
+				masks[n++] = mask;
+		}
+	}
+	return n;
+}
+
 template <typename CONFIG>
 template <typename Pattern>
 void LBM_BLOCK<CONFIG>::setLatticeDecomposition(
@@ -36,18 +98,115 @@ void LBM_BLOCK<CONFIG>::setLatticeDecomposition(
 	this->neighborRanks = neighborRanks;
 
 #ifdef HAVE_MPI
+	// The synchronizer activates an exchange buffer whenever the mask passed
+	// at runtime shares any face bit with the buffer's direction. The
+	// per-slot masks of the esoteric in-place patterns combine several face
+	// bits (diagonal slots), so partially-overlapping corner (in 3D also
+	// edge) buffers would spuriously fire: under the shifted exchanges their
+	// send regions are stale diagonal halo cells and their receive regions
+	// penetrate the neighbor's owned cells, so a stale value lands in a cell
+	// read by the next launch (only reachable in multi-dimensional
+	// decompositions - with a single distributed axis there are no corner
+	// buffers). Restricting the per-slot DF patterns to buffers fully
+	// contained in one of the slot's masks keeps every needed exchange
+	// (only fully-contained buffers carry values produced by this rank)
+	// and drops every spurious one.
+	// Per-slot exchange-mask inventories for the patterns that must restrict
+	// their DF exchange to specific buffers (see the over-activation comment
+	// above): the esoteric in-place patterns use their parity-dependent
+	// descriptor masks; A-B push exchanges the canonical slot direction only
+	// (a shift-1 exchange through a partially-overlapping buffer would ship
+	// ghost values that no thread of this rank authored).
+	std::array<std::array<TNL::Containers::SyncDirection, 4>, CONFIG::Q> slot_masks{};
+	std::array<int, CONFIG::Q> slot_nmasks{};
+	if constexpr (is_esoteric_in_place_v<typename CONFIG::STREAMING>) {
+		for (int i = 0; i < CONFIG::Q; i++)
+			slot_nmasks[i] = eso_sync_masks<CONFIG>(i, slot_masks[i]);
+	}
+	else if constexpr (is_AB_PUSH_v<typename CONFIG::STREAMING>) {
+		// The runtime mask is the canonical slot direction only, but the
+		// exchange pattern must also own the opposite buffer: stage_2
+		// receives into it, and its neighbor IDs and tags must be set up
+		// (they stay at the inert defaults otherwise and the receive is
+		// silently skipped). The containment filter in slot_sync_allowed
+		// also retains every buffer fully contained in either mask: for a
+		// diagonal slot the push-arrival region spans the ghost column,
+		// row and corner, so the face and edge sub-buffers of the canonical
+		// diagonal are essential, not spurious.
+		const TNL::Containers::SyncDirection* dirs = (CONFIG::Q == 9) ? df_sync_directions_d2q9 : df_sync_directions;
+		for (int i = 0; i < CONFIG::Q; i++) {
+			if (dirs[i] != TNL::Containers::SyncDirection::None) {
+				slot_masks[i][0] = dirs[i];
+				slot_masks[i][1] = opposite(dirs[i]);
+				slot_nmasks[i] = 2;
+			}
+		}
+	}
+	auto slot_sync_allowed = [&](int slot, TNL::Containers::SyncDirection direction) -> bool
+	{
+		if constexpr (! is_esoteric_in_place_v<typename CONFIG::STREAMING> && ! is_AB_PUSH_v<typename CONFIG::STREAMING>) {
+			(void) slot;
+			(void) direction;
+			return true;
+		}
+		else {
+			// slots whose masks are all None keep the full (inert) pattern
+			if (slot_nmasks[slot] == 0)
+				return true;
+			for (int m = 0; m < slot_nmasks[slot]; m++)
+				if ((direction & slot_masks[slot][m]) == direction)
+					return true;
+			return false;
+		}
+	};
+
 	// set communication pattern for all synchronizers
 	map_sync.setSynchronizationPattern(pattern);
-	for (int i = 0; i < CONFIG::Q; i++)
-		df_sync[i].setSynchronizationPattern(pattern);
+	for (int i = 0; i < CONFIG::Q; i++) {
+		// per-iteration synchronizer: restricted for the esoteric patterns
+		Pattern df_pattern = pattern;
+		int n = 0;
+		for (auto direction : pattern)
+			if (slot_sync_allowed(i, direction))
+				df_pattern[n++] = direction;
+		// close under opposites: the synchronizer's stage_2 looks up the
+		// opposite buffer of every active one, so it must exist in the
+		// pattern. The closure members never activate on their own: a mask
+		// can share a bit with opposite(B) only by fully containing it.
+		for (int k = 0, n_allowed = n; k < n_allowed; k++) {
+			const TNL::Containers::SyncDirection opp = opposite(df_pattern[k]);
+			bool present = false;
+			for (int m = 0; m < n; m++)
+				if (df_pattern[m] == opp) {
+					present = true;
+					break;
+				}
+			if (! present)
+				df_pattern[n++] = opp;
+		}
+		if (n > 0 && n < static_cast<int>(df_pattern.size())) {
+			// pad with duplicates: the synchronizer's pattern map ignores
+			// repeated directions
+			for (int k = n; k < static_cast<int>(df_pattern.size()); k++)
+				df_pattern[k] = df_pattern[0];
+			df_sync[i].setSynchronizationPattern(df_pattern);
+		}
+		else {
+			// non-esoteric patterns, all masks allowed, or no masks at all
+			// (nothing ever fires) - keep the full pattern
+			df_sync[i].setSynchronizationPattern(pattern);
+		}
+	}
 	for (int i = 0; i < CONFIG::MACRO::N; i++)
 		macro_sync[i].setSynchronizationPattern(pattern);
 
 	// set neighbors for all synchronizers
 	for (auto [direction, rank] : neighborRanks) {
 		map_sync.setNeighbor(direction, rank);
-		for (int i = 0; i < CONFIG::Q; i++)
-			df_sync[i].setNeighbor(direction, rank);
+		for (int i = 0; i < CONFIG::Q; i++) {
+			if (slot_sync_allowed(i, direction))
+				df_sync[i].setNeighbor(direction, rank);
+		}
 		for (int i = 0; i < CONFIG::MACRO::N; i++)
 			macro_sync[i].setNeighbor(direction, rank);
 	}
@@ -90,8 +249,10 @@ void LBM_BLOCK<CONFIG>::setLatticeDecomposition(
 		if (! isPrimaryDirection(direction) ^ isPrimaryDirection(opposite(direction)))
 			throw std::logic_error("Bug in isPrimaryDirection!!!");
 		if (neighbor_id < 0) {
-			for (int i = 0; i < CONFIG::Q; i++)
-				df_sync[i].setTags(direction, -1, -1);
+			for (int i = 0; i < CONFIG::Q; i++) {
+				if (slot_sync_allowed(i, direction))
+					df_sync[i].setTags(direction, -1, -1);
+			}
 			for (int i = 0; i < CONFIG::MACRO::N; i++)
 				macro_sync[i].setTags(direction, -1, -1);
 		}
@@ -100,10 +261,12 @@ void LBM_BLOCK<CONFIG>::setLatticeDecomposition(
 				const int offset0 = (2 * i + 0) * blocks_per_rank * nproc;
 				const int offset1 = (2 * i + 1) * blocks_per_rank * nproc;
 				if (isPrimaryDirection(direction)) {
-					df_sync[i].setTags(direction, offset1 + neighbor_id, offset0 + this->id);
+					if (slot_sync_allowed(i, direction))
+						df_sync[i].setTags(direction, offset1 + neighbor_id, offset0 + this->id);
 				}
 				else {
-					df_sync[i].setTags(direction, offset0 + neighbor_id, offset1 + this->id);
+					if (slot_sync_allowed(i, direction))
+						df_sync[i].setTags(direction, offset0 + neighbor_id, offset1 + this->id);
 				}
 			}
 			for (int i = 0; i < CONFIG::MACRO::N; i++) {
@@ -143,13 +306,36 @@ void LBM_BLOCK<CONFIG>::setLatticeDecomposition(
 	#endif
 	// low-priority stream for the interior
 	computeData.at(TNL::Containers::SyncDirection::None).stream = TNL::Backend::Stream::create(TNL::Backend::StreamNonBlocking, priority_low);
+	#ifdef HAVE_MPI
+	// Share one sequencing stream across the DF buffers of the patterns
+	// using shift-1 exchanges (esoteric in-place, A-B push): the
+	// synchronizer unpacks each buffer on its own stream, and with shift-1
+	// exchanges the recv regions of shifted face buffers cover the corner
+	// cells owned by the corner buffer, so the corner's overriding unpack
+	// races the faces'. Serializing the buffer kernels of a synchronizer
+	// onto one stream makes the std::map (enum) order the execution order,
+	// which always places subset directions before their supersets - face
+	// planes first, then edges, then corners - so the corner's message
+	// deterministically overwrites the corner cell. The compute boundary
+	// kernels are host-synchronized before the DF exchange starts
+	// (SimUpdate), so collapsing the buffer streams cannot race the pack
+	// side either.
+	if constexpr (is_esoteric_in_place_v<typename CONFIG::STREAMING> || is_AB_PUSH_v<typename CONFIG::STREAMING>)
+		df_seq_stream = TNL::Backend::Stream::create(TNL::Backend::StreamNonBlocking, priority_high);
+	#endif
 	// high-priority streams for boundaries
 	for (auto direction : pattern) {
 		computeData.at(direction).stream = TNL::Backend::Stream::create(TNL::Backend::StreamNonBlocking, priority_high);
 	#ifdef HAVE_MPI
 		// set the stream to the synchronizer
-		for (int i = 0; i < CONFIG::Q; i++)
-			df_sync[i].setCudaStream(direction, computeData.at(direction).stream);
+		for (int i = 0; i < CONFIG::Q; i++) {
+			if (slot_sync_allowed(i, direction))
+				df_sync[i].setCudaStream(
+					direction,
+					is_esoteric_in_place_v<typename CONFIG::STREAMING> || is_AB_PUSH_v<typename CONFIG::STREAMING> ? df_seq_stream
+																												   : computeData.at(direction).stream
+				);
+		}
 		for (int i = 0; i < CONFIG::MACRO::N; i++)
 			macro_sync[i].setCudaStream(direction, computeData.at(direction).stream);
 	#endif
@@ -949,9 +1135,8 @@ void LBM_BLOCK<CONFIG>::start4DArraySynchronization(
 		// determine sync direction - use D2Q9 array for Q=9, otherwise D3Q27/D3Q7 array
 		const TNL::Containers::SyncDirection* dirs = (CONFIG::Q == 9) ? df_sync_directions_d2q9 : df_sync_directions;
 		TNL::Containers::SyncDirection sync_direction = (is_df) ? dirs[i] : TNL::Containers::SyncDirection::All;
+		int buffer_offset = 0;
 		if constexpr (is_AA_v<typename CONFIG::STREAMING>) {
-			// reset shift of the lattice sites
-			sync[i].setBufferOffsets(0);
 			if (is_df) {
 				if (data.even_iter) {
 					// lattice sites for synchronization are not shifted, but DFs have opposite directions
@@ -960,7 +1145,71 @@ void LBM_BLOCK<CONFIG>::start4DArraySynchronization(
 				else {
 					// DFs have canonical directions, but lattice sites for synchronization are shifted
 					// (values to be synchronized were written to the neighboring sites)
-					sync[i].setBufferOffsets(1);
+					buffer_offset = 1;
+				}
+			}
+		}
+		else if constexpr (is_AB_PUSH_v<typename CONFIG::STREAMING>) {
+			if (is_df) {
+				// the scatter wrote the post-collision populations to the
+				// target sites, so the values to exchange sit in the
+				// ghost planes: ship them into the neighbor's owned
+				// planes, like the odd phase of the A-A pattern
+				buffer_offset = 1;
+			}
+		}
+		else if constexpr (is_esoteric_in_place_v<typename CONFIG::STREAMING>) {
+			if (is_df) {
+				using S = typename CONFIG::STREAMING;
+				constexpr int DIMS = (CONFIG::Q == 9) ? 2 : 3;
+				if constexpr (is_ESO_TWIST_v<S>) {
+					// The twist layout needs a different buffer offset per lattice
+					// axis, which the single combined-mask synchronization cannot
+					// express: run two staged synchronizations here, one per
+					// offset group; the external stage_2/3/4 calls in
+					// LBM::synchronizeDFsAndMacroDevice then see the parked None
+					// mask and do nothing.
+					//
+					// Per pass, the axes with equal offsets share one combined
+					// mask, so the face buffers are exchanged together with the
+					// edge and corner buffers of the sync pattern - the per-axis
+					// split used previously could not reach the diagonal ghost
+					// cells at all. Pass order matters: the offset-1 axes run
+					// first (their receive planes are interior sites that the
+					// offset-0 pass of a neighbor may source), the offset-0 axes
+					// second.
+					//
+					// Post-phase-A layout (even_iter false): offset-1 axes are
+					// those with c < 0 (exchanged toward the positive side),
+					// offset-0 axes those with c > 0 (toward the negative side);
+					// post-phase-B (even_iter true) is the mirror image.
+					for (int pass = 0; pass < 2; pass++) {
+						const TNL::Containers::SyncDirection eso_dir = eso_twist_pass_mask<CONFIG>(i, pass, data.even_iter);
+						if (eso_dir == TNL::Containers::SyncDirection::None)
+							continue;
+						sync[i].stage_0(view, eso_dir);
+						sync[i].setBufferOffsets(pass == 0 ? 1 : 0);
+						sync[i].stage_1();
+						sync[i].stage_2();
+						sync[i].stage_3();
+						sync[i].stage_4();
+					}
+					sync[i].stage_0(view, TNL::Containers::SyncDirection::None);
+					// skip the shared stage_0/stage_1 below: they would re-arm
+					// the synchronizer with the canonical slot direction and
+					// the last pass' stale buffer offsets, so the external
+					// stage_2/3/4 calls would duplicate the exchange over
+					// planes that do not belong to it (shift-1 receivers hit
+					// owned planes and overwrite freshly authored values)
+					continue;
+				}
+				else {
+					// combined mask over the non-trivial axes, slot-uniform buffer offset
+					TNL::Containers::SyncDirection eso_dir = TNL::Containers::SyncDirection::None;
+					for (int a = 0; a < DIMS; a++)
+						eso_dir = eso_dir | S::dfSyncDirection(i, a, data.even_iter);
+					sync_direction = eso_dir;
+					buffer_offset = S::dfSyncOffset(i, 0, data.even_iter);
 				}
 			}
 		}
@@ -969,6 +1218,11 @@ void LBM_BLOCK<CONFIG>::start4DArraySynchronization(
 		// NOTE: we could use only synchronize with policy=deferred, because threadpool and async require MPI_THREAD_MULTIPLE which is slow
 		// stage 0: set inputs, allocate buffers
 		sync[i].stage_0(view, sync_direction);
+		// the shift applies AFTER stage_0: on the synchronizer's first use it
+		// runs allocateHelper(), which resets the offsets to the default
+		// (shift 0) - only stages 1/3 consume them, so a re-set here keeps
+		// them effective also on the first call
+		sync[i].setBufferOffsets(buffer_offset);
 		// stage 1: fill send buffers
 		sync[i].stage_1();
 	}

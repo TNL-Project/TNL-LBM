@@ -84,6 +84,10 @@ struct LBM_BLOCK
 	TNL::Containers::DistributedNDArraySynchronizer<dreal_view_t> df_sync[CONFIG::Q];
 	TNL::Containers::DistributedNDArraySynchronizer<dreal_view_t> macro_sync[CONFIG::MACRO::N];
 	TNL::Containers::DistributedNDArraySynchronizer<dmap_array_t> map_sync;
+	// sequencing stream shared by the per-iteration DF synchronizers of the
+	// patterns with shift-1 halo exchanges (esoteric in-place, A-B push;
+	// motivation in setLatticeDecomposition)
+	TNL::Backend::Stream df_seq_stream;
 #endif
 
 	// data for compute for the block itself and each neighbor
