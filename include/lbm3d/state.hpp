@@ -1123,7 +1123,7 @@ bool State<NSE>::estimateMemoryDemands()
 template <typename NSE>
 void State<NSE>::reset()
 {
-	// compute initial DFs on GPU
+	// compute initial DFs and the initial macroscopic quantities on GPU
 	resetDFs();
 
 	nse.resetMap(NSE::BC::GEO_FLUID);
@@ -1134,8 +1134,16 @@ void State<NSE>::reset()
 
 	nse.copyMapToDevice();
 
-	// compute initial macroscopic quantities on GPU and copy to CPU
-	nse.computeInitialMacro();
+#ifdef HAVE_MPI
+	if (nse.nproc > 1) {
+		// finalize the initial layout-0 field on the subdomain overlaps
+		// (resetDFs authors only each block's own sites; the exchange runs
+		// at the parity that authors layout-0, set by resetDFs)
+		nse.synchronizeDFsAndMacroDevice(df_cur, true);
+	}
+#endif
+
+	// copy initial macroscopic quantities to CPU
 	nse.copyMacroToHost();
 }
 
@@ -1222,7 +1230,6 @@ void State<NSE>::SimInit()
 		if (nse.nproc > 1) {
 			// synchronize overlaps with MPI (initial synchronization can be synchronous)
 			nse.synchronizeMapDevice();
-			nse.synchronizeDFsAndMacroDevice(df_cur, true);
 		}
 #endif
 

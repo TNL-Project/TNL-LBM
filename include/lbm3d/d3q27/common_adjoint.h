@@ -188,43 +188,4 @@ struct D3Q27_COMMON_ADJOINT
 #endif
 	}
 
-	template <typename STREAMING, typename LAT_DFS>
-	__cuda_callable__ static void setEquilibriumLat(LAT_DFS& f, idx x, idx y, idx z, real rho, real vx, real vy, real vz)
-	{
-		// the adjoint reversed gather races in a single DF array
-		static_assert(STREAMING::DFMAX >= 2, "the adjoint model requires a two-array streaming pattern (e.g. A-B)");
-
-		//! only called during initialization
-		// TODO: initialize adjoint dfs - 0, before any calculation, there is collision step,
-		// where the measured data sets initial dfs for adjoint problem
-		f(mmm, x, y, z) = 0;
-		f(zmm, x, y, z) = 0;
-		f(pmm, x, y, z) = 0;
-		f(mzm, x, y, z) = 0;
-		f(zzm, x, y, z) = 0;
-		f(pzm, x, y, z) = 0;
-		f(mpm, x, y, z) = 0;
-		f(zpm, x, y, z) = 0;
-		f(ppm, x, y, z) = 0;
-
-		f(mmz, x, y, z) = 0;
-		f(zmz, x, y, z) = 0;
-		f(pmz, x, y, z) = 0;
-		f(mzz, x, y, z) = 0;
-		f(zzz, x, y, z) = 0;
-		f(pzz, x, y, z) = 0;
-		f(mpz, x, y, z) = 0;
-		f(zpz, x, y, z) = 0;
-		f(ppz, x, y, z) = 0;
-
-		f(mmp, x, y, z) = 0;
-		f(zmp, x, y, z) = 0;
-		f(pmp, x, y, z) = 0;
-		f(mzp, x, y, z) = 0;
-		f(zzp, x, y, z) = 0;
-		f(pzp, x, y, z) = 0;
-		f(mpp, x, y, z) = 0;
-		f(zpp, x, y, z) = 0;
-		f(ppp, x, y, z) = 0;
-	}
 };

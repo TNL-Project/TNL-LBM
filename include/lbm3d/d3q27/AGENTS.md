@@ -43,7 +43,7 @@ and macroscopic output for the 3D Navier-Stokes solver.
 - **`eq_*`** = equilibrium distribution functions;
   called direction-by-direction by `setEquilibrium`.
 - **`streaming_*`** = streaming pattern implementations.
-- **`common*.h`** = base mixins providing `computeDensityAndVelocity`, `setEquilibrium`, and `setEquilibriumLat`.
+- **`common*.h`** = base mixins providing `computeDensityAndVelocity` and the KS-filling `setEquilibrium`.
 - Inheritance:
   `D3Q27_COMMON` for standard operators,
   `D3Q27_COMMON_WELL` for well-formulations,

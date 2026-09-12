@@ -214,8 +214,21 @@ struct StateLocalAdjoint : State<NSE>
 		loadPrimaryAndMeasuredMacro(*this, fname_p, fname_m, steady);
 		nse.copyMacroToDevice();
 
-		// compute initial DFs on GPU
-		this->resetDFs();
+		// zero initial adjoint DFs - before any calculation, there is a
+		// collision step where the measured data sets initial dfs for the
+		// adjoint problem (the loaded macro is left untouched by the empty
+		// MACRO_Adjoint::outputMacro)
+		nse.setInitialCondition(
+			[] __cuda_callable__(typename NSE::template KernelStruct<dreal>& KS, idx gx, idx gy, idx gz) mutable
+			{
+				(void) gx;
+				(void) gy;
+				(void) gz;
+				for (int i = 0; i < NSE::Q; i++)
+					KS.f[i] = 0;
+			}
+		);
+		nse.copyDFsToHost();
 
 		nse.resetMap(NSE::BC::GEO_ADJOINT_FLUID);
 
@@ -225,8 +238,11 @@ struct StateLocalAdjoint : State<NSE>
 
 		nse.copyMapToDevice();
 
-		// compute initial macroscopic quantities on GPU and copy to CPU
-		nse.computeInitialMacro();
+#ifdef HAVE_MPI
+		if (nse.nproc > 1)
+			nse.synchronizeDFsAndMacroDevice(df_cur, true);
+#endif
+
 		nse.copyMacroToHost();
 	}
 

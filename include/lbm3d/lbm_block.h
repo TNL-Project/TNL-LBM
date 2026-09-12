@@ -206,7 +206,11 @@ struct LBM_BLOCK
 
 	void resetMap(map_t geo_type);
 	void setEquilibrium(real rho, real vx, real vy, real vz);
-	void computeInitialMacro();
+	// initializes the DF field and the initial macroscopic quantities from a
+	// site-wise initial-condition functor - the virtual "-1 -> 0" iteration
+	// producing the streaming pattern's parity-0 layout
+	template <typename IC>
+	void setInitialCondition(IC&& ic);
 
 	void allocateHostData();
 	void allocateDeviceData();
