@@ -5,6 +5,14 @@ struct State_NSE_ADE : State<NSE>
 {
 	// using different TRAITS is not implemented (probably does not make sense...)
 	static_assert(std::is_same<typename NSE::TRAITS, typename ADE::TRAITS>::value, "TRAITS must be the same type in NSE and ADE.");
+	// the NSE_ADE driver is not adapted to the single-array streaming
+	// patterns: its BC placement ignores the ghost-layer idiom and it has no
+	// two-pass outflow scheme (see AGENTS.md, "Known limitations under A-A")
+	static_assert(
+		! is_AA_v<typename NSE::STREAMING> && ! is_esoteric_in_place_v<typename NSE::STREAMING> && ! is_AA_v<typename ADE::STREAMING>
+			&& ! is_esoteric_in_place_v<typename ADE::STREAMING>,
+		"NSE_ADE supports only the two-array A-B streaming patterns (AB_PULL, AB_PUSH)"
+	);
 	using TRAITS = typename NSE::TRAITS;
 	using BLOCK_NSE = LBM_BLOCK<NSE>;
 	using BLOCK_ADE = LBM_BLOCK<ADE>;
