@@ -292,8 +292,9 @@ template <typename NSE>
 void sim(
 	const std::string& adios_config = "adios2.xml",
 	int RESOLUTION = 2,
-	double Re = 1600,			 // [-] Reynolds number
-	double LBM_VISCOSITY = 1e-4	 // [Δx^2/Δt]
+	double Re = 1600,			  // [-] Reynolds number
+	double LBM_VISCOSITY = 1e-4,  // [Δx^2/Δt]
+	double FINAL_TIME = 20		  // [convective times] final physical time
 )
 {
 	using idx = typename NSE::TRAITS::idx;
@@ -336,7 +337,7 @@ void sim(
 	if (! state.canCompute())
 		return;
 
-	state.nse.physFinalTime = 20 * convective_time;
+	state.nse.physFinalTime = FINAL_TIME * convective_time;
 	state.cnt[PRINT].period = state.nse.physFinalTime / 1000;
 	// probe only in even iterations
 	state.cnt[PROBE1].period = idx(state.nse.physFinalTime / 1000 / (2 * PHYS_DT)) * 2 * PHYS_DT;
@@ -355,7 +356,7 @@ void sim(
 }
 
 template <typename TRAITS = TraitsSP>
-void run(const std::string& adios_config, int resolution, double Re, double lbm_viscosity)
+void run(const std::string& adios_config, int resolution, double Re, double lbm_viscosity, double final_time)
 {
 	using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
 
@@ -369,7 +370,7 @@ void run(const std::string& adios_config, int resolution, double Re, double lbm_
 		D3Q27_BC_All,
 		D3Q27_MACRO_Default<TRAITS>>;
 
-	sim<NSE_CONFIG>(adios_config, resolution, Re, lbm_viscosity);
+	sim<NSE_CONFIG>(adios_config, resolution, Re, lbm_viscosity, final_time);
 }
 
 int main(int argc, char** argv)
@@ -382,6 +383,7 @@ int main(int argc, char** argv)
 	program.add_argument("--resolution").help("resolution of the lattice").scan<'i', int>().default_value(1);
 	program.add_argument("--Re").help("desired Reynolds number").scan<'g', double>().default_value(1600.0).nargs(1);
 	program.add_argument("--lbm-viscosity").help("LBM viscosity [Δx^2/Δt]").scan<'g', double>().default_value(1e-4).nargs(1);
+	program.add_argument("--final-time").help("final physical time [convective times]").scan<'g', double>().default_value(20.0).nargs(1);
 
 	try {
 		program.parse_args(argc, argv);
@@ -396,6 +398,7 @@ int main(int argc, char** argv)
 	const auto resolution = program.get<int>("--resolution");
 	const auto Re = program.get<double>("--Re");
 	const auto lbm_viscosity = program.get<double>("--lbm-viscosity");
+	const auto final_time = program.get<double>("--final-time");
 
 	if (resolution < 1) {
 		fmt::println(stderr, "CLI error: resolution must be at least 1");
@@ -409,8 +412,12 @@ int main(int argc, char** argv)
 		fmt::println(stderr, "CLI error: LBM viscosity must be in range (0, 1/6]");
 		return 1;
 	}
+	if (final_time <= 0.0) {
+		fmt::println(stderr, "CLI error: final time must be positive");
+		return 1;
+	}
 
-	run(adios_config, resolution, Re, lbm_viscosity);
+	run(adios_config, resolution, Re, lbm_viscosity, final_time);
 
 	return 0;
 }
