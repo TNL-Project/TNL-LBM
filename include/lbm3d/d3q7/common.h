@@ -48,29 +48,4 @@ struct D3Q7_COMMON
 		KS.f[pzz] = EQ::eq_pzz(KS.phi, KS.vx, KS.vy, KS.vz);
 	}
 
-	template <typename STREAMING, typename LAT_DFS>
-	__cuda_callable__ static void setEquilibriumLat(LAT_DFS& f, idx x, idx y, idx z, real phi, real vx, real vy, real vz)
-	{
-		if constexpr (twisted_layout_v<STREAMING>) {
-			// Twisted orientation: store in the opposite DF direction so that
-			// the first spatial sub-step reads the correct streamed values.
-			// (Mirrors D3Q27_COMMON::setEquilibriumLat under the A-A pattern.)
-			f(pzz, x, y, z) = EQ::eq_mzz(phi, vx, vy, vz);
-			f(zpz, x, y, z) = EQ::eq_zmz(phi, vx, vy, vz);
-			f(zzp, x, y, z) = EQ::eq_zzm(phi, vx, vy, vz);
-			f(zzz, x, y, z) = EQ::eq_zzz(phi, vx, vy, vz);
-			f(zzm, x, y, z) = EQ::eq_zzp(phi, vx, vy, vz);
-			f(zmz, x, y, z) = EQ::eq_zpz(phi, vx, vy, vz);
-			f(mzz, x, y, z) = EQ::eq_pzz(phi, vx, vy, vz);
-		}
-		else {
-			f(mzz, x, y, z) = EQ::eq_mzz(phi, vx, vy, vz);
-			f(zmz, x, y, z) = EQ::eq_zmz(phi, vx, vy, vz);
-			f(zzm, x, y, z) = EQ::eq_zzm(phi, vx, vy, vz);
-			f(zzz, x, y, z) = EQ::eq_zzz(phi, vx, vy, vz);
-			f(zzp, x, y, z) = EQ::eq_zzp(phi, vx, vy, vz);
-			f(zpz, x, y, z) = EQ::eq_zpz(phi, vx, vy, vz);
-			f(pzz, x, y, z) = EQ::eq_pzz(phi, vx, vy, vz);
-		}
-	}
 };

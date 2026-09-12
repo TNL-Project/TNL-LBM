@@ -122,10 +122,11 @@ void LBM<CONFIG>::setEquilibrium(real rho, real vx, real vy, real vz)
 }
 
 template <typename CONFIG>
-void LBM<CONFIG>::computeInitialMacro()
+template <typename IC>
+void LBM<CONFIG>::setInitialCondition(IC&& ic)
 {
 	for (auto& block : blocks)
-		block.computeInitialMacro();
+		block.setInitialCondition(ic);
 }
 
 template <typename CONFIG>
@@ -320,7 +321,7 @@ void LBM<CONFIG>::updateKernelData()
 		// the reflect sub-step reads A[i](x), an identity read with no streaming.
 		// If reflect runs first, it collides the initial state without streaming, whereas the A-B pattern streams before its first collision.
 		// This would produce a systematic error that propagates through the entire simulation.
-		// Starting with the spatial sub-step, with DFs initialized in twisted orientation (A[opposite(i)] = eq_i via setEquilibriumLat),
+		// Starting with the spatial sub-step, with DFs initialized in twisted orientation (A[opposite(i)] = eq_i via the twisted init stamping),
 		// makes the first read A[opposite(i)](x - c_i) = eq_i(x - c_i), matching A-B's streamed pull exactly.
 		// updateKernelData is called before SimUpdate increments iterations,
 		// so even_iter is based on the pre-increment counter.

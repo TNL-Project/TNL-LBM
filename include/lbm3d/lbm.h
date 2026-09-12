@@ -88,7 +88,10 @@ struct LBM
 
 	void resetMap(map_t geo_type);
 	void setEquilibrium(real rho, real vx, real vy, real vz);
-	void computeInitialMacro();
+	// initializes the DF field and the initial macroscopic quantities from a
+	// site-wise initial-condition functor (see LBM_BLOCK::setInitialCondition)
+	template <typename IC>
+	void setInitialCondition(IC&& ic);
 
 	void allocateHostData();
 	void allocateDeviceData();

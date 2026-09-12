@@ -35,7 +35,7 @@ struct State_NSE_ADE : State<NSE>
 
 	void reset() override
 	{
-		// compute initial DFs on GPU and copy to CPU
+		// compute initial DFs and the initial macroscopic quantities on GPU
 		nse.setEquilibrium(1, 0, 0, 0);	 // rho, vx, vy, vz
 		ade.setEquilibrium(1, 0, 0, 0);	 // rho, vx, vy, vz
 
@@ -49,9 +49,14 @@ struct State_NSE_ADE : State<NSE>
 		nse.copyMapToDevice();
 		ade.copyMapToDevice();
 
-		// compute initial macroscopic quantities on GPU and copy to CPU
-		nse.computeInitialMacro();
-		ade.computeInitialMacro();
+#ifdef HAVE_MPI
+		if (nse.nproc > 1) {
+			// finalize the initial layout-0 fields on the subdomain overlaps
+			nse.synchronizeDFsAndMacroDevice(df_cur, true);
+			ade.synchronizeDFsAndMacroDevice(df_cur, true);
+		}
+#endif
+
 		nse.copyMacroToHost();
 		ade.copyMacroToHost();
 	}
@@ -110,10 +115,7 @@ struct State_NSE_ADE : State<NSE>
 		if (nse.nproc > 1) {
 			// synchronize overlaps with MPI (initial synchronization can be synchronous)
 			nse.synchronizeMapDevice();
-			nse.synchronizeDFsAndMacroDevice(df_cur, true);
-
 			ade.synchronizeMapDevice();
-			ade.synchronizeDFsAndMacroDevice(df_cur, true);
 		}
 #endif
 
