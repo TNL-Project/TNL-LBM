@@ -123,46 +123,28 @@ struct StateLocal : State<NSE>
 	void resetDFs() override
 	{
 		spdlog::info("Computing initial condition");
-		for (auto& block : nse.blocks) {
-			// extract variables and views for capturing in the lambda function
-			const idx3d offset = nse.blocks.front().offset;
-			const lat_t lat = nse.lat;
-			const dreal L = this->L;
-			const dreal V_0 = lat.phys2lbmVelocity(this->V_0);
-			const dreal rho_0 = this->rho_0;
-#ifdef HAVE_MPI
-			auto local_df = block.dfs[0].getLocalView();
-#else
-			auto local_df = block.dfs[0].getView();
-#endif
 
-			// compute the initial condition
-			const idx3d begin = {0, 0, 0};
-			const idx3d end = {block.local.y(), block.local.z(), block.local.x()};
-			TNL::Algorithms::parallelFor<DeviceType>(
-				begin,
-				end,
-				[local_df, offset, lat, L, V_0, rho_0] __cuda_callable__(const idx3d& yzx) mutable
-				{
-					const auto& [y_lat, z_lat, x_lat] = yzx;
-					// convert local coordinates to physical coordinates
-					const dreal x = lat.lbm2physX(offset.x() + x_lat);
-					const dreal y = lat.lbm2physY(offset.y() + y_lat);
-					const dreal z = lat.lbm2physZ(offset.z() + z_lat);
-					// Taylor-Green vortex
-					const dreal u = V_0 * TNL::sin(x / L) * TNL::cos(y / L) * TNL::cos(z / L);
-					const dreal v = -V_0 * TNL::cos(x / L) * TNL::sin(y / L) * TNL::cos(z / L);
-					const dreal w = 0;
-					// 3 = 1/c_s^2
-					const dreal rho = rho_0 + 3 * (V_0 * V_0 / 16) * (TNL::cos(2 * x / L) + TNL::cos(2 * y / L)) * (TNL::cos(2 * z / L) + 2);
-					NSE::COLL::template setEquilibriumLat<typename NSE::STREAMING>(local_df, x_lat, y_lat, z_lat, rho, u, v, w);
-				}
-			);
+		const lat_t lat = nse.lat;
+		const dreal L = this->L;
+		const dreal V_0 = lat.phys2lbmVelocity(this->V_0);
+		const dreal rho_0 = this->rho_0;
 
-			// copy the initialized DFs so that they are not overridden
-			for (uint8_t dftype = 1; dftype < NSE::DFMAX; dftype++)
-				block.dfs[dftype] = block.dfs[0];
-		}
+		nse.setInitialCondition(
+			[lat, L, V_0, rho_0] __cuda_callable__(typename NSE::template KernelStruct<dreal> & KS, idx gx, idx gy, idx gz) mutable
+			{
+				// convert the global lattice indices to physical coordinates
+				const dreal x = lat.lbm2physX(gx);
+				const dreal y = lat.lbm2physY(gy);
+				const dreal z = lat.lbm2physZ(gz);
+				// Taylor-Green vortex
+				KS.vx = V_0 * TNL::sin(x / L) * TNL::cos(y / L) * TNL::cos(z / L);
+				KS.vy = -V_0 * TNL::cos(x / L) * TNL::sin(y / L) * TNL::cos(z / L);
+				KS.vz = 0;
+				// 3 = 1/c_s^2
+				KS.rho = rho_0 + 3 * (V_0 * V_0 / 16) * (TNL::cos(2 * x / L) + TNL::cos(2 * y / L)) * (TNL::cos(2 * z / L) + 2);
+				NSE::COLL::setEquilibrium(KS);
+			}
+		);
 
 		nse.copyDFsToHost();
 	}

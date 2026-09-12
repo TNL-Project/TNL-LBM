@@ -2,6 +2,7 @@
 
 #include "lbm_block.h"
 #include "block_size_optimizer.h"
+#include "kernels.h"
 
 #include <TNL/Atomic.h>
 
@@ -252,9 +253,20 @@ dim3 LBM_BLOCK<CONFIG>::getCudaGridSize(const idx3d& local_size, const dim3& blo
 }
 
 template <typename CONFIG>
-void LBM_BLOCK<CONFIG>::setEquilibrium(real rho, real vx, real vy, real vz)
+template <typename IC>
+void LBM_BLOCK<CONFIG>::setInitialCondition(IC&& ic)
 {
-// extract variables and views for capturing in the lambda function
+	// Initialization as a virtual "-1 -> 0" iteration: collision is replaced
+	// by equilibrium evaluation and the pattern's own streaming write
+	// produces its parity-0 layout, so the first real launch reads exactly
+	// the same populations the classical setEquilibrium + permutation init
+	// produced (bitwise, per streaming pattern).
+	//
+	// `ic` is a device functor (KS&, gx, gy, gz) -> void taking the GLOBAL
+	// lattice indices of a site; it must fill KS (the macroscopic fields and
+	// the populations, usually via COLL::setEquilibrium).
+
+	// extract variables and views for capturing in the lambda functions
 #ifdef HAVE_MPI
 	auto local_df = dfs[0].getLocalView();
 #else
@@ -268,52 +280,236 @@ void LBM_BLOCK<CONFIG>::setEquilibrium(real rho, real vx, real vy, real vz)
 	const int overlap_z = local_df.template getOverlap<3>();
 	const idx3d begin = {-overlap_y, -overlap_z, -overlap_x};
 	const idx3d end = {local.y() + overlap_y, local.z() + overlap_z, local.x() + overlap_x};
+	const idx3d goffset = offset;
+	const idx3d local_size = local;
 
+	typename CONFIG::DATA SD = data;
+
+	// kernel A: stamp the own-site natural layout over the halo-padded range
+	// (never-transported cells keep these values) and write the initial
+	// macroscopic quantities straight from the initial condition (owned
+	// sites only; the ghost macro lands via the initial exchange)
 	TNL::Algorithms::parallelFor<DeviceType>(
 		begin,
 		end,
-		[local_df, rho, vx, vy, vz] __cuda_callable__(idx3d yzx) mutable
+		[local_df, SD, ic, goffset, local_size] __cuda_callable__(idx3d yzx) mutable
 		{
 			const auto& [y, z, x] = yzx;
-			CONFIG::COLL::template setEquilibriumLat<typename CONFIG::STREAMING>(local_df, x, y, z, rho, vx, vy, vz);
+			typename CONFIG::template KernelStruct<dreal> KS;
+			CONFIG::MACRO::copyQuantities(SD, KS, x, y, z);
+			CONFIG::MACRO::zeroForcesInKS(KS);
+			ic(KS, goffset.x() + x, goffset.y() + y, goffset.z() + z);
+			for (int i = 0; i < CONFIG::Q; i++)
+				local_df(i, x, y, z) = KS.f[i];
+			if (x >= 0 && x < local_size.x() && y >= 0 && y < local_size.y() && z >= 0 && z < local_size.z())
+				CONFIG::MACRO::outputMacro(SD, KS, x, y, z);
 		}
 	);
 
 	// copy the initialized DFs so that they are not overridden
 	for (uint8_t dftype = 1; dftype < CONFIG::DFMAX; dftype++)
 		dfs[dftype] = dfs[0];
+
+	if constexpr (is_ESO_TWIST_v<typename CONFIG::STREAMING>) {
+		// EsoTwist's parity-0 placement cannot be assembled by the pattern's
+		// postCollisionStreaming from per-site equilibrium inputs: the
+		// pattern's pairwise exchange moves each pair by the head's FULL
+		// velocity (offset c_h), while the layout launch-0 reads requires the
+		// componentwise positive projection p(c_h) = max(c_h, 0) - for
+		// mixed-sign diagonals the two disagree. Stage the natural field and
+		// gather the placement directly (the other patterns are served by the
+		// streaming-write kernel below).
+		const idx nx = local.x() + 2 * overlap_x;
+		const idx ny = local.y() + 2 * overlap_y;
+		const idx nz = local.z() + 2 * overlap_z;
+		const idx lx = local.x();
+		const idx ly = local.y();
+		const idx lz = local.z();
+		// gathered source indices wrap only along periodic axes that this
+		// block spans completely; cross-block sources are already correct
+		// (kernel A evaluated the initial condition on the halo planes, which
+		// are the neighbor blocks' owned sites at literal global indices)
+		const bool wrap_x = SD.periodic.x() && lx == global.x();
+		const bool wrap_y = SD.periodic.y() && ly == global.y();
+		const bool wrap_z = SD.periodic.z() && lz == global.z();
+
+		auto c_x = [](int i) constexpr -> int
+		{
+			return CONFIG::Q == 9 ? dir9_cx(i) : dir27_cx(i);
+		};
+		auto c_y = [](int i) constexpr -> int
+		{
+			return CONFIG::Q == 9 ? dir9_cy(i) : dir27_cy(i);
+		};
+		auto c_z = [](int i) constexpr -> int
+		{
+			return CONFIG::Q == 9 ? 0 : dir27_cz(i);
+		};
+
+		// scratch planes holding the pre-placement contents of the pair's
+		// two slots (a second plane keeps the read side intact while the
+		// in-place scatter runs)
+		TNL::Containers::Array<dreal, DeviceType, idx> scratch_a;
+		TNL::Containers::Array<dreal, DeviceType, idx> scratch_b;
+		scratch_a.setSize(nx * ny * nz);
+		scratch_b.setSize(nx * ny * nz);
+		dreal* A = scratch_a.getData();
+		dreal* B = scratch_b.getData();
+
+		for (int h = 1; h < CONFIG::Q; h += 2) {  // heads are the odd-numbered slots
+			const int t = opposite_direction(h);
+			// slot h <- A(m - p(c_h)), slot t <- B(m - p(c_t))
+			// with p(c) = max(c, 0) componentwise
+			const idx shx = -(c_x(h) > 0 ? 1 : 0);
+			const idx shy = -(c_y(h) > 0 ? 1 : 0);
+			const idx shz = -(c_z(h) > 0 ? 1 : 0);
+			const idx stx = -(c_x(t) > 0 ? 1 : 0);
+			const idx sty = -(c_y(t) > 0 ? 1 : 0);
+			const idx stz = -(c_z(t) > 0 ? 1 : 0);
+
+			// stage the pair's pre-placement contents
+			TNL::Algorithms::parallelFor<DeviceType>(
+				begin,
+				end,
+				[local_df, h, t, overlap_x, overlap_y, overlap_z, nx, ny, nz, A, B] __cuda_callable__(idx3d yzx) mutable
+				{
+					const auto& [y, z, x] = yzx;
+					const idx f = ((z + overlap_z) * ny + (y + overlap_y)) * nx + (x + overlap_x);
+					A[f] = local_df(h, x, y, z);
+					B[f] = local_df(t, x, y, z);
+				}
+			);
+
+			// gather into the parity-0 placement
+			TNL::Algorithms::parallelFor<DeviceType>(
+				begin,
+				end,
+				[local_df,
+				 h,
+				 t,
+				 overlap_x,
+				 overlap_y,
+				 overlap_z,
+				 nx,
+				 ny,
+				 nz,
+				 lx,
+				 ly,
+				 lz,
+				 A,
+				 B,
+				 shx,
+				 shy,
+				 shz,
+				 stx,
+				 sty,
+				 stz,
+				 wrap_x,
+				 wrap_y,
+				 wrap_z] __cuda_callable__(idx3d yzx) mutable
+				{
+					const auto& [y, z, x] = yzx;
+					const idx f = ((z + overlap_z) * ny + (y + overlap_y)) * nx + (x + overlap_x);
+					auto valid = [&](idx mx, idx my, idx mz) -> idx
+					{
+						if (wrap_x)
+							mx = (mx % lx + lx) % lx;
+						if (wrap_y)
+							my = (my % ly + ly) % ly;
+						if (wrap_z)
+							mz = (mz % lz + lz) % lz;
+						if (mx < -overlap_x || mx >= lx + overlap_x || my < -overlap_y || my >= ly + overlap_y || mz < -overlap_z
+							|| mz >= lz + overlap_z)
+							return -1;
+						return ((mz + overlap_z) * ny + (my + overlap_y)) * nx + (mx + overlap_x);
+					};
+
+					// out-of-range sources keep the own-site value: that
+					// is what the pull launch-0 reads through the clamped
+					// kernel indices at non-periodic boundaries, and the
+					// ghost cells it applies to are never transported
+					const idx gh = valid(x + shx, y + shy, z + shz);
+					if (gh >= 0)
+						local_df(h, x, y, z) = A[gh];
+					else
+						local_df(h, x, y, z) = A[f];
+
+					const idx gt = valid(x + stx, y + sty, z + stz);
+					if (gt >= 0)
+						local_df(t, x, y, z) = B[gt];
+					else
+						local_df(t, x, y, z) = B[f];
+				}
+			);
+		}
+	}
+	else {
+		// kernel B: the virtual iteration's streaming write at the parity
+		// that authors layout-0 (even_iter == true; the first real launch
+		// runs with even_iter == false - see updateKernelData).
+		// postCollisionStreaming takes the post-collision populations in
+		// registers, so there is no read-write hazard against kernel A's
+		// output; the launch must stay a separate parallelFor so that kernel
+		// A completes first (its natural pre-write is the boundary fallback).
+		//
+		// The A-A pattern reads ALL slots of the one-cell ghost layer at
+		// non-periodic boundaries, so its twisted own-site stamping must
+		// cover the halo-padded range; the other patterns only ever read
+		// the slots the owned-range launch (plus the MPI exchange) authors.
+		//
+		// For the A-B patterns postCollisionStreaming targets df_out:
+		// rebind it to the live array on the kernel-argument copy.
+		SD.even_iter = true;
+		if constexpr (CONFIG::DFMAX == 2)
+			SD.dfs[df_out] = dfs[0].getData();
+		const bool3d distributed = is_distributed();
+		const idx3d ibegin = twisted_layout_v<typename CONFIG::STREAMING> ? begin : idx3d{0, 0, 0};
+		const idx3d iend = twisted_layout_v<typename CONFIG::STREAMING> ? end : idx3d{local.y(), local.z(), local.x()};
+		TNL::Algorithms::parallelFor<DeviceType>(
+			ibegin,
+			iend,
+			[SD, ic, goffset, distributed] __cuda_callable__(idx3d yzx) mutable
+			{
+				const auto& [y, z, x] = yzx;
+				idx xp;
+				idx xm;
+				idx yp;
+				idx ym;
+				idx zp;
+				idx zm;
+				kernelInitIndices<CONFIG>(SD, distributed, x, y, z, xp, xm, yp, ym, zp, zm);
+				typename CONFIG::template KernelStruct<dreal> KS;
+				CONFIG::MACRO::copyQuantities(SD, KS, x, y, z);
+				CONFIG::MACRO::zeroForcesInKS(KS);
+				ic(KS, goffset.x() + x, goffset.y() + y, goffset.z() + z);
+				CONFIG::STREAMING::postCollisionStreaming(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+			}
+		);
+	}
+
+	// the virtual iteration authors layout-0: the initial DF exchange in
+	// State::reset must run at this parity
+	data.even_iter = true;
 }
 
 template <typename CONFIG>
-void LBM_BLOCK<CONFIG>::computeInitialMacro()
+void LBM_BLOCK<CONFIG>::setEquilibrium(real rho, real vx, real vy, real vz)
 {
-	// extract variables and views for capturing in the lambda function
-	auto SD = data;
-
-	const idx3d begin = {0, 0, 0};
-	const idx3d end = {local.y(), local.z(), local.x()};
-
-	TNL::Algorithms::parallelFor<DeviceType>(
-		begin,
-		end,
-		[SD] __cuda_callable__(idx3d yzx) mutable
+	setInitialCondition(
+		[rho, vx, vy, vz] __cuda_callable__(typename CONFIG::template KernelStruct<dreal> & KS, idx gx, idx gy, idx gz) mutable
 		{
-			const auto& [y, z, x] = yzx;
-			typename CONFIG::template KernelStruct<dreal> KS;
-			if constexpr (twisted_layout_v<typename CONFIG::STREAMING>) {
-				// DFs are stored in twisted orientation (opposite directions)
-				for (int i = 0; i < CONFIG::Q; i++)
-					KS.f[i] = SD.df(df_cur, opposite_direction(i), x, y, z);
-			}
-			else {
-				for (int i = 0; i < CONFIG::Q; i++)
-					KS.f[i] = SD.df(df_cur, i, x, y, z);
-			}
-
-			CONFIG::MACRO::copyQuantities(SD, KS, x, y, z);
-			CONFIG::MACRO::zeroForcesInKS(KS);
-			CONFIG::COLL::computeDensityAndVelocity(KS);
-			CONFIG::MACRO::outputMacro(SD, KS, x, y, z);
+			(void) gx;
+			(void) gy;
+			(void) gz;
+			if constexpr (CONFIG::Q == 7)
+				KS.phi = rho;
+			else
+				KS.rho = rho;
+			KS.vx = vx;
+			KS.vy = vy;
+			if constexpr (CONFIG::D == 3)
+				KS.vz = vz;
+			CONFIG::COLL::setEquilibrium(KS);
 		}
 	);
 }

@@ -117,10 +117,11 @@ struct StateLocal : State_NSE_ADE<NSE, ADE>
 				auto local_df = block.hfs[0].getView();
 #endif
 				// TODO: phys -> lbm conversion for concentration?
-				if (x < center_x)
-					ADE::COLL::template setEquilibriumLat<typename ADE::STREAMING>(local_df, x, y, z, phi_left, 0, 0, 0);  // phi, vx, vy, vz
-				else
-					ADE::COLL::template setEquilibriumLat<typename ADE::STREAMING>(local_df, x, y, z, phi_right, 0, 0, 0);	// phi, vx, vy, vz
+				typename ADE::template KernelStruct<dreal> KS;
+				KS.phi = (x < center_x) ? phi_left : phi_right;  // KS.vx = KS.vy = KS.vz = 0 by default
+				ADE::COLL::setEquilibrium(KS);
+				for (int i = 0; i < ADE::Q; i++)
+					local_df(i, x, y, z) = KS.f[i];
 			}
 		);
 
