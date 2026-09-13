@@ -8,11 +8,19 @@ set(unit_test_sources
     test_inflow_moment.cu
     test_decomposition.cu
     test_bc_symmetry.cu
+    test_streaming_mpi.cu
+    test_streaming_mpi_bc2d.cu
+    test_streaming_mpi_bc3d.cu
     doctest_main.cu
 )
 
 add_executable(test_cpp_units ${unit_test_sources})
 target_link_libraries(test_cpp_units PUBLIC TNL::TNL_LBM PRIVATE doctest::doctest)
+
+# the streaming-MPI BC-dispatch cases (test_streaming_mpi_bc2d.cu /
+# test_streaming_mpi_bc3d.cu) live in separate translation units per lattice
+# model: the per-pattern BC switch instantiations dominate the compile time,
+# and the split lets ninja schedule the model TUs in parallel
 
 # force language to HIP
 if(TNL_LBM_BUILD_HIP)
