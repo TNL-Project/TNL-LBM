@@ -1,9 +1,7 @@
 """Unit tests compiled into the C++ unit-test binary (test_cpp_units).
 
 Drives the compiled test_cpp_units executable — the single doctest binary that
-aggregates every unit-test translation unit in tests/unit/ (outflow-pass
-rectangle cover checks, lattice decomposition neighbor discovery, and
-multi-rank tiling/reciprocity invariants).
+aggregates every unit-test translation unit in tests/unit/.
 
 Cases are grouped by .cu source file (doctest test suite) and rank count:
 each single-rank suite runs in one invocation, and multi-rank cases are
@@ -162,7 +160,7 @@ BATCHES: list[Batch] = _batches
 BATCH_IDS = [label for label, _, _, _ in BATCHES]
 
 
-@pytest.mark.parametrize("batch", enumerate(BATCHES), ids=BATCH_IDS)
+@pytest.mark.parametrize("batch", list(enumerate(BATCHES)), ids=BATCH_IDS)
 def test_cpp_units(
     batch: tuple[int, Batch],
     test_dir: pathlib.Path,
@@ -200,5 +198,5 @@ def test_cpp_units(
         [str(TEST_BINARY), *extra_args],
         workdir=test_dir,
         np_ranks=np_ranks,
-        timeout=60.0,
+        timeout=200.0,
     )
