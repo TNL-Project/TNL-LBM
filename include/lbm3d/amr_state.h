@@ -2131,12 +2131,11 @@ void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level)
 				cz_hi = 0;
 			else if (patch.face == SyncDirection::Front)
 				cz_lo = fine->local.z();
-			const idx3d begin{std::max(patch.fine_origin.x(), cx_lo), std::max(patch.fine_origin.y(), cy_lo), std::max(patch.fine_origin.z(), cz_lo)};
-			const idx3d end{
-				std::min(patch.fine_origin.x() + patch.fine_size.x(), cx_hi),
-				std::min(patch.fine_origin.y() + patch.fine_size.y(), cy_hi),
-				std::min(patch.fine_origin.z() + patch.fine_size.z(), cz_hi)
-			};
+			idx bx0 = std::max(patch.fine_origin.x(), cx_lo), bx1 = std::min(patch.fine_origin.x() + patch.fine_size.x(), cx_hi);
+			idx by0 = std::max(patch.fine_origin.y(), cy_lo), by1 = std::min(patch.fine_origin.y() + patch.fine_size.y(), cy_hi);
+			idx bz0 = std::max(patch.fine_origin.z(), cz_lo), bz1 = std::min(patch.fine_origin.z() + patch.fine_size.z(), cz_hi);
+			const idx3d begin{bx0, by0, bz0};
+			const idx3d end{bx1, by1, bz1};
 			if (begin.x() >= end.x() || begin.y() >= end.y() || begin.z() >= end.z())
 				continue;
 
@@ -2372,34 +2371,12 @@ void State_AMR<NSE>::advancePair(int level, bool compute_macro, bool sync_macro)
 		launchFineToCoarseTransfersInterior(level + 1);
 		this->nse.updateKernelDataForLevel(level + 1, this->nse.totalSubstepCount[level + 1]);
 		launchCoarseToFineTransfers(level + 1);
-#ifdef AMR_PASSIVE_BAND
-		// AMR_PASSIVE_BAND probe (T1a, 2026-09-05): the mid-cycle fill for
-		// the finer pair #2 covers its substep-1 frame too under the
-		// passive band (same source: this level's post-substep-A state)
-		launchCoarseToFineTransfersOtherFrame(level + 1);
-#endif
 		// substep B reads the skin the F2C just wrote (its ring streams
 		// from it) and the finer pair #2 reads the ghost rows the C2F
 		// filled -- both must be complete
 		synchronizeTransfers();
 	}
 
-#ifdef AMR_SUBSTEP2_C2F_REFILL
-	// AMR_SUBSTEP2_C2F_REFILL probe (cycle-timing suspect T1b, 2026-09-05):
-	// refill the substep-1 frame's ghost rows BETWEEN the substeps,
-	// overwriting substep 1's kernel-integrated band product at the inner
-	// ghost row before substep 2 streams from it -- substep 2 then
-	// consumes fresh C2F-authored band content instead of the widened
-	// launch's output, while substep 1 is untouched. The fill sources the
-	// parent's current df_out (at max_level 1 the pre-step coarse state,
-	// i.e. one fine-substep stale against the substep-2 consumption; at
-	// nested levels the parent's post-substep-A frame). The rotation calls
-	// are the absolute setter on the already-incremented count, so the
-	// pre-fill and the substep-2 preparation select the same frame
-	this->nse.updateKernelDataForLevel(level, this->nse.totalSubstepCount[level]);
-	launchCoarseToFineTransfers(level);
-	synchronizeTransfers();
-#endif
 	// substep B: interior-only launch (on a face masked in fine_wall_masks
 	// the window still covers the GEO_WALL row: the bounce-back refreshes
 	// the wall's slots in every substep's frame)
