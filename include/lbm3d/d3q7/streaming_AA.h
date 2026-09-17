@@ -4,8 +4,12 @@
 
 // A-A pattern
 template <typename TRAITS>
-struct D3Q7_STREAMING
+struct D3Q7_STREAMING_AA
 {
+	static constexpr int DFMAX = 1;
+	// DF slot that holds the freshly written field after a kernel launch
+	static constexpr std::uint8_t output_df = df_cur;
+
 	using idx = typename TRAITS::idx;
 	using dreal = typename TRAITS::dreal;
 
@@ -55,3 +59,10 @@ struct D3Q7_STREAMING
 		}
 	}
 };
+
+template <typename TRAITS>
+inline constexpr bool is_AA_v<D3Q7_STREAMING_AA<TRAITS>> = true;
+template <typename TRAITS>
+inline constexpr bool twisted_layout_v<D3Q7_STREAMING_AA<TRAITS>> = true;
+template <typename TRAITS>
+inline constexpr bool requires_ghost_layer_v<D3Q7_STREAMING_AA<TRAITS>> = true;

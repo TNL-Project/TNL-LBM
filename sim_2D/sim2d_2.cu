@@ -9,15 +9,10 @@
 #include "lbm3d/d2q9/col_clbm.h"
 #include "lbm3d/d2q9/macro.h"
 
-#ifdef AA_PATTERN
-	#include "lbm3d/d2q9/streaming_AA.h"
-#endif
-#ifdef AB_PATTERN
-	#include "lbm3d/d2q9/streaming_AB.h"
-#endif
+#include "lbm3d/d2q9/streaming.h"
 
-template <typename TRAITS>
-struct NSE2D_Data_XProfileInflow : NSE_Data<TRAITS>
+template <typename TRAITS, int DFS_COUNT>
+struct NSE2D_Data_XProfileInflow : NSE_Data<TRAITS, DFS_COUNT>
 {
 	using idx = typename TRAITS::idx;
 	using dreal = typename TRAITS::dreal;
@@ -410,7 +405,7 @@ void run(const std::string& adios_config, int RES, bool use_forcing, double fina
 	using NSE_CONFIG = LBM_CONFIG<
 		TRAITS,
 		D2Q9_KernelStruct,
-		NSE2D_Data_XProfileInflow<TRAITS>,
+		NSE2D_Data_XProfileInflow,
 		COLL,
 		typename COLL::EQ,
 		D2Q9_STREAMING<TRAITS>,

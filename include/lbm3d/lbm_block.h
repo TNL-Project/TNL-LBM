@@ -57,8 +57,8 @@ struct LBM_BLOCK
 	dboollat_array_t dphiTransferDirection;
 
 	// distribution functions
-	hlat_array_t hfs[DFMAX];
-	dlat_array_t dfs[DFMAX];
+	hlat_array_t hfs[CONFIG::DFMAX];
+	dlat_array_t dfs[CONFIG::DFMAX];
 
 	// MPI
 	TNL::MPI::Comm communicator = MPI_COMM_WORLD;
@@ -84,6 +84,10 @@ struct LBM_BLOCK
 	TNL::Containers::DistributedNDArraySynchronizer<dreal_view_t> df_sync[CONFIG::Q];
 	TNL::Containers::DistributedNDArraySynchronizer<dreal_view_t> macro_sync[CONFIG::MACRO::N];
 	TNL::Containers::DistributedNDArraySynchronizer<dmap_array_t> map_sync;
+	// sequencing stream shared by the per-iteration DF synchronizers of the
+	// patterns with shift-1 halo exchanges (esoteric in-place, A-B push;
+	// motivation in setLatticeDecomposition)
+	TNL::Backend::Stream df_seq_stream;
 #endif
 
 	// data for compute for the block itself and each neighbor
@@ -206,7 +210,11 @@ struct LBM_BLOCK
 
 	void resetMap(map_t geo_type);
 	void setEquilibrium(real rho, real vx, real vy, real vz);
-	void computeInitialMacro();
+	// initializes the DF field and the initial macroscopic quantities from a
+	// site-wise initial-condition functor - the virtual "-1 -> 0" iteration
+	// producing the streaming pattern's parity-0 layout
+	template <typename IC>
+	void setInitialCondition(IC&& ic);
 
 	void allocateHostData();
 	void allocateDeviceData();

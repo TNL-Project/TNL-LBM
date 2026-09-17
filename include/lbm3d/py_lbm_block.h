@@ -71,7 +71,6 @@ void export_LBM_BLOCK(nb::module_& m, const char* name)
 			.def("setBoundaryZ", &LBM_BLOCK::setBoundaryZ, nb::arg("z"), nb::arg("value"), "set boundary value at the given GLOBAL index")
 			.def("resetMap", &LBM_BLOCK::resetMap)
 			.def("setEquilibrium", &LBM_BLOCK::setEquilibrium)
-			.def("computeInitialMacro", &LBM_BLOCK::computeInitialMacro)
 		//
 		;
 

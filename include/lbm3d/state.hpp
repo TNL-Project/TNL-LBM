@@ -919,7 +919,7 @@ void State<NSE>::checkpointState(adios2::Mode mode)
 		checkpoint.saveLoadVariable("LBM_map", block, block.hmap);
 
 		// save/load DFs
-		for (int dfty = 0; dfty < DFMAX; dfty++) {
+		for (int dfty = 0; dfty < NSE::DFMAX; dfty++) {
 			const std::string name = fmt::format("LBM_df_{}", dfty);
 			checkpoint.saveLoadVariable(name, block, block.hfs[dfty]);
 		}
@@ -1073,12 +1073,12 @@ bool State<NSE>::estimateMemoryDemands()
 	}
 
 	long long CPUavail = sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGE_SIZE);
-	long long CPUtotal = DFMAX * memDFs + memMacro + memMap + memOutput;
-	long long CPUDFs = DFMAX * memDFs;
+	long long CPUtotal = NSE::DFMAX * memDFs + memMacro + memMap + memOutput;
+	long long CPUDFs = NSE::DFMAX * memDFs;
 #ifdef USE_CUDA
 	long long GPUavail = 0;
 	long long GPUtotal_hw = 0;
-	long long GPUtotal = DFMAX * memDFs + memMacro + memMap;
+	long long GPUtotal = NSE::DFMAX * memDFs + memMacro + memMap;
 
 	const int gpu_id = TNL::Backend::getDevice();
 	const std::string gpu_name = TNL::Backend::getDeviceName(gpu_id);
@@ -1102,7 +1102,7 @@ bool State<NSE>::estimateMemoryDemands()
 		100.0 * CPUtotal / CPUavail
 	);
 #ifdef USE_CUDA
-	spdlog::info("GPU RAM for DFs:   {:d} MiB", DFMAX * memDFs / 1024 / 1024);
+	spdlog::info("GPU RAM for DFs:   {:d} MiB", NSE::DFMAX * memDFs / 1024 / 1024);
 	spdlog::info("GPU RAM for map:   {:d} MiB", memMap / 1024 / 1024);
 	spdlog::info("GPU RAM for macro: {:d} MiB", memMacro / 1024 / 1024);
 	spdlog::info(
@@ -1123,7 +1123,7 @@ bool State<NSE>::estimateMemoryDemands()
 template <typename NSE>
 void State<NSE>::reset()
 {
-	// compute initial DFs on GPU
+	// compute initial DFs and the initial macroscopic quantities on GPU
 	resetDFs();
 
 	nse.resetMap(NSE::BC::GEO_FLUID);
@@ -1134,8 +1134,16 @@ void State<NSE>::reset()
 
 	nse.copyMapToDevice();
 
-	// compute initial macroscopic quantities on GPU and copy to CPU
-	nse.computeInitialMacro();
+#ifdef HAVE_MPI
+	if (nse.nproc > 1) {
+		// finalize the initial layout-0 field on the subdomain overlaps
+		// (resetDFs authors only each block's own sites; the exchange runs
+		// at the parity that authors layout-0, set by resetDFs)
+		nse.synchronizeDFsAndMacroDevice(df_cur, true);
+	}
+#endif
+
+	// copy initial macroscopic quantities to CPU
 	nse.copyMacroToHost();
 }
 
@@ -1222,7 +1230,6 @@ void State<NSE>::SimInit()
 		if (nse.nproc > 1) {
 			// synchronize overlaps with MPI (initial synchronization can be synchronous)
 			nse.synchronizeMapDevice();
-			nse.synchronizeDFsAndMacroDevice(df_cur, true);
 		}
 #endif
 
@@ -1290,12 +1297,7 @@ void State<NSE>::SimUpdate()
 	bool compute_macro = NSE::MACRO::compute_in_each_iteration || sync_macro;
 
 #ifdef HAVE_MPI
-	#ifdef AA_PATTERN
-	uint8_t output_df = df_cur;
-	#endif
-	#ifdef AB_PATTERN
-	uint8_t output_df = df_out;
-	#endif
+	constexpr std::uint8_t output_df = NSE::STREAMING::output_df;
 #endif
 
 #ifdef USE_CUDA

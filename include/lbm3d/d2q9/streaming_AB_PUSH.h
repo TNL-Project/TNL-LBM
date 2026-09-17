@@ -3,35 +3,48 @@
 #include "lbm3d/defs.h"
 #include "lbm_common/rounding.h"
 
-// pull-scheme
+// A-B push scheme: two DF arrays. The post-collision populations are written
+// straight to their target sites in the other array, so the next launch reads
+// them at its own site; slot (i, s) then holds the population that arrived at
+// s from s - c_i (the post-stream layout, like the A-A even sub-step, but with
+// separate arrays and no direction twist).
+//
+// The outflow-pass gathers read the finalized post-stream array: the
+// pre-collision population postcoll_{n-1}(i, s) is found in slot (i, s + c_i).
 template <typename TRAITS>
-struct D2Q9_STREAMING
+struct D2Q9_STREAMING_AB_PUSH
 {
+	static constexpr int DFMAX = 2;
+	// DF slot that holds the freshly written field after a kernel launch
+	static constexpr std::uint8_t output_df = df_out;
+
 	using idx = typename TRAITS::idx;
 	using dreal = typename TRAITS::dreal;
 
+	// the streaming step itself: write the post-collision populations to the
+	// target sites in the other array
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void
 	postCollisionStreaming(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm_unused, idx z, idx zp_unused)
 	{
-		// no streaming actually, write to the (x,y,z) site
-		for (int i = 0; i < 9; i++)
-			SD.df(df_out, i, x, y, z) = KS.f[i];
+		SD.df(df_out, dir9::zz, x, y, z) = KS.f[dir9::zz];
+		SD.df(df_out, dir9::pz, xp, y, z) = KS.f[dir9::pz];
+		SD.df(df_out, dir9::mz, xm, y, z) = KS.f[dir9::mz];
+		SD.df(df_out, dir9::zp, x, yp, z) = KS.f[dir9::zp];
+		SD.df(df_out, dir9::zm, x, ym, z) = KS.f[dir9::zm];
+		SD.df(df_out, dir9::pp, xp, yp, z) = KS.f[dir9::pp];
+		SD.df(df_out, dir9::mm, xm, ym, z) = KS.f[dir9::mm];
+		SD.df(df_out, dir9::pm, xp, ym, z) = KS.f[dir9::pm];
+		SD.df(df_out, dir9::mp, xm, yp, z) = KS.f[dir9::mp];
 	}
 
+	// the post-stream populations sit at their own site: identity read
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void
 	streaming(uint8_t type, LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm_unused, idx z, idx zp_unused)
 	{
-		KS.f[dir9::mm] = TNL::Backend::ldg(SD.df(type, dir9::mm, xp, yp, z));
-		KS.f[dir9::mz] = TNL::Backend::ldg(SD.df(type, dir9::mz, xp, y, z));
-		KS.f[dir9::mp] = TNL::Backend::ldg(SD.df(type, dir9::mp, xp, ym, z));
-		KS.f[dir9::zm] = TNL::Backend::ldg(SD.df(type, dir9::zm, x, yp, z));
-		KS.f[dir9::zz] = TNL::Backend::ldg(SD.df(type, dir9::zz, x, y, z));
-		KS.f[dir9::zp] = TNL::Backend::ldg(SD.df(type, dir9::zp, x, ym, z));
-		KS.f[dir9::pm] = TNL::Backend::ldg(SD.df(type, dir9::pm, xm, yp, z));
-		KS.f[dir9::pz] = TNL::Backend::ldg(SD.df(type, dir9::pz, xm, y, z));
-		KS.f[dir9::pp] = TNL::Backend::ldg(SD.df(type, dir9::pp, xm, ym, z));
+		for (int i = 0; i < 9; i++)
+			KS.f[i] = TNL::Backend::ldg(SD.df(type, i, x, y, z));
 	}
 
 	template <typename LBM_DATA, typename LBM_KS>
@@ -40,26 +53,24 @@ struct D2Q9_STREAMING
 		streaming(df_cur, SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 	}
 
-	// streaming with bounce-back rule applied
+	// streaming with bounce-back rule applied: identity read, then swap all 4
+	// opposite DF pairs (the same effect as the GEO_WALL bounce-back collision)
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void
 	streamingBounceBack(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm_unused, idx z, idx zp_unused)
 	{
-		KS.f[dir9::pp] = TNL::Backend::ldg(SD.df(df_cur, dir9::mm, xp, yp, z));
-		KS.f[dir9::pz] = TNL::Backend::ldg(SD.df(df_cur, dir9::mz, xp, y, z));
-		KS.f[dir9::pm] = TNL::Backend::ldg(SD.df(df_cur, dir9::mp, xp, ym, z));
-		KS.f[dir9::zp] = TNL::Backend::ldg(SD.df(df_cur, dir9::zm, x, yp, z));
-		KS.f[dir9::zz] = TNL::Backend::ldg(SD.df(df_cur, dir9::zz, x, y, z));
-		KS.f[dir9::zm] = TNL::Backend::ldg(SD.df(df_cur, dir9::zp, x, ym, z));
-		KS.f[dir9::mp] = TNL::Backend::ldg(SD.df(df_cur, dir9::pm, xm, yp, z));
-		KS.f[dir9::mz] = TNL::Backend::ldg(SD.df(df_cur, dir9::pz, xm, y, z));
-		KS.f[dir9::mm] = TNL::Backend::ldg(SD.df(df_cur, dir9::pp, xm, ym, z));
+		streaming(SD, KS, xm, x, xp, ym, y, yp, zm_unused, z, zp_unused);
+		TNL::swap(KS.f[dir9::mm], KS.f[dir9::pp]);
+		TNL::swap(KS.f[dir9::mz], KS.f[dir9::pz]);
+		TNL::swap(KS.f[dir9::mp], KS.f[dir9::pm]);
+		TNL::swap(KS.f[dir9::zm], KS.f[dir9::zp]);
 	}
 
-	// outflow pass gathers for an arbitrary face: the outflow cell takes the
-	// pulled state of its anchor column (the fluid-side neighbor, one cell
-	// inward) from df_cur (finalized by the previous launch, no race against
-	// the df_out writes of the current one).
+	// Outflow-pass gather for an arbitrary face, in the post-stream layout
+	// (see the file header): the pull-scheme site (anchor, tangential -c_i) is
+	// found in slot (i, anchor + c_i[normal], tangential own). The pass reads
+	// only the finalized previous launch, so there is no race against the
+	// df_out writes of the current one.
 	// FACE is a compile-time template parameter, so the per-direction
 	// components, site offsets and family branches fold to constants.
 	template <int FACE, typename LBM_DATA, typename LBM_KS>
@@ -67,9 +78,9 @@ struct D2Q9_STREAMING
 	{
 		constexpr bool axis_x = (FACE & (bc_face::XP | bc_face::XM)) != 0;
 		for (int i = 0; i < 9; i++) {
-			// normal coordinate: the anchor column; tangential: -c offset (pull scheme)
-			const idx sx = axis_x ? anchor : x - dir9_cx(i);
-			const idx sy = axis_x ? y - dir9_cy(i) : anchor;
+			// normal coordinate: anchor + normal component of c_i; tangential: own
+			const idx sx = axis_x ? anchor + dir9_cx(i) : x;
+			const idx sy = axis_x ? y : anchor + dir9_cy(i);
 			KS.f[i] = TNL::Backend::ldg(SD.df(df_cur, i, sx, sy, z));
 		}
 	}
@@ -108,11 +119,10 @@ struct D2Q9_STREAMING
 		);
 	}
 
-	// interpolated outflow (Geier 2015) for an arbitrary face: the population
-	// moving against the outward normal blends postcoll_{n-1} from the anchor
-	// column with the outflow cell's own postcoll, the perpendicular population
-	// streams ordinarily (own column), the outward-moving population takes the
-	// pulled state of the anchor column.
+	// interpolated outflow (Geier 2015) for an arbitrary face, in the
+	// post-stream layout: pulls' anchor/own-column sites (s) map to slots
+	// (s + c_i), so both columns use the cell's own tangential coordinates and
+	// the normal coordinate shifted by the normal component of c_i.
 	// FACE is a compile-time template parameter, so the per-direction
 	// components, site offsets and family branches fold to constants.
 	template <int FACE, typename LBM_DATA, typename LBM_KS>
@@ -122,11 +132,11 @@ struct D2Q9_STREAMING
 		constexpr int out_sign = (FACE & (bc_face::XM | bc_face::YM)) ? -1 : 1;
 		for (int i = 0; i < 9; i++) {
 			const int cn = axis_x ? dir9_cx(i) : dir9_cy(i);  // normal component of c_i
-			// sites in the anchor column and the own column, tangential -c offsets
-			const idx nx = axis_x ? anchor : x - dir9_cx(i);
-			const idx ny = axis_x ? y - dir9_cy(i) : anchor;
-			const idx ox = axis_x ? x : x - dir9_cx(i);
-			const idx oy = axis_x ? y - dir9_cy(i) : y;
+			// mapped anchor-column slot and own-column slot
+			const idx nx = axis_x ? anchor + cn : x;
+			const idx ny = axis_x ? y : anchor + cn;
+			const idx ox = axis_x ? x + cn : x;
+			const idx oy = axis_x ? y : y + cn;
 			if (cn == out_sign)
 				KS.f[i] = TNL::Backend::ldg(SD.df(df_cur, i, nx, ny, z));
 			else if (cn == 0)
@@ -155,3 +165,6 @@ struct D2Q9_STREAMING
 		}
 	}
 };
+
+template <typename TRAITS>
+inline constexpr bool is_AB_PUSH_v<D2Q9_STREAMING_AB_PUSH<TRAITS>> = true;

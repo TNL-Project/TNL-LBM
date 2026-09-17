@@ -10,16 +10,10 @@
 #include "lbm3d/d2q9/col_clbm.h"
 #include "lbm3d/d2q9/macro.h"
 
-// exactly one streaming header must be included
-#ifdef AA_PATTERN
-	#include "lbm3d/d2q9/streaming_AA.h"
-#endif
-#ifdef AB_PATTERN
-	#include "lbm3d/d2q9/streaming_AB.h"
-#endif
+#include "lbm3d/d2q9/streaming.h"
 
-template <typename TRAITS>
-struct NSE2D_Data_Periodic : NSE_Data<TRAITS>
+template <typename TRAITS, int DFS_COUNT>
+struct NSE2D_Data_Periodic : NSE_Data<TRAITS, DFS_COUNT>
 {
 	using idx = typename TRAITS::idx;
 	using dreal = typename TRAITS::dreal;
@@ -107,43 +101,21 @@ struct StateLocal : State<NSE>
 		const dreal rho_0 = this->rho_0;
 		const dreal V_0 = lbm_V_0;
 
-		for (auto& block : nse.blocks) {
-			const idx3d offset = block.offset;
-#ifdef HAVE_MPI
-			auto local_df = block.dfs[0].getLocalView();
-#else
-			auto local_df = block.dfs[0].getView();
-#endif
-
-			const idx3d begin = {0, 0, 0};
-			const idx3d end = {block.local.y(), block.local.z(), block.local.x()};
-			TNL::Algorithms::parallelFor<DeviceType>(
-				begin,
-				end,
-				[lat, local_df, offset, V_0, rho_0] __cuda_callable__(const idx3d& yzx) mutable
-				{
-					const auto& [y_lat, z_lat, x_lat] = yzx;
-					const idx x = offset.x() + x_lat;
-					const idx y = offset.y() + y_lat;
-
-					// Taylor-Green vortex at t=0 (F=1), using the same physical
-					// coordinate mapping as analytical_vx/vy
-					const real X = lat.global.x();
-					const real Y = lat.global.y();
-					const real px = lat.lbm2physX(x) / (X * lat.physDl);
-					const real py = lat.lbm2physY(y) / (Y * lat.physDl);
-					const dreal vx = V_0 * TNL::sin(2 * TNL::pi * px) * TNL::cos(2 * TNL::pi * py);
-					const dreal vy = -V_0 * TNL::cos(2 * TNL::pi * px) * TNL::sin(2 * TNL::pi * py);
-					const dreal vz = 0;
-
-					NSE::COLL::setEquilibriumLat(local_df, x_lat, y_lat, z_lat, rho_0, vx, vy, vz);
-				}
-			);
-
-			// copy the initialized DFs so that they are not overridden
-			for (uint8_t dftype = 1; dftype < DFMAX; dftype++)
-				block.dfs[dftype] = block.dfs[0];
-		}
+		nse.setInitialCondition(
+			[lat, V_0, rho_0] __cuda_callable__(typename NSE::template KernelStruct<dreal>& KS, idx gx, idx gy, idx) mutable
+			{
+				// Taylor-Green vortex at t=0 (F=1), using the same physical
+				// coordinate mapping as analytical_vx/vy
+				const real X = lat.global.x();
+				const real Y = lat.global.y();
+				const real px = lat.lbm2physX(gx) / (X * lat.physDl);
+				const real py = lat.lbm2physY(gy) / (Y * lat.physDl);
+				KS.vx = V_0 * TNL::sin(2 * TNL::pi * px) * TNL::cos(2 * TNL::pi * py);
+				KS.vy = -V_0 * TNL::cos(2 * TNL::pi * px) * TNL::sin(2 * TNL::pi * py);
+				KS.rho = rho_0;
+				NSE::COLL::setEquilibrium(KS);
+			}
+		);
 
 		nse.copyDFsToHost();
 	}
@@ -382,7 +354,7 @@ void run(const std::string& adios_config, int RES)
 	using NSE_CONFIG = LBM_CONFIG<
 		TRAITS,
 		D2Q9_KernelStruct,
-		NSE2D_Data_Periodic<TRAITS>,
+		NSE2D_Data_Periodic,
 		COLL,
 		typename COLL::EQ,
 		D2Q9_STREAMING<TRAITS>,

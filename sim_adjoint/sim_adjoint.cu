@@ -1,7 +1,3 @@
-#ifndef AA_PATTERN
-	#define AB_PATTERN
-#endif
-
 #include <argparse/argparse.hpp>
 #include <filesystem>
 #include <cmath>
@@ -218,8 +214,21 @@ struct StateLocalAdjoint : State<NSE>
 		loadPrimaryAndMeasuredMacro(*this, fname_p, fname_m, steady);
 		nse.copyMacroToDevice();
 
-		// compute initial DFs on GPU
-		this->resetDFs();
+		// zero initial adjoint DFs - before any calculation, there is a
+		// collision step where the measured data sets initial dfs for the
+		// adjoint problem (the loaded macro is left untouched by the empty
+		// MACRO_Adjoint::outputMacro)
+		nse.setInitialCondition(
+			[] __cuda_callable__(typename NSE::template KernelStruct<dreal>& KS, idx gx, idx gy, idx gz) mutable
+			{
+				(void) gx;
+				(void) gy;
+				(void) gz;
+				for (int i = 0; i < NSE::Q; i++)
+					KS.f[i] = 0;
+			}
+		);
+		nse.copyDFsToHost();
 
 		nse.resetMap(NSE::BC::GEO_ADJOINT_FLUID);
 
@@ -229,8 +238,11 @@ struct StateLocalAdjoint : State<NSE>
 
 		nse.copyMapToDevice();
 
-		// compute initial macroscopic quantities on GPU and copy to CPU
-		nse.computeInitialMacro();
+#ifdef HAVE_MPI
+		if (nse.nproc > 1)
+			nse.synchronizeDFsAndMacroDevice(df_cur, true);
+#endif
+
 		nse.copyMacroToHost();
 	}
 
@@ -631,10 +643,10 @@ void run(double* velocityProfileX, double* velocityProfileY, double* velocityPro
 	using NSE_CONFIG = LBM_CONFIG<
 		TRAITS,
 		D3Q27_KernelStruct,
-		NSE_Data_InflowProfile<TRAITS>,
+		NSE_Data_InflowProfile,
 		COLL,
 		typename COLL::EQ,
-		D3Q27_STREAMING<TRAITS>,
+		D3Q27_STREAMING_AB_PULL<TRAITS>,
 		D3Q27_BC_All,
 		MacroLocal<TRAITS>>;
 
@@ -661,10 +673,10 @@ void runAdjoint(
 	using ADJ_CONFIG = LBM_CONFIG<
 		TRAITS,
 		D3Q27_KernelStruct_Adjoint,
-		NSE_Data_Adjoint<TRAITS>,
+		NSE_Data_Adjoint,
 		COLL,
 		typename COLL::EQ,
-		D3Q27_STREAMING<TRAITS>,
+		D3Q27_STREAMING_AB_PULL<TRAITS>,
 		D3Q27_BC_All,
 		D3Q27_MACRO_Adjoint<TRAITS>>;
 

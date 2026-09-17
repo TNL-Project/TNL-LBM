@@ -2,6 +2,7 @@
 
 #include "lbm_block.h"
 #include "block_size_optimizer.h"
+#include "kernels.h"
 
 #include <TNL/Atomic.h>
 
@@ -23,6 +24,68 @@ LBM_BLOCK<CONFIG>::LBM_BLOCK(const TNL::MPI::Comm& communicator, idx3d global, i
 	nproc = communicator.size();
 }
 
+// Combined exchange mask of one EsoTwist synchronization pass for the given
+// slot: the face bits of the slot's non-zero lattice-axis components that
+// belong to the pass. Post-phase-A (even_iter false), the axes with c < 0
+// take buffer offset 1 and the axes with c > 0 take offset 0; post-phase-B
+// (even_iter true) is the mirror image. Shared by the two-pass exchange in
+// start4DArraySynchronization and by the per-slot pattern restriction in
+// setLatticeDecomposition.
+template <typename CONFIG>
+TNL::Containers::SyncDirection eso_twist_pass_mask(int slot, int pass, bool even_iter)
+{
+	constexpr int DIMS = (CONFIG::Q == 9) ? 2 : 3;
+	TNL::Containers::SyncDirection mask = TNL::Containers::SyncDirection::None;
+	for (int a = 0; a < DIMS; a++) {
+		const int c = (CONFIG::Q == 9) ? (a == 0 ? dir9_cx(slot) : dir9_cy(slot))
+									   : (a == 0   ? dir27_cx(slot)
+										  : a == 1 ? dir27_cy(slot)
+												   : dir27_cz(slot));
+		if (c == 0)
+			continue;
+		const bool offset1 = (c < 0) != even_iter;
+		if ((pass == 0) != offset1)
+			continue;
+		const bool pos_side = (c > 0) == even_iter;
+		if (a == 0)
+			mask = mask | (pos_side ? TNL::Containers::SyncDirection::Right : TNL::Containers::SyncDirection::Left);
+		else if (a == 1)
+			mask = mask | (pos_side ? TNL::Containers::SyncDirection::Top : TNL::Containers::SyncDirection::Bottom);
+		else
+			mask = mask | (pos_side ? TNL::Containers::SyncDirection::Front : TNL::Containers::SyncDirection::Back);
+	}
+	return mask;
+}
+
+// All exchange masks the given slot of an esoteric in-place pattern ever
+// uses, across both parities (and both EsoTwist passes). A slot exchanges
+// at most 4 distinct masks; the count is returned, unused entries untouched.
+template <typename CONFIG>
+int eso_sync_masks(int slot, std::array<TNL::Containers::SyncDirection, 4>& masks)
+{
+	using S = typename CONFIG::STREAMING;
+	int n = 0;
+	if constexpr (is_ESO_TWIST_v<S>) {
+		for (const bool even_iter : {false, true})
+			for (int pass = 0; pass < 2; pass++) {
+				const auto mask = eso_twist_pass_mask<CONFIG>(slot, pass, even_iter);
+				if (mask != TNL::Containers::SyncDirection::None)
+					masks[n++] = mask;
+			}
+	}
+	else if constexpr (is_esoteric_in_place_v<S>) {
+		constexpr int DIMS = (CONFIG::Q == 9) ? 2 : 3;
+		for (const bool even_iter : {false, true}) {
+			TNL::Containers::SyncDirection mask = TNL::Containers::SyncDirection::None;
+			for (int a = 0; a < DIMS; a++)
+				mask = mask | S::dfSyncDirection(slot, a, even_iter);
+			if (mask != TNL::Containers::SyncDirection::None)
+				masks[n++] = mask;
+		}
+	}
+	return n;
+}
+
 template <typename CONFIG>
 template <typename Pattern>
 void LBM_BLOCK<CONFIG>::setLatticeDecomposition(
@@ -35,18 +98,126 @@ void LBM_BLOCK<CONFIG>::setLatticeDecomposition(
 	this->neighborRanks = neighborRanks;
 
 #ifdef HAVE_MPI
+	// The synchronizer activates an exchange buffer whenever the mask passed
+	// at runtime shares any face bit with the buffer's direction. The
+	// per-slot masks of the esoteric in-place patterns combine several face
+	// bits (diagonal slots), so partially-overlapping corner (in 3D also
+	// edge) buffers would spuriously fire: under the shifted exchanges their
+	// send regions are stale diagonal halo cells and their receive regions
+	// penetrate the neighbor's owned cells, so a stale value lands in a cell
+	// read by the next launch (only reachable in multi-dimensional
+	// decompositions - with a single distributed axis there are no corner
+	// buffers). Restricting the per-slot DF patterns to buffers fully
+	// contained in one of the slot's masks keeps every needed exchange
+	// (only fully-contained buffers carry values produced by this rank)
+	// and drops every spurious one.
+	// Per-slot exchange-mask inventories for the patterns that must restrict
+	// their DF exchange to specific buffers (see the over-activation comment
+	// above): the esoteric in-place patterns use their parity-dependent
+	// descriptor masks; A-B push and A-A exchange shifts of the canonical
+	// slot direction only (a shift-1 exchange through a partially-
+	// overlapping buffer would ship ghost values that no thread of this
+	// rank authored - A-A's odd phase has the same push semantics, since
+	// it writes the post-collision populations to the neighboring sites).
+	std::array<std::array<TNL::Containers::SyncDirection, 4>, CONFIG::Q> slot_masks{};
+	std::array<int, CONFIG::Q> slot_nmasks{};
+	if constexpr (is_esoteric_in_place_v<typename CONFIG::STREAMING>) {
+		for (int i = 0; i < CONFIG::Q; i++)
+			slot_nmasks[i] = eso_sync_masks<CONFIG>(i, slot_masks[i]);
+	}
+	else if constexpr (is_AB_PUSH_v<typename CONFIG::STREAMING> || is_AA_v<typename CONFIG::STREAMING>) {
+		// The runtime mask is drawn from the canonical slot direction and
+		// its opposite (A-B push always uses the canonical direction with
+		// shift 1; A-A alternates: the opposite direction unshifted after
+		// the twisted same-site write of the even phase, the canonical
+		// direction with shift 1 after the push-style write of the odd
+		// phase), and the exchange pattern must also own the opposite
+		// buffer of the active mask: stage_2 receives into it, and its
+		// neighbor IDs and tags must be set up (they stay at the inert
+		// defaults otherwise and the receive is silently skipped). The
+		// containment filter in slot_sync_allowed also retains every buffer
+		// fully contained in either mask: for a diagonal slot the
+		// push-arrival region spans the ghost column, row and corner, so
+		// the face and edge sub-buffers of the canonical diagonal are
+		// essential, not spurious.
+		const TNL::Containers::SyncDirection* dirs = (CONFIG::Q == 9) ? df_sync_directions_d2q9 : df_sync_directions;
+		for (int i = 0; i < CONFIG::Q; i++) {
+			if (dirs[i] != TNL::Containers::SyncDirection::None) {
+				slot_masks[i][0] = dirs[i];
+				slot_masks[i][1] = opposite(dirs[i]);
+				slot_nmasks[i] = 2;
+			}
+		}
+	}
+	auto slot_sync_allowed = [&](int slot, TNL::Containers::SyncDirection direction) -> bool
+	{
+		if constexpr (
+			! is_esoteric_in_place_v<typename CONFIG::STREAMING> && ! is_AB_PUSH_v<typename CONFIG::STREAMING>
+			&& ! is_AA_v<typename CONFIG::STREAMING>
+		)
+		{
+			(void) slot;
+			(void) direction;
+			return true;
+		}
+		else {
+			// slots whose masks are all None keep the full (inert) pattern
+			if (slot_nmasks[slot] == 0)
+				return true;
+			for (int m = 0; m < slot_nmasks[slot]; m++)
+				if ((direction & slot_masks[slot][m]) == direction)
+					return true;
+			return false;
+		}
+	};
+
 	// set communication pattern for all synchronizers
 	map_sync.setSynchronizationPattern(pattern);
-	for (int i = 0; i < CONFIG::Q; i++)
-		df_sync[i].setSynchronizationPattern(pattern);
+	for (int i = 0; i < CONFIG::Q; i++) {
+		// per-iteration synchronizer: restricted for the esoteric patterns
+		Pattern df_pattern = pattern;
+		int n = 0;
+		for (auto direction : pattern)
+			if (slot_sync_allowed(i, direction))
+				df_pattern[n++] = direction;
+		// close under opposites: the synchronizer's stage_2 looks up the
+		// opposite buffer of every active one, so it must exist in the
+		// pattern. The closure members never activate on their own: a mask
+		// can share a bit with opposite(B) only by fully containing it.
+		for (int k = 0, n_allowed = n; k < n_allowed; k++) {
+			const TNL::Containers::SyncDirection opp = opposite(df_pattern[k]);
+			bool present = false;
+			for (int m = 0; m < n; m++)
+				if (df_pattern[m] == opp) {
+					present = true;
+					break;
+				}
+			if (! present)
+				df_pattern[n++] = opp;
+		}
+		if (n > 0 && n < static_cast<int>(df_pattern.size())) {
+			// pad with duplicates: the synchronizer's pattern map ignores
+			// repeated directions
+			for (int k = n; k < static_cast<int>(df_pattern.size()); k++)
+				df_pattern[k] = df_pattern[0];
+			df_sync[i].setSynchronizationPattern(df_pattern);
+		}
+		else {
+			// non-esoteric patterns, all masks allowed, or no masks at all
+			// (nothing ever fires) - keep the full pattern
+			df_sync[i].setSynchronizationPattern(pattern);
+		}
+	}
 	for (int i = 0; i < CONFIG::MACRO::N; i++)
 		macro_sync[i].setSynchronizationPattern(pattern);
 
 	// set neighbors for all synchronizers
 	for (auto [direction, rank] : neighborRanks) {
 		map_sync.setNeighbor(direction, rank);
-		for (int i = 0; i < CONFIG::Q; i++)
-			df_sync[i].setNeighbor(direction, rank);
+		for (int i = 0; i < CONFIG::Q; i++) {
+			if (slot_sync_allowed(i, direction))
+				df_sync[i].setNeighbor(direction, rank);
+		}
 		for (int i = 0; i < CONFIG::MACRO::N; i++)
 			macro_sync[i].setNeighbor(direction, rank);
 	}
@@ -89,8 +260,10 @@ void LBM_BLOCK<CONFIG>::setLatticeDecomposition(
 		if (! isPrimaryDirection(direction) ^ isPrimaryDirection(opposite(direction)))
 			throw std::logic_error("Bug in isPrimaryDirection!!!");
 		if (neighbor_id < 0) {
-			for (int i = 0; i < CONFIG::Q; i++)
-				df_sync[i].setTags(direction, -1, -1);
+			for (int i = 0; i < CONFIG::Q; i++) {
+				if (slot_sync_allowed(i, direction))
+					df_sync[i].setTags(direction, -1, -1);
+			}
 			for (int i = 0; i < CONFIG::MACRO::N; i++)
 				macro_sync[i].setTags(direction, -1, -1);
 		}
@@ -99,10 +272,12 @@ void LBM_BLOCK<CONFIG>::setLatticeDecomposition(
 				const int offset0 = (2 * i + 0) * blocks_per_rank * nproc;
 				const int offset1 = (2 * i + 1) * blocks_per_rank * nproc;
 				if (isPrimaryDirection(direction)) {
-					df_sync[i].setTags(direction, offset1 + neighbor_id, offset0 + this->id);
+					if (slot_sync_allowed(i, direction))
+						df_sync[i].setTags(direction, offset1 + neighbor_id, offset0 + this->id);
 				}
 				else {
-					df_sync[i].setTags(direction, offset0 + neighbor_id, offset1 + this->id);
+					if (slot_sync_allowed(i, direction))
+						df_sync[i].setTags(direction, offset0 + neighbor_id, offset1 + this->id);
 				}
 			}
 			for (int i = 0; i < CONFIG::MACRO::N; i++) {
@@ -142,13 +317,40 @@ void LBM_BLOCK<CONFIG>::setLatticeDecomposition(
 	#endif
 	// low-priority stream for the interior
 	computeData.at(TNL::Containers::SyncDirection::None).stream = TNL::Backend::Stream::create(TNL::Backend::StreamNonBlocking, priority_low);
+	#ifdef HAVE_MPI
+	// Share one sequencing stream across the DF buffers of the patterns
+	// using shift-1 exchanges (esoteric in-place, A-B push, A-A): the
+	// synchronizer unpacks each buffer on its own stream, and with shift-1
+	// exchanges the recv regions of shifted face buffers cover the corner
+	// cells owned by the corner buffer, so the corner's overriding unpack
+	// races the faces'. Serializing the buffer kernels of a synchronizer
+	// onto one stream makes the std::map (enum) order the execution order,
+	// which always places subset directions before their supersets - face
+	// planes first, then edges, then corners - so the corner's message
+	// deterministically overwrites the corner cell. The compute boundary
+	// kernels are host-synchronized before the DF exchange starts
+	// (SimUpdate), so collapsing the buffer streams cannot race the pack
+	// side either.
+	if constexpr (
+		is_esoteric_in_place_v<typename CONFIG::STREAMING> || is_AB_PUSH_v<typename CONFIG::STREAMING> || is_AA_v<typename CONFIG::STREAMING>
+	)
+		df_seq_stream = TNL::Backend::Stream::create(TNL::Backend::StreamNonBlocking, priority_high);
+	#endif
 	// high-priority streams for boundaries
 	for (auto direction : pattern) {
 		computeData.at(direction).stream = TNL::Backend::Stream::create(TNL::Backend::StreamNonBlocking, priority_high);
 	#ifdef HAVE_MPI
 		// set the stream to the synchronizer
-		for (int i = 0; i < CONFIG::Q; i++)
-			df_sync[i].setCudaStream(direction, computeData.at(direction).stream);
+		for (int i = 0; i < CONFIG::Q; i++) {
+			if (slot_sync_allowed(i, direction))
+				df_sync[i].setCudaStream(
+					direction,
+					is_esoteric_in_place_v<typename CONFIG::STREAMING> || is_AB_PUSH_v<typename CONFIG::STREAMING>
+							|| is_AA_v<typename CONFIG::STREAMING>
+						? df_seq_stream
+						: computeData.at(direction).stream
+				);
+		}
 		for (int i = 0; i < CONFIG::MACRO::N; i++)
 			macro_sync[i].setCudaStream(direction, computeData.at(direction).stream);
 	#endif
@@ -252,9 +454,20 @@ dim3 LBM_BLOCK<CONFIG>::getCudaGridSize(const idx3d& local_size, const dim3& blo
 }
 
 template <typename CONFIG>
-void LBM_BLOCK<CONFIG>::setEquilibrium(real rho, real vx, real vy, real vz)
+template <typename IC>
+void LBM_BLOCK<CONFIG>::setInitialCondition(IC&& ic)
 {
-// extract variables and views for capturing in the lambda function
+	// Initialization as a virtual "-1 -> 0" iteration: collision is replaced
+	// by equilibrium evaluation and the pattern's own streaming write
+	// produces its parity-0 layout, so the first real launch reads exactly
+	// the same populations the classical setEquilibrium + permutation init
+	// produced (bitwise, per streaming pattern).
+	//
+	// `ic` is a device functor (KS&, gx, gy, gz) -> void taking the GLOBAL
+	// lattice indices of a site; it must fill KS (the macroscopic fields and
+	// the populations, usually via COLL::setEquilibrium).
+
+	// extract variables and views for capturing in the lambda functions
 #ifdef HAVE_MPI
 	auto local_df = dfs[0].getLocalView();
 #else
@@ -268,50 +481,259 @@ void LBM_BLOCK<CONFIG>::setEquilibrium(real rho, real vx, real vy, real vz)
 	const int overlap_z = local_df.template getOverlap<3>();
 	const idx3d begin = {-overlap_y, -overlap_z, -overlap_x};
 	const idx3d end = {local.y() + overlap_y, local.z() + overlap_z, local.x() + overlap_x};
+	const idx3d goffset = offset;
+	const idx3d local_size = local;
 
+	typename CONFIG::DATA SD = data;
+
+	// kernel A: stamp the own-site natural layout over the halo-padded range
+	// (never-transported cells keep these values) and write the initial
+	// macroscopic quantities straight from the initial condition (owned
+	// sites only; the ghost macro lands via the initial exchange)
 	TNL::Algorithms::parallelFor<DeviceType>(
 		begin,
 		end,
-		[local_df, rho, vx, vy, vz] __cuda_callable__(idx3d yzx) mutable
+		[local_df, SD, ic, goffset, local_size] __cuda_callable__(idx3d yzx) mutable
 		{
 			const auto& [y, z, x] = yzx;
-			CONFIG::COLL::setEquilibriumLat(local_df, x, y, z, rho, vx, vy, vz);
+			typename CONFIG::template KernelStruct<dreal> KS;
+			CONFIG::MACRO::copyQuantities(SD, KS, x, y, z);
+			CONFIG::MACRO::zeroForcesInKS(KS);
+			ic(KS, goffset.x() + x, goffset.y() + y, goffset.z() + z);
+			for (int i = 0; i < CONFIG::Q; i++)
+				local_df(i, x, y, z) = KS.f[i];
+			if (x >= 0 && x < local_size.x() && y >= 0 && y < local_size.y() && z >= 0 && z < local_size.z())
+				CONFIG::MACRO::outputMacro(SD, KS, x, y, z);
 		}
 	);
 
 	// copy the initialized DFs so that they are not overridden
-	for (uint8_t dftype = 1; dftype < DFMAX; dftype++)
+	for (uint8_t dftype = 1; dftype < CONFIG::DFMAX; dftype++)
 		dfs[dftype] = dfs[0];
+
+	if constexpr (is_ESO_TWIST_v<typename CONFIG::STREAMING>) {
+		// EsoTwist's parity-0 placement cannot be assembled by the pattern's
+		// postCollisionStreaming from per-site equilibrium inputs: the
+		// pattern's pairwise exchange moves each pair by the head's FULL
+		// velocity (offset c_h), while the layout launch-0 reads requires the
+		// componentwise positive projection p(c_h) = max(c_h, 0) - for
+		// mixed-sign diagonals the two disagree. Stage the natural field and
+		// gather the placement directly (the other patterns are served by the
+		// streaming-write kernel below).
+		const idx nx = local.x() + 2 * overlap_x;
+		const idx ny = local.y() + 2 * overlap_y;
+		const idx nz = local.z() + 2 * overlap_z;
+		const idx lx = local.x();
+		const idx ly = local.y();
+		const idx lz = local.z();
+		// gathered source indices wrap only along periodic axes that this
+		// block spans completely; cross-block sources are already correct
+		// (kernel A evaluated the initial condition on the halo planes, which
+		// are the neighbor blocks' owned sites at literal global indices)
+		const bool wrap_x = SD.periodic.x() && lx == global.x();
+		const bool wrap_y = SD.periodic.y() && ly == global.y();
+		const bool wrap_z = SD.periodic.z() && lz == global.z();
+
+		auto c_x = [](int i) constexpr -> int
+		{
+			return CONFIG::Q == 9 ? dir9_cx(i) : dir27_cx(i);
+		};
+		auto c_y = [](int i) constexpr -> int
+		{
+			return CONFIG::Q == 9 ? dir9_cy(i) : dir27_cy(i);
+		};
+		auto c_z = [](int i) constexpr -> int
+		{
+			return CONFIG::Q == 9 ? 0 : dir27_cz(i);
+		};
+
+		// scratch planes holding the pre-placement contents of the pair's
+		// two slots (a second plane keeps the read side intact while the
+		// in-place scatter runs)
+		TNL::Containers::Array<dreal, DeviceType, idx> scratch_a;
+		TNL::Containers::Array<dreal, DeviceType, idx> scratch_b;
+		scratch_a.setSize(nx * ny * nz);
+		scratch_b.setSize(nx * ny * nz);
+		dreal* A = scratch_a.getData();
+		dreal* B = scratch_b.getData();
+
+		for (int h = 1; h < CONFIG::Q; h += 2) {  // heads are the odd-numbered slots
+			const int t = opposite_direction(h);
+			// slot h <- A(m - p(c_h)), slot t <- B(m - p(c_t))
+			// with p(c) = max(c, 0) componentwise
+			const idx shx = -(c_x(h) > 0 ? 1 : 0);
+			const idx shy = -(c_y(h) > 0 ? 1 : 0);
+			const idx shz = -(c_z(h) > 0 ? 1 : 0);
+			const idx stx = -(c_x(t) > 0 ? 1 : 0);
+			const idx sty = -(c_y(t) > 0 ? 1 : 0);
+			const idx stz = -(c_z(t) > 0 ? 1 : 0);
+
+			// stage the pair's pre-placement contents
+			TNL::Algorithms::parallelFor<DeviceType>(
+				begin,
+				end,
+				[local_df, h, t, overlap_x, overlap_y, overlap_z, nx, ny, nz, A, B] __cuda_callable__(idx3d yzx) mutable
+				{
+					const auto& [y, z, x] = yzx;
+					const idx f = ((z + overlap_z) * ny + (y + overlap_y)) * nx + (x + overlap_x);
+					A[f] = local_df(h, x, y, z);
+					B[f] = local_df(t, x, y, z);
+				}
+			);
+
+			// gather into the parity-0 placement
+			TNL::Algorithms::parallelFor<DeviceType>(
+				begin,
+				end,
+				[local_df,
+				 h,
+				 t,
+				 overlap_x,
+				 overlap_y,
+				 overlap_z,
+				 nx,
+				 ny,
+				 nz,
+				 lx,
+				 ly,
+				 lz,
+				 A,
+				 B,
+				 shx,
+				 shy,
+				 shz,
+				 stx,
+				 sty,
+				 stz,
+				 wrap_x,
+				 wrap_y,
+				 wrap_z] __cuda_callable__(idx3d yzx) mutable
+				{
+					const auto& [y, z, x] = yzx;
+					const idx f = ((z + overlap_z) * ny + (y + overlap_y)) * nx + (x + overlap_x);
+					auto valid = [&](idx mx, idx my, idx mz) -> idx
+					{
+						if (wrap_x)
+							mx = (mx % lx + lx) % lx;
+						if (wrap_y)
+							my = (my % ly + ly) % ly;
+						if (wrap_z)
+							mz = (mz % lz + lz) % lz;
+						if (mx < -overlap_x || mx >= lx + overlap_x || my < -overlap_y || my >= ly + overlap_y || mz < -overlap_z
+							|| mz >= lz + overlap_z)
+							return -1;
+						return ((mz + overlap_z) * ny + (my + overlap_y)) * nx + (mx + overlap_x);
+					};
+
+					// out-of-range sources keep the own-site value: that
+					// is what the pull launch-0 reads through the clamped
+					// kernel indices at non-periodic boundaries, and the
+					// ghost cells it applies to are never transported
+					const idx gh = valid(x + shx, y + shy, z + shz);
+					if (gh >= 0)
+						local_df(h, x, y, z) = A[gh];
+					else
+						local_df(h, x, y, z) = A[f];
+
+					const idx gt = valid(x + stx, y + sty, z + stz);
+					if (gt >= 0)
+						local_df(t, x, y, z) = B[gt];
+					else
+						local_df(t, x, y, z) = B[f];
+				}
+			);
+		}
+	}
+	else {
+		// kernel B: the virtual iteration's streaming write at the parity
+		// that authors layout-0 (even_iter == true; the first real launch
+		// runs with even_iter == false - see updateKernelData).
+		// postCollisionStreaming takes the post-collision populations in
+		// registers, so there is no read-write hazard against kernel A's
+		// output; the launch must stay a separate parallelFor so that kernel
+		// A completes first (its natural pre-write is the boundary fallback).
+		//
+		// The A-A pattern reads ALL slots of the one-cell ghost layer at
+		// non-periodic boundaries, so its twisted own-site stamping must
+		// cover the halo-padded range; the other patterns only ever read
+		// the slots the owned-range launch (plus the MPI exchange) authors.
+		//
+		// For the A-B patterns postCollisionStreaming targets df_out:
+		// rebind it to the live array on the kernel-argument copy.
+		SD.even_iter = true;
+		if constexpr (CONFIG::DFMAX == 2)
+			SD.dfs[df_out] = dfs[0].getData();
+		const bool3d distributed = is_distributed();
+		const idx3d ibegin = twisted_layout_v<typename CONFIG::STREAMING> ? begin : idx3d{0, 0, 0};
+		const idx3d iend = twisted_layout_v<typename CONFIG::STREAMING> ? end : idx3d{local.y(), local.z(), local.x()};
+		TNL::Algorithms::parallelFor<DeviceType>(
+			ibegin,
+			iend,
+			[SD, ic, goffset, distributed, local_size] __cuda_callable__(idx3d yzx) mutable
+			{
+				const auto& [y, z, x] = yzx;
+				idx xp;
+				idx xm;
+				idx yp;
+				idx ym;
+				idx zp;
+				idx zm;
+				kernelInitIndices<CONFIG>(SD, distributed, x, y, z, xp, xm, yp, ym, zp, zm);
+				if constexpr (requires_ghost_layer_v<typename CONFIG::STREAMING>) {
+					// The esoteric streaming writes target the +-1 neighbors with
+					// unclamped indices (a ghost layer is assumed). A non-distributed
+					// axis has no DF overlaps, so the writes that would leave the domain
+					// are redirected around the seam. They land in outermost-layer slots
+					// that no in-domain write targets (its source would have to sit
+					// outside the domain), mirroring the A-A pattern's wrap-writes
+					// at non-periodic seams. Distributed axes keep the raw +-1 (the
+					// exchange halo absorbs them), periodic axes are already wrapped
+					// by kernelInitIndices.
+					if (! distributed.x()) {
+						xp = (x + 1) % local_size.x();
+						xm = (x + local_size.x() - 1) % local_size.x();
+					}
+					if (! distributed.y()) {
+						yp = (y + 1) % local_size.y();
+						ym = (y + local_size.y() - 1) % local_size.y();
+					}
+					if (! distributed.z()) {
+						zp = (z + 1) % local_size.z();
+						zm = (z + local_size.z() - 1) % local_size.z();
+					}
+				}
+				typename CONFIG::template KernelStruct<dreal> KS;
+				CONFIG::MACRO::copyQuantities(SD, KS, x, y, z);
+				CONFIG::MACRO::zeroForcesInKS(KS);
+				ic(KS, goffset.x() + x, goffset.y() + y, goffset.z() + z);
+				CONFIG::STREAMING::postCollisionStreaming(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+			}
+		);
+	}
+
+	// the virtual iteration authors layout-0: the initial DF exchange in
+	// State::reset must run at this parity
+	data.even_iter = true;
 }
 
 template <typename CONFIG>
-void LBM_BLOCK<CONFIG>::computeInitialMacro()
+void LBM_BLOCK<CONFIG>::setEquilibrium(real rho, real vx, real vy, real vz)
 {
-	// extract variables and views for capturing in the lambda function
-	auto SD = data;
-
-	const idx3d begin = {0, 0, 0};
-	const idx3d end = {local.y(), local.z(), local.x()};
-
-	TNL::Algorithms::parallelFor<DeviceType>(
-		begin,
-		end,
-		[SD] __cuda_callable__(idx3d yzx) mutable
+	setInitialCondition(
+		[rho, vx, vy, vz] __cuda_callable__(typename CONFIG::template KernelStruct<dreal> & KS, idx gx, idx gy, idx gz) mutable
 		{
-			const auto& [y, z, x] = yzx;
-			typename CONFIG::template KernelStruct<dreal> KS;
-#ifdef AA_PATTERN
-			for (int i = 0; i < CONFIG::Q; i++)
-				KS.f[i] = SD.df(df_cur, opposite_direction(i), x, y, z);
-#else
-			for (int i = 0; i < CONFIG::Q; i++)
-				KS.f[i] = SD.df(df_cur, i, x, y, z);
-#endif
-
-			CONFIG::MACRO::copyQuantities(SD, KS, x, y, z);
-			CONFIG::MACRO::zeroForcesInKS(KS);
-			CONFIG::COLL::computeDensityAndVelocity(KS);
-			CONFIG::MACRO::outputMacro(SD, KS, x, y, z);
+			(void) gx;
+			(void) gy;
+			(void) gz;
+			if constexpr (CONFIG::Q == 7)
+				KS.phi = rho;
+			else
+				KS.rho = rho;
+			KS.vx = vx;
+			KS.vy = vy;
+			if constexpr (CONFIG::D == 3)
+				KS.vz = vz;
+			CONFIG::COLL::setEquilibrium(KS);
 		}
 	);
 }
@@ -718,14 +1140,14 @@ void LBM_BLOCK<CONFIG>::copyDFsToDevice(uint8_t dfty)
 template <typename CONFIG>
 void LBM_BLOCK<CONFIG>::copyDFsToHost()
 {
-	for (uint8_t dfty = 0; dfty < DFMAX; dfty++)
+	for (uint8_t dfty = 0; dfty < CONFIG::DFMAX; dfty++)
 		hfs[dfty] = dfs[dfty];
 }
 
 template <typename CONFIG>
 void LBM_BLOCK<CONFIG>::copyDFsToDevice()
 {
-	for (uint8_t dfty = 0; dfty < DFMAX; dfty++)
+	for (uint8_t dfty = 0; dfty < CONFIG::DFMAX; dfty++)
 		dfs[dfty] = hfs[dfty];
 }
 
@@ -751,26 +1173,94 @@ void LBM_BLOCK<CONFIG>::start4DArraySynchronization(
 		// determine sync direction - use D2Q9 array for Q=9, otherwise D3Q27/D3Q7 array
 		const TNL::Containers::SyncDirection* dirs = (CONFIG::Q == 9) ? df_sync_directions_d2q9 : df_sync_directions;
 		TNL::Containers::SyncDirection sync_direction = (is_df) ? dirs[i] : TNL::Containers::SyncDirection::All;
-	#ifdef AA_PATTERN
-		// reset shift of the lattice sites
-		sync[i].setBufferOffsets(0);
-		if (is_df) {
-			if (data.even_iter) {
-				// lattice sites for synchronization are not shifted, but DFs have opposite directions
-				sync_direction = opposite(sync_direction);
-			}
-			else {
-				// DFs have canonical directions, but lattice sites for synchronization are shifted
-				// (values to be synchronized were written to the neighboring sites)
-				sync[i].setBufferOffsets(1);
+		int buffer_offset = 0;
+		if constexpr (is_AA_v<typename CONFIG::STREAMING>) {
+			if (is_df) {
+				if (data.even_iter) {
+					// lattice sites for synchronization are not shifted, but DFs have opposite directions
+					sync_direction = opposite(sync_direction);
+				}
+				else {
+					// DFs have canonical directions, but lattice sites for synchronization are shifted
+					// (values to be synchronized were written to the neighboring sites)
+					buffer_offset = 1;
+				}
 			}
 		}
-	#endif
+		else if constexpr (is_AB_PUSH_v<typename CONFIG::STREAMING>) {
+			if (is_df) {
+				// the scatter wrote the post-collision populations to the
+				// target sites, so the values to exchange sit in the
+				// ghost planes: ship them into the neighbor's owned
+				// planes, like the odd phase of the A-A pattern
+				buffer_offset = 1;
+			}
+		}
+		else if constexpr (is_esoteric_in_place_v<typename CONFIG::STREAMING>) {
+			if (is_df) {
+				using S = typename CONFIG::STREAMING;
+				constexpr int DIMS = (CONFIG::Q == 9) ? 2 : 3;
+				if constexpr (is_ESO_TWIST_v<S>) {
+					// The twist layout needs a different buffer offset per lattice
+					// axis, which the single combined-mask synchronization cannot
+					// express: run two staged synchronizations here, one per
+					// offset group; the external stage_2/3/4 calls in
+					// LBM::synchronizeDFsAndMacroDevice then see the parked None
+					// mask and do nothing.
+					//
+					// Per pass, the axes with equal offsets share one combined
+					// mask, so the face buffers are exchanged together with the
+					// edge and corner buffers of the sync pattern - the per-axis
+					// split used previously could not reach the diagonal ghost
+					// cells at all. Pass order matters: the offset-1 axes run
+					// first (their receive planes are interior sites that the
+					// offset-0 pass of a neighbor may source), the offset-0 axes
+					// second.
+					//
+					// Post-phase-A layout (even_iter false): offset-1 axes are
+					// those with c < 0 (exchanged toward the positive side),
+					// offset-0 axes those with c > 0 (toward the negative side);
+					// post-phase-B (even_iter true) is the mirror image.
+					for (int pass = 0; pass < 2; pass++) {
+						const TNL::Containers::SyncDirection eso_dir = eso_twist_pass_mask<CONFIG>(i, pass, data.even_iter);
+						if (eso_dir == TNL::Containers::SyncDirection::None)
+							continue;
+						sync[i].stage_0(view, eso_dir);
+						sync[i].setBufferOffsets(pass == 0 ? 1 : 0);
+						sync[i].stage_1();
+						sync[i].stage_2();
+						sync[i].stage_3();
+						sync[i].stage_4();
+					}
+					sync[i].stage_0(view, TNL::Containers::SyncDirection::None);
+					// skip the shared stage_0/stage_1 below: they would re-arm
+					// the synchronizer with the canonical slot direction and
+					// the last pass' stale buffer offsets, so the external
+					// stage_2/3/4 calls would duplicate the exchange over
+					// planes that do not belong to it (shift-1 receivers hit
+					// owned planes and overwrite freshly authored values)
+					continue;
+				}
+				else {
+					// combined mask over the non-trivial axes, slot-uniform buffer offset
+					TNL::Containers::SyncDirection eso_dir = TNL::Containers::SyncDirection::None;
+					for (int a = 0; a < DIMS; a++)
+						eso_dir = eso_dir | S::dfSyncDirection(i, a, data.even_iter);
+					sync_direction = eso_dir;
+					buffer_offset = S::dfSyncOffset(i, 0, data.even_iter);
+				}
+			}
+		}
 		// start the synchronization
 		// NOTE: we don't use synchronize with policy because we need pipelining
 		// NOTE: we could use only synchronize with policy=deferred, because threadpool and async require MPI_THREAD_MULTIPLE which is slow
 		// stage 0: set inputs, allocate buffers
 		sync[i].stage_0(view, sync_direction);
+		// the shift applies AFTER stage_0: on the synchronizer's first use it
+		// runs allocateHelper(), which resets the offsets to the default
+		// (shift 0) - only stages 1/3 consume them, so a re-set here keeps
+		// them effective also on the first call
+		sync[i].setBufferOffsets(buffer_offset);
 		// stage 1: fill send buffers
 		sync[i].stage_1();
 	}
@@ -907,7 +1397,7 @@ void LBM_BLOCK<CONFIG>::allocateDeviceData()
 #endif
 
 	// initialize data pointers
-	for (uint8_t dfty = 0; dfty < DFMAX; dfty++)
+	for (uint8_t dfty = 0; dfty < CONFIG::DFMAX; dfty++)
 		data.dfs[dfty] = dfs[dfty].getData();
 #ifdef HAVE_MPI
 	data.indexer = dmap.getLocalView().getIndexer();

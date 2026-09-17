@@ -37,13 +37,7 @@
 #include "lbm3d/d2q9/col_srt.h"
 #include "lbm3d/d2q9/macro.h"
 
-// exactly one streaming header must be included
-#ifdef AA_PATTERN
-	#include "lbm3d/d2q9/streaming_AA.h"
-#endif
-#ifdef AB_PATTERN
-	#include "lbm3d/d2q9/streaming_AB.h"
-#endif
+#include "lbm3d/d2q9/streaming.h"
 
 #include "lbm3d/lbm_block.h"
 #include "lbm3d/lattice_decomposition.h"
@@ -51,7 +45,7 @@
 using TRAITS = Traits<float, double, int>;
 using COLL = D2Q9_SRT<TRAITS>;
 using CONFIG =
-	LBM_CONFIG<TRAITS, D2Q9_KernelStruct, NSE_Data<TRAITS>, COLL, typename COLL::EQ, D2Q9_STREAMING<TRAITS>, D2Q9_BC_All, D2Q9_MACRO_Default<TRAITS>>;
+	LBM_CONFIG<TRAITS, D2Q9_KernelStruct, NSE_Data, COLL, typename COLL::EQ, D2Q9_STREAMING<TRAITS>, D2Q9_BC_All, D2Q9_MACRO_Default<TRAITS>>;
 using BLOCK = LBM_BLOCK<CONFIG>;
 using idx = typename TRAITS::idx;
 using idx3d = typename TRAITS::idx3d;
