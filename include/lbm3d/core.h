@@ -12,6 +12,7 @@
 #include "d3q27/eq.h"
 #include "d3q27/eq_inv_cum.h"
 #include "d3q27/eq_well.h"
+#include "d3q27/eq_inv_cum_well.h"
 #include "d3q27/eq_entropic.h"
 
 #include "d3q27/eq_adjoint.h"
@@ -39,7 +40,6 @@
 #include "d3q27/col_bgk_well.h"
 
 #include "d3q27/col_srt_adjoint.h"
-
 
 #include "state.h"
 

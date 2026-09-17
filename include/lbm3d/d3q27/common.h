@@ -3,7 +3,7 @@
 #include "lbm3d/defs.h"
 #include "lbm_common/ciselnik.h"
 
-template <typename T_TRAITS, typename T_EQ>
+template <typename T_TRAITS, typename T_EQ, bool WELL_CONDITIONED = false>
 struct D3Q27_COMMON
 {
 	using TRAITS = T_TRAITS;
@@ -12,6 +12,30 @@ struct D3Q27_COMMON
 	using idx = typename TRAITS::idx;
 	using real = typename TRAITS::real;
 	using dreal = typename TRAITS::dreal;
+
+	static constexpr bool is_well_conditioned = WELL_CONDITIONED;
+
+	// storage<->physical DF converters: identity for the standard convention, shifted by +/-w_i when WELL_CONDITIONED
+	__cuda_callable__ static constexpr dreal weight(int i)
+	{
+		return i == zzz ? n8o27 : (i <= zzm ? n2o27 : (i <= zmp ? n1o54 : n1o216));
+	}
+
+	__cuda_callable__ static dreal fromStorage(const dreal* f, int i)
+	{
+		if constexpr (WELL_CONDITIONED)
+			return f[i] + weight(i);
+		else
+			return f[i];
+	}
+
+	__cuda_callable__ static dreal toStorage(dreal f, int i)
+	{
+		if constexpr (WELL_CONDITIONED)
+			return f - weight(i);
+		else
+			return f;
+	}
 
 	template <typename LBM_KS>
 	__cuda_callable__ static void computeDensityAndVelocity(LBM_KS& KS)
@@ -35,10 +59,10 @@ struct D3Q27_COMMON
 			   + KS.f[zzz];
 #endif
 
-		KS.vz = ((((KS.f[ppp] - KS.f[mmm]) + (KS.f[mpp] - KS.f[pmm])) + ((KS.f[pmp] - KS.f[mpm]) + (KS.f[mmp] - KS.f[ppm])))
-				 + (((KS.f[zpp] - KS.f[zmm]) + (KS.f[zmp] - KS.f[zpm])) + ((KS.f[pzp] - KS.f[mzm]) + (KS.f[mzp] - KS.f[pzm])))
-				 + (KS.f[zzp] - KS.f[zzm]) + KS.fz * n1o2)
-			  / KS.rho;
+		if constexpr (WELL_CONDITIONED) {
+			KS.rho += no1;
+		}
+
 		KS.vx = ((((KS.f[ppp] - KS.f[mmm]) + (KS.f[pmp] - KS.f[mpm])) + ((KS.f[ppm] - KS.f[mmp]) + (KS.f[pmm] - KS.f[mpp])))
 				 + (((KS.f[pzp] - KS.f[mzm]) + (KS.f[pzm] - KS.f[mzp])) + ((KS.f[ppz] - KS.f[mmz]) + (KS.f[pmz] - KS.f[mpz])))
 				 + (KS.f[pzz] - KS.f[mzz]) + KS.fx * n1o2)
@@ -46,6 +70,10 @@ struct D3Q27_COMMON
 		KS.vy = ((((KS.f[ppp] - KS.f[mmm]) + (KS.f[ppm] - KS.f[mmp])) + ((KS.f[mpp] - KS.f[pmm]) + (KS.f[mpm] - KS.f[pmp])))
 				 + (((KS.f[ppz] - KS.f[mmz]) + (KS.f[mpz] - KS.f[pmz])) + ((KS.f[zpp] - KS.f[zmm]) + (KS.f[zpm] - KS.f[zmp])))
 				 + (KS.f[zpz] - KS.f[zmz]) + KS.fy * n1o2)
+			  / KS.rho;
+		KS.vz = ((((KS.f[ppp] - KS.f[mmm]) + (KS.f[mpp] - KS.f[pmm])) + ((KS.f[pmp] - KS.f[mpm]) + (KS.f[mmp] - KS.f[ppm])))
+				 + (((KS.f[zpp] - KS.f[zmm]) + (KS.f[zmp] - KS.f[zpm])) + ((KS.f[pzp] - KS.f[mzm]) + (KS.f[mzp] - KS.f[pzm])))
+				 + (KS.f[zzp] - KS.f[zzm]) + KS.fz * n1o2)
 			  / KS.rho;
 	}
 
@@ -191,3 +219,8 @@ struct D3Q27_COMMON
 #endif
 	}
 };
+
+// Legacy alias
+template <typename T_TRAITS, typename T_EQ>
+struct D3Q27_COMMON_WELL : public D3Q27_COMMON<T_TRAITS, T_EQ, true>
+{};

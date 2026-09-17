@@ -306,13 +306,19 @@ struct D3Q27_BC_All
 		const int wzp = dslot(AXIS, T1, T2, SIGN, 0, 1);
 		const int wzm = dslot(AXIS, T1, T2, SIGN, 0, -1);
 
-		const dreal zCorners = ((KS.f[zpp] + KS.f[zmm]) + (KS.f[zpm] + KS.f[zmp]));
-		const dreal wCorners = ((KS.f[wpp] + KS.f[wmm]) + (KS.f[wpm] + KS.f[wmp]));
-		const dreal zSum = zCorners + ((KS.f[zpz] + KS.f[zmz]) + (KS.f[zzp] + KS.f[zzm]));
-		const dreal wSum = wCorners + ((KS.f[wpz] + KS.f[wmz]) + (KS.f[wzp] + KS.f[wzm]));
+		// moment reconstruction requires physical populations (identity for non-well storages)
+		const auto f = [&KS](int i) -> dreal
+		{
+			return COLL::fromStorage(KS.f, i);
+		};
+
+		const dreal zCorners = ((f(zpp) + f(zmm)) + (f(zpm) + f(zmp)));
+		const dreal wCorners = ((f(wpp) + f(wmm)) + (f(wpm) + f(wmp)));
+		const dreal zSum = zCorners + ((f(zpz) + f(zmz)) + (f(zzp) + f(zzm)));
+		const dreal wSum = wCorners + ((f(wpz) + f(wmz)) + (f(wzp) + f(wzm)));
 
 		// reciprocal first, then multiply -- matches the legacy XM denominator
-		KS.rho = (dreal) 1.0 / (1 + SIGN * vn) * ((KS.f[z00] + zSum) + 2 * (KS.f[w00] + wSum));
+		KS.rho = (dreal) 1.0 / (1 + SIGN * vn) * ((f(z00) + zSum) + 2 * (f(w00) + wSum));
 
 		// lbm_fma_rn pins replicate the fp-contraction spots the compiler picks
 		// for the legacy XM body (verified in SASS): a runtime-parameterized
@@ -338,14 +344,15 @@ struct D3Q27_BC_All
 			const int w = dslot(AXIS, T1, T2, SIGN, ct1, ct2);
 			const int z = dslot(AXIS, T1, T2, 0, ct1, ct2);
 			if (ct1 == 0 && ct2 == 0)
-				KS.f[i] = lbm_fma_rn((dreal) (-SIGN) * vn, KS.rho, mTT - (mT1T1 + mT2T2)) + KS.f[w00] + zSum + 2 * wSum;
+				KS.f[i] = COLL::toStorage(lbm_fma_rn((dreal) (-SIGN) * vn, KS.rho, mTT - (mT1T1 + mT2T2)) + f(w00) + zSum + 2 * wSum, i);
 			else if (ct2 == 0)
-				KS.f[i] = (dreal) 0.5 * ((mT1T1 - mTT) + ct1 * (mT1 - mT1T2T2)) - (KS.f[w] + KS.f[z]);
+				KS.f[i] = COLL::toStorage((dreal) 0.5 * ((mT1T1 - mTT) + ct1 * (mT1 - mT1T2T2)) - (f(w) + f(z)), i);
 			else if (ct1 == 0)
-				KS.f[i] = (dreal) 0.5 * ((mT2T2 - mTT) + ct2 * (mT2 - mT1T1T2)) - (KS.f[w] + KS.f[z]);
+				KS.f[i] = COLL::toStorage((dreal) 0.5 * ((mT2T2 - mTT) + ct2 * (mT2 - mT1T1T2)) - (f(w) + f(z)), i);
 			else
-				KS.f[i] =
-					(dreal) 0.25 * (lbm_fma_rn((dreal) (ct1 * ct2) * KS.rho, vt1 * vt2, mTT) + (ct2 * mT1T1T2 + ct1 * mT1T2T2)) - (KS.f[w] + KS.f[z]);
+				KS.f[i] = COLL::toStorage(
+					(dreal) 0.25 * (lbm_fma_rn((dreal) (ct1 * ct2) * KS.rho, vt1 * vt2, mTT) + (ct2 * mT1T1T2 + ct1 * mT1T2T2)) - (f(w) + f(z)), i
+				);
 		}
 	}
 
@@ -447,26 +454,33 @@ struct D3Q27_BC_All
 				}
 				break;
 			case GEO_INFLOW_EQ_LEFT:
-				SD.inflow(KS, x, y, z);
-				applySymmetryCorner(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
-				// clang-format off
-				KS.rho = (dreal)1.0/(1-KS.vx) * (
-					(
-						KS.f[zzz] + (
-							+ ((KS.f[zpp] + KS.f[zmm]) + (KS.f[zpm] + KS.f[zmp]))
-							+ ((KS.f[zpz] + KS.f[zmz]) + (KS.f[zzp] + KS.f[zzm]))
+				{
+					SD.inflow(KS, x, y, z);
+					applySymmetryCorner(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+					// moment reconstruction requires physical populations (identity for non-well storages)
+					const auto f = [&KS](int i) -> dreal
+					{
+						return COLL::fromStorage(KS.f, i);
+					};
+					// clang-format off
+					KS.rho = (dreal)1.0/(1-KS.vx) * (
+						(
+							f(zzz) + (
+								+ ((f(zpp) + f(zmm)) + (f(zpm) + f(zmp)))
+								+ ((f(zpz) + f(zmz)) + (f(zzp) + f(zzm)))
+							)
 						)
-					)
-					+ 2*(
-						KS.f[mzz] + (
-							+ ((KS.f[mpp] + KS.f[mmm]) + (KS.f[mpm] + KS.f[mmp]))
-							+ ((KS.f[mpz] + KS.f[mmz]) + (KS.f[mzp] + KS.f[mzm]))
+						+ 2*(
+							f(mzz) + (
+								+ ((f(mpp) + f(mmm)) + (f(mpm) + f(mmp)))
+								+ ((f(mpz) + f(mmz)) + (f(mzp) + f(mzm)))
+							)
 						)
-					)
-				);
-				// clang-format on
-				COLL::setEquilibrium(KS);
-				break;
+					);
+					// clang-format on
+					COLL::setEquilibrium(KS);
+					break;
+				}
 			case GEO_OUTFLOW_EQ:
 				applySymmetryCorner(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				COLL::computeDensityAndVelocity(KS);
