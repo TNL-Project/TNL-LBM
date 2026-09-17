@@ -7,10 +7,9 @@ set(TARGETS
 # optional C2F reconstruction strategy switch for AMR experiments (see
 # include/lbm3d/d3q27/amr_coupling.h); e.g. configure with
 #   cmake -B build -DTNL_LBM_C2F_STRATEGY=C2F_LAGRANGE
-# 2026-08-18 (user ruling): the default (empty) builds the compact-moment
-# interpolation with the carve pre-pass -- the interpolation never reads
-# covered GEO_NOTHING cells; before the flip the default was the 3rd-order
-# Lagrange interpolation (now the C2F_LAGRANGE opt-out).
+# The default (empty) builds the compact-moment interpolation; before the
+# flip the default was the 3rd-order Lagrange interpolation (now the
+# C2F_LAGRANGE opt-out).
 set(TNL_LBM_C2F_STRATEGY "" CACHE STRING "C2F strategy define for AMR targets (C2F_LAGRANGE, C2F_TRILINEAR, C2F_LINEAR_EXPLOSION, C2F_UNIFORM_EXPLOSION; C2F_COMPACT_MOMENT is the default, accepted as a no-op)")
 
 # optional F2C transfer strategy switch for AMR experiments (see
@@ -53,6 +52,10 @@ endif()
 # retired together with the ring-F2C code it gated, so there is no feedback
 # switch left to configure.
 
+# built only in MPI-configured trees: the AMR driver is a single-MPI-rank
+# design and the sims include mpi.h directly (a non-MPI tree cannot build
+# them -- TNL's DummyDefs.h stub collides with the true header)
+if(MPI_FOUND AND TNL_LBM_USE_MPI)
 foreach(target IN ITEMS ${TARGETS})
     add_executable(${target} ${target}.cu)
     target_link_libraries(${target} PUBLIC TNL::TNL_LBM)
@@ -70,3 +73,4 @@ foreach(target IN ITEMS ${TARGETS})
         set_source_files_properties(${target}.cu PROPERTIES LANGUAGE HIP)
     endif()
 endforeach()
+endif()
