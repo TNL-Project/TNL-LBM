@@ -2162,12 +2162,80 @@ void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level)
 				cz_hi = 0;
 			else if (patch.face == SyncDirection::Front)
 				cz_lo = fine->local.z();
-			const idx3d begin{std::max(patch.fine_origin.x(), cx_lo), std::max(patch.fine_origin.y(), cy_lo), std::max(patch.fine_origin.z(), cz_lo)};
-			const idx3d end{
-				std::min(patch.fine_origin.x() + patch.fine_size.x(), cx_hi),
-				std::min(patch.fine_origin.y() + patch.fine_size.y(), cy_hi),
-				std::min(patch.fine_origin.z() + patch.fine_size.z(), cz_hi)
-			};
+#ifdef AMR_COUPLING_C2F_EXT
+			// AMR_COUPLING_C2F_EXT read-address-writes arm (see the file
+			// docstring of include/lbm3d/d3q27/amr_coupling.h): the fill
+			// window is loosened one row past the patch's face-normal span
+			// (applied to the begin/end pair below) to also admit the FIRST
+			// INTERIOR ROW of fine cells along the coupled face; the kernel
+			// restricts those destinations to the face's outgoing direction
+			// family via the ext_axis/ext_row/ext_sign descriptor -- every
+			// other slot of the row is live fine data
+			int ext_axis = -1;
+			idx ext_row = 0;
+			int ext_sign = 0;
+			if (patch.face == SyncDirection::Left) {
+				ext_axis = 0;
+				ext_row = 0;
+				ext_sign = -1;
+			}
+			else if (patch.face == SyncDirection::Right) {
+				ext_axis = 0;
+				ext_row = fine->local.x() - 1;
+				ext_sign = 1;
+			}
+			if (patch.face == SyncDirection::Bottom) {
+				ext_axis = 1;
+				ext_row = 0;
+				ext_sign = -1;
+			}
+			else if (patch.face == SyncDirection::Top) {
+				ext_axis = 1;
+				ext_row = fine->local.y() - 1;
+				ext_sign = 1;
+			}
+			if (patch.face == SyncDirection::Back) {
+				ext_axis = 2;
+				ext_row = 0;
+				ext_sign = -1;
+			}
+			else if (patch.face == SyncDirection::Front) {
+				ext_axis = 2;
+				ext_row = fine->local.z() - 1;
+				ext_sign = 1;
+			}
+#endif
+			idx bx0 = std::max(patch.fine_origin.x(), cx_lo), bx1 = std::min(patch.fine_origin.x() + patch.fine_size.x(), cx_hi);
+			idx by0 = std::max(patch.fine_origin.y(), cy_lo), by1 = std::min(patch.fine_origin.y() + patch.fine_size.y(), cy_hi);
+			idx bz0 = std::max(patch.fine_origin.z(), cz_lo), bz1 = std::min(patch.fine_origin.z() + patch.fine_size.z(), cz_hi);
+#ifdef AMR_COUPLING_C2F_EXT
+			// the first-interior-row extension of the face-normal span (the
+			// interior row lies inside the fine storage, so no extra clip) --
+			// applied ONLY to a window whose base face-normal span is
+			// non-empty: a wall-masked patch (fine_size[axis] == 0 at creation,
+			// so the face-aware clip empties it) must stay empty rather than
+			// be resurrected one row deep (review H1, 2026-09-06)
+			if (ext_axis == 0 && bx0 < bx1) {
+				if (ext_sign < 0)
+					bx1 += 1;
+				else
+					bx0 -= 1;
+			}
+			else if (ext_axis == 1 && by0 < by1) {
+				if (ext_sign < 0)
+					by1 += 1;
+				else
+					by0 -= 1;
+			}
+			else if (ext_axis == 2 && bz0 < bz1) {
+				if (ext_sign < 0)
+					bz1 += 1;
+				else
+					bz0 -= 1;
+			}
+#endif
+			const idx3d begin{bx0, by0, bz0};
+			const idx3d end{bx1, by1, bz1};
 			if (begin.x() >= end.x() || begin.y() >= end.y() || begin.z() >= end.z())
 				continue;
 
@@ -2198,6 +2266,12 @@ void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level)
 				coarse_even_iter,
 				fine->offset,
 				coarse->offset
+#ifdef AMR_COUPLING_C2F_EXT
+				,
+				ext_axis,
+				ext_row,
+				ext_sign
+#endif
 			);
 		}
 	}
@@ -2288,6 +2362,11 @@ void State_AMR<NSE>::launchFineToCoarseTransfersInterior(int fine_level)
 			const bool next_coarse_even_iter = (next_coarse_substep % 2) == 1;
 
 			const idx3d ov{fine->df_overlap_X(), fine->df_overlap_Y(), fine->df_overlap_Z()};
+#ifdef AMR_COUPLING_F2C_RING
+			// map-read bounds of the coarse block's stored range, for the
+			// redirect's guard (review MEDIUM, 2026-09-06)
+			const idx3d coarse_ov{coarse->df_overlap_X(), coarse->df_overlap_Y(), coarse->df_overlap_Z()};
+#endif
 			const idx3d begin = patch.coarse_origin;
 			const idx3d end{
 				patch.coarse_origin.x() + patch.coarse_size.x(),
@@ -2324,6 +2403,11 @@ void State_AMR<NSE>::launchFineToCoarseTransfersInterior(int fine_level)
 				coarse->offset,
 				fine->local,
 				ov
+#ifdef AMR_COUPLING_F2C_RING
+				,
+				coarse->local,
+				coarse_ov
+#endif
 			);
 		}
 	}
@@ -2433,6 +2517,16 @@ void State_AMR<NSE>::advancePair(int level, bool compute_macro, bool sync_macro)
 		// CONCURRENTLY on their per-direction streams (disjoint cell sets)
 		// and are drained together below -- the phase's single sync point
 		launchFineToCoarseTransfersInterior(level + 1);
+#if defined(AMR_COUPLING_C2F_EXT) || defined(AMR_COUPLING_F2C_RING)
+		// read-address-writes arm sequencing (the arm's docstring in
+		// include/lbm3d/d3q27/amr_coupling.h): the fill side reads what
+		// stream_f2c just wrote -- the extended stencils reach the
+		// F2C-armed skin (AMR_COUPLING_C2F_EXT) and the redirect writes the
+		// live ring cells every C2F launch reads (AMR_COUPLING_F2C_RING) --
+		// drain the F2C stream before the fill launches; ungated builds
+		// keep the historical overlap verbatim (review H2, 2026-09-06)
+		TNL::Backend::streamSynchronize(stream_f2c);
+#endif
 		this->nse.updateKernelDataForLevel(level + 1, this->nse.totalSubstepCount[level + 1]);
 		launchCoarseToFineTransfers(level + 1);
 #ifdef AMR_PASSIVE_BAND
@@ -2615,6 +2709,17 @@ void State_AMR<NSE>::SimUpdate()
 	// writes skin cells in the parent's post-step array, C2F writes fine
 	// ghost rows)
 	launchFineToCoarseTransfersInterior(1);
+	#if defined(AMR_COUPLING_C2F_EXT) || defined(AMR_COUPLING_F2C_RING)
+	// read-address-writes arm sequencing (the arm's docstring in
+	// include/lbm3d/d3q27/amr_coupling.h): the cascade's fill side reads
+	// what stream_f2c just wrote -- extended stencils reach the F2C-armed
+	// skin (AMR_COUPLING_C2F_EXT) and the redirect writes the live ring
+	// cells the cascade reads (AMR_COUPLING_F2C_RING) -- drain the F2C
+	// stream (the end-sync F2C above and the nested end-syncs of the
+	// recursion share it) before the cascade launches; ungated builds keep
+	// the historical overlap verbatim (review H2, 2026-09-06)
+	TNL::Backend::streamSynchronize(stream_f2c);
+	#endif
 
 	// the cycle-end coarse-to-fine cascade, level-ascending: fill the ghost
 	// rows of each level's substep-0 rotation frame -- the band for that

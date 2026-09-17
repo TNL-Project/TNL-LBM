@@ -454,6 +454,52 @@
  * turbulence masking) stands, strengthened. Dose-consistent with the
  * round-1 retention family: the third-order channel is a partial
  * SUPPRESSOR of the artifact on the global handle as well.
+ * Read-address-writes candidate arm (2026-09-06, user design ruling): "C2F
+ * and F2C should write values where the site reads them from" -- the
+ * transfer write destinations are derived from the consumers' READ
+ * addresses while streaming, boundary conditions and the collide-stream
+ * kernels stay untouched. Umbrella cache option
+ * `AMR_COUPLING_READ_ADDR_WRITES` (enables both sub-switches); with every
+ * option unset the kernels compile the verbatim HEAD text (bit-identity
+ * harness contract):
+ * - `AMR_COUPLING_C2F_EXT` (both patterns; closes the fine-side T1 leak):
+ *   the C2F fill additionally covers the FIRST INTERIOR ROW of fine cells
+ *   along each coupled face -- the fine band cell at the widened substep-A
+ *   launch pulls the face's outgoing direction family from exactly that
+ *   row (min-x-face band cell reads df_cur[m-family, x=0] under A-B /
+ *   the twisted slot at the same site under A-A Phi_S), so the fill
+ *   writes the family there with the pattern's own store convention
+ *   (store_fine_df, unchanged): A-B natural slot q, A-A twisted
+ *   opposite_direction(q). The kernel receives the face descriptor
+ *   ext_axis/ext_row/ext_sign from the launcher; a destination on the
+ *   extension row is restricted to the face's outgoing family
+ *   (c_axis[q] == ext_sign; 9 of 27 per face, the union at corners served
+ *   by the adjacent faces' patches with a deterministic per-(position,
+ *   direction) evaluator, so the benign corner double-write is
+ *   value-identical) -- every other slot of the row is live fine data
+ *   and stays untouched. Single-consumer safety: the admitted slots are
+ *   read only by the band's substep-A pull and refreshed by row-0's own
+ *   kernel product (A-B overwrite of the rotated-in frame / A-A push into
+ *   the same slot, read-before-write in the same thread). The launcher
+ *   applies the extension only to windows whose base face-normal span is
+ *   non-empty, so wall-masked patches (fine_size[axis] == 0) stay empty
+ *   as at HEAD (review H1). The arm also carries the end-of-cycle
+ *   transfer sequencing (F2C -> barrier -> C2F, amr_state.h): the
+ *   extended windows' stencils reach the F2C-armed skin.
+ * - `AMR_COUPLING_F2C_RING` (A-A only; closes defect D1 of the 2026-09-05
+ *   interface data-dependency audit): in cudaAMR_FineToCoarse's coarse
+ *   store, the branch arming the next coarse reflect (even / Phi_T)
+ *   substep writes the natural slot at the frozen skin site at HEAD --
+ *   dead traffic, because the reflect phase reads only same-site slots
+ *   (streaming_AA.h) and the ring's footprint-facing slots then hold the
+ *   one-step-stale mirrored self-product. The arm redirects the store to
+ *   slot q at the live ring cell r = skin cell + c_q whenever r is
+ *   GEO_AMR_INTERFACE (dropping the frozen-site store in that branch
+ *   entirely); the Phi_S-armed twisted-at-skin branch is UNCHANGED. The
+ *   map-read target is bounds-checked against the coarse block's stored
+ *   range before the read (review MEDIUM), and because the redirect's
+ *   ring writes feed every C2F launch, the sequencing barriers are gated
+ *   on either define (review H2).
  * - `C2F_LAGRANGE`: opts out to the 3rd-order tensor-product Lagrange
  *   scheme described above (the pre-flip default; its 4-node window can
  *   read covered coarse cells).
@@ -1457,6 +1503,15 @@ __global__ void cudaAMR_CoarseToFine(
 	bool coarse_even_iter,
 	typename CONFIG::TRAITS::idx3d fine_off,
 	typename CONFIG::TRAITS::idx3d coarse_off
+#ifdef AMR_COUPLING_C2F_EXT
+	,
+	// AMR_COUPLING_C2F_EXT face descriptor (see the file docstring): the
+	// coupled face's normal axis (0/1/2, -1 = no extension), the first
+	// interior row coordinate along it, and its outgoing direction sign
+	int ext_axis,
+	typename CONFIG::TRAITS::idx ext_row,
+	int ext_sign
+#endif
 )
 {
 	using TRAITS = typename CONFIG::TRAITS;
@@ -1529,8 +1584,32 @@ __global__ void cudaAMR_CoarseToFine(
 	// direction q goes to slot q; the A-A spatial ("odd") substep pulls the
 	// DF streaming out of a ghost cell in direction q from the
 	// opposite-direction slot, so direction q is stored twisted
+#ifdef AMR_COUPLING_C2F_EXT
+	const auto store_fine_df = [&fine_SD, ext_axis, ext_row, ext_sign](int q, idx x, idx y, idx z, dreal f) -> void
+#else
 	const auto store_fine_df = [&fine_SD](int q, idx x, idx y, idx z, dreal f) -> void
+#endif
 	{
+#ifdef AMR_COUPLING_C2F_EXT
+		// AMR_COUPLING_C2F_EXT read-address-writes arm (see the file
+		// docstring): a destination on the first interior row along the
+		// coupled face (an extension cell) receives ONLY the face's
+		// outgoing direction family -- the slots the widened substep-A
+		// band pull reads from this row; every other slot of the row is
+		// live fine data and stays untouched
+		if (ext_axis >= 0) {
+			const idx ec = ext_axis == 0 ? x : (ext_axis == 1 ? y : z);
+			if (ec == ext_row) {
+				// (the AMR_CM_PI_NEQ vel_c* enumeration)
+				constexpr signed char rw_cx[27] = {0, 1, -1, 0, 0, 0, 0, 1, -1, 1, -1, 1, -1, 1, -1, 0, 0, 0, 0, 1, -1, 1, -1, 1, -1, 1, -1};
+				constexpr signed char rw_cy[27] = {0, 0, 0, 1, -1, 0, 0, 1, -1, -1, 1, 0, 0, 0, 0, 1, -1, 1, -1, 1, -1, 1, -1, -1, 1, -1, 1};
+				constexpr signed char rw_cz[27] = {0, 0, 0, 0, 0, 1, -1, 0, 0, 0, 0, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1};
+				const signed char cq = ext_axis == 0 ? rw_cx[q] : (ext_axis == 1 ? rw_cy[q] : rw_cz[q]);
+				if (cq != ext_sign)
+					return;
+			}
+		}
+#endif
 #ifdef AB_PATTERN
 	#ifdef AMR_C2F_WRITE_DF_OUT
 		// AMR_C2F_WRITE_DF_OUT probe (write-side frame timing, suspect T2c,
@@ -2928,6 +3007,14 @@ __global__ void cudaAMR_FineToCoarse(
 	typename CONFIG::TRAITS::idx3d coarse_off,
 	typename CONFIG::TRAITS::idx3d fine_local,
 	typename CONFIG::TRAITS::idx3d ov
+#ifdef AMR_COUPLING_F2C_RING
+	,
+	// AMR_COUPLING_F2C_RING redirect guard inputs (review MEDIUM, 2026-09-06):
+	// the redirected store's target sits one row outside the skin window; the
+	// coarse block's stored map range for the bounds-check
+	typename CONFIG::TRAITS::idx3d coarse_local,
+	typename CONFIG::TRAITS::idx3d coarse_ov
+#endif
 )
 {
 	using TRAITS = typename CONFIG::TRAITS;
@@ -2938,6 +3025,14 @@ __global__ void cudaAMR_FineToCoarse(
 	using idx = typename TRAITS::idx;
 	using dreal = typename TRAITS::dreal;
 	using LBM_KS = typename CONFIG::template KernelStruct<dreal>;
+
+#ifdef AMR_COUPLING_F2C_RING
+	// consumed only by the AA redirect branch below; A-B builds of this
+	// kernel accept and ignore them (the option is code-gated, not
+	// pattern-gated, in sim_AMR/CMakeLists.txt)
+	static_cast<void>(coarse_local);
+	static_cast<void>(coarse_ov);
+#endif
 
 	const idx x = threadIdx.x + blockIdx.x * blockDim.x + coarse_begin.x();
 	const idx y = threadIdx.y + blockIdx.y * blockDim.y + coarse_begin.y();
@@ -3121,7 +3216,11 @@ __global__ void cudaAMR_FineToCoarse(
 	// for an even next substep, twisted for an odd one) --
 	// AMR_CM_BACKTRANSFORM
 	if (is_coupling_cell) {
+	#ifdef AMR_COUPLING_F2C_RING
+		const auto store_coarse_df = [&coarse_SD, coarse_even_iter, coarse_local, coarse_ov, x, y, z](int q, dreal f) -> void
+	#else
 		const auto store_coarse_df = [&coarse_SD, coarse_even_iter, x, y, z](int q, dreal f) -> void
+	#endif
 		{
 		// the back-transformation emits STORAGE-convention values directly:
 		// physical DFs on D3Q27_COMMON, fhat = f - w_q on D3Q27_COMMON_WELL
@@ -3129,8 +3228,38 @@ __global__ void cudaAMR_FineToCoarse(
 			static_cast<void>(coarse_even_iter);
 			coarse_SD.df(df_out, q, x, y, z) = f;
 	#elif defined(AA_PATTERN)
-			if (coarse_even_iter)
+			if (coarse_even_iter) {
+		#ifdef AMR_COUPLING_F2C_RING
+				// AMR_COUPLING_F2C_RING read-address-writes arm (defect D1 of
+				// the 2026-09-05 audit, see the file docstring): the
+				// natural-slot store arming the next coarse reflect substep
+				// is dead traffic at the frozen skin (the reflect phase reads
+				// only same-site slots) -- redirect it to slot q at the live
+				// ring cell r = skin cell + c_q (the address that slot's
+				// reader consumes), dropping the frozen-site store in this
+				// branch entirely; the Phi_S-armed twisted-at-skin branch
+				// below is unchanged
+				{
+					// (the AMR_CM_PI_NEQ vel_c* enumeration)
+					constexpr signed char rw_cx[27] = {0, 1, -1, 0, 0, 0, 0, 1, -1, 1, -1, 1, -1, 1, -1, 0, 0, 0, 0, 1, -1, 1, -1, 1, -1, 1, -1};
+					constexpr signed char rw_cy[27] = {0, 0, 0, 1, -1, 0, 0, 1, -1, -1, 1, 0, 0, 0, 0, 1, -1, 1, -1, 1, -1, 1, -1, -1, 1, -1, 1};
+					constexpr signed char rw_cz[27] = {0, 0, 0, 0, 0, 1, -1, 0, 0, 0, 0, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1};
+					const idx rx = x + rw_cx[q];
+					const idx ry = y + rw_cy[q];
+					const idx rz = z + rw_cz[q];
+					// bounds-check the map read against the coarse block's
+					// stored range (review MEDIUM, 2026-09-06): the ring
+					// target sits one row outside the skin window and could
+					// step past stored map extents on a zero-overlap face of
+					// a block-edge-abutting footprint
+					if (rx >= -coarse_ov.x() && rx < coarse_local.x() + coarse_ov.x() && ry >= -coarse_ov.y() && ry < coarse_local.y() + coarse_ov.y()
+						&& rz >= -coarse_ov.z() && rz < coarse_local.z() + coarse_ov.z() && coarse_SD.map(rx, ry, rz) == BC::GEO_AMR_INTERFACE)
+						coarse_SD.df(df_cur, q, rx, ry, rz) = f;
+				}
+		#else
 				coarse_SD.df(df_cur, q, x, y, z) = f;
+		#endif
+			}
 			else
 				coarse_SD.df(df_cur, opposite_direction(q), x, y, z) = f;
 	#endif

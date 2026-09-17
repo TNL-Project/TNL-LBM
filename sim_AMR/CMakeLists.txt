@@ -80,6 +80,32 @@ set(AMR_C2F_WRITE_DF_OUT "" CACHE STRING "T2c frame-timing probe: the C2F fill w
 set(AMR_PASSIVE_BAND "" CACHE STRING "T1a cycle-timing probe: disarm the substep-1 widened extent (both substeps interior-only, frame-1 fill restored) (enable with ON)")
 set(AMR_SUBSTEP2_C2F_REFILL "" CACHE STRING "T1b cycle-timing probe: refill the substep-1 frame's ghost rows between the fine substeps (enable with ON)")
 
+# 2026-09-06 read-address-writes candidate arm (user design ruling; the C2F
+# and F2C transfers write exactly the addresses the consumers' pulls read --
+# streaming, boundary conditions and collide-stream kernels stay untouched;
+# the defect mechanisms are the 2026-09-05 interface data-dependency audit,
+# docs/AMR-seam-checkerboard-investigation.md sec. 2.5). Sub-switches:
+#   AMR_COUPLING_C2F_EXT: the C2F fill additionally covers the FIRST
+#     INTERIOR ROW of fine cells along each coupled face, restricted to the
+#     face's outgoing direction family (closes the fine-side T1 leak; both
+#     patterns) -- carries the end-of-cycle F2C -> barrier -> C2F sequencing
+#     the extended windows require (they read the F2C-armed skin).
+#   AMR_COUPLING_F2C_RING (A-A only): redirect the F2C natural-slot store
+#     arming a coarse reflect (even / Phi_T) substep from the frozen skin
+#     cell to the live GEO_AMR_INTERFACE ring cell at skin + c_q (defect D1
+#     of the audit: Phi_T reads only same-site slots, so the skin store is
+#     dead traffic for those cycles).
+# ALL OFF by default: with every option unset the sim targets compile the
+# verbatim HEAD text pinned by the bit-identity harness.
+set(AMR_COUPLING_READ_ADDR_WRITES "" CACHE STRING "read-address-writes AMR coupling candidate arm: umbrella for AMR_COUPLING_C2F_EXT + AMR_COUPLING_F2C_RING (enable with ON)")
+set(AMR_COUPLING_C2F_EXT "" CACHE STRING "C2F fill destination extension to the first interior fine row (outgoing families only, both patterns) + F2C->C2F transfer sequencing (enable with ON)")
+set(AMR_COUPLING_F2C_RING "" CACHE STRING "A-A F2C reflect-step store redirect from the frozen skin to the live GEO_AMR_INTERFACE ring (enable with ON)")
+
+if(AMR_COUPLING_READ_ADDR_WRITES)
+    set(AMR_COUPLING_C2F_EXT ON CACHE STRING "C2F fill destination extension to the first interior fine row (outgoing families only, both patterns) + F2C->C2F transfer sequencing (enable with ON)" FORCE)
+    set(AMR_COUPLING_F2C_RING ON CACHE STRING "A-A F2C reflect-step store redirect from the frozen skin to the live GEO_AMR_INTERFACE ring (enable with ON)" FORCE)
+endif()
+
 # 2026-09-05 operator-parametrization probe (round 2b of the checkerboard
 # investigation -- hypothesis and measured verdict in col_cum.h next to the
 # pin, arm table in docs/AMR-seam-checkerboard-investigation.md §2): pin the
@@ -151,6 +177,15 @@ foreach(target IN ITEMS ${TARGETS})
     # 2026-09-05 operator-parametrization probe (see the block above)
     if(CUM_OMEGA345_ONE)
         target_compile_definitions(${target} PRIVATE CUM_OMEGA345_ONE)
+    endif()
+
+    # 2026-09-06 read-address-writes candidate arm (see the block above)
+    if(AMR_COUPLING_C2F_EXT)
+        target_compile_definitions(${target} PRIVATE AMR_COUPLING_C2F_EXT)
+    endif()
+
+    if(AMR_COUPLING_F2C_RING)
+        target_compile_definitions(${target} PRIVATE AMR_COUPLING_F2C_RING)
     endif()
 
     # force language to HIP
