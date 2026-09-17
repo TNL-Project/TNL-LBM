@@ -38,7 +38,7 @@ round reproduced it exactly at 3.2487e-3 / 1.5256e-3.
 
 ---
 
-## 2. Falsification history (two measured rounds)
+## 2. Falsification history (measured rounds)
 
 ### 2.1 Round 1 (2026-09-03) — fill parity and ω3-persistence: FALSIFIED, signed
 
@@ -167,6 +167,173 @@ reading (their production figures were blind to the parity-class artifact —
 turbulence masking, figure scales) stands, strengthened. The round-1 signed
 conclusion extends unchanged: the seven-cumulant third-order channel is a
 partial SUPPRESSOR of the checkerboard.
+
+### 2.4 Round 3 (2026-09-05) — operator × streaming-pattern matrix: antialiasing is the carrier under AB; AA carries its own interface defect
+
+Hypothesis (user-directed): grid refinement exchanges distribution functions
+and should be independent of the streaming pattern that produces them. Measured
+as the full 2×2×2 matrix — Geier-2017 A/B terms × antialiasing derivative
+feedback × {A-B, A-A} — on the canonical case. The `USE_GEIER_CUM_2017`-without-
+`USE_GEIER_CUM_ANTIALIAS` combination was not compilable before this round: the
+2017 Eqs 46–48 A/B terms read the cross-derivatives `DxvDyu/DxwDzu/DywDzv` that
+only the ANTIALIAS block declares (`col_cum.h`); the arm was completed by
+zeroing them alongside `Dxu/Dyv/Dzw` in the `#else` (uniform removal of all
+derivative feedback; temporary, source reverted after measurement — the tree is
+clean at HEAD).
+
+| A-B combo (default build) | parity 0020 / 0010 | seam mean | seam max | rho std | recirc min vx |
+|---|---|---|---|---|---|
+| 2017 + ANTIALIAS (committed default) | 3.2487e-3 / 3.3542e-3 | 1.5256e-3 | 2.3697e-3 | 5.0753e-4 | −9.96e-4 |
+| 2017, no ANTIALIAS | **1.8126e-6 / 1.0467e-6** | 3.0887e-5 | 2.3971e-4 | 5.5266e-5 | −2.34e-3 |
+| no 2017, ANTIALIAS | 1.2048e-4 / 1.2090e-4 | 4.9702e-5 | 3.8918e-4 | 9.4674e-5 | −2.70e-3 |
+| neither | **2.6078e-6 / 1.2817e-6** | 4.2416e-5 | 3.6056e-4 | 6.2119e-5 | −2.72e-3 |
+
+| A-A combo (`build-aa`, `-DTNL_LBM_AA_PATTERN=ON`) | parity 0020 / 0010 | seam mean | seam max | rho std | recirc min vx |
+|---|---|---|---|---|---|
+| 2017 + ANTIALIAS | 3.8598e-3 / 4.1819e-3 | 2.3073e-3 | 4.2259e-3 | 8.6530e-4 | −2.52e-3 |
+| 2017, no ANTIALIAS | 8.9022e-4 / 7.0764e-4 | 1.3169e-3 | 2.7155e-3 | 6.0184e-4 | −2.32e-3 |
+| no 2017, ANTIALIAS | 1.4297e-3 / 6.9861e-4 | 1.8188e-3 | 3.2105e-3 | 6.2141e-4 | −2.09e-3 |
+| neither | 1.4967e-3 / 8.0410e-4 | 1.8314e-3 | 3.2267e-3 | 6.1658e-4 | −2.06e-3 |
+
+Factor decomposition (final-frame parity):
+
+| factor | A-B | A-A |
+|---|---|---|
+| drop ANTIALIAS, 2017 ON | **÷1793** | ÷4.3 |
+| drop ANTIALIAS, 2017 OFF | ÷46 | ×1.05 (noise) |
+| drop 2017, ANTIALIAS ON | ÷27 | ÷2.7 |
+| drop 2017, ANTIALIAS OFF | ×1.4 (floor vs floor) | ×1.7 (floor vs floor) |
+
+**Findings (signed).**
+
+1. Under A-B the artifact requires ANTIALIAS to exist at all — both no-ANTIALIAS
+   combos sit at the ~2e-6 floor at both probe frames. Full attribution:
+   seed (T1, ~2e-6) × Eqs 33–35 second-order feedback (~46×, → 1.2e-4) ×
+   2017 A/B cross-derivative channel (Eqs 46–48, ~27×, → 3.2e-3).
+2. Under A-A nothing collapses: all four combos sit ≥ 7e-4 with an
+   operator-insensitive floor (~1e-3) — the A-A pattern carries its own,
+   operator-roughly-independent parity mechanism at the interface. The ÷46
+   Eqs 33–35 contribution is invisible there (masked by the floor), which is
+   exactly why the A-A no-2017 combos are indistinguishable; only the A/B
+   channel (the one contribution reaching above the floor) still shows
+   (÷4.3 / ÷2.7).
+3. The A-A runs' wake is uniformly ~40 % more energetic (max|vx| 0.0363–0.0369
+   vs 0.0257–0.0258 A-B, all combos) — pattern-driven, in line with the
+   documented wake-amplified A-A/A-B divergence (AGENTS); within-pattern
+   comparisons are unaffected.
+4. §4.3 falsifier (1) is settled: the artifact persists under A-A in every
+   operator combo — fork (b) strengthened — and the A-A floor exposes a NEW
+   defect class: the interface is NOT streaming-pattern independent.
+
+**Round-3 synthesis (signed).** The premise that refinement is
+streaming-pattern independent is violated in both directions: A-A is clearly
+broken at the interface (operator-insensitive ~1e-3 parity floor), and A-B is
+affected too in the sense that its artifact lives entirely in the operator's
+antialiasing response to what the interface feeds it (no-ANTIALIAS A-B is clean
+at 2e-6 with the same seed present). Open audit question: which interface data
+dependency authors the A-A floor — candidate classes are the frame/slot identity
+of the C2F/F2C traffic (the A-A twisted even/odd phases vs the A-B ping-pong
+against the odd 3-step AMR cycle: 2 fine substeps + 1 coarse step flips array
+roles every cycle), and the substep-1 widened extent [−1, local+1) streaming
+through the unclamped single-array indexing. Physics note: ANTIALIAS-off is a
+diagnostic, not a fix — the derivative feedback is the Galilean-invariance
+correction (Geier 2015; K2018 runs it in production), and the no-2017 runs
+recirculate ×2.7 deeper (−2.7e-3 vs −1.0e-3).
+
+Reproduction: source reverted after measurement (tree clean at HEAD); the two
+defines are `sim_AMR_ball.cu:1–2` (comment per combo; the 2017-without-ANTIALIAS
+combo additionally needs the `col_cum.h` `#else` cross-derivative zeroing), the
+A-B build is `build`, the A-A build is `build-aa`
+(`cmake -B build-aa -S . -G Ninja -DTNL_LBM_AA_PATTERN=ON`); run dirs
+`/tmp/opencode/band_probe/{run_baseline,run_noantialias,ab_no2017_anti,ab_no2017_noanti}`
+(A-B) and `/tmp/opencode/band_probe/aa_{2017_anti,2017_noanti,no2017_anti,no2017_noanti}`
+(A-A); probe frames 0010+0020 with
+`/tmp/opencode/checkerboard_sweep/checkerboard_probe.py`. /tmp hygiene: only
+frames 0010/0020 and `sim.log` are retained per run dir (tmpfs — clear big
+artifacts often to avoid OOM).
+
+### 2.5 Round 3b (2026-09-05) — interface data-dependency audit: ROOT CAUSE of the A-A floor (deep agent, code-verified)
+
+A dedicated line-by-line audit of every interface df read/write under both
+patterns (all file:line claims re-verified on the tree after the audit) plus
+in-situ measurements on the canonical case. Verdict: the **fine-side** band
+machinery (C2F fill → substep A/B consumption → F2C read) is pattern-independent
+by deliberate parity arming and cycle-invariant under both patterns — but the
+**coarse-side feedback path is not**, and that is the A-A floor's author.
+
+**The structural asymmetry.** The fine level runs exactly 2 substeps per cycle
+(`totalSubstepCount` +2, `amr_state.h:2413,:2471`) → Φ_S (spatial substep A)
+then Φ_T (reflect substep B) on *every* cycle — cycle-invariant. The coarse
+level runs 1 step per cycle (`amr_state.h:2589`, `lbm.hpp:452-454`) → its A-A
+phase **alternates every cycle** (odd iterations Φ_S, even Φ_T).
+
+**D1 — A-A frozen-adjacency of the collision-active ring (parity author).**
+The coarse ring row c=0 (`GEO_AMR_INTERFACE`, collision-active, `bc.h:563`)
+streams from its frozen neighbor, the c=1 skin (`GEO_NOTHING` never streams,
+`bc.h:221-227,:574-575`). Under A-A, foreign content enters a cell's slots only
+via another cell's push or the cell's own pull: on Φ_S steps the ring's pull
+correctly ingests the F2C-armed skin slots; on Φ_T steps the reflect phase reads
+*only same-site slots* (`streaming_AA.h:97-100`), and the ring's footprint-facing
+slots were last written by its own previous Φ_T twist-store — its own
+post-collision populations in mirrored orientation, one coarse-step stale. Every
+other coarse step the interface is effectively closed (bounce-back-like), and the
+F2C natural-slot write for those cycles (`amr_coupling.h:3133`, armed via
+`next_coarse_even_iter`, `amr_state.h:2287-2288`) is dead traffic.
+
+**D2 — parity-armed C2F reads of the contaminated ring (seam author).** C2F
+reads ring rows with the producing step's convention (`amr_coupling.h:1509-1515`):
+post-Φ_S cycles the ring's footprint-facing slots are *not* what the Φ_S
+collision ingested (they hold the stale mirrored Φ_T product); post-Φ_T cycles
+the returned product itself collided on the D1 reflection. The fill therefore
+deposits the reflection on the fine band rows, spatially locked to subcell
+parity through the window shift (`axis_window`).
+
+**Measured evidence (canonical case, both patterns).** (1) Baselines reproduce
+the §2.4 matrix bit-for-bit. (2) In-situ period-2 signature (160 consecutive
+coarse-step frames, `--out3d-iter-period 1`, no source edits): A-A ring rows
+carry a period-2 vx square wave — per-parity mean offsets +5.73e-3 (c=0 row,
+x-max), +7.50e-3 (x-min), −4.81e-3 (halo), flip fraction 0.95-0.98 — while
+upstream reference/interior planes are exactly clean and all A-B planes sit at
+the 1e-4 class with no period-2; the A-A interface also blocks the flow
+(downstream halo mean vx 1.06e-3 vs 1.71e-2 under A-B). (3) Discriminating arm
+(define-gated `AMR_AA_F2C_NEIGHBOR_REFRESH` probe, since reverted): poke each
+skin cell's F2C DF f_q into the frozen-facing slot q of each live neighbor with
+the same phase convention — full arm: parity ÷5.7 to 6.73e-4 and the square wave
+collapses (halo vx recovers to 1.77e-2 ≈ A-B); TAU-only (fixes D1 ingestion):
+parity ÷3.9 → D1 dominates the parity checkerboard; SPATIAL-only (freshens D2
+fill reads): seam ÷3.4 to 6.73e-4 → D2 dominates the smooth seam bias. (4)
+Full-arm double-run deterministic to ~1e-4 relative (the probe itself adds a
+small freshness race — see T8 below). Refuted: unclamped-index wrap of the
+widened extent (statically impossible — non-periodic, overlap 2) and A-B role
+inversion across the odd 3-step cycle (role-named arrays + absolute per-substep
+rotation).
+
+**Does the same class seed the A-B antialias channel? No.** The A-B artifact is
+the fine-side T1 band collision amplified by the operator (established in §2.4:
+removing ANTIALIAS collapses A-B to 1.8e-6 with the same T1 seed present); the
+D1/D2 class is structurally impossible under A-B's pull scheme, which reads the
+armed frame every step. Under A-A the D1/D2 alternation additionally modulates
+the C2F fill feeding substep 1's mixed shell, so the channels add there
+(A-A 2017+anti 3.86e-3 ≈ A-B 3.25e-3 + the ~1e-3 pattern floor).
+
+**Fix designs (not yet implemented).** D1 (priority 1): refresh the frozen-facing
+slots of every live cell adjacent to a `GEO_NOTHING` cell once per cycle with
+the phase-correct convention before the next coarse step, sequenced on one
+stream before the C2F reads (kills the probe's added race); confirmation bar:
+canonical A-A parity ≤ ~1e-3 at both frames AND ring square-wave offsets ≤1e-4
+class. D2 (priority 2): sequence the D1 refresh before the C2F launches with a
+barrier (or parity-gate the C2F coarse-source read); bar: A-A seam_mean ≤ ~1e-3.
+Caveat for the production flip: the full arm's seam (2.06e-3) does not beat the
+SPATIAL-only arm's (6.7e-4) — the TAU pokes change the ring state feeding F2C;
+the ordered variant must be evaluated on the Tier-1/2 matrix first. Latent
+hazard noted for both patterns (severe only under A-A): the F2C-writes-skin ∥
+C2F-reads-skin stream overlap is a genuine read/write race whose loser value is
+convention-mismatched under A-A; at HEAD the winner is deterministic-fresh
+(floor reproduces bit-for-bit). Nested levels carry the same class on nested
+rings (mid-sync fills read post-Φ_S parent state — same analysis per pair;
+flagged, not measured). The A-A defect is orthogonal to the T1b refill question
+and does not change §5's A-B fix ranking.
+
 
 ---
 
@@ -413,7 +580,10 @@ seeding site and their validation modalities never see it: drag averages integra
 it out, instantaneous turbulent figures sit far above a 10⁻³-class zero-mean ripple,
 and the seam sits where nothing turbulent crosses it. Our measurements cannot
 decide this from inside our codebase. Falsifiers, in cost order: (1) the parity
-metric under the AA build (nearest cousin of in-place streaming; cheap);
+metric under the AA build (nearest cousin of in-place streaming; cheap) —
+**settled 2026-09-05 (§2.4): the artifact persists under A-A in all four
+operator combos, on top of an operator-insensitive ~1e-3 floor (a separate
+interface defect; the audit question posed in the round-3 synthesis)**;
 (2) a fill-site-geometry-only arm — staggered quarter-point destination placement
 grafted onto our σ-form fill inside our cycle, keeping basis and schedule fixed —
 isolating the school's own attributional candidate (the stagger as implicit
