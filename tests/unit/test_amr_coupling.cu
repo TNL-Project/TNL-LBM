@@ -7,11 +7,11 @@
 // launches the coupling kernel directly, and verifies the result on the
 // host. No State/LBM objects are involved and no simulation is run.
 //
-// The streaming pattern is selected at compile time: tests/unit/CMakeLists.txt
-// compiles this file twice, once with AB_PATTERN and once with
-// AA_PATTERN -- the `amr_coupling` TEST_SUITE of the consolidated doctest
-// binaries test_amr_units_{ab,aa} (whose main() comes from
-// doctest_main.cu). The A-A pattern stores post-collision data in the
+// The streaming pattern is selected at compile time per test binary: the
+// consolidated doctest binaries test_amr_units_{ab,aa} of
+// tests/unit/CMakeLists.txt pin TNL_LBM_STREAMING_PATTERN_{AB_PULL,AA}
+// (whose main() comes from doctest_main.cu); every pattern-dependent branch
+// below is an `if constexpr` on NSE_CONFIG::STREAMING. The A-A pattern stores post-collision data in the
 // "twisted" orientation (df_cur[opposite(q), site] holds direction q, see
 // streaming_AA.h and the kernel docstrings), so the fill/verify helpers
 // below are parametrized by the storage parity and cover both A-A states.
@@ -160,11 +160,11 @@ struct MockBlock
 {
 	DATA data;
 	TRAITS::__dmap_array_t dmap;
-	TRAITS::__dlat_array_t dfs[DFMAX];
+	TRAITS::__dlat_array_t dfs[NSE_CONFIG::DFMAX];
 	TRAITS::__dmacro_array_t dmacro;
 
 	TRAITS::__hmap_array_t hmap;
-	TRAITS::__hlat_array_t hfs[DFMAX];
+	TRAITS::__hlat_array_t hfs[NSE_CONFIG::DFMAX];
 	TRAITS::__hmacro_array_t hmacro;
 
 	idx size = 0;
@@ -197,7 +197,7 @@ struct MockBlock
 		hmacro.getOverlaps().template setSize<3>(ov);
 		hmacro.setSizes(NSE_CONFIG::MACRO::N, N, N, N);
 
-		for (uint8_t dfty = 0; dfty < DFMAX; dfty++) {
+		for (uint8_t dfty = 0; dfty < NSE_CONFIG::DFMAX; dfty++) {
 			dfs[dfty].getOverlaps().template setSize<1>(ov);
 			dfs[dfty].getOverlaps().template setSize<2>(ov);
 			dfs[dfty].getOverlaps().template setSize<3>(ov);
@@ -210,7 +210,7 @@ struct MockBlock
 
 		// wire the DATA pointers and the indexer exactly like
 		// LBM_BLOCK::allocateDeviceData (the plain-NDArray variant)
-		for (uint8_t dfty = 0; dfty < DFMAX; dfty++)
+		for (uint8_t dfty = 0; dfty < NSE_CONFIG::DFMAX; dfty++)
 			data.dfs[dfty] = dfs[dfty].getData();
 		data.indexer = dmap.getIndexer();
 		data.XYZ = data.indexer.getStorageSize();
@@ -225,13 +225,13 @@ struct MockBlock
 
 	void copyToDevice()
 	{
-		for (uint8_t dfty = 0; dfty < DFMAX; dfty++)
+		for (uint8_t dfty = 0; dfty < NSE_CONFIG::DFMAX; dfty++)
 			dfs[dfty] = hfs[dfty];
 	}
 
 	void copyToHost()
 	{
-		for (uint8_t dfty = 0; dfty < DFMAX; dfty++)
+		for (uint8_t dfty = 0; dfty < NSE_CONFIG::DFMAX; dfty++)
 			hfs[dfty] = dfs[dfty];
 	}
 };
@@ -246,24 +246,24 @@ struct MockBlock
 //   sits in df_cur[q]
 void storePostCollisionDF(MockBlock& block, bool even_iter, int q, idx x, idx y, idx z, dreal value)
 {
-#ifdef AB_PATTERN
-	static_cast<void>(even_iter);
-	block.hfs[df_out](q, x, y, z) = value;
-#elif defined(AA_PATTERN)
-	block.hfs[df_cur](even_iter ? opposite_direction(q) : q, x, y, z) = value;
-#endif
+	if constexpr (! is_AA_v<NSE_CONFIG::STREAMING>) {
+		static_cast<void>(even_iter);
+		block.hfs[df_out](q, x, y, z) = value;
+	} else {
+		block.hfs[df_cur](even_iter ? opposite_direction(q) : q, x, y, z) = value;
+	}
 }
 
 // read back the post-collision DF value of direction `q` for parity
 // `even_iter` (mirror of storePostCollisionDF)
 dreal readPostCollisionDF(const MockBlock& block, bool even_iter, int q, idx x, idx y, idx z)
 {
-#ifdef AB_PATTERN
-	static_cast<void>(even_iter);
-	return block.hfs[df_out](q, x, y, z);
-#elif defined(AA_PATTERN)
-	return block.hfs[df_cur](even_iter ? opposite_direction(q) : q, x, y, z);
-#endif
+	if constexpr (! is_AA_v<NSE_CONFIG::STREAMING>) {
+		static_cast<void>(even_iter);
+		return block.hfs[df_out](q, x, y, z);
+	} else {
+		return block.hfs[df_cur](even_iter ? opposite_direction(q) : q, x, y, z);
+	}
 }
 
 // zeroth DF moment of the data stored by fillUniform/fillField with storage
@@ -281,12 +281,12 @@ dreal rhoMomentFilled(const MockBlock& block, bool even_iter, idx x, idx y, idx 
 // NEXT consuming coarse substep is even, twisted when it is odd.
 int coarseWriteSlot(int q, bool next_coarse_even_iter)
 {
-#ifdef AB_PATTERN
-	static_cast<void>(next_coarse_even_iter);
-	return q;
-#elif defined(AA_PATTERN)
-	return next_coarse_even_iter ? q : opposite_direction(q);
-#endif
+	if constexpr (! is_AA_v<NSE_CONFIG::STREAMING>) {
+		static_cast<void>(next_coarse_even_iter);
+		return q;
+	} else {
+		return next_coarse_even_iter ? q : opposite_direction(q);
+	}
 }
 
 // Direction slot in the fine df_cur array where the coarse-to-fine fill
@@ -296,11 +296,11 @@ int coarseWriteSlot(int q, bool next_coarse_even_iter)
 // opposite-direction slot)
 int c2fWriteSlot(int q)
 {
-#ifdef AB_PATTERN
-	return q;
-#elif defined(AA_PATTERN)
-	return opposite_direction(q);
-#endif
+	if constexpr (! is_AA_v<NSE_CONFIG::STREAMING>) {
+		return q;
+	} else {
+		return opposite_direction(q);
+	}
 }
 
 // DF array cudaAMR_FineToCoarse stores into: df_out for the A-B pattern
@@ -308,11 +308,11 @@ int c2fWriteSlot(int q)
 // kernel launch reads), df_cur for the A-A pattern (single array)
 uint8_t f2cWriteArray()
 {
-#ifdef AB_PATTERN
-	return df_out;
-#elif defined(AA_PATTERN)
-	return df_cur;
-#endif
+	if constexpr (! is_AA_v<NSE_CONFIG::STREAMING>) {
+		return df_out;
+	} else {
+		return df_cur;
+	}
 }
 
 // rho moment of the DFs cudaAMR_FineToCoarse wrote at a coarse cell
@@ -329,7 +329,7 @@ dreal f2cWrittenRho(const MockBlock& coarse, bool next_coarse_even_iter, idx x, 
 void fillUniform(MockBlock& block, bool even_iter, dreal rho, dreal u0, dreal v0, dreal w0)
 {
 	const std::array<dreal, 27> eq = equilibriumOnHost(rho, u0, v0, w0);
-	for (uint8_t dfty = 0; dfty < DFMAX; dfty++)
+	for (uint8_t dfty = 0; dfty < NSE_CONFIG::DFMAX; dfty++)
 		for (int q = 0; q < 27; q++)
 			for (idx z = -block.ov; z < block.size + block.ov; z++)
 				for (idx y = -block.ov; y < block.size + block.ov; y++)
@@ -873,11 +873,11 @@ constexpr dreal NEST_RHO0 = 4;
 // direction-asymmetry marker (binary fraction); also used for the slot
 // distinguishability of the A-A twisted fill
 constexpr dreal NEST_VX = dreal(0.03125);
-#ifdef AB_PATTERN
 // wrong-array sentinel added to every DF in the array the coupling must NOT
-// read (A-B pattern with two DF arrays only)
-constexpr dreal NEST_GARBAGE = 1000;
-#endif
+// read (two DF arrays of the A-B pattern only; the A-A single-array branches
+// below leave the constant unused, hence [[maybe_unused]]). The pre-umbrella
+// code declared it inside the A-B-only preprocessor branch.
+[[maybe_unused]] constexpr dreal NEST_GARBAGE = 1000;
 
 // floor division by 2 (valid for negative coordinates, unlike C++ integer
 // division which truncates toward zero)
@@ -927,18 +927,18 @@ void fillMarkerNested(MockBlock& block, bool is_fine, bool source_even_iter)
 		for (idx y = -block.ov; y < block.size + block.ov; y++) {
 			for (idx x = -block.ov; x < block.size + block.ov; x++) {
 				const dreal rho = (is_fine ? dreal(0.5) * static_cast<dreal>(x + NEST_FINE_OFF) : static_cast<dreal>(x)) + NEST_RHO0;
-				const std::array<dreal, 27> eq = equilibriumOnHost(rho, NEST_VX, 0, 0);
-#ifdef AB_PATTERN
+			const std::array<dreal, 27> eq = equilibriumOnHost(rho, NEST_VX, 0, 0);
+			if constexpr (! is_AA_v<NSE_CONFIG::STREAMING>) {
 				static_cast<void>(source_even_iter);  // A-A-only state
-				for (uint8_t dfty = 0; dfty < DFMAX; dfty++)
+				for (uint8_t dfty = 0; dfty < NSE_CONFIG::DFMAX; dfty++)
 					for (int q = 0; q < 27; q++)
 						block.hfs[dfty](q, x, y, z) = eq[q] + NEST_GARBAGE;
 				for (int q = 0; q < 27; q++)
 					block.hfs[df_out](q, x, y, z) = eq[q];
-#elif defined(AA_PATTERN)
+			} else {
 				for (int q = 0; q < 27; q++)
 					storePostCollisionDF(block, source_even_iter, q, x, y, z, eq[q]);
-#endif
+			}
 			}
 		}
 	}
@@ -1138,35 +1138,35 @@ void test_nested_geometry_coupling()
 		);
 	}
 
-#ifdef AB_PATTERN
-	// ----- wrong-array trap: the coarse df_cur array was poisoned with the
-	// sentinel; the F2C transfer must write df_out (the frame the next coarse
-	// kernel launch reads as df_cur), leaving df_cur untouched -----
-	bad = 0;
-	max_err = 0;
-	first_mismatch = true;
-	for (const idx z : {4, 8, 12}) {
-		for (const idx y : {4, 8, 12}) {
-			const std::array<dreal, 27> eq_marker = equilibriumOnHost(static_cast<dreal>(3) + NEST_RHO0, NEST_VX, 0, 0);
-			for (int q = 0; q < 27; q++) {
-				const dreal actual = coarse.hfs[df_cur](q, 3, y, z);
-				const dreal expected = eq_marker[q] + NEST_GARBAGE;
-				if (! closeEnough(actual, expected, 1e-5, 1e-2)) {
-					if (first_mismatch) {
-						fmt::println("  first mismatch: df_cur at halo=(3, {}, {}), q={}, actual={:.9e}, expected(untouched sentinel)={:.9e}", y, z, q, actual, expected);
-						first_mismatch = false;
+	if constexpr (! is_AA_v<NSE_CONFIG::STREAMING>) {
+		// ----- wrong-array trap: the coarse df_cur array was poisoned with the
+		// sentinel; the F2C transfer must write df_out (the frame the next coarse
+		// kernel launch reads as df_cur), leaving df_cur untouched -----
+		bad = 0;
+		max_err = 0;
+		first_mismatch = true;
+		for (const idx z : {4, 8, 12}) {
+			for (const idx y : {4, 8, 12}) {
+				const std::array<dreal, 27> eq_marker = equilibriumOnHost(static_cast<dreal>(3) + NEST_RHO0, NEST_VX, 0, 0);
+				for (int q = 0; q < 27; q++) {
+					const dreal actual = coarse.hfs[df_cur](q, 3, y, z);
+					const dreal expected = eq_marker[q] + NEST_GARBAGE;
+					if (! closeEnough(actual, expected, 1e-5, 1e-2)) {
+						if (first_mismatch) {
+							fmt::println("  first mismatch: df_cur at halo=(3, {}, {}), q={}, actual={:.9e}, expected(untouched sentinel)={:.9e}", y, z, q, actual, expected);
+							first_mismatch = false;
+						}
+						bad++;
 					}
-					bad++;
+					max_err = std::max<double>(max_err, std::abs(actual - expected));
 				}
-				max_err = std::max<double>(max_err, std::abs(actual - expected));
 			}
 		}
+		CHECK_MESSAGE(
+			bad == 0,
+			fmt::format("Test 5 nested F2C A-B frame: halo writes landed in df_out (df_cur untouched sentinel, max |err| = {:.3e})", max_err)
+		);
 	}
-	CHECK_MESSAGE(
-		bad == 0,
-		fmt::format("Test 5 nested F2C A-B frame: halo writes landed in df_out (df_cur untouched sentinel, max |err| = {:.3e})", max_err)
-	);
-#endif
 
 	// ----- storability guard: coarse cells whose 2x2x2 fine subcell block is
 	// not fully storable must be left at the marker IC (c = 2 and c = 13 lie
@@ -1563,7 +1563,7 @@ void fillFieldCE(MockBlock& block, bool even_iter, const FIELD& field)
 void poisonCellDFs(MockBlock& block, idx x, idx y, idx z)
 {
 	const dreal nan = std::numeric_limits<dreal>::quiet_NaN();
-	for (uint8_t dfty = 0; dfty < DFMAX; dfty++)
+	for (uint8_t dfty = 0; dfty < NSE_CONFIG::DFMAX; dfty++)
 		for (int q = 0; q < 27; q++)
 			block.hfs[dfty](q, x, y, z) = nan;
 }
@@ -1857,7 +1857,7 @@ struct SkinCubicField {
 void sentinelFineGhostPlane(MockBlock& fine, int axis)
 {
 	constexpr dreal SENTINEL = 1000;
-	for (uint8_t dfty = 0; dfty < DFMAX; dfty++)
+	for (uint8_t dfty = 0; dfty < NSE_CONFIG::DFMAX; dfty++)
 		for (int q = 0; q < 27; q++)
 			for (idx b = -fine.ov; b < fine.size + fine.ov; b++)
 				for (idx a = -fine.ov; a < fine.size + fine.ov; a++) {
@@ -2387,18 +2387,18 @@ constexpr const char* nesting_interior_chain = "1 8 8 8 12 12 12\n"
 // physical arrays, AA reduces the captured even_iter flag
 int eventRotation(const BLOCK& block, const void* captured_cur, bool captured_even)
 {
-#ifdef AB_PATTERN
-	static_cast<void>(captured_even);
-	if (captured_cur == block.dfs[0].getData())
-		return 0;
-	if (captured_cur == block.dfs[1].getData())
-		return 1;
-	return -1;
-#elif defined(AA_PATTERN)
-	static_cast<void>(block);
-	static_cast<void>(captured_cur);
-	return captured_even ? 1 : 0;
-#endif
+	if constexpr (! is_AA_v<NSE_CONFIG::STREAMING>) {
+		static_cast<void>(captured_even);
+		if (captured_cur == block.dfs[0].getData())
+			return 0;
+		if (captured_cur == block.dfs[1].getData())
+			return 1;
+		return -1;
+	} else {
+		static_cast<void>(block);
+		static_cast<void>(captured_cur);
+		return captured_even ? 1 : 0;
+	}
 }
 
 // the fixture's spy under a second recording channel: the write-side
@@ -2584,13 +2584,13 @@ void test_two_hop_transfer_census()
 					const void* fine_cur = nullptr;
 					const void* parent_cur = nullptr;
 					bool fine_even = false, parent_even = false;
-#ifdef AB_PATTERN
-					fine_cur = evt.fine_cur;
-					parent_cur = evt.parent_cur;
-#elif defined(AA_PATTERN)
-					fine_even = evt.fine_even;
-					parent_even = evt.parent_even;
-#endif
+					if constexpr (! is_AA_v<NSE_CONFIG::STREAMING>) {
+						fine_cur = evt.fine_cur;
+						parent_cur = evt.parent_cur;
+					} else {
+						fine_even = evt.fine_even;
+						parent_even = evt.parent_even;
+					}
 					const int expected_parent_rot = w.parent_rot == TR_CLOCK ? clock_rot : w.parent_rot;
 					const int recorded_parent_rot = eventRotation(*parent, parent_cur, parent_even);
 					const int recorded_fine_rot = eventRotation(*fine, fine_cur, fine_even);
@@ -2685,7 +2685,7 @@ struct StateSentinel_AMR : StateSchedule_AMR<NSE>
 	{
 		const std::array<dreal, 27> eq = equilibriumOnHost(SENT_RHO, SENT_VX, 0, 0);
 		const idx3d ovl{block.df_overlap_X(), block.df_overlap_Y(), block.df_overlap_Z()};
-		for (uint8_t dfty = 0; dfty < DFMAX; dfty++)
+		for (uint8_t dfty = 0; dfty < NSE_CONFIG::DFMAX; dfty++)
 			for (idx z = block.offset.z() - ovl.z(); z < block.offset.z() + block.local.z() + ovl.z(); z++)
 				for (idx y = block.offset.y() - ovl.y(); y < block.offset.y() + block.local.y() + ovl.y(); y++)
 					for (idx x = block.offset.x() - ovl.x(); x < block.offset.x() + block.local.x() + ovl.x(); x++)
@@ -2841,7 +2841,7 @@ void fillMarkerScaled(MockBlock& block, dreal scale, idx off)
 			for (idx x = -block.ov; x < block.size + block.ov; x++) {
 				const dreal rho = scale * static_cast<dreal>(x + off) + NEST_RHO0;
 				const std::array<dreal, 27> eq = equilibriumOnHost(rho, NEST_VX, 0, 0);
-				for (uint8_t dfty = 0; dfty < DFMAX; dfty++)
+				for (uint8_t dfty = 0; dfty < NSE_CONFIG::DFMAX; dfty++)
 					for (int q = 0; q < 27; q++)
 						block.hfs[dfty](q, x, y, z) = eq[q];
 			}
@@ -2860,19 +2860,19 @@ constexpr idx NEST2_FINE_OFF = 18;
 // reads the single array with the twisted consumer orientation)
 	dreal composedSourceRho(const MockBlock& block, idx x, idx y, idx z)
 {
-#ifdef AB_PATTERN
-	// after the pointer-slot swap, the hop-2 kernel's df_out-slot source is
-	// the physical dfs[0]: hop-1 product rows hold the fill, interior rows
-	// the pristine marker -- both in natural orientation in dfs[0]
-	dreal rho = 0;
-	for (int q = 0; q < 27; q++)
-		rho += block.hfs[0](q, x, y, z);
-	return rho;
-#elif defined(AA_PATTERN)
-	// ghost rows carry the hop-1 fill and the interior rows were re-armed
-	// above, all in the twisted orientation of the spatial consumer
-	return rhoMomentFilled(block, true, x, y, z);
-#endif
+	if constexpr (! is_AA_v<NSE_CONFIG::STREAMING>) {
+		// after the pointer-slot swap, the hop-2 kernel's df_out-slot source is
+		// the physical dfs[0]: hop-1 product rows hold the fill, interior rows
+		// the pristine marker -- both in natural orientation in dfs[0]
+		dreal rho = 0;
+		for (int q = 0; q < 27; q++)
+			rho += block.hfs[0](q, x, y, z);
+		return rho;
+	} else {
+		// ghost rows carry the hop-1 fill and the interior rows were re-armed
+		// above, all in the twisted orientation of the spatial consumer
+		return rhoMomentFilled(block, true, x, y, z);
+	}
 }
 
 // Test 21: two-hop kernel composition -- direct `cudaAMR_CoarseToFine`
@@ -2932,27 +2932,27 @@ void test_two_hop_kernel_composition()
 	// pointer slots are swapped -- exactly what the production rotation
 	// does in place at every substep boundary
 	bool hop2_source_even = false;
-#ifdef AB_PATTERN
-	std::swap(fine1.data.dfs[0], fine1.data.dfs[1]);
-#elif defined(AA_PATTERN)
-	hop2_source_even = true;
-	// re-arm the interior rows of fine1 to the twisted orientation of the
-	// filled ghost rows (the interior currently reads as the natural
-	// orientation of the plain hfs fill; the ghost rows just filled by
-	// hop 1 already carry the twisted storage)
-	{
-		MockBlock& b = fine1;
-		for (idx z = 0; z < b.size; z++)
-			for (idx y = 0; y < b.size; y++)
-				for (idx x = 0; x < b.size; x++) {
-					const dreal rho = dreal(0.5) * static_cast<dreal>(x + NEST_FINE_OFF) + NEST_RHO0;
-					const std::array<dreal, 27> eq = equilibriumOnHost(rho, NEST_VX, 0, 0);
-					for (int q = 0; q < 27; q++)
-						b.hfs[df_cur](opposite_direction(q), x, y, z) = eq[q];
-				}
-		fine1.copyToDevice();
+	if constexpr (! is_AA_v<NSE_CONFIG::STREAMING>)
+		std::swap(fine1.data.dfs[0], fine1.data.dfs[1]);
+	else {
+		hop2_source_even = true;
+		// re-arm the interior rows of fine1 to the twisted orientation of the
+		// filled ghost rows (the interior currently reads as the natural
+		// orientation of the plain hfs fill; the ghost rows just filled by
+		// hop 1 already carry the twisted storage)
+		{
+			MockBlock& b = fine1;
+			for (idx z = 0; z < b.size; z++)
+				for (idx y = 0; y < b.size; y++)
+					for (idx x = 0; x < b.size; x++) {
+						const dreal rho = dreal(0.5) * static_cast<dreal>(x + NEST_FINE_OFF) + NEST_RHO0;
+						const std::array<dreal, 27> eq = equilibriumOnHost(rho, NEST_VX, 0, 0);
+						for (int q = 0; q < 27; q++)
+							b.hfs[df_cur](opposite_direction(q), x, y, z) = eq[q];
+					}
+			fine1.copyToDevice();
+		}
 	}
-#endif
 
 	// hop 2: the same fill one level deeper
 	launchCoarseToFine(fine2, fine1, {-2, -2, -2}, {0, 18, 18}, off2, off1, hop2_source_even);
@@ -2990,13 +2990,13 @@ void test_two_hop_kernel_composition()
 	}
 
 	// ----- fine-to-coarse composition (own-8 mean-of-mean chain) -----
-#ifdef AB_PATTERN
-	// restore the identity pointer slots before the F2C half (the C2F
-	// composition above swapped them to emulate the production rotation;
-	// hop B's F2C read/write both land in the df_out slot and must not
-	// inherit the swap)
-	std::swap(fine1.data.dfs[0], fine1.data.dfs[1]);
-#endif	// AB_PATTERN
+	if constexpr (! is_AA_v<NSE_CONFIG::STREAMING>) {
+		// restore the identity pointer slots before the F2C half (the C2F
+		// composition above swapped them to emulate the production rotation;
+		// hop B's F2C read/write both land in the df_out slot and must not
+		// inherit the swap)
+		std::swap(fine1.data.dfs[0], fine1.data.dfs[1]);
+	}
 #ifdef F2C_SCHONHERR
 	// re-establish the pristine marker state for the F2C direction
 	fillMarkerScaled(fine1, 0.5, NEST_FINE_OFF);

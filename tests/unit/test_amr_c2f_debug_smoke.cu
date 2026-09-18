@@ -87,7 +87,7 @@ using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
 using NSE_CONFIG = LBM_CONFIG<
 	TRAITS,
 	D3Q27_KernelStruct,
-	NSE_Data_ConstInflow<TRAITS>,
+	NSE_Data_ConstInflow,
 	COLL,
 	typename COLL::EQ,
 	D3Q27_STREAMING<TRAITS>,
@@ -171,11 +171,11 @@ struct MockBlock
 {
 	DATA data;
 	TRAITS::__dmap_array_t dmap;
-	TRAITS::__dlat_array_t dfs[DFMAX];
+	TRAITS::__dlat_array_t dfs[NSE_CONFIG::DFMAX];
 	TRAITS::__dmacro_array_t dmacro;
 
 	TRAITS::__hmap_array_t hmap;
-	TRAITS::__hlat_array_t hfs[DFMAX];
+	TRAITS::__hlat_array_t hfs[NSE_CONFIG::DFMAX];
 	TRAITS::__hmacro_array_t hmacro;
 
 	idx size = 0;
@@ -204,7 +204,7 @@ struct MockBlock
 		hmacro.getOverlaps().template setSize<3>(ov);
 		hmacro.setSizes(NSE_CONFIG::MACRO::N, N, N, N);
 
-		for (uint8_t dfty = 0; dfty < DFMAX; dfty++) {
+		for (uint8_t dfty = 0; dfty < NSE_CONFIG::DFMAX; dfty++) {
 			dfs[dfty].getOverlaps().template setSize<1>(ov);
 			dfs[dfty].getOverlaps().template setSize<2>(ov);
 			dfs[dfty].getOverlaps().template setSize<3>(ov);
@@ -215,7 +215,7 @@ struct MockBlock
 			hfs[dfty].setSizes(NSE_CONFIG::Q, N, N, N);
 		}
 
-		for (uint8_t dfty = 0; dfty < DFMAX; dfty++)
+		for (uint8_t dfty = 0; dfty < NSE_CONFIG::DFMAX; dfty++)
 			data.dfs[dfty] = dfs[dfty].getData();
 		data.indexer = dmap.getIndexer();
 		data.XYZ = data.indexer.getStorageSize();
@@ -228,34 +228,33 @@ struct MockBlock
 
 	void copyToDevice()
 	{
-		for (uint8_t dfty = 0; dfty < DFMAX; dfty++)
+		for (uint8_t dfty = 0; dfty < NSE_CONFIG::DFMAX; dfty++)
 			dfs[dfty] = hfs[dfty];
 	}
 
 	void copyToHost()
 	{
-		for (uint8_t dfty = 0; dfty < DFMAX; dfty++)
+		for (uint8_t dfty = 0; dfty < NSE_CONFIG::DFMAX; dfty++)
 			hfs[dfty] = dfs[dfty];
 	}
 };
 
 void storePostCollisionDF(MockBlock& block, bool even_iter, int q, idx x, idx y, idx z, dreal value)
 {
-#ifdef AB_PATTERN
-	static_cast<void>(even_iter);
-	block.hfs[df_out](q, x, y, z) = value;
-#elif defined(AA_PATTERN)
-	block.hfs[df_cur](even_iter ? opposite_direction(q) : q, x, y, z) = value;
-#endif
+	if constexpr (is_AA_v<NSE_CONFIG::STREAMING>)
+		block.hfs[df_cur](even_iter ? opposite_direction(q) : q, x, y, z) = value;
+	else {
+		static_cast<void>(even_iter);
+		block.hfs[df_out](q, x, y, z) = value;
+	}
 }
 
 int c2fWriteSlot(int q)
 {
-#ifdef AB_PATTERN
-	return q;
-#elif defined(AA_PATTERN)
-	return opposite_direction(q);
-#endif
+	if constexpr (is_AA_v<NSE_CONFIG::STREAMING>)
+		return opposite_direction(q);
+	else
+		return q;
 }
 
 dreal d3q27Weight(int q)

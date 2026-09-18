@@ -305,6 +305,12 @@ __global__ void cudaAMRConservationReduce(
 template <typename NSE>
 struct State_AMR : State<NSE>
 {
+	static_assert(
+		is_AA_v<typename NSE::STREAMING> || is_AB_PULL_v<typename NSE::STREAMING> || is_AB_PUSH_v<typename NSE::STREAMING>,
+		"the AMR coupling supports only the AA, AB_PULL, and AB_PUSH streaming patterns "
+		"(the esoteric in-place patterns have no AMR coupling kernels)"
+	);
+
 	using Base = State<NSE>;
 	using TRAITS = typename NSE::TRAITS;
 	using BLOCK_NSE = LBM_BLOCK<NSE>;
@@ -850,25 +856,11 @@ void State_AMR<NSE>::SimInit()
 		launchCoarseToFineTransfersOtherFrame(L);
 	#endif
 	}
-	// the SimInit fill's single sync point: the ghost-macro seeding below
-	// reads the filled ghost DFs, so both transfer streams must be drained
+	// the SimInit fill's single sync point: cycle 0's widened fine
+	// substep-1 kernel reads the fill's ghost-DF destinations from its own
+	// launch stream, so both transfer streams must be drained before the
+	// driver proceeds to SimUpdate
 	synchronizeTransfers();
-
-	// seed the ghost-row macros from the SimInit C2F fill: frame 0000 is
-	// emitted before any kernel ran, and computeInitialMacro covers only the
-	// interior [0, local), so without this the fine ghost rows would carry
-	// the zero-init dmacro in the t=0 snapshot. Recompute the SAME window
-	// the cycle-0 substep-1 kernel will use (ghost_layers = 1), which yields
-	// identical macros from the C2F-seeded DFs with no physics run; the
-	// interior macros are recomputed identically too. fine_wall_masks is
-	// already built, so masked-wall faces carry their GEO_WALL row in the
-	// window consistently.
-	for (auto& block : this->nse.blocks) {
-		if (block.level == 0)
-			continue;
-		const auto [begin, size] = kernelLaunchWindow(block, /*ghost_layers=*/1);
-		block.computeInitialMacro(begin, begin + size);
-	}
 #endif
 }
 
@@ -2464,12 +2456,9 @@ template <typename NSE>
 void State_AMR<NSE>::advancePair(int level, bool compute_macro, bool sync_macro)
 {
 #ifdef HAVE_MPI
-	#ifdef AA_PATTERN
-	uint8_t output_df = df_cur;
-	#endif
-	#ifdef AB_PATTERN
-	uint8_t output_df = df_out;
-	#endif
+	// the pattern's post-collision output frame (the streaming struct
+	// constant: df_cur for A-A, df_out for the two-array A-B patterns)
+	constexpr uint8_t output_df = NSE::STREAMING::output_df;
 #else
 	static_cast<void>(sync_macro);	// consumed only by the MPI overlap exchange
 #endif
@@ -2655,12 +2644,8 @@ void State_AMR<NSE>::SimUpdate()
 		macro_generation_++;
 
 	#ifdef HAVE_MPI
-		#ifdef AA_PATTERN
-	uint8_t output_df = df_cur;
-		#endif
-		#ifdef AB_PATTERN
-	uint8_t output_df = df_out;
-		#endif
+	// the pattern's post-collision output frame (see advancePair)
+	constexpr uint8_t output_df = NSE::STREAMING::output_df;
 	#endif
 
 	this->timer_compute.start();

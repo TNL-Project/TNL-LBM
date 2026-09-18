@@ -1,9 +1,5 @@
 #pragma once
 
-#if ! defined(AA_PATTERN) && ! defined(AB_PATTERN)
-	#error "amr_coupling.h requires either AA_PATTERN or AB_PATTERN to be defined before inclusion"
-#endif
-
 #include "lbm3d/defs.h"
 #include "lbm_common/ciselnik.h"
 
@@ -93,7 +89,7 @@
  * (inert on the all-GEO_FLUID fine blocks of v1). Streaming-pattern
  * caveat: unlike an interior face, the shifted wall-window reads a frozen
  * row that is never rewritten by the coarse kernel, so the read-vs-write
- * orientation conventions can diverge there -- under AA_PATTERN this is
+ * orientation conventions can diverge there -- under the A-A pattern this is
  * exactly the frozen-cell read mismatch catalogued as Defect-1 in
  * docs/AMR-for-LBM-implementation.md (the wall refinement lane, like all
  * frozen-cell coupling reads, is A-B-pattern-only until Defect-1 is
@@ -1523,6 +1519,12 @@ __global__ void cudaAMR_CoarseToFine(
 	using dreal = typename TRAITS::dreal;
 	using LBM_KS = typename CONFIG::template KernelStruct<dreal>;
 
+	static_assert(
+		is_AA_v<typename CONFIG::STREAMING> || is_AB_PULL_v<typename CONFIG::STREAMING> || is_AB_PUSH_v<typename CONFIG::STREAMING>,
+		"the AMR coupling supports only the AA, AB_PULL, and AB_PUSH streaming patterns "
+		"(the esoteric in-place patterns have no AMR coupling kernels)"
+	);
+
 	// Schönherr group mapping (per-window organization of the thesis Sec.
 	// 7.2 reference implementation): one thread computes the up-to-8
 	// destination cells of a 2x2x2 destination group rather than a single
@@ -1542,33 +1544,34 @@ __global__ void cudaAMR_CoarseToFine(
 	// kernel launch -- the ONLY streaming-pattern-dependent code in the kernel
 	const auto read_coarse_df = [&coarse_SD, coarse_even_iter](int q, idx cx, idx cy, idx cz) -> dreal
 	{
-#ifdef AB_PATTERN
-		// AB: post-collision DF of direction q at the same site, natural
-		// orientation, is stored in df_out (coarse_even_iter is AA-only state)
-		static_cast<void>(coarse_even_iter);
-	#ifdef AMR_C2F_READ_DF_CUR
-		// AMR_C2F_READ_DF_CUR probe (frame-timing suspect T2a, 2026-09-05;
-		// see the file docstring's frame/cycle-timing round): read the coarse
-		// PRE-step frame df_cur instead of the post-collision output df_out.
-		// At the end-sync cascade the coarse rotation still points df_out at
-		// the array the just-finished coarse step wrote, so df_cur is the
-		// state one full coarse step stale (cycle n's fill carries t_n
-		// content rather than t_{n+1}); the SimInit cycle-0 fill is
-		// value-identical (setInitialCondition holds both frames at the
-		// initial condition). Ungated builds keep the verbatim HEAD read.
-		return coarse_SD.df(df_cur, q, cx, cy, cz);
-	#else
-		return coarse_SD.df(df_out, q, cx, cy, cz);
-	#endif
-#elif defined(AA_PATTERN)
-		if (coarse_even_iter)
-			// AA post-collision state (twisted): the post-collision DF of
-			// direction q at (cx,cy,cz) sits in the opposite-direction slot
-			return coarse_SD.df(df_cur, opposite_direction(q), cx, cy, cz);
-		// AA post-stream state (natural): the streamed-in DF of direction q --
-		// the working state the next coarse substep will collide with
-		return coarse_SD.df(df_cur, q, cx, cy, cz);
+		if constexpr (is_AA_v<typename CONFIG::STREAMING>) {
+			if (coarse_even_iter)
+				// AA post-collision state (twisted): the post-collision DF of
+				// direction q at (cx,cy,cz) sits in the opposite-direction slot
+				return coarse_SD.df(df_cur, opposite_direction(q), cx, cy, cz);
+			// AA post-stream state (natural): the streamed-in DF of direction q --
+			// the working state the next coarse substep will collide with
+			return coarse_SD.df(df_cur, q, cx, cy, cz);
+		}
+		else {
+			// A-B: post-collision DF of direction q at the same site, natural
+			// orientation, is stored in df_out (coarse_even_iter is AA-only state)
+			static_cast<void>(coarse_even_iter);
+#ifdef AMR_C2F_READ_DF_CUR
+			// AMR_C2F_READ_DF_CUR probe (frame-timing suspect T2a, 2026-09-05;
+			// see the file docstring's frame/cycle-timing round): read the coarse
+			// PRE-step frame df_cur instead of the post-collision output df_out.
+			// At the end-sync cascade the coarse rotation still points df_out at
+			// the array the just-finished coarse step wrote, so df_cur is the
+			// state one full coarse step stale (cycle n's fill carries t_n
+			// content rather than t_{n+1}); the SimInit cycle-0 fill is
+			// value-identical (setInitialCondition holds both frames at the
+			// initial condition). Ungated builds keep the verbatim HEAD read.
+			return coarse_SD.df(df_cur, q, cx, cy, cz);
+#else
+			return coarse_SD.df(df_out, q, cx, cy, cz);
 #endif
+		}
 	};
 
 	// true floor division by 2 (valid for negative fine global coordinates,
@@ -1610,25 +1613,25 @@ __global__ void cudaAMR_CoarseToFine(
 			}
 		}
 #endif
-#ifdef AB_PATTERN
-	#ifdef AMR_C2F_WRITE_DF_OUT
-		// AMR_C2F_WRITE_DF_OUT probe (write-side frame timing, suspect T2c,
-		// 2026-09-05): the fill lands in logical df_out -- the frame the
-		// next fine substep does NOT rotate into df_cur -- so the consumed
-		// substep-0 frame keeps whatever its ghost rows already held (the
-		// SimInit fill lands in dfs[1] too, leaving the initial-condition
-		// ghost rows in the consumed frame of every cycle: substep 1's
-		// band input degenerates to the t_0 state for the whole run while
-		// substep 2's band input is unchanged, since the widened substep-1
-		// launch overwrites the df_out inner row before substep 2 reads
-		// it). Ungated builds keep the verbatim HEAD store.
-		fine_SD.df(df_out, q, x, y, z) = f;
-	#else
-		fine_SD.df(df_cur, q, x, y, z) = f;
-	#endif
-#elif defined(AA_PATTERN)
-		fine_SD.df(df_cur, opposite_direction(q), x, y, z) = f;
+		if constexpr (is_AA_v<typename CONFIG::STREAMING>)
+			fine_SD.df(df_cur, opposite_direction(q), x, y, z) = f;
+		else {
+#ifdef AMR_C2F_WRITE_DF_OUT
+			// AMR_C2F_WRITE_DF_OUT probe (write-side frame timing, suspect T2c,
+			// 2026-09-05): the fill lands in logical df_out -- the frame the
+			// next fine substep does NOT rotate into df_cur -- so the consumed
+			// substep-0 frame keeps whatever its ghost rows already held (the
+			// SimInit fill lands in dfs[1] too, leaving the initial-condition
+			// ghost rows in the consumed frame of every cycle: substep 1's
+			// band input degenerates to the t_0 state for the whole run while
+			// substep 2's band input is unchanged, since the widened substep-1
+			// launch overwrites the df_out inner row before substep 2 reads
+			// it). Ungated builds keep the verbatim HEAD store.
+			fine_SD.df(df_out, q, x, y, z) = f;
+#else
+			fine_SD.df(df_cur, q, x, y, z) = f;
 #endif
+		}
 	};
 
 	// per-destination macro write for GEO_AMR_INTERFACE cells (no-op in v1,
@@ -3026,8 +3029,14 @@ __global__ void cudaAMR_FineToCoarse(
 	using dreal = typename TRAITS::dreal;
 	using LBM_KS = typename CONFIG::template KernelStruct<dreal>;
 
+	static_assert(
+		is_AA_v<typename CONFIG::STREAMING> || is_AB_PULL_v<typename CONFIG::STREAMING> || is_AB_PUSH_v<typename CONFIG::STREAMING>,
+		"the AMR coupling supports only the AA, AB_PULL, and AB_PUSH streaming patterns "
+		"(the esoteric in-place patterns have no AMR coupling kernels)"
+	);
+
 #ifdef AMR_COUPLING_F2C_RING
-	// consumed only by the AA redirect branch below; A-B builds of this
+	// consumed only by the A-A redirect branch below; A-B builds of this
 	// kernel accept and ignore them (the option is code-gated, not
 	// pattern-gated, in sim_AMR/CMakeLists.txt)
 	static_cast<void>(coarse_local);
@@ -3062,31 +3071,32 @@ __global__ void cudaAMR_FineToCoarse(
 	// launch -- one of only TWO streaming-pattern-dependent sites
 	const auto read_fine_df = [&fine_SD, fine_even_iter](int q, idx fx, idx fy, idx fz) -> dreal
 	{
-#ifdef AB_PATTERN
-		// AB: post-collision DF of direction q at the same site, natural
-		// orientation, is stored in df_out (fine_even_iter is AA-only state)
-		static_cast<void>(fine_even_iter);
-	#ifdef AMR_F2C_READ_DF_CUR
-		// AMR_F2C_READ_DF_CUR probe (frame-timing suspect T2b, 2026-09-05):
-		// read the fine df_cur frame instead of the post-substep-2 output
-		// df_out. At every pair sync point the fine rotation still holds
-		// the substep-2 preparation (odd count), where df_cur is the
-		// pair's substep-1 output -- the skin feedback then injects the
-		// fine state of one fine substep stale (t + dt_f instead of
-		// t + 2dt_f = the time-aligned end of the pair). Ungated builds
-		// keep the verbatim HEAD read.
-		return fine_SD.df(df_cur, q, fx, fy, fz);
-	#else
-		return fine_SD.df(df_out, q, fx, fy, fz);
-	#endif
-#elif defined(AA_PATTERN)
-		if (fine_even_iter)
-			// AA post-collision state (twisted): the post-collision DF of
-			// direction q at (fx,fy,fz) sits in the opposite-direction slot
-			return fine_SD.df(df_cur, opposite_direction(q), fx, fy, fz);
-		// AA post-stream state (natural): the streamed-in DF of direction q
-		return fine_SD.df(df_cur, q, fx, fy, fz);
+		if constexpr (is_AA_v<typename CONFIG::STREAMING>) {
+			if (fine_even_iter)
+				// AA post-collision state (twisted): the post-collision DF of
+				// direction q at (fx,fy,fz) sits in the opposite-direction slot
+				return fine_SD.df(df_cur, opposite_direction(q), fx, fy, fz);
+			// AA post-stream state (natural): the streamed-in DF of direction q
+			return fine_SD.df(df_cur, q, fx, fy, fz);
+		}
+		else {
+			// A-B: post-collision DF of direction q at the same site, natural
+			// orientation, is stored in df_out (fine_even_iter is AA-only state)
+			static_cast<void>(fine_even_iter);
+#ifdef AMR_F2C_READ_DF_CUR
+			// AMR_F2C_READ_DF_CUR probe (frame-timing suspect T2b, 2026-09-05):
+			// read the fine df_cur frame instead of the post-substep-2 output
+			// df_out. At every pair sync point the fine rotation still holds
+			// the substep-2 preparation (odd count), where df_cur is the
+			// pair's substep-1 output -- the skin feedback then injects the
+			// fine state of one fine substep stale (t + dt_f instead of
+			// t + 2dt_f = the time-aligned end of the pair). Ungated builds
+			// keep the verbatim HEAD read.
+			return fine_SD.df(df_cur, q, fx, fy, fz);
+#else
+			return fine_SD.df(df_out, q, fx, fy, fz);
 #endif
+		}
 	};
 
 #ifdef F2C_SCHONHERR
@@ -3222,47 +3232,49 @@ __global__ void cudaAMR_FineToCoarse(
 		const auto store_coarse_df = [&coarse_SD, coarse_even_iter, x, y, z](int q, dreal f) -> void
 	#endif
 		{
-		// the back-transformation emits STORAGE-convention values directly:
-		// physical DFs on D3Q27_COMMON, fhat = f - w_q on D3Q27_COMMON_WELL
-	#ifdef AB_PATTERN
-			static_cast<void>(coarse_even_iter);
-			coarse_SD.df(df_out, q, x, y, z) = f;
-	#elif defined(AA_PATTERN)
-			if (coarse_even_iter) {
-		#ifdef AMR_COUPLING_F2C_RING
-				// AMR_COUPLING_F2C_RING read-address-writes arm (defect D1 of
-				// the 2026-09-05 audit, see the file docstring): the
-				// natural-slot store arming the next coarse reflect substep
-				// is dead traffic at the frozen skin (the reflect phase reads
-				// only same-site slots) -- redirect it to slot q at the live
-				// ring cell r = skin cell + c_q (the address that slot's
-				// reader consumes), dropping the frozen-site store in this
-				// branch entirely; the Phi_S-armed twisted-at-skin branch
-				// below is unchanged
-				{
-					// (the AMR_CM_PI_NEQ vel_c* enumeration)
-					constexpr signed char rw_cx[27] = {0, 1, -1, 0, 0, 0, 0, 1, -1, 1, -1, 1, -1, 1, -1, 0, 0, 0, 0, 1, -1, 1, -1, 1, -1, 1, -1};
-					constexpr signed char rw_cy[27] = {0, 0, 0, 1, -1, 0, 0, 1, -1, -1, 1, 0, 0, 0, 0, 1, -1, 1, -1, 1, -1, 1, -1, -1, 1, -1, 1};
-					constexpr signed char rw_cz[27] = {0, 0, 0, 0, 0, 1, -1, 0, 0, 0, 0, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1};
-					const idx rx = x + rw_cx[q];
-					const idx ry = y + rw_cy[q];
-					const idx rz = z + rw_cz[q];
-					// bounds-check the map read against the coarse block's
-					// stored range (review MEDIUM, 2026-09-06): the ring
-					// target sits one row outside the skin window and could
-					// step past stored map extents on a zero-overlap face of
-					// a block-edge-abutting footprint
-					if (rx >= -coarse_ov.x() && rx < coarse_local.x() + coarse_ov.x() && ry >= -coarse_ov.y() && ry < coarse_local.y() + coarse_ov.y()
-						&& rz >= -coarse_ov.z() && rz < coarse_local.z() + coarse_ov.z() && coarse_SD.map(rx, ry, rz) == BC::GEO_AMR_INTERFACE)
-						coarse_SD.df(df_cur, q, rx, ry, rz) = f;
-				}
-		#else
-				coarse_SD.df(df_cur, q, x, y, z) = f;
-		#endif
-			}
-			else
-				coarse_SD.df(df_cur, opposite_direction(q), x, y, z) = f;
+			// the back-transformation emits STORAGE-convention values directly:
+			// physical DFs on D3Q27_COMMON, fhat = f - w_q on D3Q27_COMMON_WELL
+			if constexpr (is_AA_v<typename CONFIG::STREAMING>) {
+				if (coarse_even_iter) {
+	#ifdef AMR_COUPLING_F2C_RING
+					// AMR_COUPLING_F2C_RING read-address-writes arm (defect D1 of
+					// the 2026-09-05 audit, see the file docstring): the
+					// natural-slot store arming the next coarse reflect substep
+					// is dead traffic at the frozen skin (the reflect phase reads
+					// only same-site slots) -- redirect it to slot q at the live
+					// ring cell r = skin cell + c_q (the address that slot's
+					// reader consumes), dropping the frozen-site store in this
+					// branch entirely; the Phi_S-armed twisted-at-skin branch
+					// below is unchanged
+					{
+						// (the AMR_CM_PI_NEQ vel_c* enumeration)
+						constexpr signed char rw_cx[27] = {0, 1, -1, 0, 0, 0, 0, 1, -1, 1, -1, 1, -1, 1, -1, 0, 0, 0, 0, 1, -1, 1, -1, 1, -1, 1, -1};
+						constexpr signed char rw_cy[27] = {0, 0, 0, 1, -1, 0, 0, 1, -1, -1, 1, 0, 0, 0, 0, 1, -1, 1, -1, 1, -1, 1, -1, -1, 1, -1, 1};
+						constexpr signed char rw_cz[27] = {0, 0, 0, 0, 0, 1, -1, 0, 0, 0, 0, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1};
+						const idx rx = x + rw_cx[q];
+						const idx ry = y + rw_cy[q];
+						const idx rz = z + rw_cz[q];
+						// bounds-check the map read against the coarse block's
+						// stored range (review MEDIUM, 2026-09-06): the ring
+						// target sits one row outside the skin window and could
+						// step past stored map extents on a zero-overlap face of
+						// a block-edge-abutting footprint
+						if (rx >= -coarse_ov.x() && rx < coarse_local.x() + coarse_ov.x() && ry >= -coarse_ov.y()
+							&& ry < coarse_local.y() + coarse_ov.y() && rz >= -coarse_ov.z() && rz < coarse_local.z() + coarse_ov.z()
+							&& coarse_SD.map(rx, ry, rz) == BC::GEO_AMR_INTERFACE)
+							coarse_SD.df(df_cur, q, rx, ry, rz) = f;
+					}
+	#else
+					coarse_SD.df(df_cur, q, x, y, z) = f;
 	#endif
+				}
+				else
+					coarse_SD.df(df_cur, opposite_direction(q), x, y, z) = f;
+			}
+			else {
+				static_cast<void>(coarse_even_iter);
+				coarse_SD.df(df_out, q, x, y, z) = f;
+			}
 		};
 
 	#ifdef USE_GEIER_CUM_2017
@@ -3442,24 +3454,25 @@ __global__ void cudaAMR_FineToCoarse(
 
 			// coarse DF write in the orientation the NEXT coarse substep will read
 			// (see the kernel docstring) -- the other pattern-dependent site
-	#ifdef AB_PATTERN
-			// AB: write to logical df_out, natural orientation -- the next global
-			// updateKernelData() rotates the coarse frames, so this physical
-			// array is the df_cur the next coarse kernel launch pulls from
-			// (coarse_even_iter is AA-only state)
-			static_cast<void>(coarse_even_iter);
-			coarse_SD.df(df_out, q, x, y, z) = f_coarse;
-	#elif defined(AA_PATTERN)
-			if (coarse_even_iter)
-				// next substep is even ("reflect"): reads the same site, same
-				// direction -- store natural
-				coarse_SD.df(df_cur, q, x, y, z) = f_coarse;
-			else
-				// next substep is odd ("spatial"): the DF streaming out of this
-				// cell in direction q is pulled from the opposite-direction slot
-				// -- store twisted
-				coarse_SD.df(df_cur, opposite_direction(q), x, y, z) = f_coarse;
-	#endif
+			if constexpr (is_AA_v<typename CONFIG::STREAMING>) {
+				if (coarse_even_iter)
+					// next substep is even ("reflect"): reads the same site, same
+					// direction -- store natural
+					coarse_SD.df(df_cur, q, x, y, z) = f_coarse;
+				else
+					// next substep is odd ("spatial"): the DF streaming out of this
+					// cell in direction q is pulled from the opposite-direction slot
+					// -- store twisted
+					coarse_SD.df(df_cur, opposite_direction(q), x, y, z) = f_coarse;
+			}
+			else {
+				// A-B: write to logical df_out, natural orientation -- the next global
+				// updateKernelData() rotates the coarse frames, so this physical
+				// array is the df_cur the next coarse kernel launch pulls from
+				// (coarse_even_iter is AA-only state)
+				static_cast<void>(coarse_even_iter);
+				coarse_SD.df(df_out, q, x, y, z) = f_coarse;
+			}
 		}
 
 		// macros for coupling cells (GEO_AMR_INTERFACE ring or GEO_NOTHING

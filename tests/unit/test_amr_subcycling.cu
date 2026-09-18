@@ -30,9 +30,9 @@
 //   State sibling on the same lattice run through the same sequence
 //   (bitwise-identical DFs and macroscopic quantities on the host).
 //
-// The streaming pattern is selected at compile time (AB_PATTERN/AA_PATTERN);
-// this suite is compiled into the consolidated doctest binaries
-// test_amr_units_{ab,aa} (tests/unit/CMakeLists.txt), which provide main().
+// The streaming pattern is selected at compile time per test binary (the
+// TNL_LBM_STREAMING_PATTERN_{AB_PULL,AA} pins of tests/unit/CMakeLists.txt);
+// this suite is compiled into the consolidated test_amr_units_{ab,aa} doctest binaries.
 // Everything is single-rank.
 
 // The shared fixture machinery (lattice factory, spy states, census carriers,
@@ -117,20 +117,20 @@ void test_subcycling_schedule()
 		CHECK_MESSAGE(false, fmt::format("Test 1 setup: SimInit launched {} events, expected exactly 1 (C2F frame 0)", state.events.size()));
 		return;
 	}
-#ifdef AB_PATTERN
-	{
-		const void* const P = fine->dfs[0].getData();
+	if constexpr (! is_AA_v<NSE_CONFIG::STREAMING>) {
+		{
+			const void* const P = fine->dfs[0].getData();
+			CHECK_MESSAGE(
+				state.events[0].fine_cur == P,
+				"Test 1 setup: SimInit's initial fill targeted frame P (the substep-0 rotation)"
+			);
+		}
+	} else {
 		CHECK_MESSAGE(
-			state.events[0].fine_cur == P,
-			"Test 1 setup: SimInit's initial fill targeted frame P (the substep-0 rotation)"
+			state.events[0].fine_even == false,
+			"Test 1 setup: SimInit's initial fill ran at even_iter false (the substep-0 parity)"
 		);
 	}
-#elif defined(AA_PATTERN)
-	CHECK_MESSAGE(
-		state.events[0].fine_even == false,
-		"Test 1 setup: SimInit's initial fill ran at even_iter false (the substep-0 parity)"
-	);
-#endif
 	// consume the SimInit events so the cycle census starts empty
 	state.events.clear();
 
@@ -152,36 +152,36 @@ void test_subcycling_schedule()
 		using Stage = typename StateSchedule_AMR<NSE_CONFIG>::Stage;
 		const Evt* ev = state.events.size() >= base + 5 ? state.events.data() + base : nullptr;
 		bool call_ok = iter_ok && ev != nullptr;
-#ifdef AB_PATTERN
-		const void* const P = fine->dfs[0].getData();
-		const void* const Q = fine->dfs[1].getData();
-		const void* const expected_coarse = ((call - 1) % 2 == 0) ? coarse->dfs[0].getData() : coarse->dfs[1].getData();
-		if (call_ok) {
-			call_ok = ev[0].stage == Stage::kernel && ev[0].level == 1 && ev[0].fine_cur == P && ev[0].fine_out == Q
-				   && ev[0].ghost_layers == 1;
-			call_ok = call_ok && ev[1].stage == Stage::kernel && ev[1].level == 1 && ev[1].fine_cur == Q && ev[1].fine_out == P
+		if constexpr (! is_AA_v<NSE_CONFIG::STREAMING>) {
+			const void* const P = fine->dfs[0].getData();
+			const void* const Q = fine->dfs[1].getData();
+			const void* const expected_coarse = ((call - 1) % 2 == 0) ? coarse->dfs[0].getData() : coarse->dfs[1].getData();
+			if (call_ok) {
+				call_ok = ev[0].stage == Stage::kernel && ev[0].level == 1 && ev[0].fine_cur == P && ev[0].fine_out == Q
+					   && ev[0].ghost_layers == 1;
+				call_ok = call_ok && ev[1].stage == Stage::kernel && ev[1].level == 1 && ev[1].fine_cur == Q && ev[1].fine_out == P
 					   && ev[1].ghost_layers == 0;
-			call_ok = call_ok && ev[2].stage == Stage::kernel && ev[2].level == 0 && ev[2].coarse_cur == expected_coarse
+				call_ok = call_ok && ev[2].stage == Stage::kernel && ev[2].level == 0 && ev[2].coarse_cur == expected_coarse
 					   && ev[2].ghost_layers == 0;
-			call_ok = call_ok && ev[3].stage == Stage::f2c && ev[3].level == 1 && ev[3].fine_cur == Q && ev[3].fine_out == P;
-			call_ok = call_ok && ev[4].stage == Stage::c2f && ev[4].level == 1 && ev[4].fine_cur == P;
-			// the coarse rotation must not change across events 3-5 (no
-			// fine-level preparation may touch level 0)
-			call_ok = call_ok && ev[3].coarse_cur == expected_coarse && ev[4].coarse_cur == expected_coarse;
-		}
-#elif defined(AA_PATTERN)
-		const bool expected_coarse_even = ((call - 1) % 2 == 1);
-		if (call_ok) {
-			call_ok = ev[0].stage == Stage::kernel && ev[0].level == 1 && ev[0].fine_even == false && ev[0].ghost_layers == 1;
-			call_ok = call_ok && ev[1].stage == Stage::kernel && ev[1].level == 1 && ev[1].fine_even == true
+				call_ok = call_ok && ev[3].stage == Stage::f2c && ev[3].level == 1 && ev[3].fine_cur == Q && ev[3].fine_out == P;
+				call_ok = call_ok && ev[4].stage == Stage::c2f && ev[4].level == 1 && ev[4].fine_cur == P;
+				// the coarse rotation must not change across events 3-5 (no
+				// fine-level preparation may touch level 0)
+				call_ok = call_ok && ev[3].coarse_cur == expected_coarse && ev[4].coarse_cur == expected_coarse;
+			}
+		} else {
+			const bool expected_coarse_even = ((call - 1) % 2 == 1);
+			if (call_ok) {
+				call_ok = ev[0].stage == Stage::kernel && ev[0].level == 1 && ev[0].fine_even == false && ev[0].ghost_layers == 1;
+				call_ok = call_ok && ev[1].stage == Stage::kernel && ev[1].level == 1 && ev[1].fine_even == true
 					   && ev[1].ghost_layers == 0;
-			call_ok = call_ok && ev[2].stage == Stage::kernel && ev[2].level == 0 && ev[2].coarse_even == expected_coarse_even
+				call_ok = call_ok && ev[2].stage == Stage::kernel && ev[2].level == 0 && ev[2].coarse_even == expected_coarse_even
 					   && ev[2].ghost_layers == 0;
-			call_ok = call_ok && ev[3].stage == Stage::f2c && ev[3].level == 1 && ev[3].fine_even == true;
-			call_ok = call_ok && ev[4].stage == Stage::c2f && ev[4].level == 1 && ev[4].fine_even == false;
-			call_ok = call_ok && ev[3].coarse_even == expected_coarse_even && ev[4].coarse_even == expected_coarse_even;
+				call_ok = call_ok && ev[3].stage == Stage::f2c && ev[3].level == 1 && ev[3].fine_even == true;
+				call_ok = call_ok && ev[4].stage == Stage::c2f && ev[4].level == 1 && ev[4].fine_even == false;
+				call_ok = call_ok && ev[3].coarse_even == expected_coarse_even && ev[4].coarse_even == expected_coarse_even;
+			}
 		}
-#endif
 		if (! call_ok) {
 			census_ok = false;
 			CHECK_MESSAGE(
@@ -597,7 +597,7 @@ void test_interface_ring_freshness()
 		)
 	);
 
-#ifdef AB_PATTERN
+if constexpr (! is_AA_v<NSE_CONFIG::STREAMING>) {
 	// LOCK 5 (the pair discriminates the simulated band from both the old
 	// both-frames fill and from a no-widening regression):
 	// (SB1) the widened substep-1 kernel INTEGRATED the inner overlap rows:
@@ -644,7 +644,7 @@ void test_interface_ring_freshness()
 			sb2_max_diff
 		)
 	);
-#endif
+}
 }
 
 // Test 8 (T8 generative fill-freshness model, N cycles): the fine block's
@@ -752,7 +752,7 @@ void test_interface_ring_freshness_model()
 		);
 	}
 
-#ifdef AB_PATTERN
+if constexpr (! is_AA_v<NSE_CONFIG::STREAMING>) {
 	// M2a: the frame-1 INNER layer is fresh substep-1 kernel output every
 	// cycle -- it must differ from the SimInit anchor and from the previous
 	// cycle's inner content at every cycle end
@@ -802,7 +802,7 @@ void test_interface_ring_freshness_model()
 			)
 		);
 	}
-#endif
+}
 }
 
 // Test 9 (T8 parity-structure lock): the re-paired 10-iter seam metric
@@ -887,11 +887,11 @@ void test_schedule_parity_structure()
 		for (int k = 1; k < cycles; k++) {
 			const Evt& ref = state.events[slot];
 			const Evt& cur = state.events[5 * k + slot];
-#ifdef AB_PATTERN
-			invariant_ok = invariant_ok && ref.fine_cur == cur.fine_cur && ref.fine_out == cur.fine_out;
-#elif defined(AA_PATTERN)
-			invariant_ok = invariant_ok && ref.fine_even == cur.fine_even;
-#endif
+			if constexpr (! is_AA_v<NSE_CONFIG::STREAMING>) {
+				invariant_ok = invariant_ok && ref.fine_cur == cur.fine_cur && ref.fine_out == cur.fine_out;
+			} else {
+				invariant_ok = invariant_ok && ref.fine_even == cur.fine_even;
+			}
 		}
 	CHECK_MESSAGE(
 		invariant_ok,
@@ -904,19 +904,19 @@ void test_schedule_parity_structure()
 	bool alternation_ok = true;
 	for (int slot = 2; slot < 5; slot++)
 		for (int k = 0; k + 1 < cycles; k++) {
-#ifdef AB_PATTERN
-			alternation_ok = alternation_ok && state.events[5 * k + slot].coarse_cur != state.events[5 * (k + 1) + slot].coarse_cur;
-#elif defined(AA_PATTERN)
-			alternation_ok = alternation_ok && state.events[5 * k + slot].coarse_even != state.events[5 * (k + 1) + slot].coarse_even;
-#endif
+			if constexpr (! is_AA_v<NSE_CONFIG::STREAMING>) {
+				alternation_ok = alternation_ok && state.events[5 * k + slot].coarse_cur != state.events[5 * (k + 1) + slot].coarse_cur;
+			} else {
+				alternation_ok = alternation_ok && state.events[5 * k + slot].coarse_even != state.events[5 * (k + 1) + slot].coarse_even;
+			}
 		}
 	for (int slot = 2; slot < 5; slot++)
 		for (int k = 0; k + 2 < cycles; k++) {
-#ifdef AB_PATTERN
-			alternation_ok = alternation_ok && state.events[5 * k + slot].coarse_cur == state.events[5 * (k + 2) + slot].coarse_cur;
-#elif defined(AA_PATTERN)
-			alternation_ok = alternation_ok && state.events[5 * k + slot].coarse_even == state.events[5 * (k + 2) + slot].coarse_even;
-#endif
+			if constexpr (! is_AA_v<NSE_CONFIG::STREAMING>) {
+				alternation_ok = alternation_ok && state.events[5 * k + slot].coarse_cur == state.events[5 * (k + 2) + slot].coarse_cur;
+			} else {
+				alternation_ok = alternation_ok && state.events[5 * k + slot].coarse_even == state.events[5 * (k + 2) + slot].coarse_even;
+			}
 		}
 	CHECK_MESSAGE(
 		alternation_ok,
@@ -934,11 +934,11 @@ void test_schedule_parity_structure()
 		const Evt& substep1 = state.events[5 * k];
 		const Evt& substep2 = state.events[5 * k + 1];
 		const Evt& fill = state.events[5 * (k - 1) + 4];
-#ifdef AB_PATTERN
-		consumption_ok = consumption_ok && substep1.fine_cur == fill.fine_cur && substep2.fine_cur == substep1.fine_out;
-#elif defined(AA_PATTERN)
-		consumption_ok = consumption_ok && substep1.fine_even == fill.fine_even && substep2.fine_even != substep1.fine_even;
-#endif
+		if constexpr (! is_AA_v<NSE_CONFIG::STREAMING>) {
+			consumption_ok = consumption_ok && substep1.fine_cur == fill.fine_cur && substep2.fine_cur == substep1.fine_out;
+		} else {
+			consumption_ok = consumption_ok && substep1.fine_even == fill.fine_even && substep2.fine_even != substep1.fine_even;
+		}
 	}
 	CHECK_MESSAGE(
 		consumption_ok,

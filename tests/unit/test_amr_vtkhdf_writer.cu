@@ -26,9 +26,9 @@
 // high-level lite API (libhdf5_hl), so H5LTfind_group/H5LTfind_attribute
 // are replaced by H5Lexists and H5Aopen + H5Aread.
 //
-// The streaming pattern is selected at compile time (AB_PATTERN/AA_PATTERN);
-// this suite is compiled into the consolidated doctest binaries
-// test_amr_units_{ab,aa} (tests/unit/CMakeLists.txt), which provide main().
+// The streaming pattern is selected at compile time per test binary (the
+// TNL_LBM_STREAMING_PATTERN_{AB_PULL,AA} pins of tests/unit/CMakeLists.txt);
+// this suite is compiled into the consolidated test_amr_units_{ab,aa} doctest binaries.
 // The writer itself is pattern-agnostic (it reads only the macroscopic
 // quantities, which both patterns produce identically from an equilibrium
 // state). Everything is single-rank.
@@ -69,7 +69,7 @@ using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
 using NSE_CONFIG = LBM_CONFIG<
 	TRAITS,
 	D3Q27_KernelStruct,
-	NSE_Data_ConstInflow<TRAITS>,
+	NSE_Data_ConstInflow,
 	COLL,
 	typename COLL::EQ,
 	D3Q27_STREAMING<TRAITS>,
@@ -328,13 +328,14 @@ void test_vtkhdf_structure()
 		"setup: one level-0 block and one level-1 block created"
 	);
 
-	// uniform equilibrium initial state on both levels; computeInitialMacro
-	// is required because D3Q27_MACRO_Default does not recompute macroscopic
-	// quantities (compute_in_each_iteration == false) and the writer only
-	// copies what is stored in dmacro
+	// uniform equilibrium initial state on both levels; the engine's
+	// setEquilibrium also authors the stored macros over the FULL stored
+	// extent including the ghost rows (D3Q27_MACRO_Default does not
+	// recompute macros -- compute_in_each_iteration == false -- so they
+	// exist only where explicitly authored, and the writer only copies
+	// what is stored in dmacro)
 	for (auto& block : lbm.blocks) {
 		block.setEquilibrium(1, 0, 0, 0);
-		block.computeInitialMacro();
 		block.copyMacroToHost();
 	}
 
@@ -526,7 +527,6 @@ void test_vtkhdf_nesting_structure()
 			// (the mock never runs the kernel; the existing test's idiom)
 			for (auto& block : lbm.blocks) {
 				block.setEquilibrium(1, 0, 0, 0);
-				block.computeInitialMacro();
 				block.copyMacroToHost();
 			}
 			for (auto& block : lbm.blocks) {

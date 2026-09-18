@@ -491,23 +491,19 @@ void LBM<CONFIG>::updateKernelDataForLevel(int level, int substep)
 		// overwrites from the level-0 lattice every iteration
 		block.data.lbmViscosity = block.lat_local.lbmViscosity();
 
-#ifdef AA_PATTERN
-		// A-A pattern: DF rotation is a no-op (DFMAX=1), only even_iter toggles;
-		// see updateKernelData() for the sub-step ordering requirements
+		// parity / rotation preparation mirrors updateKernelData() exactly:
+		// even_iter toggles per substep (consumed by the A-A kernels only),
+		// and the absolute DF pointer rotation is a no-op when DFMAX == 1
+		// (single-array patterns); see updateKernelData() for the sub-step
+		// ordering requirements
 		block.data.even_iter = (substep % 2) == 1;
-#endif
 
-#ifdef AB_PATTERN
-		// A-B pattern: absolute DF pointer rotation, mirroring updateKernelData();
-		// the source must be the stored dfs arrays, because data.dfs are
-		// already-rotated raw pointers
-		int i = substep % DFMAX;  // i = 0, 1, 2, ... DFMAX-1
+		int i = substep % CONFIG::DFMAX;  // i = 0, 1, 2, ... DFMAX-1
 
-		for (int k = 0; k < DFMAX; k++) {
-			int knew = (k - i) <= 0 ? (k - i + DFMAX) % DFMAX : k - i;
+		for (int k = 0; k < CONFIG::DFMAX; k++) {
+			int knew = (k - i) <= 0 ? (k - i + CONFIG::DFMAX) % CONFIG::DFMAX : k - i;
 			block.data.dfs[k] = block.dfs[knew].getData();
 		}
-#endif
 	}
 }
 

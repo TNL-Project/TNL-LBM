@@ -24,12 +24,16 @@ target_link_libraries(test_cpp_units PUBLIC TNL::TNL_LBM PRIVATE doctest::doctes
 # model: the per-pattern BC switch instantiations dominate the compile time,
 # and the split lets ninja schedule the model TUs in parallel
 
-# per-pattern test binaries: the AB-pinned targets cannot exist in an
-# AA-configured build tree (TNL_LBM propagates AA_PATTERN to every consumer,
-# colliding with the private AB_PATTERN pin), so they are created only in the
-# default A-B tree; the AA tree still gets the aa-pinned binaries and the
-# default-pattern test_cpp_units
-if(TNL_LBM_AA_PATTERN)
+# per-pattern test binaries: the pattern is pinned per target via the
+# umbrella TNL_LBM_STREAMING_PATTERN_{AB_PULL,AA} definitions consumed by
+# the streaming.h alias tables. The TNL_LBM interface target always
+# propagates the tree-wide selection, but the alias tables match
+# TNL_LBM_STREAMING_PATTERN_AA first, so the aa pin wins in a default (A-B)
+# tree; in an AA-configured tree the same precedence would silently turn
+# the "ab" binaries into second AA builds, so they are created only in the
+# default A-B tree (the AA tree still gets the aa-pinned binaries and the
+# default-pattern test_cpp_units)
+if(TNL_LBM_STREAMING_PATTERN STREQUAL "AA")
     set(AMR_TEST_PATTERNS aa)
     message(STATUS "tests/unit: AA-pattern build tree - skipping the AB-pinned per-pattern test targets")
 else()
@@ -53,11 +57,31 @@ set(AMR_SUITE_SOURCES
     test_amr_nesting.cu
 )
 
+# the "ab"/"aa" binary suffixes pin the A-B pull reference and the A-A
+# pattern respectively via the umbrella selection definitions; the pin is
+# applied through COMPILE OPTIONS so it lands after the DEFINES group on
+# the compile command line (strip the tree-level interface define, then
+# pin): the umbrella's #if/#elif first-match precedence otherwise defeats
+# a plain compile definition whenever the tree pattern is checked earlier
+# than the pinned one (e.g. an AB_PUSH tree vs the AB_PULL pin)
+function(amr_pattern_define pattern out_var)
+    if(pattern STREQUAL "aa")
+        set(pin_define "TNL_LBM_STREAMING_PATTERN_AA")
+    else()
+        set(pin_define "TNL_LBM_STREAMING_PATTERN_AB_PULL")
+    endif()
+    set(opts "-D${pin_define}")
+    if(TNL_LBM_STREAMING_PATTERN)
+        list(PREPEND opts "-UTNL_LBM_STREAMING_PATTERN_${TNL_LBM_STREAMING_PATTERN}")
+    endif()
+    set(${out_var} "${opts}" PARENT_SCOPE)
+endfunction()
+
 foreach(pattern IN ITEMS ${AMR_TEST_PATTERNS})
-    string(TOUPPER "${pattern}" pattern_upper)
+    amr_pattern_define(${pattern} pattern_options)
     set(target "test_amr_units_${pattern}")
     add_executable(${target} doctest_main_amr.cu ${AMR_SUITE_SOURCES})
-    target_compile_definitions(${target} PRIVATE "${pattern_upper}_PATTERN")
+    target_compile_options(${target} PRIVATE ${pattern_options})
     target_link_libraries(${target} PUBLIC TNL::TNL_LBM PRIVATE doctest::doctest)
     set_target_properties(${target} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
 
@@ -89,10 +113,11 @@ set(C2F_SMOKE_NAMES eq dev norm shear)
 set(C2F_SMOKE_DEFINES C2F_EQ_ONLY C2F_DEV_ONLY C2F_NORM_ONLY C2F_SHEAR_ONLY)
 foreach(smoke_name smoke_define IN ZIP_LISTS C2F_SMOKE_NAMES C2F_SMOKE_DEFINES)
     foreach(pattern IN ITEMS ${AMR_TEST_PATTERNS})
-        string(TOUPPER "${pattern}" pattern_upper)
+        amr_pattern_define(${pattern} pattern_options)
         set(target "test_amr_c2f_smoke_${smoke_name}_${pattern}")
         add_executable(${target} doctest_main_amr.cu test_amr_c2f_debug_smoke.cu)
-        target_compile_definitions(${target} PRIVATE "${pattern_upper}_PATTERN" "${smoke_define}")
+        target_compile_definitions(${target} PRIVATE "${smoke_define}")
+        target_compile_options(${target} PRIVATE ${pattern_options})
         target_link_libraries(${target} PUBLIC TNL::TNL_LBM PRIVATE doctest::doctest)
         set_target_properties(${target} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
 
@@ -104,10 +129,11 @@ foreach(smoke_name smoke_define IN ZIP_LISTS C2F_SMOKE_NAMES C2F_SMOKE_DEFINES)
 endforeach()
 
 foreach(pattern IN ITEMS ${AMR_TEST_PATTERNS})
-    string(TOUPPER "${pattern}" pattern_upper)
+    amr_pattern_define(${pattern} pattern_options)
     set(target "test_amr_f2c_schonherr_${pattern}")
     add_executable(${target} doctest_main_amr.cu test_amr_f2c_schonherr.cu)
-    target_compile_definitions(${target} PRIVATE "${pattern_upper}_PATTERN" "F2C_SCHONHERR")
+    target_compile_definitions(${target} PRIVATE "F2C_SCHONHERR")
+    target_compile_options(${target} PRIVATE ${pattern_options})
     target_link_libraries(${target} PUBLIC TNL::TNL_LBM PRIVATE doctest::doctest)
     set_target_properties(${target} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
 
@@ -122,7 +148,7 @@ endforeach()
 # locating the binaries by path (e.g. tests/unit/test_amr_units.py) cannot
 # pick up outdated AB binaries that this tree no longer builds (a missing
 # binary is an honest hard failure; a stale one is silently wrong)
-if(TNL_LBM_AA_PATTERN)
+if(TNL_LBM_STREAMING_PATTERN STREQUAL "AA")
     file(REMOVE
         ${CMAKE_BINARY_DIR}/tests/test_amr_units_ab
         ${CMAKE_BINARY_DIR}/tests/test_amr_f2c_schonherr_ab
