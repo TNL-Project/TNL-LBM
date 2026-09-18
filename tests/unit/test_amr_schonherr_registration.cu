@@ -55,7 +55,7 @@ using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
 using NSE_CONFIG = LBM_CONFIG<
 	TRAITS,
 	D3Q27_KernelStruct,
-	NSE_Data_ConstInflow<TRAITS>,
+	NSE_Data_ConstInflow,
 	COLL,
 	typename COLL::EQ,
 	D3Q27_STREAMING<TRAITS>,

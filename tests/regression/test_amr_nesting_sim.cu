@@ -65,40 +65,35 @@ struct StateLocal_AMR : State_AMR<NSE>
 
 	// Taylor-Green initial condition on all blocks (the sim_AMR idiom);
 	// per-level lattice parameters come from block.lat_local (level 0 uses
-	// nse.lat), so local coordinates are passed directly
+	// nse.lat); the engine hands the functor the GLOBAL site index, so
+	// block.offset recovers the local lbm2physPoint coordinate
+	// (lat_local.physOrigin already includes the offset)
 	void setInitialCondition()
 	{
 		for (auto& block : nse.blocks) {
-#ifdef HAVE_MPI
-			auto local_df = block.dfs[0].getLocalView();
-#else
-			auto local_df = block.dfs[0].getView();
-#endif
 			const lat_t lat_local = (block.level == 0) ? nse.lat : block.lat_local;
 			const dreal V_0 = lat_local.phys2lbmVelocity(this->V_0);
 			const dreal k = this->k;
+			const idx3d offset = block.offset;
 
-			const idx3d begin = {0, 0, 0};
-			const idx3d end = {block.local.y(), block.local.z(), block.local.x()};
-			TNL::Algorithms::parallelFor<DeviceType>(
-				begin,
-				end,
-				[local_df, lat_local, V_0, k] __cuda_callable__(const idx3d& yzx) mutable
+			// the engine authors the pattern's parity-0 DF layout and the
+			// initial macroscopic quantities from the site-wise functor
+			block.setInitialCondition(
+				[lat_local, V_0, k, offset] __cuda_callable__(typename NSE::template KernelStruct<dreal> & KS, idx gx, idx gy, idx gz) mutable
 				{
-					const auto& [y, z, x] = yzx;
-					const point_t phys = lat_local.lbm2physPoint(x, y, z);
+					const point_t phys = lat_local.lbm2physPoint(gx - offset.x(), gy - offset.y(), gz - offset.z());
 					const dreal u = V_0 * TNL::sin(k * phys.x()) * TNL::cos(k * phys.y()) * TNL::cos(k * phys.z());
 					const dreal v = -V_0 * TNL::cos(k * phys.x()) * TNL::sin(k * phys.y()) * TNL::cos(k * phys.z());
 					const dreal w = 0;
 					const dreal rho =
 						1 + 3 * (V_0 * V_0 / 16) * (TNL::cos(2 * k * phys.x()) + TNL::cos(2 * k * phys.y())) * (TNL::cos(2 * k * phys.z()) + 2);
-					NSE::COLL::setEquilibriumLat(local_df, x, y, z, rho, u, v, w);
+					KS.rho = rho;
+					KS.vx = u;
+					KS.vy = v;
+					KS.vz = w;
+					NSE::COLL::setEquilibrium(KS);
 				}
 			);
-
-			// copy the initialized DFs so that they are not overridden
-			for (uint8_t dftype = 1; dftype < DFMAX; dftype++)
-				block.dfs[dftype] = block.dfs[0];
 		}
 
 		nse.copyDFsToHost();
@@ -131,7 +126,7 @@ int main(int argc, char** argv)
 	using NSE_CONFIG = LBM_CONFIG<
 		TRAITS,
 		D3Q27_KernelStruct,
-		NSE_Data_ConstInflow<TRAITS>,
+		NSE_Data_ConstInflow,
 		COLL,
 		typename COLL::EQ,
 		D3Q27_STREAMING<TRAITS>,
