@@ -17,7 +17,7 @@
 //
 // Geometry (coarse level-0 cells, R = --resolution):
 // - domain X=64R x Y=16R x Z=16R, planar channel along x (periodic tangent y),
-// - inflow: x=1 GEO_INFLOW_LEFT with a uniform (constant) velocity profile
+// - inflow: x=1 GEO_INFLOW_MOMENT (formerly GEO_INFLOW_LEFT) with a uniform (constant) velocity profile
 //   (NSE_Data_ConstInflow), outflow: x=X-2 GEO_OUTFLOW_RIGHT_INTERP,
 // - walls: z=R and z=13R+1 GEO_WALL (bounce-back planes at 1.0 and 13.0 coarse
 //   dx — resolution-independent physical locations, interior fluid z-depth is
@@ -165,7 +165,7 @@ struct StateLocal_AMR_Channel : State_AMR<NSE>
 	// steers the C2F source windows off it, thesis §7.3)
 	void setupBoundaries() override
 	{
-		nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT);								 // inflow (constant profile)
+		nse.setBoundaryX(1, BC::GEO_INFLOW_MOMENT);								 // inflow (constant profile)
 		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT_INTERP);	 // outflow
 
 		// bounce-back wall cells such that the wall link-planes sit at 1.0 and
@@ -309,39 +309,16 @@ struct StateLocal_AMR_Channel : State_AMR<NSE>
 	}
 
 	// uniform-flow initial condition at rest: rho = 1, u = 0 on all blocks;
-	// the inflow BC then develops the channel flow from t = 0. Fine blocks
-	// initialize the FULL stored extent (including the ghost band): on the
+	// the inflow BC then develops the channel flow from t = 0. The engine
+	// initializes the FULL stored extent (including the ghost band): on the
 	// wall face the ghost rows receive no coarse-to-fine fill (see the
 	// header comment), so they must hold a valid state from the start;
-	// level-0 blocks keep the interior-only loop (their ghost rows are
-	// managed by the exterior boundary conditions)
+	// level-0 blocks have no DF overlaps, so only their interior is authored
+	// (their ghost rows are managed by the exterior boundary conditions)
 	void setInitialCondition()
 	{
-		for (auto& block : nse.blocks) {
-#ifdef HAVE_MPI
-			auto local_df = block.dfs[0].getLocalView();
-#else
-			auto local_df = block.dfs[0].getView();
-#endif
-			const int ov_x = block.level == 0 ? 0 : local_df.template getOverlap<1>();
-			const int ov_y = block.level == 0 ? 0 : local_df.template getOverlap<2>();
-			const int ov_z = block.level == 0 ? 0 : local_df.template getOverlap<3>();
-			const idx3d begin = {-ov_y, -ov_z, -ov_x};
-			const idx3d end = {block.local.y() + ov_y, block.local.z() + ov_z, block.local.x() + ov_x};
-			TNL::Algorithms::parallelFor<DeviceType>(
-				begin,
-				end,
-				[local_df] __cuda_callable__(const idx3d& yzx) mutable
-				{
-					const auto& [y, z, x] = yzx;
-					NSE::COLL::setEquilibriumLat(local_df, x, y, z, 1, 0, 0, 0);
-				}
-			);
-
-			// copy the initialized DFs so that they are not overridden
-			for (uint8_t dftype = 1; dftype < DFMAX; dftype++)
-				block.dfs[dftype] = block.dfs[0];
-		}
+		for (auto& block : nse.blocks)
+			block.setEquilibrium(1, 0, 0, 0);
 
 		nse.copyDFsToHost();
 	}
@@ -502,7 +479,7 @@ void run(
 	using NSE_CONFIG = LBM_CONFIG<
 		TRAITS,
 		D3Q27_KernelStruct,
-		NSE_Data_ConstInflow<TRAITS>,
+		NSE_Data_ConstInflow,
 		COLL,
 		typename COLL::EQ,
 		D3Q27_STREAMING<TRAITS>,

@@ -21,7 +21,7 @@
 // 61 cells at R = 1), ball of diameter D centered at (2D, H/2, H/2) -- at
 // R = 1 the stamped ball occupies the coarse cells x in {4,5,6}, y/z in
 // {14,15,16} (lbmDrawSphere's truncating phys2lbmPoint + l2Norm test on a
-// 1.364-cell radius). BCs are sim_3's: inflow x = 1 (GEO_INFLOW_LEFT,
+// 1.364-cell radius). BCs are sim_3's: inflow x = 1 (GEO_INFLOW_MOMENT, formerly GEO_INFLOW_LEFT,
 // constant profile via NSE_Data_ConstInflow), outflow x = X-2
 // (GEO_OUTFLOW_RIGHT_INTERP), symmetry planes y/z at 1 and N-2, GEO_NOTHING
 // on every edge plane (the A-A extra-layer idiom sim_3 already carries).
@@ -83,7 +83,7 @@
 // --Re = 100 default (lbm inflow velocity ~0.0367 at R = 1), PHYS_DT =
 // (nu_lb/nu_phys) * DL^2. Fine levels scale diffusively (nu doubles per
 // level, see initLevelLattice); the uniform inflow drives the level-0
-// GEO_INFLOW_LEFT plane only. Default final time is sim_3's 30 s;
+// GEO_INFLOW_MOMENT plane only. Default final time is sim_3's 30 s;
 // --phys-final-time overrides. Deliberately NOT ported from sim_3: the 2D
 // cuts (cut_X/cut_Y/cut_Z) and the OUT2D cadence (the base 2D-cut pipeline
 // is level-0-only and the two existing AMR sims write no 2D output), and
@@ -351,7 +351,7 @@ struct StateLocal_AMR_Ball : State_AMR<NSE>
 	// cells, so the ball walls survive under the footprint
 	void setupBoundaries() override
 	{
-		nse.setBoundaryX(1, BC::GEO_INFLOW_LEFT);								 // left
+		nse.setBoundaryX(1, BC::GEO_INFLOW_MOMENT);								 // left
 		nse.setBoundaryX(nse.lat.global.x() - 2, BC::GEO_OUTFLOW_RIGHT_INTERP);	 // right
 
 		//nse.setBoundaryY(1, BC::GEO_SYMMETRY);						 // front
@@ -379,38 +379,15 @@ struct StateLocal_AMR_Ball : State_AMR<NSE>
 
 	// uniform-flow initial condition at rest: rho = 1, u = 0 on all blocks;
 	// the inflow BC then develops the flow around the ball from t = 0 (the
-	// same developing regime sim_3 runs). Fine blocks initialize the FULL
+	// same developing regime sim_3 runs). The engine initializes the FULL
 	// stored extent (including the ghost band) so that the ghost rows hold
 	// a valid state from the start (sim_AMR_channel's idiom); level-0
-	// blocks keep the interior-only loop (their ghost rows are managed by
-	// the exterior boundary conditions)
+	// blocks have no DF overlaps, so only their interior is authored (their
+	// ghost rows are managed by the exterior boundary conditions)
 	void setInitialCondition()
 	{
-		for (auto& block : nse.blocks) {
-#ifdef HAVE_MPI
-			auto local_df = block.dfs[0].getLocalView();
-#else
-			auto local_df = block.dfs[0].getView();
-#endif
-			const int ov_x = block.level == 0 ? 0 : local_df.template getOverlap<1>();
-			const int ov_y = block.level == 0 ? 0 : local_df.template getOverlap<2>();
-			const int ov_z = block.level == 0 ? 0 : local_df.template getOverlap<3>();
-			const idx3d begin = {-ov_y, -ov_z, -ov_x};
-			const idx3d end = {block.local.y() + ov_y, block.local.z() + ov_z, block.local.x() + ov_x};
-			TNL::Algorithms::parallelFor<DeviceType>(
-				begin,
-				end,
-				[local_df] __cuda_callable__(const idx3d& yzx) mutable
-				{
-					const auto& [y, z, x] = yzx;
-					NSE::COLL::setEquilibriumLat(local_df, x, y, z, 1, 0, 0, 0);
-				}
-			);
-
-			// copy the initialized DFs so that they are not overridden
-			for (uint8_t dftype = 1; dftype < DFMAX; dftype++)
-				block.dfs[dftype] = block.dfs[0];
-		}
+		for (auto& block : nse.blocks)
+			block.setEquilibrium(1, 0, 0, 0);
 
 		nse.copyDFsToHost();
 	}
@@ -579,7 +556,7 @@ run(const std::string& adios_config,
 	using NSE_CONFIG = LBM_CONFIG<
 		TRAITS,
 		D3Q27_KernelStruct,
-		NSE_Data_ConstInflow<TRAITS>,
+		NSE_Data_ConstInflow,
 		COLL,
 		typename COLL::EQ,
 		D3Q27_STREAMING<TRAITS>,
