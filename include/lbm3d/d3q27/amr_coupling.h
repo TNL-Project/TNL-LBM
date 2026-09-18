@@ -1,9 +1,5 @@
 #pragma once
 
-#if ! defined(AA_PATTERN) && ! defined(AB_PATTERN)
-	#error "amr_coupling.h requires either AA_PATTERN or AB_PATTERN to be defined before inclusion"
-#endif
-
 #include "lbm3d/defs.h"
 #include "lbm_common/ciselnik.h"
 
@@ -93,7 +89,7 @@
  * (inert on the all-GEO_FLUID fine blocks of v1). Streaming-pattern
  * caveat: unlike an interior face, the shifted wall-window reads a frozen
  * row that is never rewritten by the coarse kernel, so the read-vs-write
- * orientation conventions can diverge there -- under AA_PATTERN this is
+ * orientation conventions can diverge there -- under the A-A pattern this is
  * exactly the frozen-cell read mismatch catalogued as Defect-1 in
  * docs/AMR-for-LBM-implementation.md (the wall refinement lane, like all
  * frozen-cell coupling reads, is A-B-pattern-only until Defect-1 is
@@ -1139,6 +1135,12 @@ __global__ void cudaAMR_CoarseToFine(
 	using dreal = typename TRAITS::dreal;
 	using LBM_KS = typename CONFIG::template KernelStruct<dreal>;
 
+	static_assert(
+		is_AA_v<typename CONFIG::STREAMING> || is_AB_PULL_v<typename CONFIG::STREAMING> || is_AB_PUSH_v<typename CONFIG::STREAMING>,
+		"the AMR coupling supports only the AA, AB_PULL, and AB_PUSH streaming patterns "
+		"(the esoteric in-place patterns have no AMR coupling kernels)"
+	);
+
 	// Schönherr group mapping (per-window organization of the thesis Sec.
 	// 7.2 reference implementation): one thread computes the up-to-8
 	// destination cells of a 2x2x2 destination group rather than a single
@@ -1158,20 +1160,21 @@ __global__ void cudaAMR_CoarseToFine(
 	// kernel launch -- the ONLY streaming-pattern-dependent code in the kernel
 	const auto read_coarse_df = [&coarse_SD, coarse_even_iter](int q, idx cx, idx cy, idx cz) -> dreal
 	{
-#ifdef AB_PATTERN
-		// AB: post-collision DF of direction q at the same site, natural
-		// orientation, is stored in df_out (coarse_even_iter is AA-only state)
-		static_cast<void>(coarse_even_iter);
-		return coarse_SD.df(df_out, q, cx, cy, cz);
-#elif defined(AA_PATTERN)
-		if (coarse_even_iter)
-			// AA post-collision state (twisted): the post-collision DF of
-			// direction q at (cx,cy,cz) sits in the opposite-direction slot
-			return coarse_SD.df(df_cur, opposite_direction(q), cx, cy, cz);
-		// AA post-stream state (natural): the streamed-in DF of direction q --
-		// the working state the next coarse substep will collide with
-		return coarse_SD.df(df_cur, q, cx, cy, cz);
-#endif
+		if constexpr (is_AA_v<typename CONFIG::STREAMING>) {
+			if (coarse_even_iter)
+				// AA post-collision state (twisted): the post-collision DF of
+				// direction q at (cx,cy,cz) sits in the opposite-direction slot
+				return coarse_SD.df(df_cur, opposite_direction(q), cx, cy, cz);
+			// AA post-stream state (natural): the streamed-in DF of direction q --
+			// the working state the next coarse substep will collide with
+			return coarse_SD.df(df_cur, q, cx, cy, cz);
+		}
+		else {
+			// A-B: post-collision DF of direction q at the same site, natural
+			// orientation, is stored in df_out (coarse_even_iter is AA-only state)
+			static_cast<void>(coarse_even_iter);
+			return coarse_SD.df(df_out, q, cx, cy, cz);
+		}
 	};
 
 	// true floor division by 2 (valid for negative fine global coordinates,
@@ -1189,11 +1192,11 @@ __global__ void cudaAMR_CoarseToFine(
 	// opposite-direction slot, so direction q is stored twisted
 	const auto store_fine_df = [&fine_SD](int q, idx x, idx y, idx z, dreal f) -> void
 	{
-#ifdef AB_PATTERN
-		fine_SD.df(df_cur, q, x, y, z) = f;
-#elif defined(AA_PATTERN)
-		fine_SD.df(df_cur, opposite_direction(q), x, y, z) = f;
-#endif
+		if constexpr (is_AA_v<typename CONFIG::STREAMING>)
+			fine_SD.df(df_cur, opposite_direction(q), x, y, z) = f;
+		else {
+			fine_SD.df(df_cur, q, x, y, z) = f;
+		}
 	};
 
 	// per-destination macro write for GEO_AMR_INTERFACE cells (no-op in v1,
@@ -1937,6 +1940,12 @@ __global__ void cudaAMR_FineToCoarse(
 	using dreal = typename TRAITS::dreal;
 	using LBM_KS = typename CONFIG::template KernelStruct<dreal>;
 
+	static_assert(
+		is_AA_v<typename CONFIG::STREAMING> || is_AB_PULL_v<typename CONFIG::STREAMING> || is_AB_PUSH_v<typename CONFIG::STREAMING>,
+		"the AMR coupling supports only the AA, AB_PULL, and AB_PUSH streaming patterns "
+		"(the esoteric in-place patterns have no AMR coupling kernels)"
+	);
+
 
 	const idx x = threadIdx.x + blockIdx.x * blockDim.x + coarse_begin.x();
 	const idx y = threadIdx.y + blockIdx.y * blockDim.y + coarse_begin.y();
@@ -1966,19 +1975,20 @@ __global__ void cudaAMR_FineToCoarse(
 	// launch -- one of only TWO streaming-pattern-dependent sites
 	const auto read_fine_df = [&fine_SD, fine_even_iter](int q, idx fx, idx fy, idx fz) -> dreal
 	{
-#ifdef AB_PATTERN
-		// AB: post-collision DF of direction q at the same site, natural
-		// orientation, is stored in df_out (fine_even_iter is AA-only state)
-		static_cast<void>(fine_even_iter);
-		return fine_SD.df(df_out, q, fx, fy, fz);
-#elif defined(AA_PATTERN)
-		if (fine_even_iter)
-			// AA post-collision state (twisted): the post-collision DF of
-			// direction q at (fx,fy,fz) sits in the opposite-direction slot
-			return fine_SD.df(df_cur, opposite_direction(q), fx, fy, fz);
-		// AA post-stream state (natural): the streamed-in DF of direction q
-		return fine_SD.df(df_cur, q, fx, fy, fz);
-#endif
+		if constexpr (is_AA_v<typename CONFIG::STREAMING>) {
+			if (fine_even_iter)
+				// AA post-collision state (twisted): the post-collision DF of
+				// direction q at (fx,fy,fz) sits in the opposite-direction slot
+				return fine_SD.df(df_cur, opposite_direction(q), fx, fy, fz);
+			// AA post-stream state (natural): the streamed-in DF of direction q
+			return fine_SD.df(df_cur, q, fx, fy, fz);
+		}
+		else {
+			// A-B: post-collision DF of direction q at the same site, natural
+			// orientation, is stored in df_out (fine_even_iter is AA-only state)
+			static_cast<void>(fine_even_iter);
+			return fine_SD.df(df_out, q, fx, fy, fz);
+		}
 	};
 
 #ifdef F2C_SCHONHERR
@@ -2110,18 +2120,19 @@ __global__ void cudaAMR_FineToCoarse(
 	if (is_coupling_cell) {
 		const auto store_coarse_df = [&coarse_SD, coarse_even_iter, x, y, z](int q, dreal f) -> void
 		{
-		// the back-transformation emits STORAGE-convention values directly:
-		// physical DFs on D3Q27_COMMON, fhat = f - w_q on D3Q27_COMMON_WELL
-	#ifdef AB_PATTERN
-			static_cast<void>(coarse_even_iter);
-			coarse_SD.df(df_out, q, x, y, z) = f;
-	#elif defined(AA_PATTERN)
-			if (coarse_even_iter) {
-				coarse_SD.df(df_cur, q, x, y, z) = f;
+			// the back-transformation emits STORAGE-convention values directly:
+			// physical DFs on D3Q27_COMMON, fhat = f - w_q on D3Q27_COMMON_WELL
+			if constexpr (is_AA_v<typename CONFIG::STREAMING>) {
+				if (coarse_even_iter) {
+					coarse_SD.df(df_cur, q, x, y, z) = f;
+				}
+				else
+					coarse_SD.df(df_cur, opposite_direction(q), x, y, z) = f;
 			}
-			else
-				coarse_SD.df(df_cur, opposite_direction(q), x, y, z) = f;
-	#endif
+			else {
+				static_cast<void>(coarse_even_iter);
+				coarse_SD.df(df_out, q, x, y, z) = f;
+			}
 		};
 
 	#ifdef USE_GEIER_CUM_2017
@@ -2301,24 +2312,25 @@ __global__ void cudaAMR_FineToCoarse(
 
 			// coarse DF write in the orientation the NEXT coarse substep will read
 			// (see the kernel docstring) -- the other pattern-dependent site
-	#ifdef AB_PATTERN
-			// AB: write to logical df_out, natural orientation -- the next global
-			// updateKernelData() rotates the coarse frames, so this physical
-			// array is the df_cur the next coarse kernel launch pulls from
-			// (coarse_even_iter is AA-only state)
-			static_cast<void>(coarse_even_iter);
-			coarse_SD.df(df_out, q, x, y, z) = f_coarse;
-	#elif defined(AA_PATTERN)
-			if (coarse_even_iter)
-				// next substep is even ("reflect"): reads the same site, same
-				// direction -- store natural
-				coarse_SD.df(df_cur, q, x, y, z) = f_coarse;
-			else
-				// next substep is odd ("spatial"): the DF streaming out of this
-				// cell in direction q is pulled from the opposite-direction slot
-				// -- store twisted
-				coarse_SD.df(df_cur, opposite_direction(q), x, y, z) = f_coarse;
-	#endif
+			if constexpr (is_AA_v<typename CONFIG::STREAMING>) {
+				if (coarse_even_iter)
+					// next substep is even ("reflect"): reads the same site, same
+					// direction -- store natural
+					coarse_SD.df(df_cur, q, x, y, z) = f_coarse;
+				else
+					// next substep is odd ("spatial"): the DF streaming out of this
+					// cell in direction q is pulled from the opposite-direction slot
+					// -- store twisted
+					coarse_SD.df(df_cur, opposite_direction(q), x, y, z) = f_coarse;
+			}
+			else {
+				// A-B: write to logical df_out, natural orientation -- the next global
+				// updateKernelData() rotates the coarse frames, so this physical
+				// array is the df_cur the next coarse kernel launch pulls from
+				// (coarse_even_iter is AA-only state)
+				static_cast<void>(coarse_even_iter);
+				coarse_SD.df(df_out, q, x, y, z) = f_coarse;
+			}
 		}
 
 		// macros for coupling cells (GEO_AMR_INTERFACE ring or GEO_NOTHING

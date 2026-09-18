@@ -45,18 +45,15 @@ using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
 using NSE_CONFIG = LBM_CONFIG<
 	TRAITS,
 	D3Q27_KernelStruct,
-	NSE_Data_ConstInflow<TRAITS>,
+	NSE_Data_ConstInflow,
 	COLL,
 	typename COLL::EQ,
 	D3Q27_STREAMING<TRAITS>,
 	D3Q27_BC_All,
 	D3Q27_MACRO_Default<TRAITS>>;
 
-#ifdef AA_PATTERN
-constexpr const char* pattern_name = "AA";
-#else
-constexpr const char* pattern_name = "AB";
-#endif
+// display name of the compiled-in streaming pattern (log/id strings only)
+constexpr const char* pattern_name = is_AA_v<NSE_CONFIG::STREAMING> ? "AA" : "AB";
 
 using idx = typename TRAITS::idx;
 using idx3d = typename TRAITS::idx3d;
@@ -90,38 +87,29 @@ inline lat_t makeLattice(int N = 16)
 // non-uniform (but smooth and stable) initial condition so that one LBM
 // kernel launch has an observable effect (a uniform equilibrium state is a
 // fixed point of both collision and streaming and could not distinguish
-// "kernel ran" from "no-op" in Test 3)
+// "kernel ran" from "no-op" in Test 3). The engine functor receives the
+// GLOBAL site index; block.lat_local.physOrigin already includes the block
+// offset, so gx - block.offset recovers the local lbm2physPoint coordinate
 template <typename STATE>
 void setSineInitialCondition(STATE& state)
 {
-	using idx3d = typename STATE::idx3d;
 	using dreal = typename STATE::dreal;
 
 	for (auto& block : state.nse.blocks) {
-#ifdef HAVE_MPI
-		auto local_df = block.dfs[0].getLocalView();
-#else
-		auto local_df = block.dfs[0].getView();
-#endif
 		const lat_t lat_local = (block.level == 0) ? state.nse.lat : block.lat_local;
+		const idx3d offset = block.offset;
 
-		const idx3d begin = {0, 0, 0};
-		const idx3d end = {block.local.y(), block.local.z(), block.local.x()};
-		TNL::Algorithms::parallelFor<DeviceType>(
-			begin,
-			end,
-			[local_df, lat_local] __cuda_callable__(const idx3d& yzx) mutable
+		block.setInitialCondition(
+			[lat_local, offset] __cuda_callable__(typename NSE_CONFIG::template KernelStruct<dreal> & KS, idx gx, idx gy, idx gz) mutable
 			{
-				const auto& [y, z, x] = yzx;
-				const point_t phys = lat_local.lbm2physPoint(x, y, z);
-				const dreal rho = 1 + 0.01f * TNL::sin(8.0f * phys.x());
-				NSE_CONFIG::COLL::setEquilibriumLat(local_df, x, y, z, rho, 0, 0, 0);
+				const point_t phys = lat_local.lbm2physPoint(gx - offset.x(), gy - offset.y(), gz - offset.z());
+				KS.rho = 1 + 0.01f * TNL::sin(8.0f * phys.x());
+				KS.vx = 0;
+				KS.vy = 0;
+				KS.vz = 0;
+				NSE_CONFIG::COLL::setEquilibrium(KS);
 			}
 		);
-
-		// copy the initialized DFs so that they are not overridden
-		for (uint8_t dftype = 1; dftype < DFMAX; dftype++)
-			block.dfs[dftype] = block.dfs[0];
 	}
 
 	state.nse.copyDFsToHost();
@@ -194,11 +182,10 @@ template <typename STATE>
 std::string levelStateString(const STATE& state, const BLOCK& block, int level)
 {
 	std::string s = fmt::format("level {}:", level);
-#ifdef AB_PATTERN
-	s += fmt::format(" dfs rotation = {}", dfsSwapped(block) ? "substep-1 (swapped)" : "substep-0 (identity)");
-#elif defined(AA_PATTERN)
-	s += fmt::format(" even_iter = {}", block.data.even_iter);
-#endif
+	if constexpr (is_AA_v<typename NSE_CONFIG::STREAMING>)
+		s += fmt::format(" even_iter = {}", block.data.even_iter);
+	else
+		s += fmt::format(" dfs rotation = {}", dfsSwapped(block) ? "substep-1 (swapped)" : "substep-0 (identity)");
 	s += fmt::format(", lbmViscosity = {:.6e}", static_cast<double>(block.data.lbmViscosity));
 	return s;
 }
@@ -242,17 +229,18 @@ struct StateSchedule_AMR : StateLocal_AMR<NSE>
 		Stage stage;
 		int level = -1;
 		int ghost_layers = 0;  // kernel launch extent class (0 = interior-only, 1 = widened simulated-band substep)
-#ifdef AB_PATTERN
+		// parity evidence at the call site: the DF-frame pointer identity is
+		// recorded under a two-array (A-B) pattern binary, the even_iter flag
+		// under a single-array (A-A) pattern binary; both member groups exist
+		// in either build, but only one is populated/read per pattern
 		const void* fine_cur = nullptr;	   // fine block's data.dfs[0] (df_cur) at the call site
 		const void* fine_out = nullptr;	   // fine block's data.dfs[1] (df_out) at the call site
 		const void* coarse_cur = nullptr;  // level-0 block's data.dfs[0] (df_cur) at the call site
 		const void* parent_cur = nullptr;  // level-(level-1) block's data.dfs[0] at the call site (level >= 1 events)
 		const void* parent_out = nullptr;  // level-(level-1) block's data.dfs[1] at the call site (level >= 1 events)
-#elif defined(AA_PATTERN)
 		bool fine_even = false;
 		bool coarse_even = false;
 		bool parent_even = false;
-#endif
 		// f2c events only: the write-side next-substep index sampled at the
 		// call site (the expression launchFineToCoarseTransfersInterior's
 		// parity argument derives from); -1 on every other event
@@ -272,23 +260,24 @@ struct StateSchedule_AMR : StateLocal_AMR<NSE>
 		BLOCK_NSE* fine = level > 0 ? this->nse.getBlocksAtLevel(level).front() : nullptr;
 		BLOCK_NSE* coarse = this->nse.getBlocksAtLevel(0).front();
 		BLOCK_NSE* parent = level > 0 ? this->nse.getBlocksAtLevel(level - 1).front() : nullptr;
-#ifdef AB_PATTERN
-		if (fine != nullptr) {
-			e.fine_cur = fine->data.dfs[0];
-			e.fine_out = fine->data.dfs[1];
+		if constexpr (is_AA_v<typename NSE::STREAMING>) {
+			if (fine != nullptr)
+				e.fine_even = fine->data.even_iter;
+			if (parent != nullptr)
+				e.parent_even = parent->data.even_iter;
+			e.coarse_even = coarse->data.even_iter;
 		}
-		if (parent != nullptr) {
-			e.parent_cur = parent->data.dfs[0];
-			e.parent_out = parent->data.dfs[1];
+		else {
+			if (fine != nullptr) {
+				e.fine_cur = fine->data.dfs[0];
+				e.fine_out = fine->data.dfs[1];
+			}
+			if (parent != nullptr) {
+				e.parent_cur = parent->data.dfs[0];
+				e.parent_out = parent->data.dfs[1];
+			}
+			e.coarse_cur = coarse->data.dfs[0];
 		}
-		e.coarse_cur = coarse->data.dfs[0];
-#elif defined(AA_PATTERN)
-		if (fine != nullptr)
-			e.fine_even = fine->data.even_iter;
-		if (parent != nullptr)
-			e.parent_even = parent->data.even_iter;
-		e.coarse_even = coarse->data.even_iter;
-#endif
 		if (stage == Stage::f2c && level > 0)
 			e.next_parent_substep = level > 1 ? this->nse.totalSubstepCount[level - 1] : this->nse.iterations;
 		events.push_back(e);
@@ -326,7 +315,7 @@ inline HostSnapshot snapshotBlock(const BLOCK& block)
 {
 	HostSnapshot snap;
 	snap.local = block.local;
-	for (uint8_t dfty = 0; dfty < DFMAX; dfty++)
+	for (uint8_t dfty = 0; dfty < NSE_CONFIG::DFMAX; dfty++)
 		for (int q = 0; q < NSE_CONFIG::Q; q++)
 			for (idx z = 0; z < block.local.z(); z++)
 				for (idx y = 0; y < block.local.y(); y++)
@@ -346,7 +335,7 @@ inline double maxAbsDiffSnapshot(const BLOCK& block, const HostSnapshot& snap)
 {
 	double max_diff = 0;
 	std::size_t i = 0;
-	for (uint8_t dfty = 0; dfty < DFMAX; dfty++)
+	for (uint8_t dfty = 0; dfty < NSE_CONFIG::DFMAX; dfty++)
 		for (int q = 0; q < NSE_CONFIG::Q; q++)
 			for (idx z = 0; z < block.local.z(); z++)
 				for (idx y = 0; y < block.local.y(); y++)
@@ -441,9 +430,9 @@ inline FineGhostScan captureFineGhost(BLOCK& block)
 					scan.coords.emplace_back(idx3d{x, y, z});
 					scan.map.push_back(block.hmap(x, y, z));
 					scan.frame0.push_back(block.hfs[0](q, x, y, z));
-#ifdef AB_PATTERN
-					scan.frame1.push_back(block.hfs[1](q, x, y, z));
-#endif
+					// the second DF frame exists only in two-array (A-B) patterns
+					if constexpr (! is_AA_v<typename NSE_CONFIG::STREAMING>)
+						scan.frame1.push_back(block.hfs[1](q, x, y, z));
 				}
 	return scan;
 }

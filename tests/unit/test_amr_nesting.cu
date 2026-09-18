@@ -70,9 +70,10 @@
 //   is unchanged), no parent block sees a rod cell, and the layout
 //   guardrails reject the forbidden classes with named errors.
 //
-// The streaming pattern is selected at compile time (AB_PATTERN/AA_PATTERN);
-// this suite is compiled into the consolidated doctest binaries
-// test_amr_units_{ab,aa} (tests/unit/CMakeLists.txt), which provide main().
+// The streaming pattern is selected at compile time per test binary (the
+// TNL_LBM_STREAMING_PATTERN_{AB_PULL,AA} pins of
+// tests/unit/CMakeLists.txt); this suite is compiled into the consolidated
+// doctest binaries test_amr_units_{ab,aa}, which provide main().
 // Everything is single-rank. Shared fixture machinery (lattice factory,
 // report) comes from tests/unit/amr_test_fixture.h.
 
@@ -835,18 +836,19 @@ const char* stageName(St stage)
 // the captured df_cur pointer aliases; AA: the captured even_iter flag)
 int capturedRotation(const BLOCK& block, const void* captured_cur, bool captured_even)
 {
-#ifdef AB_PATTERN
-	static_cast<void>(captured_even);
-	if (captured_cur == block.dfs[0].getData())
-		return 0;
-	if (captured_cur == block.dfs[1].getData())
-		return 1;
-	return -1;
-#elif defined(AA_PATTERN)
-	static_cast<void>(block);
-	static_cast<void>(captured_cur);
-	return captured_even ? 1 : 0;
-#endif
+	if constexpr (is_AA_v<NSE_CONFIG::STREAMING>) {
+		static_cast<void>(block);
+		static_cast<void>(captured_cur);
+		return captured_even ? 1 : 0;
+	}
+	else {
+		static_cast<void>(captured_even);
+		if (captured_cur == block.dfs[0].getData())
+			return 0;
+		if (captured_cur == block.dfs[1].getData())
+			return 1;
+		return -1;
+	}
 }
 
 // assert one 1-based cycle of the census against the table: events between
@@ -892,28 +894,30 @@ bool checkCycleEvents(
 		const void* fine_cur = nullptr;
 		const void* parent_cur = nullptr;
 		bool fine_even = false, parent_even = false;
-#ifdef AB_PATTERN
-		fine_cur = evt.fine_cur;
-		parent_cur = evt.parent_cur;
-#elif defined(AA_PATTERN)
-		fine_even = evt.fine_even;
-		parent_even = evt.parent_even;
-#endif
+		if constexpr (is_AA_v<NSE_CONFIG::STREAMING>) {
+			fine_even = evt.fine_even;
+			parent_even = evt.parent_even;
+		}
+		else {
+			fine_cur = evt.fine_cur;
+			parent_cur = evt.parent_cur;
+		}
 		if (want.stage == St::kernel && want.level == 0) {
 			// the level-0 step is driven by the global updateKernelData
 			// clock (set before SimUpdate) and must not be re-armed by any
 			// fine-level preparation
-#ifdef AB_PATTERN
-			if (evt.coarse_cur != (clock_rot == 0 ? level0->dfs[0].getData() : level0->dfs[1].getData())) {
-				failure = fmt::format("event {} (kernel L0): level-0 rotation does not match the global clock of cycle {}", i + 1, cycle);
-				return false;
+			if constexpr (is_AA_v<NSE_CONFIG::STREAMING>) {
+				if (evt.coarse_even != (clock_rot == 1)) {
+					failure = fmt::format("event {} (kernel L0): level-0 even_iter does not match the global clock of cycle {}", i + 1, cycle);
+					return false;
+				}
 			}
-#elif defined(AA_PATTERN)
-			if (evt.coarse_even != (clock_rot == 1)) {
-				failure = fmt::format("event {} (kernel L0): level-0 even_iter does not match the global clock of cycle {}", i + 1, cycle);
-				return false;
+			else {
+				if (evt.coarse_cur != (clock_rot == 0 ? level0->dfs[0].getData() : level0->dfs[1].getData())) {
+					failure = fmt::format("event {} (kernel L0): level-0 rotation does not match the global clock of cycle {}", i + 1, cycle);
+					return false;
+				}
 			}
-#endif
 		}
 		if (block != nullptr && want.fine_rot != EVT_NA) {
 			const int expected_rot = want.fine_rot == EVT_CLOCK ? clock_rot : want.fine_rot;
@@ -1019,11 +1023,10 @@ void checkScheduleCensus(int max_level, const char* regions, const char* label, 
 		const auto& evt = state.events[L - 1];
 		BLOCK* block = state.nse.getBlocksAtLevel(L).front();
 		init_ok = evt.stage == St::c2f && evt.level == L;
-#ifdef AB_PATTERN
-		init_ok = init_ok && evt.fine_cur == block->dfs[0].getData();
-#elif defined(AA_PATTERN)
-		init_ok = init_ok && evt.fine_even == false;
-#endif
+		if constexpr (is_AA_v<NSE_CONFIG::STREAMING>)
+			init_ok = init_ok && evt.fine_even == false;
+		else
+			init_ok = init_ok && evt.fine_cur == block->dfs[0].getData();
 	}
 	CHECK_MESSAGE(init_ok, fmt::format("{} SimInit: level-ascending initial c2f cascade ({} events, all at rotation 0)", label, state.events.size()));
 	state.events.clear();
