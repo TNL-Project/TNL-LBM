@@ -202,12 +202,14 @@
  * (the caller sets the fine level's DF rotation for the upcoming substep
  * BEFORE the fill, so `df_cur` is exactly the array the next fine-level
  * streaming step pulls from; ghosts are re-filled every substep). The
- * direction slot is pattern-dependent: A-B pulls ghost DFs in natural
- * orientation, so direction q is stored in slot q; the A-A spatial
- * ("odd") substep pulls the DF streaming out of a ghost cell in direction q
- * from the opposite-direction slot (see D3Q27_STREAMING::streaming in
- * streaming_AA.h), so direction q is stored twisted in
- * `opposite_direction(q)`.
+ * destination slot is pattern-dependent: A-B pull reads ghost DFs at the
+ * pulled neighbor's natural slot, so the value authored for direction q
+ * of site x goes to slot (q, x); A-B push consumes it at the
+ * identity-read address (q, x + c_q), where the store is redirected; the
+ * A-A spatial ("odd") substep pulls the DF streaming out of a ghost cell
+ * in direction q from the opposite-direction slot (see
+ * D3Q27_STREAMING::streaming in streaming_AA.h), so direction q is stored
+ * twisted in `opposite_direction(q)`.
  *
  * Macroscopic output: for cells tagged `GEO_AMR_INTERFACE` the interpolated
  * macros are written to `dmacro` so visualization shows coupling-produced
@@ -1122,6 +1124,11 @@ __global__ void cudaAMR_CoarseToFine(
 	typename CONFIG::TRAITS::dreal tau_fine,
 	typename CONFIG::TRAITS::dreal tau_coarse,
 	bool coarse_even_iter,
+	// parity of the NEXT consuming fine substep (the store side's phase
+	// argument, consumed by the A-A preCollisionSlot placement only; the
+	// caller re-points the fine level's DF rotation to that substep before
+	// the fill, mirroring the F2C store side's documented parity asymmetry)
+	bool fine_even_iter,
 	typename CONFIG::TRAITS::idx3d fine_off,
 	typename CONFIG::TRAITS::idx3d coarse_off
 )
@@ -1160,21 +1167,12 @@ __global__ void cudaAMR_CoarseToFine(
 	// kernel launch -- the ONLY streaming-pattern-dependent code in the kernel
 	const auto read_coarse_df = [&coarse_SD, coarse_even_iter](int q, idx cx, idx cy, idx cz) -> dreal
 	{
-		if constexpr (is_AA_v<typename CONFIG::STREAMING>) {
-			if (coarse_even_iter)
-				// AA post-collision state (twisted): the post-collision DF of
-				// direction q at (cx,cy,cz) sits in the opposite-direction slot
-				return coarse_SD.df(df_cur, opposite_direction(q), cx, cy, cz);
-			// AA post-stream state (natural): the streamed-in DF of direction q --
-			// the working state the next coarse substep will collide with
-			return coarse_SD.df(df_cur, q, cx, cy, cz);
-		}
-		else {
-			// A-B: post-collision DF of direction q at the same site, natural
-			// orientation, is stored in df_out (coarse_even_iter is AA-only state)
-			static_cast<void>(coarse_even_iter);
-			return coarse_SD.df(df_out, q, cx, cy, cz);
-		}
+		// the producing launch's post-collision population of direction q
+		// at the source site, in its own phase discipline: A-B patterns
+		// ignore the parity argument (pull reads own-site df_out, push the
+		// downwind scatter target); AA resolves twisted/natural per the
+		// producing phase (even_iter given by the caller)
+		return CONFIG::STREAMING::postCollisionSlot(coarse_SD, q, cx, cy, cz, coarse_even_iter);
 	};
 
 	// true floor division by 2 (valid for negative fine global coordinates,
@@ -1185,18 +1183,28 @@ __global__ void cudaAMR_CoarseToFine(
 		return v >= 0 ? v / 2 : -((-v + 1) / 2);
 	};
 
-	// fine-DF write in the orientation the next fine substep pulls (see the
-	// file docstring): A-B pulls ghost DFs in natural orientation, so
-	// direction q goes to slot q; the A-A spatial ("odd") substep pulls the
-	// DF streaming out of a ghost cell in direction q from the
-	// opposite-direction slot, so direction q is stored twisted
-	const auto store_fine_df = [&fine_SD](int q, idx x, idx y, idx z, dreal f) -> void
+	// fine-DF write: the fill's authored population of ghost site x moving
+	// in direction q is consumed by the downstream cell t = x + c_q, so it
+	// is written to the NEXT consuming fine substep's preCollisionSlot
+	// there (pattern-owned placement: natural upwind slot under A-B pull,
+	// the downwind identity-read address under A-B push, parity-resolved
+	// twisted/natural under A-A). The bounds test on the shifted target
+	// covers the fine block's stored extent exactly; out-of-range targets
+	// are precisely the never-read slots
+	const auto store_fine_df = [&fine_SD, fine_even_iter](int q, idx x, idx y, idx z, dreal f) -> void
 	{
-		if constexpr (is_AA_v<typename CONFIG::STREAMING>)
-			fine_SD.df(df_cur, opposite_direction(q), x, y, z) = f;
-		else {
-			fine_SD.df(df_cur, q, x, y, z) = f;
-		}
+		const idx rx = x + dir27_cx(q);
+		const idx ry = y + dir27_cy(q);
+		const idx rz = z + dir27_cz(q);
+		// the range probe tests the slot the write lands in -- at band-extreme
+		// destinations it differs from the consumer address for every
+		// gather-layout pattern. A-B pull's probe degenerates to the authored
+		// destination's own storage index (in-range for every cell of the
+		// launch extent), so it is statically inert and skipped here
+		if constexpr (is_AB_PULL_v<typename CONFIG::STREAMING>)
+			CONFIG::STREAMING::preCollisionSlot(fine_SD, q, rx, ry, rz, fine_even_iter) = f;
+		else if (CONFIG::STREAMING::preCollisionSlotInRange(fine_SD, q, rx, ry, rz, fine_even_iter))
+			CONFIG::STREAMING::preCollisionSlot(fine_SD, q, rx, ry, rz, fine_even_iter) = f;
 	};
 
 	// per-destination macro write for GEO_AMR_INTERFACE cells (no-op in v1,
@@ -1875,15 +1883,20 @@ __global__ void cudaAMR_CoarseToFine(
  * Streaming-pattern handling (DF reads and writes are the ONLY
  * pattern-dependent parts):
  * - Reads from the fine level mirror `cudaAMR_CoarseToFine`: AB reads the
- *   post-collision DFs from `df_out` in natural orientation; AA reads
- *   `df_cur` from the opposite-direction slot when `fine_even_iter` is
- *   true (twisted post-collision state) or from the natural slot when
- *   false (post-stream state).
+ *   post-collision DFs from `df_out` in natural orientation -- with the
+ *   pattern's own post-collision placement (same site under A-B pull,
+ *   the +c_q-shifted slot under A-B push); AA reads `df_cur` from the
+ *   opposite-direction slot when `fine_even_iter` is true (twisted
+ *   post-collision state) or from the natural slot when false
+ *   (post-stream state).
  * - Writes go to `coarse_SD.df(df_cur, ...)` for BOTH patterns (a single
  *   site), but the DIRECTION slot depends on which substep consumes the
  *   data next (convention in `streaming_AA.h` lines 31-90, against which
  *   this v1 decision was reviewed):
- *   - AB: the write goes to logical `df_out` in natural orientation. The
+ *   - AB: the write goes to logical `df_out` in natural orientation --
+ *     A-B pull to slot (q, site), A-B push to slot (q, site + c_q), so
+ *     both patterns' next coarse launch consumes the authored
+ *     post-collision value with its own natural address. The
  *     caller passes `coarse_SD` in the rotation state of the LAST coarse
  *     kernel launch (which read df_cur and wrote df_out); the next global
  *     `updateKernelData()` rotates the coarse frames, so the physical
@@ -1960,6 +1973,21 @@ __global__ void cudaAMR_FineToCoarse(
 	const idx fy0 = 2 * (y + coarse_off.y()) - fine_off.y();
 	const idx fz0 = 2 * (z + coarse_off.z()) - fine_off.z();
 
+	// A-B next-consumer-rotation view of the coarse block: the kernel
+	// receives coarse_SD in the just-finished launch's rotation (logical
+	// df_out = the fresh post-step frame that the next global
+	// updateKernelData() rotates into the df_cur the next coarse launch
+	// reads). The store-side preCollisionSlot conventions address the
+	// CONSUMING phase's DF array, so the store presents this swapped view
+	// of the two frame pointers. A-A patterns (DFMAX == 1) are
+	// parity-disciplined on a single frame and need no swap
+	typename CONFIG::DATA coarse_SD_next = coarse_SD;
+	if constexpr (CONFIG::DFMAX >= 2) {
+		dreal* tmp = coarse_SD_next.dfs[df_cur];
+		coarse_SD_next.dfs[df_cur] = coarse_SD_next.dfs[df_out];
+		coarse_SD_next.dfs[df_out] = tmp;
+	}
+
 	// per-cell storability guard: all 8 subcells must be valid fine storage
 	// indices (see the file docstring)
 	for (int b = 0; b < 2; b++) {
@@ -1975,20 +2003,12 @@ __global__ void cudaAMR_FineToCoarse(
 	// launch -- one of only TWO streaming-pattern-dependent sites
 	const auto read_fine_df = [&fine_SD, fine_even_iter](int q, idx fx, idx fy, idx fz) -> dreal
 	{
-		if constexpr (is_AA_v<typename CONFIG::STREAMING>) {
-			if (fine_even_iter)
-				// AA post-collision state (twisted): the post-collision DF of
-				// direction q at (fx,fy,fz) sits in the opposite-direction slot
-				return fine_SD.df(df_cur, opposite_direction(q), fx, fy, fz);
-			// AA post-stream state (natural): the streamed-in DF of direction q
-			return fine_SD.df(df_cur, q, fx, fy, fz);
-		}
-		else {
-			// A-B: post-collision DF of direction q at the same site, natural
-			// orientation, is stored in df_out (fine_even_iter is AA-only state)
-			static_cast<void>(fine_even_iter);
-			return fine_SD.df(df_out, q, fx, fy, fz);
-		}
+		// the producing launch's post-collision population of direction q
+		// at the source site, in its own phase discipline: A-B patterns
+		// ignore the parity argument (pull reads own-site df_out, push the
+		// downwind scatter target); AA resolves twisted/natural per the
+		// producing phase (even_iter given by the caller)
+		return CONFIG::STREAMING::postCollisionSlot(fine_SD, q, fx, fy, fz, fine_even_iter);
 	};
 
 #ifdef F2C_SCHONHERR
@@ -2113,26 +2133,31 @@ __global__ void cudaAMR_FineToCoarse(
 	const bool is_coupling_cell = (map_val == BC::GEO_AMR_INTERFACE || map_val == BC::GEO_NOTHING);
 
 	// Steps G-H: cumulant back-transformation into the coarse DFs (Geier
-	// 2015 Eqs. 81-96) with the pattern-dependent store orientation of the
-	// default branch (AB writes logical df_out natural; AA stores natural
-	// for an even next substep, twisted for an odd one) --
-	// AMR_CM_BACKTRANSFORM
+	// 2015 Eqs. 81-96), stored into the next consuming coarse substep's
+	// preCollisionSlot at the skin slot's downstream cell (pattern-owned
+	// placement) -- AMR_CM_BACKTRANSFORM
 	if (is_coupling_cell) {
-		const auto store_coarse_df = [&coarse_SD, coarse_even_iter, x, y, z](int q, dreal f) -> void
+		const auto store_coarse_df = [&coarse_SD_next, coarse_even_iter, x, y, z](int q, dreal f) -> void
 		{
-			// the back-transformation emits STORAGE-convention values directly:
-			// physical DFs on D3Q27_COMMON, fhat = f - w_q on D3Q27_COMMON_WELL
-			if constexpr (is_AA_v<typename CONFIG::STREAMING>) {
-				if (coarse_even_iter) {
-					coarse_SD.df(df_cur, q, x, y, z) = f;
-				}
-				else
-					coarse_SD.df(df_cur, opposite_direction(q), x, y, z) = f;
-			}
-			else {
-				static_cast<void>(coarse_even_iter);
-				coarse_SD.df(df_out, q, x, y, z) = f;
-			}
+		// the back-transformation emits STORAGE-convention values directly:
+		// physical DFs on D3Q27_COMMON, fhat = f - w_q on D3Q27_COMMON_WELL
+			// the skin's authored population of direction q is consumed by
+			// the downstream cell t = x + c_q: write the NEXT consuming
+			// coarse substep's preCollisionSlot there (pattern-owned
+			// placement; the range probe tests the slot the write lands in).
+			// Single-writer and deterministic: a written slot's would-be
+			// scatter source is a frozen GEO_NOTHING cell, which never
+			// scatters
+			const idx rx = x + dir27_cx(q);
+			const idx ry = y + dir27_cy(q);
+			const idx rz = z + dir27_cz(q);
+			// A-B pull's range probe degenerates to the authored cell's own
+			// storage index (statically inert, see the C2F store) and is
+			// skipped here to keep the FP schedule of the pre-refactor stream
+			if constexpr (is_AB_PULL_v<typename CONFIG::STREAMING>)
+				CONFIG::STREAMING::preCollisionSlot(coarse_SD_next, q, rx, ry, rz, coarse_even_iter) = f;
+			else if (CONFIG::STREAMING::preCollisionSlotInRange(coarse_SD_next, q, rx, ry, rz, coarse_even_iter))
+				CONFIG::STREAMING::preCollisionSlot(coarse_SD_next, q, rx, ry, rz, coarse_even_iter) = f;
 		};
 
 	#ifdef USE_GEIER_CUM_2017
@@ -2310,27 +2335,21 @@ __global__ void cudaAMR_FineToCoarse(
 		for (int q = 0; q < CONFIG::Q; q++) {
 			const dreal f_coarse = KS_EQ.f[q] + neq_scale * (f_avg[q] - KS_EQ.f[q]);
 
-			// coarse DF write in the orientation the NEXT coarse substep will read
-			// (see the kernel docstring) -- the other pattern-dependent site
-			if constexpr (is_AA_v<typename CONFIG::STREAMING>) {
-				if (coarse_even_iter)
-					// next substep is even ("reflect"): reads the same site, same
-					// direction -- store natural
-					coarse_SD.df(df_cur, q, x, y, z) = f_coarse;
-				else
-					// next substep is odd ("spatial"): the DF streaming out of this
-					// cell in direction q is pulled from the opposite-direction slot
-					// -- store twisted
-					coarse_SD.df(df_cur, opposite_direction(q), x, y, z) = f_coarse;
-			}
-			else {
-				// A-B: write to logical df_out, natural orientation -- the next global
-				// updateKernelData() rotates the coarse frames, so this physical
-				// array is the df_cur the next coarse kernel launch pulls from
-				// (coarse_even_iter is AA-only state)
-				static_cast<void>(coarse_even_iter);
-				coarse_SD.df(df_out, q, x, y, z) = f_coarse;
-			}
+			// coarse DF write in the placement the NEXT coarse substep reads
+			// (see the kernel docstring) -- the other pattern-dependent site;
+			// the authored population of direction q is consumed by the
+			// downstream cell t = x + c_q, stored to the next consuming
+			// substep's preCollisionSlot there (pattern-owned placement;
+			// the range probe tests the slot the write lands in)
+			const idx rx = x + dir27_cx(q);
+			const idx ry = y + dir27_cy(q);
+			const idx rz = z + dir27_cz(q);
+			// (A-B pull's statically inert range probe skipped as documented
+			// at the two main store lambdas)
+			if constexpr (is_AB_PULL_v<typename CONFIG::STREAMING>)
+				CONFIG::STREAMING::preCollisionSlot(coarse_SD_next, q, rx, ry, rz, coarse_even_iter) = f_coarse;
+			else if (CONFIG::STREAMING::preCollisionSlotInRange(coarse_SD_next, q, rx, ry, rz, coarse_even_iter))
+				CONFIG::STREAMING::preCollisionSlot(coarse_SD_next, q, rx, ry, rz, coarse_even_iter) = f_coarse;
 		}
 
 		// macros for coupling cells (GEO_AMR_INTERFACE ring or GEO_NOTHING

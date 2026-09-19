@@ -21,6 +21,58 @@ struct D3Q27_STREAMING_AB_PUSH
 	using idx = typename TRAITS::idx;
 	using dreal = typename TRAITS::dreal;
 
+	// slot the fused kernel reads as direction q's pre-collision population
+	// at site (x,y,z) in an upcoming phase of parity `even`: writing through
+	// this reference stages data so that exactly the launch's gather returns
+	// it. A-B push gathers at the own site in logical df_cur (see
+	// streaming()); `even` is AA-only state. The DATA struct must be
+	// presented in the CONSUMING phase's rotation (for A-B, the logical
+	// df_cur of the launch that will read the staged value).
+	template <typename LBM_DATA>
+	__cuda_callable__ static auto& preCollisionSlot(LBM_DATA& SD, int q, idx x, idx y, idx z, bool even)
+	{
+		static_cast<void>(even);
+		return SD.df(df_cur, q, x, y, z);
+	}
+
+	// whether preCollisionSlot(q, x, y, z, even) refers to a valid STORAGE
+	// index of SD's block (the own-site slot position is what matters here,
+	// not the direction the caller shifted by)
+	template <typename LBM_DATA>
+	__cuda_callable__ static bool preCollisionSlotInRange(LBM_DATA& SD, int q, idx x, idx y, idx z, bool even)
+	{
+		static_cast<void>(even);
+		static_cast<void>(q);
+		const idx ovx = SD.indexer.template getOverlap<0>();
+		const idx ovy = SD.indexer.template getOverlap<1>();
+		const idx ovz = SD.indexer.template getOverlap<2>();
+		return x >= -ovx && x < SD.X() + ovx && y >= -ovy && y < SD.Y() + ovy && z >= -ovz && z < SD.Z() + ovz;
+	}
+
+	// slot where a kernel launch leaves direction q's post-collision
+	// population of site (x,y,z): A-B push stores it shifted to the
+	// downwind target site in logical df_out (see postCollisionStreaming).
+	// The DATA struct must be presented in the PRODUCING phase's rotation
+	// (for A-B, the logical df_out of the launch that produced the value).
+	// Storability guard: coupling probes address seam neighborhoods of the
+	// block, so the direction-shifted slot site is clamped into the stored
+	// extent (identity inside it).
+	template <typename LBM_DATA>
+	__cuda_callable__ static auto& postCollisionSlot(LBM_DATA& SD, int q, idx x, idx y, idx z, bool even)
+	{
+		static_cast<void>(even);
+		const idx ovx = SD.indexer.template getOverlap<0>();
+		const idx ovy = SD.indexer.template getOverlap<1>();
+		const idx ovz = SD.indexer.template getOverlap<2>();
+		idx rx = x + dir27_cx(q);
+		idx ry = y + dir27_cy(q);
+		idx rz = z + dir27_cz(q);
+		rx = rx < -ovx ? -ovx : (rx >= SD.X() + ovx ? SD.X() + ovx - 1 : rx);
+		ry = ry < -ovy ? -ovy : (ry >= SD.Y() + ovy ? SD.Y() + ovy - 1 : ry);
+		rz = rz < -ovz ? -ovz : (rz >= SD.Z() + ovz ? SD.Z() + ovz - 1 : rz);
+		return SD.df(df_out, q, rx, ry, rz);
+	}
+
 	// the streaming step itself: write the post-collision populations to the
 	// target sites in the other array
 	template <typename LBM_DATA, typename LBM_KS>

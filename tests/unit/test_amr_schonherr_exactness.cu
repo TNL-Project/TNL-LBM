@@ -412,6 +412,9 @@ void launchCoarseToFineOff(MockBlock& fine, MockBlock& coarse, idx3d begin, idx3
 	launch_config.gridSize = dim3(
 		static_cast<unsigned>((size.x() + 3) / 4), static_cast<unsigned>((size.y() + 3) / 4), static_cast<unsigned>((size.z() + 3) / 4)
 	);
+	// the fill is consumed by the twisted ("odd") phase placement in these
+	// tests (the suites' write-slot convention); occupied only by the A-A
+	// preCollisionSlot placement -- next-consuming-substep parity false
 	TNL::Backend::launchKernelAsync(
 		cudaAMR_CoarseToFine<NSE_CONFIG>,
 		launch_config,
@@ -422,6 +425,7 @@ void launchCoarseToFineOff(MockBlock& fine, MockBlock& coarse, idx3d begin, idx3
 		TAU_FINE,
 		TAU_COARSE,
 		coarse_even_iter,
+		false,
 		fine_off,
 		coarse_off
 	);

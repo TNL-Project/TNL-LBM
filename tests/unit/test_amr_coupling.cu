@@ -237,32 +237,55 @@ struct MockBlock
 };
 
 // Store the post-collision DF of direction `q` in the slot (and array) that
-// the coupling kernel reads back as direction `q`:
+// the coupling kernel reads back as the post-collision population of
+// direction `q` of site (x,y,z) (mirror of the producer state's
+// STREAMING::postCollisionSlot):
 // - A-B pattern: the reads use df_out[q] in natural orientation (the parity
 //   argument is A-A-only state, ignored by the kernels)
 // - A-A pattern with even_iter == true (post-collision, twisted): direction q
 //   sits in df_cur[opposite_direction(q)]
-// - A-A pattern with even_iter == false (post-stream, natural): direction q
-//   sits in df_cur[q]
+// - A-A pattern with even_iter == false (odd push-scatter): direction q of
+//   site (x,y,z) sits in df_cur[q] at the downwind target site (x,y,z) + c_q;
+//   content whose target falls outside the stored extent is not stored (the
+//   kernel's storability clamp only reaches it as another site's content)
 void storePostCollisionDF(MockBlock& block, bool even_iter, int q, idx x, idx y, idx z, dreal value)
 {
 	if constexpr (! is_AA_v<NSE_CONFIG::STREAMING>) {
 		static_cast<void>(even_iter);
 		block.hfs[df_out](q, x, y, z) = value;
 	} else {
-		block.hfs[df_cur](even_iter ? opposite_direction(q) : q, x, y, z) = value;
+		if (even_iter) {
+			block.hfs[df_cur](opposite_direction(q), x, y, z) = value;
+		}
+		else {
+			const idx rx = x + dir27_cx(q);
+			const idx ry = y + dir27_cy(q);
+			const idx rz = z + dir27_cz(q);
+			if (rx >= -block.ov && rx < block.size + block.ov && ry >= -block.ov && ry < block.size + block.ov && rz >= -block.ov
+				&& rz < block.size + block.ov)
+				block.hfs[df_cur](q, rx, ry, rz) = value;
+		}
 	}
 }
 
 // read back the post-collision DF value of direction `q` for parity
-// `even_iter` (mirror of storePostCollisionDF)
+// `even_iter` (mirror of storePostCollisionDF; the odd branch mirrors the
+// kernel's final-address storability clamp)
 dreal readPostCollisionDF(const MockBlock& block, bool even_iter, int q, idx x, idx y, idx z)
 {
 	if constexpr (! is_AA_v<NSE_CONFIG::STREAMING>) {
 		static_cast<void>(even_iter);
 		return block.hfs[df_out](q, x, y, z);
 	} else {
-		return block.hfs[df_cur](even_iter ? opposite_direction(q) : q, x, y, z);
+		if (even_iter)
+			return block.hfs[df_cur](opposite_direction(q), x, y, z);
+		idx rx = x + dir27_cx(q);
+		idx ry = y + dir27_cy(q);
+		idx rz = z + dir27_cz(q);
+		rx = rx < -block.ov ? -block.ov : (rx >= block.size + block.ov ? block.size + block.ov - 1 : rx);
+		ry = ry < -block.ov ? -block.ov : (ry >= block.size + block.ov ? block.size + block.ov - 1 : ry);
+		rz = rz < -block.ov ? -block.ov : (rz >= block.size + block.ov ? block.size + block.ov - 1 : rz);
+		return block.hfs[df_cur](q, rx, ry, rz);
 	}
 }
 
@@ -315,12 +338,33 @@ uint8_t f2cWriteArray()
 	}
 }
 
+// Read back the direction-q DF that cudaAMR_FineToCoarse authored for the
+// coarse cell (x,y,z): the store places each direction into the next
+// consuming coarse substep's preCollisionSlot at the consumer address
+// (x,y,z) + c_q, so the authored sites are
+// - A-B pattern: df_out[q] at the own site (the frame rotation turns df_out
+//   into the df_cur the next launch pulls from)
+// - A-A, next substep odd: df_cur[opposite_direction(q)] at the own site
+// - A-A, next substep even: df_cur[q] at the downwind consumer site
+dreal readAuthoredF2CDF(const MockBlock& coarse, bool next_coarse_even_iter, int q, idx x, idx y, idx z)
+{
+	if constexpr (! is_AA_v<NSE_CONFIG::STREAMING>) {
+		static_cast<void>(next_coarse_even_iter);
+		return coarse.hfs[df_out](q, x, y, z);
+	} else {
+		if (next_coarse_even_iter)
+			return coarse.hfs[df_cur](q, x + dir27_cx(q), y + dir27_cy(q), z + dir27_cz(q));
+		else
+			return coarse.hfs[df_cur](opposite_direction(q), x, y, z);
+	}
+}
+
 // rho moment of the DFs cudaAMR_FineToCoarse wrote at a coarse cell
 dreal f2cWrittenRho(const MockBlock& coarse, bool next_coarse_even_iter, idx x, idx y, idx z)
 {
 	dreal rho = 0;
 	for (int q = 0; q < 27; q++)
-		rho += coarse.hfs[f2cWriteArray()](coarseWriteSlot(q, next_coarse_even_iter), x, y, z);
+		rho += readAuthoredF2CDF(coarse, next_coarse_even_iter, q, x, y, z);
 	return rho;
 }
 
@@ -385,8 +429,11 @@ void launchCoarseToFine(MockBlock& fine, MockBlock& coarse, idx3d begin, idx3d e
 	launch_config.gridSize = dim3(
 		static_cast<unsigned>((size.x() + 3) / 4), static_cast<unsigned>((size.y() + 3) / 4), static_cast<unsigned>((size.z() + 3) / 4)
 	);
+	// the fill is consumed by the twisted ("odd") phase placement in these
+	// tests (c2fWriteSlot's convention); occupied only by the A-A
+	// preCollisionSlot placement -- next-consuming-substep parity false
 	TNL::Backend::launchKernelAsync(
-		cudaAMR_CoarseToFine<NSE_CONFIG>, launch_config, fine.data, coarse.data, begin, end, TAU_FINE, TAU_COARSE, coarse_even_iter, fine_off, coarse_off
+		cudaAMR_CoarseToFine<NSE_CONFIG>, launch_config, fine.data, coarse.data, begin, end, TAU_FINE, TAU_COARSE, coarse_even_iter, false, fine_off, coarse_off
 	);
 	TNL::Backend::streamSynchronize(0);
 }
@@ -545,8 +592,8 @@ void test_uniform_fine_to_coarse()
 					for (idx x = 0; x < COARSE_N; x++)
 						for (int q = 0; q < 27; q++) {
 							// the kernel writes the direction-q DF into the
-							// parity-dependent slot of the write array
-							const dreal actual = coarse.hfs[f2cWriteArray()](coarseWriteSlot(q, coarse_even_iter), x, y, z);
+							// parity-dependent authored site
+							const dreal actual = readAuthoredF2CDF(coarse, coarse_even_iter, q, x, y, z);
 							if (! closeEnough(actual, expected[q], 1e-6, 1e-8)) {
 								if (bad == 0)
 									fmt::println(
@@ -591,7 +638,10 @@ void test_linear_gradient_coarse_to_fine()
 	};
 
 	MockBlock coarse, fine;
-	coarse.allocate(COARSE_N);
+	// ov = 2 so the direction-shifted A-A post-collision slots of the rim
+	// coarse window cells (fg = 0 probes slot x = -2) exist with analytic
+	// content (faithful to the production halo exchange)
+	coarse.allocate(COARSE_N, 2);
 	fine.allocate(FINE_N);
 	fillField(
 		coarse,
@@ -796,7 +846,9 @@ void test_mass_conservation_coarse_to_fine()
 	};
 
 	MockBlock coarse, fine;
-	coarse.allocate(COARSE_N);
+	// ov = 2 so the direction-shifted A-A post-collision slots of the rim
+	// coarse window cells exist with analytic content (see Test 3)
+	coarse.allocate(COARSE_N, 2);
 	fine.allocate(FINE_N);
 	fillField(
 		coarse,
@@ -1089,10 +1141,17 @@ void test_nested_geometry_coupling()
 	// strategy-independent, and the linear-marker transfer values coincide
 	// between branches, so this launch block stays shared under the
 	// strategy split]
-	tagCouplingCells(coarse, {2, 3, 3}, {4, 13, 13});
-	tagCouplingCells(coarse, {12, 3, 3}, {14, 13, 13});
-	launchFineToCoarse(coarse, fine, {2, 3, 3}, {4, 13, 13}, fine_off, coarse_off, fine_even_iter, next_coarse_even_iter);
-	launchFineToCoarse(coarse, fine, {12, 3, 3}, {14, 13, 13}, fine_off, coarse_off, fine_even_iter, next_coarse_even_iter);
+	// A-A probe margin: the direction-shifted odd-phase reads of the rim
+	// columns' fine children (c = 3 -> fx = -2, c = 12 -> fx = 16 at the
+	// mock's storage rim) hit the storability clamp (the mock has no halo
+	// exchange), so the windows are widened on A-A to add the rim-free
+	// columns c = 4/c = 11 asserted below
+	const auto f2c_lo_end = is_AA_v<NSE_CONFIG::STREAMING> ? 5 : 4;
+	const auto f2c_hi_beg = is_AA_v<NSE_CONFIG::STREAMING> ? 11 : 12;
+	tagCouplingCells(coarse, {2, 3, 3}, {f2c_lo_end, 13, 13});
+	tagCouplingCells(coarse, {f2c_hi_beg, 3, 3}, {14, 13, 13});
+	launchFineToCoarse(coarse, fine, {2, 3, 3}, {f2c_lo_end, 13, 13}, fine_off, coarse_off, fine_even_iter, next_coarse_even_iter);
+	launchFineToCoarse(coarse, fine, {f2c_hi_beg, 3, 3}, {14, 13, 13}, fine_off, coarse_off, fine_even_iter, next_coarse_even_iter);
 
 	fine.copyToHost();
 	coarse.copyToHost();
@@ -1104,7 +1163,12 @@ void test_nested_geometry_coupling()
 	// projection value and the F2C_SCHONHERR subcell mean d0 coincide
 	// exactly (both reproduce a linear field at the coarse center); the
 	// pinned value is therefore identical under both strategies] -----
-	for (const idx c : {3, 12}) {
+	// authored-content columns: the production halo faces c = 3/12 on A-B;
+	// the rim-free c = 4/11 on A-A (their children fx = 0,1/14,15 stay clear
+	// of the mock storage rim, see the launch-window note above)
+	const auto authored_lo = is_AA_v<NSE_CONFIG::STREAMING> ? 4 : 3;
+	const auto authored_hi = is_AA_v<NSE_CONFIG::STREAMING> ? 11 : 12;
+	for (const idx c : {authored_lo, authored_hi}) {
 		const dreal rho_e = correctF2Crho(c, 0, NEST_FINE_OFF);
 		const std::array<dreal, 27> eq = equilibriumOnHost(rho_e, NEST_VX, 0, 0);
 		max_err = 0;
@@ -1113,7 +1177,7 @@ void test_nested_geometry_coupling()
 		for (const idx z : {4, 8, 12}) {
 			for (const idx y : {4, 8, 12}) {
 				for (int q = 0; q < 27; q++) {
-					const dreal actual = coarse.hfs[f2cWriteArray()](coarseWriteSlot(q, next_coarse_even_iter), c, y, z);
+					const dreal actual = readAuthoredF2CDF(coarse, next_coarse_even_iter, q, c, y, z);
 					if (! closeEnough(actual, eq[q], 1e-4, 1e-5)) {
 						if (first_mismatch) {
 							fmt::println(
@@ -1174,7 +1238,16 @@ void test_nested_geometry_coupling()
 	max_err = 0;
 	bad = 0;
 	for (const idx c : {2, 13}) {
-		const dreal rho_marker = static_cast<dreal>(c) + NEST_RHO0;
+		// marker moment in the kernel's authored view: on A-A the odd-next
+		// read of df_cur[opposite(q)][c] shows the writer cell's
+		// post-collision image (writer x = c + c_qx)
+		dreal rho_marker = 0;
+		if constexpr (is_AA_v<NSE_CONFIG::STREAMING>) {
+			for (int q = 0; q < 27; q++)
+				rho_marker += equilibriumOnHost(static_cast<dreal>(c + dir27_cx(q)) + NEST_RHO0, NEST_VX, 0, 0)[opposite_direction(q)];
+		} else {
+			rho_marker = static_cast<dreal>(c) + NEST_RHO0;
+		}
 		const dreal rho_m = f2cWrittenRho(coarse, next_coarse_even_iter, c, 8, 8);
 		max_err = std::max<double>(max_err, std::abs(rho_m - rho_marker));
 		if (! closeEnough(rho_m, rho_marker, 1e-4, 1e-5))
@@ -1275,7 +1348,7 @@ void test_cubic_reproduction_fine_to_coarse()
 #endif
 						const std::array<dreal, 27> eq = equilibriumOnHost(rho_e, u0, v0, w0);
 						for (int q = 0; q < 27; q++) {
-							const dreal actual = coarse.hfs[f2cWriteArray()](coarseWriteSlot(q, coarse_even_iter), x, y, z);
+							const dreal actual = readAuthoredF2CDF(coarse, coarse_even_iter, q, x, y, z);
 							if (! closeEnough(actual, eq[q], 1e-5, 1e-6)) {
 								if (bad == 0)
 									fmt::println(
@@ -1345,8 +1418,11 @@ void test_f2c_df_store_map_guard()
 	const bool fine_even_iter = false;
 	const bool next_coarse_even_iter = false;
 
-	// processed halo column and the exercised map classes in it
-	constexpr idx CX = 3, CZ = 8;
+	// processed halo column and the exercised map classes in it: c = 3 on
+	// A-B (the production min-x halo face), the rim-free c = 4 on A-A (its
+	// children fx = 0,1 stay clear of the mock storage rim; see the Test 5
+	// launch-window note)
+	constexpr idx CX = is_AA_v<NSE_CONFIG::STREAMING> ? 4 : 3, CZ = 8;
 	constexpr idx Y_WALL = 8, Y_FLUID = 9, Y_NOTHING = 10, Y_INTERFACE = 11;
 
 	MockBlock coarse, fine;
@@ -1373,14 +1449,13 @@ void test_f2c_df_store_map_guard()
 
 	const idx3d fine_off{NEST_FINE_OFF, NEST_FINE_OFF, NEST_FINE_OFF};
 	const idx3d coarse_off{0, 0, 0};
-	launchFineToCoarse(coarse, fine, {2, 3, 3}, {4, 13, 13}, fine_off, coarse_off, fine_even_iter, next_coarse_even_iter);
+	const idx f2c_end = is_AA_v<NSE_CONFIG::STREAMING> ? 5 : 4;
+	launchFineToCoarse(coarse, fine, {2, 3, 3}, {f2c_end, 13, 13}, fine_off, coarse_off, fine_even_iter, next_coarse_even_iter);
 
 	coarse.copyToHost();
 	coarse.hmacro = coarse.dmacro;
 
-	// marker IC of the coarse column (rho of coarse cell c = c + NEST_RHO0)
-	// and the exact F2C transfer result (host replica from Test 5)
-	const std::array<dreal, 27> eq_marker = equilibriumOnHost(static_cast<dreal>(CX) + NEST_RHO0, NEST_VX, 0, 0);
+	// exact F2C transfer result (host replica from Test 5)
 	const dreal rho_transfer = correctF2Crho(CX, 0, NEST_FINE_OFF);
 	const std::array<dreal, 27> eq_transfer = equilibriumOnHost(rho_transfer, NEST_VX, 0, 0);
 
@@ -1397,11 +1472,14 @@ void test_f2c_df_store_map_guard()
 		idx bad = 0;
 		bool first_mismatch = true;
 		for (int q = 0; q < 27; q++) {
-			// the kernel's write slot of direction q; the marker IC stored
-			// eq of direction `slot` in that slot (natural fill)
+			// the kernel's write slot of direction q; on A-B the marker IC
+			// stored eq[slot] of the cell itself there (natural fill), on
+			// A-A the odd-next read of df_cur[slot][CX] shows the writer
+			// cell's post-collision image (writer x = CX + c_qx)
 			const int slot = coarseWriteSlot(q, next_coarse_even_iter);
-			const dreal actual = coarse.hfs[f2cWriteArray()](slot, CX, y, CZ);
-			const dreal expected = expect_write ? eq_transfer[q] : eq_marker[slot];
+			const dreal actual = readAuthoredF2CDF(coarse, next_coarse_even_iter, q, CX, y, CZ);
+			const dreal marker_rho = static_cast<dreal>(CX + (is_AA_v<NSE_CONFIG::STREAMING> ? dir27_cx(q) : 0)) + NEST_RHO0;
+			const dreal expected = expect_write ? eq_transfer[q] : equilibriumOnHost(marker_rho, NEST_VX, 0, 0)[slot];
 			if (! closeEnough(actual, expected, 1e-4, 1e-5)) {
 				if (first_mismatch) {
 					fmt::println("  first mismatch: cell=({}, {}, {}), q={}, actual={:.9e}, expected={:.9e}", CX, y, CZ, q, actual, expected);
@@ -1723,14 +1801,17 @@ void test_cm_exactness_nominal()
 
 	for (const Case& cse : cases) {
 		MockBlock coarse, fine;
-		coarse.allocate(COARSE_N);
+		// ov = 2 carries the one-cell probe margin of the direction-shifted
+		// A-A post-collision reads (see Test 3); the covered plane moves to
+		// x = -2 accordingly (probes reach at most slot x = -1)
+		coarse.allocate(COARSE_N, 2);
 		fine.allocate(FINE_N);
 		if (cse.quadratic)
 			fillFieldCE(coarse, even_iter, CMQuadraticField{});
 		else
 			fillFieldCE(coarse, even_iter, CMLinearField{});
 		// far-away covered plane: inert for every candidate window
-		coverPlaneYZ(coarse, -1, -1, COARSE_N);
+		coverPlaneYZ(coarse, is_AA_v<NSE_CONFIG::STREAMING> ? -2 : -1, -1, COARSE_N);
 		coarse.copyToDevice();
 
 		launchCoarseToFine(fine, coarse, {2, 2, 2}, {15, 15, 15}, {0, 0, 0}, {0, 0, 0}, even_iter);
@@ -1909,7 +1990,7 @@ bool checkCoarseTransferExact(const MockBlock& coarse, const std::vector<idx3d>&
 	for (const idx3d& c : cells) {
 		const std::array<dreal, 27> eq = equilibriumOnHost(skinExpectedRho(c), SkinCubicField::U0, SkinCubicField::V0, SkinCubicField::W0);
 		for (int q = 0; q < 27; q++) {
-			const dreal actual = coarse.hfs[f2cWriteArray()](coarseWriteSlot(q, coarse_even_iter), c.x(), c.y(), c.z());
+			const dreal actual = readAuthoredF2CDF(coarse, coarse_even_iter, q, c.x(), c.y(), c.z());
 			if (! (std::isfinite(actual) && closeEnough(actual, eq[q], 1e-5, 1e-6))) {
 				if (first_mismatch) {
 					fmt::println("  first mismatch: cell=({},{},{}), q={}, actual={:.9e}, expected={:.9e}", c.x(), c.y(), c.z(), q, actual, eq[q]);
@@ -2166,8 +2247,7 @@ void test_f2c_skin_df_store_map_guard()
 		idx bad = 0;
 		bool first_mismatch = true;
 		for (int q = 0; q < 27; q++) {
-			const int slot = coarseWriteSlot(q, next_coarse_even_iter);
-			const dreal actual = coarse.hfs[f2cWriteArray()](slot, 1, y, CZ);
+			const dreal actual = readAuthoredF2CDF(coarse, next_coarse_even_iter, q, 1, y, CZ);
 			const bool ok = expect_write ? (std::isfinite(actual) && closeEnough(actual, eq_transfer[q], 1e-4, 1e-5))
 										 : static_cast<bool>(std::isnan(actual));
 			if (! ok) {
@@ -2830,11 +2910,13 @@ void test_midcycle_fill_live_source()
 // fill the whole stored extent of `block` with the equilibrium of the
 // global linear marker rho = scale * (x + off) + NEST_RHO0 (one consistent
 // field across the level chain: scale 1 at level 0, 1/2 at level 1, 1/4 at
-// level 2 when off is the block's fine-global offset), EVERY array and
-// parity orientation carrying the same values: unlike fillMarkerNested no
-// wrong-array sentinel is planted -- the window/parity traps are Test 5's
-// job, the composition constants of Test 21 are this lock's discriminator
-void fillMarkerScaled(MockBlock& block, dreal scale, idx off)
+// level 2 when off is the block's fine-global offset), EVERY array carrying
+// the same natural values, then overwriting the parity-correct source image
+// the kernels read for `source_even_iter` (A-A only -- see
+// storePostCollisionDF): unlike fillMarkerNested no wrong-array sentinel is
+// planted -- the window/parity traps are Test 5's job, the composition
+// constants of Test 21 are this lock's discriminator
+void fillMarkerScaled(MockBlock& block, dreal scale, idx off, bool source_even_iter)
 {
 	for (idx z = -block.ov; z < block.size + block.ov; z++)
 		for (idx y = -block.ov; y < block.size + block.ov; y++)
@@ -2845,6 +2927,19 @@ void fillMarkerScaled(MockBlock& block, dreal scale, idx off)
 					for (int q = 0; q < 27; q++)
 						block.hfs[dfty](q, x, y, z) = eq[q];
 			}
+	// parity-correct source image on the array the kernels probe (A-A only;
+	// A-B reads the natural df_out fill as-is) -- a separate pass: the
+	// odd-phase image writes one cell downwind, which the natural fill of a
+	// later cell would overwrite in an interleaved single pass
+	if constexpr (is_AA_v<NSE_CONFIG::STREAMING>)
+		for (idx z = -block.ov; z < block.size + block.ov; z++)
+			for (idx y = -block.ov; y < block.size + block.ov; y++)
+				for (idx x = -block.ov; x < block.size + block.ov; x++) {
+					const dreal rho = scale * static_cast<dreal>(x + off) + NEST_RHO0;
+					const std::array<dreal, 27> eq = equilibriumOnHost(rho, NEST_VX, 0, 0);
+					for (int q = 0; q < 27; q++)
+						storePostCollisionDF(block, source_even_iter, q, x, y, z, eq[q]);
+				}
 }
 
 // fine-global offset of the second-hop block of Test 21: fine2 is the 2:1
@@ -2907,9 +3002,9 @@ void test_two_hop_kernel_composition()
 	coarse.allocate(NEST_N, NEST_OV);
 	fine1.allocate(NEST_N, NEST_OV);
 	fine2.allocate(NEST_N, NEST_OV);
-	fillMarkerScaled(coarse, 1.0, 0);
-	fillMarkerScaled(fine1, 0.5, NEST_FINE_OFF);
-	fillMarkerScaled(fine2, 0.25, NEST2_FINE_OFF);
+	fillMarkerScaled(coarse, 1.0, 0, /*source_even_iter=*/false);
+	fillMarkerScaled(fine1, 0.5, NEST_FINE_OFF, /*source_even_iter=*/false);
+	fillMarkerScaled(fine2, 0.25, NEST2_FINE_OFF, /*source_even_iter=*/false);
 	coarse.copyToDevice();
 	fine1.copyToDevice();
 	fine2.copyToDevice();
@@ -2998,9 +3093,12 @@ void test_two_hop_kernel_composition()
 		std::swap(fine1.data.dfs[0], fine1.data.dfs[1]);
 	}
 #ifdef F2C_SCHONHERR
-	// re-establish the pristine marker state for the F2C direction
-	fillMarkerScaled(fine1, 0.5, NEST_FINE_OFF);
-	fillMarkerScaled(fine2, 0.25, NEST2_FINE_OFF);
+	// re-establish the pristine marker state for the F2C direction: hop A
+	// probes fine2's post-odd image (fine_even_iter = false); hop B probes
+	// fine1's post-EVEN image (the hop-A store armed the odd phase's
+	// pre-slots, which postCollisionSlot(A-A, even) exposes)
+	fillMarkerScaled(fine1, 0.5, NEST_FINE_OFF, /*source_even_iter=*/true);
+	fillMarkerScaled(fine2, 0.25, NEST2_FINE_OFF, /*source_even_iter=*/false);
 	fine1.copyToDevice();
 	fine2.copyToDevice();
 
@@ -3045,9 +3143,13 @@ void test_two_hop_kernel_composition()
 	);
 
 	// hop B: F2C fine1 -> coarse at the level-0 cell (6,6,6), reading the
-	// hop-A product on its x = 4 subcells and the pristine marker on x = 5
+	// hop-A product on its x = 4 subcells and the pristine marker on x = 5.
+	// The hop-A store wrote the odd phase's pre-slots (the twisted
+	// own-cell image), which the post-even read convention exposes -- the
+	// composition only makes sense when hop B describes fine1's stored
+	// state with the SAME parity, fine_even_iter = true
 	tagCouplingCells(coarse, {6, 6, 6}, {7, 7, 7});
-	launchFineToCoarse(coarse, fine1, {6, 6, 6}, {7, 7, 7}, off1, off0, /*fine_even_iter=*/false, /*coarse_even_iter=*/false);
+	launchFineToCoarse(coarse, fine1, {6, 6, 6}, {7, 7, 7}, off1, off0, /*fine_even_iter=*/true, /*coarse_even_iter=*/false);
 	// mean-of-mean expectation: (4 * 10.125 + 4 * rho_L1(5)) / 8 with
 	// rho_L1(5) = 0.5*(5+8)+4 = 10.5 -- a hop that ignored the hop-A
 	// product would read 4 * 10.0 instead, pinning (4*10+4*10.5)/8 = 10.25
