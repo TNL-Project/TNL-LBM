@@ -240,7 +240,7 @@ if(TNL_LBM_BUILD_PYTHON AND NOT TNL_LBM_BUILD_HIP)
 
     FetchContent_Declare(nanobind
         GIT_REPOSITORY https://github.com/wjakob/nanobind.git
-        GIT_TAG v3.0.1
+        GIT_TAG v3.1.0
         SYSTEM
         FIND_PACKAGE_ARGS
     )
