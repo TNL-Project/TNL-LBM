@@ -23,6 +23,48 @@ struct D3Q27_STREAMING_AB_PULL
 			SD.df(df_out, i, x, y, z) = KS.f[i];
 	}
 
+	// slot the fused kernel reads as direction q's pre-collision population
+	// at site (x,y,z) in an upcoming phase of parity `even`: writing through
+	// this reference stages data so that exactly the launch's gather returns
+	// it. A-B pull gathers from the upwind site in logical df_cur (see
+	// streaming()); `even` is AA-only state. The DATA struct must be
+	// presented in the CONSUMING phase's rotation (for A-B, the logical
+	// df_cur of the launch that will read the staged value).
+	template <typename LBM_DATA>
+	__cuda_callable__ static auto& preCollisionSlot(LBM_DATA& SD, int q, idx x, idx y, idx z, bool even)
+	{
+		static_cast<void>(even);
+		return SD.df(df_cur, q, x - dir27_cx(q), y - dir27_cy(q), z - dir27_cz(q));
+	}
+
+	// whether preCollisionSlot(q, x, y, z, even) refers to a valid STORAGE
+	// index of SD's block (the upwind slot position is what matters here,
+	// not the consuming-site address the caller shifted by)
+	template <typename LBM_DATA>
+	__cuda_callable__ static bool preCollisionSlotInRange(LBM_DATA& SD, int q, idx x, idx y, idx z, bool even)
+	{
+		static_cast<void>(even);
+		const idx rx = x - dir27_cx(q);
+		const idx ry = y - dir27_cy(q);
+		const idx rz = z - dir27_cz(q);
+		const idx ovx = SD.indexer.template getOverlap<0>();
+		const idx ovy = SD.indexer.template getOverlap<1>();
+		const idx ovz = SD.indexer.template getOverlap<2>();
+		return rx >= -ovx && rx < SD.X() + ovx && ry >= -ovy && ry < SD.Y() + ovy && rz >= -ovz && rz < SD.Z() + ovz;
+	}
+
+	// slot where a kernel launch leaves direction q's post-collision
+	// population of site (x,y,z): A-B pull stores own-site in logical
+	// df_out (see postCollisionStreaming). The DATA struct must be
+	// presented in the PRODUCING phase's rotation (for A-B, the logical
+	// df_out of the launch that produced the value).
+	template <typename LBM_DATA>
+	__cuda_callable__ static auto& postCollisionSlot(LBM_DATA& SD, int q, idx x, idx y, idx z, bool even)
+	{
+		static_cast<void>(even);
+		return SD.df(df_out, q, x, y, z);
+	}
+
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void
 	streaming(uint8_t type, LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)

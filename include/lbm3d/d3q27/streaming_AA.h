@@ -135,6 +135,62 @@ struct D3Q27_STREAMING_AA
 		}
 	}
 
+	// slot the fused kernel reads as direction q's pre-collision population
+	// at site (x,y,z) in an upcoming phase of parity `even`: writing through
+	// this reference stages data so that exactly that phase's gather returns
+	// it. Even phase reads the same site, same direction in df_cur (the
+	// identity "reflect" phase); odd phase reads the upwind site in the
+	// opposite-direction slot (the twisted "spatial" phase).
+	template <typename LBM_DATA>
+	__cuda_callable__ static auto& preCollisionSlot(LBM_DATA& SD, int q, idx x, idx y, idx z, bool even)
+	{
+		if (even)
+			return SD.df(df_cur, q, x, y, z);
+		else
+			return SD.df(df_cur, opposite_direction(q), x - dir27_cx(q), y - dir27_cy(q), z - dir27_cz(q));
+	}
+
+	// slot where a kernel launch of parity `even` leaves direction q's
+	// post-collision population of site (x,y,z): the even phase's reflect
+	// swap writes the opposite-direction slot at the own site, the odd
+	// phase's push scatter writes the natural slot at the downwind target.
+	// Storability guard: coupling probes address seam neighborhoods of the
+	// block, so the odd phase's direction-shifted slot site is clamped into
+	// the stored extent (identity inside it).
+	template <typename LBM_DATA>
+	__cuda_callable__ static auto& postCollisionSlot(LBM_DATA& SD, int q, idx x, idx y, idx z, bool even)
+	{
+		if (even)
+			return SD.df(df_cur, opposite_direction(q), x, y, z);
+		else {
+			const idx ovx = SD.indexer.template getOverlap<0>();
+			const idx ovy = SD.indexer.template getOverlap<1>();
+			const idx ovz = SD.indexer.template getOverlap<2>();
+			idx rx = x + dir27_cx(q);
+			idx ry = y + dir27_cy(q);
+			idx rz = z + dir27_cz(q);
+			rx = rx < -ovx ? -ovx : (rx >= SD.X() + ovx ? SD.X() + ovx - 1 : rx);
+			ry = ry < -ovy ? -ovy : (ry >= SD.Y() + ovy ? SD.Y() + ovy - 1 : ry);
+			rz = rz < -ovz ? -ovz : (rz >= SD.Z() + ovz ? SD.Z() + ovz - 1 : rz);
+			return SD.df(df_cur, q, rx, ry, rz);
+		}
+	}
+
+	// whether preCollisionSlot(q, x, y, z, even) refers to a valid STORAGE
+	// index of SD's block (the slot's true position: own-site for the even
+	// phase, the upwind twisted position for the odd phase)
+	template <typename LBM_DATA>
+	__cuda_callable__ static bool preCollisionSlotInRange(LBM_DATA& SD, int q, idx x, idx y, idx z, bool even)
+	{
+		const idx rx = even ? x : x - dir27_cx(q);
+		const idx ry = even ? y : y - dir27_cy(q);
+		const idx rz = even ? z : z - dir27_cz(q);
+		const idx ovx = SD.indexer.template getOverlap<0>();
+		const idx ovy = SD.indexer.template getOverlap<1>();
+		const idx ovz = SD.indexer.template getOverlap<2>();
+		return rx >= -ovx && rx < SD.X() + ovx && ry >= -ovy && ry < SD.Y() + ovy && rz >= -ovz && rz < SD.Z() + ovz;
+	}
+
 	// Interpolation outflow from Geier - CuLBM (2015), velocity neglected.
 	// Even: df_cur is natural (post-stream) — AB formula applies directly.
 	// Odd: df_cur is twisted; the AA twist transform (dir→opp(dir),

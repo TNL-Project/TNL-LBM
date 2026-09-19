@@ -2097,6 +2097,11 @@ void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level)
 			// parity of the kernel launch that produced the current coarse
 			// data (AA-pattern state; ignored by the kernel for AB)
 			const bool coarse_even_iter = coarse->data.even_iter;
+			// parity of the NEXT consuming fine substep: the caller re-pointed
+			// the fine level's rotation to exactly that substep before this
+			// fill (the store side's phase argument, mirroring the F2C
+			// store's documented parity asymmetry)
+			const bool fine_even_iter = fine->data.even_iter;
 
 			// launch extent in the fine block's indexer coordinates, clipped
 			// FACE-AWARE to the fine block's overlap storage (the band
@@ -2156,6 +2161,7 @@ void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level)
 				tau_fine,
 				tau_coarse,
 				coarse_even_iter,
+				fine_even_iter,
 				fine->offset,
 				coarse->offset
 			);
