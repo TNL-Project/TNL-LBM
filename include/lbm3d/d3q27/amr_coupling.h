@@ -1143,9 +1143,10 @@ __global__ void cudaAMR_CoarseToFine(
 	using LBM_KS = typename CONFIG::template KernelStruct<dreal>;
 
 	static_assert(
-		is_AA_v<typename CONFIG::STREAMING> || is_AB_PULL_v<typename CONFIG::STREAMING> || is_AB_PUSH_v<typename CONFIG::STREAMING>,
-		"the AMR coupling supports only the AA, AB_PULL, and AB_PUSH streaming patterns "
-		"(the esoteric in-place patterns have no AMR coupling kernels)"
+		is_AA_v<typename CONFIG::STREAMING> || is_AB_PULL_v<typename CONFIG::STREAMING> || is_AB_PUSH_v<typename CONFIG::STREAMING>
+			|| is_esoteric_in_place_v<typename CONFIG::STREAMING>,
+		"the AMR coupling supports the AA, AB_PULL, AB_PUSH and the esoteric in-place "
+		"(ESO_TWIST, ESO_PULL, ESO_PUSH) streaming patterns"
 	);
 
 	// Schönherr group mapping (per-window organization of the thesis Sec.
@@ -1954,9 +1955,10 @@ __global__ void cudaAMR_FineToCoarse(
 	using LBM_KS = typename CONFIG::template KernelStruct<dreal>;
 
 	static_assert(
-		is_AA_v<typename CONFIG::STREAMING> || is_AB_PULL_v<typename CONFIG::STREAMING> || is_AB_PUSH_v<typename CONFIG::STREAMING>,
-		"the AMR coupling supports only the AA, AB_PULL, and AB_PUSH streaming patterns "
-		"(the esoteric in-place patterns have no AMR coupling kernels)"
+		is_AA_v<typename CONFIG::STREAMING> || is_AB_PULL_v<typename CONFIG::STREAMING> || is_AB_PUSH_v<typename CONFIG::STREAMING>
+			|| is_esoteric_in_place_v<typename CONFIG::STREAMING>,
+		"the AMR coupling supports the AA, AB_PULL, AB_PUSH and the esoteric in-place "
+		"(ESO_TWIST, ESO_PULL, ESO_PUSH) streaming patterns"
 	);
 
 
