@@ -217,6 +217,67 @@ struct D3Q27_STREAMING_ESO_PULL
 		}
 	}
 
+	// slot the fused kernel reads as direction q's pre-collision population
+	// at site (x,y,z) in an upcoming phase of parity `even` (phase 1 is
+	// even_iter == false, phase 2 is even_iter == true): writing through
+	// this reference stages data so that exactly that phase's gather
+	// returns it. Transcribed from the two branches of streaming(): heads
+	// (is_pair_head) read at the own site, tails at the neighbor one step
+	// along the pair head's direction c_h = -c_q -- the parity flips only
+	// the direction slot (phase 1 reads the natural slot, phase 2 the
+	// opposite one); the site offset is -c_q for tails and zero for heads.
+	template <typename LBM_DATA>
+	__cuda_callable__ static auto& preCollisionSlot(LBM_DATA& SD, int q, idx x, idx y, idx z, bool even)
+	{
+		const idx rx = x + (is_pair_head(q) ? 0 : -dir27_cx(q));
+		const idx ry = y + (is_pair_head(q) ? 0 : -dir27_cy(q));
+		const idx rz = z + (is_pair_head(q) ? 0 : -dir27_cz(q));
+		return SD.df(df_cur, even ? opposite_direction(q) : q, rx, ry, rz);
+	}
+
+	// slot where a kernel launch of parity `even` leaves direction q's
+	// post-collision population of site (x,y,z): transcribed from
+	// postCollisionStreaming() -- phase 1 (even == false) writes the
+	// opposite-direction slot, phase 2 (even == true) the natural one,
+	// both at the site n + c_q for heads (the pair exchange carries the
+	// pair by the head's full velocity) and at the own site for tails.
+	// This is the consistent counterpart of preCollisionSlot: a launch's
+	// post-collision slot of site s equals the next launch's
+	// pre-collision slot of site s + c_q. Storability guard: coupling
+	// probes address seam neighborhoods of the block, so a slot site
+	// shifted past the stored extent is clamped into it (identity inside
+	// it), like the A-A pattern's odd-phase shift.
+	template <typename LBM_DATA>
+	__cuda_callable__ static auto& postCollisionSlot(LBM_DATA& SD, int q, idx x, idx y, idx z, bool even)
+	{
+		const idx ovx = SD.indexer.template getOverlap<0>();
+		const idx ovy = SD.indexer.template getOverlap<1>();
+		const idx ovz = SD.indexer.template getOverlap<2>();
+		idx rx = x + (is_pair_head(q) ? dir27_cx(q) : 0);
+		idx ry = y + (is_pair_head(q) ? dir27_cy(q) : 0);
+		idx rz = z + (is_pair_head(q) ? dir27_cz(q) : 0);
+		rx = rx < -ovx ? -ovx : (rx >= SD.X() + ovx ? SD.X() + ovx - 1 : rx);
+		ry = ry < -ovy ? -ovy : (ry >= SD.Y() + ovy ? SD.Y() + ovy - 1 : ry);
+		rz = rz < -ovz ? -ovz : (rz >= SD.Z() + ovz ? SD.Z() + ovz - 1 : rz);
+		return SD.df(df_cur, even ? q : opposite_direction(q), rx, ry, rz);
+	}
+
+	// whether preCollisionSlot(q, x, y, z, even) refers to a valid STORAGE
+	// index of SD's block (the slot's true position: the site offset is
+	// parity-independent, the parity flips only the direction slot)
+	template <typename LBM_DATA>
+	__cuda_callable__ static bool preCollisionSlotInRange(LBM_DATA& SD, int q, idx x, idx y, idx z, bool even)
+	{
+		static_cast<void>(even);
+		const idx rx = x + (is_pair_head(q) ? 0 : -dir27_cx(q));
+		const idx ry = y + (is_pair_head(q) ? 0 : -dir27_cy(q));
+		const idx rz = z + (is_pair_head(q) ? 0 : -dir27_cz(q));
+		const idx ovx = SD.indexer.template getOverlap<0>();
+		const idx ovy = SD.indexer.template getOverlap<1>();
+		const idx ovz = SD.indexer.template getOverlap<2>();
+		return rx >= -ovx && rx < SD.X() + ovx && ry >= -ovy && ry < SD.Y() + ovy && rz >= -ovz && rz < SD.Z() + ovz;
+	}
+
 	// streaming with the bounce-back rule applied: the identity write-back of
 	// this pattern preserves the implicit bounce-back of the esoteric schemes
 	// (a swapped wall cell writes back exactly what it read)

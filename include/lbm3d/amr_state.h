@@ -306,9 +306,10 @@ template <typename NSE>
 struct State_AMR : State<NSE>
 {
 	static_assert(
-		is_AA_v<typename NSE::STREAMING> || is_AB_PULL_v<typename NSE::STREAMING> || is_AB_PUSH_v<typename NSE::STREAMING>,
-		"the AMR coupling supports only the AA, AB_PULL, and AB_PUSH streaming patterns "
-		"(the esoteric in-place patterns have no AMR coupling kernels)"
+		is_AA_v<typename NSE::STREAMING> || is_AB_PULL_v<typename NSE::STREAMING> || is_AB_PUSH_v<typename NSE::STREAMING>
+			|| is_esoteric_in_place_v<typename NSE::STREAMING>,
+		"the AMR coupling supports the AA, AB_PULL, AB_PUSH and the esoteric in-place "
+		"(ESO_TWIST, ESO_PULL, ESO_PUSH) streaming patterns"
 	);
 
 	using Base = State<NSE>;
