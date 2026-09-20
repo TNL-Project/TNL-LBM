@@ -233,10 +233,9 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal Cs_011 = (no1 - omega1) * C_011;
 #ifdef USE_GEIER_CUM_ANTIALIAS
 		// derivatives of v: notation taken from Geier's paper 2017 part I: Eq 27-29
-		// const dreal Dxu = - omega1/no2/rho * (no2*C_200-C_020-C_002) - omega2/no2/rho*(C_200+C_020+C_002-k_000);
-		const dreal Dxu =
-			-omega1 * n1o2 * rho_inv * (no2 * C_200 - C_020 - C_002)
-			- omega2 * n1o2 * rho_inv * (C_200 + C_020 + C_002 - (-no1 + rho));	 // remark: rho <--> rho^(2), i.e. rho^(2) = 1-rho = 1-k_000
+		// (in the paper's well-conditioned variables the last term is -kappa_000 = -delta_rho;
+		// in this operator's raw variables k_000 = rho, so the form subtracts the full density)
+		const dreal Dxu = -omega1 * n1o2 * rho_inv * (no2 * C_200 - C_020 - C_002) - omega2 * n1o2 * rho_inv * (C_200 + C_020 + C_002 - k_000);
 		const dreal Dyv = Dxu + n3o2 * omega1 * rho_inv * (C_200 - C_020);
 		const dreal Dzw = Dxu + n3o2 * omega1 * rho_inv * (C_200 - C_002);
 		// plus their combination: Eq 30 - 32
