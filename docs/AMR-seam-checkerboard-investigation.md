@@ -1,8 +1,8 @@
 # AMR Seam Checkerboard Investigation — Findings Record
 
-**Dates:** 2026-09-03 → 2026-09-05
+**Dates:** 2026-09-03 → 2026-09-05 (+2026-09-19 post-refactor recheck, §2.6; +2026-09-21 operator-defect closure, §2.7)
 **Branch:** feat/amr
-**Status:** seed confirmed (T1), fix candidates ranked, validation matrix pre-registered, default-flip ruling PENDING
+**Status:** CLOSED on the canonical case — the artifact's two code-level authors are eliminated: the D1/D2 placement traffic by the streaming-slot refactor (6fbc6b7, §2.6) and the operator's antialiasing transcription defect by the col_cum.h fix (11cd893, §2.7). The pre-registered §6 Tier-1 bars pass with NO default flip (parity 1.84e-6 / seam 3.09e-5 on the corrected operator); §5's ranked candidates stand measured-not-adopted. Remaining open threads: the DFMAX == 1 parity-class mass pump at BC-adjacent interfaces (next campaign), the Tier-0 re-record ruling, and the unrun Tier-2/3 legs.
 
 Normative companions: `docs/AMR-schonherr-ch7-target-contract.md` (cycle contract),
 `docs/AMR-for-LBM-implementation.md` (internals; interface density bias paragraph),
@@ -334,6 +334,244 @@ rings (mid-sync fills read post-Φ_S parent state — same analysis per pair;
 flagged, not measured). The A-A defect is orthogonal to the T1b refill question
 and does not change §5's A-B fix ranking.
 
+### 2.6 Round 4 (2026-09-19) — recheck after the streaming-slot refactor (commit 6fbc6b7)
+
+Commit 6fbc6b7 (`refactor(amr): route coupling DF access through streaming
+slots`) moved the coupling's pre/post-collision DF placement knowledge out of
+`amr_coupling.h` into the streaming policy classes (pattern-owned
+`preCollisionSlot`/`postCollisionSlot`; reads at `amr_coupling.h:1571,:3119`,
+stores at `:1640-1642,:3304-3305`). Three placement classes are candidates of
+interest for this investigation: AB_PULL is byte-identical by construction (the
+pattern-owned calls reduce to the old `(q, x)` addressing, storage-affordability
+store kept unconditional); AB_PUSH reads/stores now hit the downwind `+c_q`
+slots (heals the sim_AMR_ball mass-freeze under push); under A-A the odd-phase
+reconstruction reads the true post-collision slot (was the arrival layout) and
+the even-next stores reach the consumer address (was the dead twist-at-ghost) —
+exactly the D1/D2 traffic §2.5 root-caused as the A-A floor's author. Hypothesis
+under test: the operator-insensitive ~1e-3 A-A parity floor moves if the
+corrected placements were its carrier; the push arms should now reproduce the
+pull arms.
+
+**Probe calibration (signed, prerequisite).** The doc-era probe
+(`/tmp/opencode/checkerboard_sweep/checkerboard_probe.py`) was deleted; the
+Round-4 probe (`/tmp/opencode/checker_recheck/checkerboard_probe.py`)
+re-implements the metrics from §1 + the probe-record anchors in
+`amr_coupling.h :358-368` and the 2026-09-03 session's metric delegation. On the
+morning-of-2026-09-19 canonical-case runs (`results_sim_AMR_ball_2x2/`, the
+same arg set, exit 0) the calibrated conventions reproduce the §2.4 A-B
+baselines **exactly to all recorded digits**: parity rows fg {88,89,90} with the
+int1 tangent window (geier 3.2486973e-3 / 3.3541826e-3 @0020/@0010 vs recorded
+3.2487e-3 / 3.3542e-3; neither 2.6077870e-6 / 1.2817192e-6 vs 2.6078e-6 /
+1.2817e-6); seam defect = downsampled last fine coarse-column block (fg {90,91},
+2×2×2 uniform mean) vs the seam-plane midpoint interpolation (c45+c46)/2
+(1.525613e-3 / 2.369747e-3 vs 1.5256e-3 / 2.3697e-3; neither 4.241638e-5 /
+3.605613e-04 vs 4.2416e-5 / 3.6056e-4); rho std over map==0 fluid cells
+(5.075263e-4 vs 5.0753e-4; 6.2119e-5 both); max|vx| over the Level0 domain
+(2.5719946e-2 vs the §2.3-recorded 2.5719e-2). **Convention gap (recorded
+honestly):** the recirc line's exact doc-era row choice was not recovered — the
+probe takes the fine centerline row nearest below the physical midplane (fg
+y=z=62); measured −9.5262e-4 vs recorded −9.963e-4 (−4.4 %) and −2.6458e-3 vs
+−2.72e-3 (−2.7 %) on the same byte-identical fields that reproduce every other
+recorded cell exactly. All cross-round recirc comparisons carry that ≤ ~5 %
+systematic offset; all within-Round-4 comparisons use one convention.
+
+**A-B recheck (from disk, exit 0; probe rows above).**
+
+| A-B combo | parity 0020 / 0010 (§2.4) | Round-4 | seam mean | seam max | rho std | recirc min vx |
+|---|---|---|---|---|---|---|
+| 2017+ANTIALIAS, **pull** | 3.2487e-3 / 3.3542e-3 | 3.2486973e-3 / 3.3541826e-3 (=) | 1.5256126e-3 (= 1.5256e-3) | 2.3697468e-3 (= 2.3697e-3) | 5.0752633e-4 (= 5.0753e-4) | −9.5262e-4 (conv) |
+| neither, **pull** | 2.6078e-6 / 1.2817e-6 | 2.6077870e-6 / 1.2817192e-6 (=) | 4.2416381e-5 (= 4.2416e-5) | 3.6056130e-4 (= 3.6056e-4) | 6.2119318e-5 (= 6.2119e-5) | −2.6458e-3 (conv) |
+| 2017+ANTIALIAS, **push** | — | 3.2486959e-3 / 3.3541846e-3 | 1.5256112e-3 | 2.3697838e-3 | 5.0752405e-4 | −9.5259e-4 |
+| neither, **push** | — | 2.6099135e-6 / 1.2758509e-6 | 4.2419505e-5 | 3.6056968e-4 | 6.2116945e-5 | −2.6458e-3 |
+
+**A-A recheck (fresh runs this session, exit 0, `build-aa`, canonical case).**
+
+| A-A combo | parity 0020 / 0010 (§2.4) | Round-4 parity 0020 / 0010 | seam mean @0020 | seam max @0020 | rho std 0020 / 0010 | recirc min vx 0020 / 0010 |
+|---|---|---|---|---|---|---|
+| 2017+ANTIALIAS | 3.8598e-3 / 4.1819e-3 | **2.4785232e-3 (÷1.56) / 3.2657809e-3 (÷1.28)** | 1.0241138e-3 (÷2.25) | 1.7072503e-3 (÷2.47) | 5.4651e-4 / 5.1775e-4 (÷1.58 / ÷1.67) | −6.10e-4 / −2.77e-4 |
+| neither | 1.4967e-3 / 8.0410e-4 | **2.1445663e-6 (÷698) / 1.3126526e-6 (÷613)** | 4.0149144e-5 (÷45.6) | 2.8695143e-4 (÷11.2) | 1.3549e-4 / 6.1719e-5 (÷4.6 / ÷10) | −2.6119e-3 / −1.7533e-3 |
+
+A-A run caveat (signed): both A-A arms carry the known pre-existing
+mass-injection onset at the run's end (mass print frozen 7.13–7.18e+05 through
+t ≈ 0.99, then a single jump to 7.29–7.34e+05 with a × 8 KE print jump at
+t = 1.000 — the pathology 6fbc6b7's message lists as pre-existing and
+not-healed). Frame 0010 rows are pre-onset clean (neither-arm rho std
+6.1719e-5, the A-B base 6.2e-5 class); the collapse signature (÷698 / ÷45.6)
+dwarfs the onset perturbation, and the 0020 rows are quoted nonetheless for the
+§2.4-comparable cadence.
+
+**Verdict (signed).**
+
+1. **A-B side: reproduced (pull) and healed (push), both bars signed.** The
+   AB_PULL rows reproduce every calibrated §2.4 cell exactly — the refactor's
+   byte-identical-by-construction claim is measured true on the canonical case.
+   The AB_PUSH rows match AB_PULL to floating-point noise on the 2017+ANTIALIAS
+   arm (parity rel. diff −4.3e-7 @0020, seam −9.2e-7, max|vx| +2.5e-6 — plus
+   conservation/KE series identical at print precision) and to ~8e-4 relative
+   on the neither arm (+0.082 % parity, +0.007 % seam) — the push mass-freeze is
+   healed by the downwind `+c_q` placement, exactly per the commit's
+   expectation.
+2. **The A-A operator-insensitive ~1e-3 parity floor COLLAPSED — the corrected
+   placements were its carrier.** Under the neither combo (no antialiasing
+   channel), Round-4 A-A parity sits at 2.14e-6 / 1.31e-6 (@0020/@0010) — ÷698
+   / ÷613 below §2.4's 1.4967e-3 / 8.0410e-4, i.e. AT the T1 seed level
+   (A-B neither: 2.61e-6 / 1.28e-6). The §1 genuine-seed bars are crossed by
+   orders of magnitude (parity ÷ ≥ 5–10×; neither seam mean|dvx| 4.0e-5 ≤ 4e-4,
+   and the §2.5 fix bars: A-A parity ≤ ~1e-3 ✓ at both frames, A-A
+   seam_mean ≤ ~1e-3 ✓). The A-A floor is gone with precisely the two
+   correction classes that §2.5's root-cause audit named — the odd-writer
+   reconstruction now reads the true post-collision slot and the even-next
+   stores reach the consumer address (the D1/D2 traffic), which **confirms
+   §2.5's root cause by its own pre-registered confirmation bar**. The
+   §2.4-finding-3 signature (A-A wake ~40 % more energetic than A-B) also
+   disappears (A-A max|vx| 2.5699e-2 / 2.5679e-2 vs A-B 2.5720e-2 / 2.5723e-2 —
+   the +40 % was the D1 blockage artifact, not pattern physics).
+3. **What survives is the T1-found operator channel, pattern-symmetric.** The
+   A-A 2017+ANTIALIAS arm retains parity 2.48e-3 / 3.27e-3 and seam 1.0e-3 — the
+   antialias channel amplifying the same T1 band seed as under A-B (amplifier
+   factor vs the same-arm neither seed: 1156 @0020 / 2488 @0010 vs A-B's
+   1246 / 2617 — the same operator response within pattern jitter). §2.4's
+   signed conclusion stands, restricted to its carrier: the A-B artifact lives
+   in the operator's antialiasing response to what the interface feeds it; the
+   interface is NOW streaming-pattern independent (neither-class floors equal
+   at the 2e-6 seed level, geier-class parities equal at the 2.5–3.4e-3
+   operator-amplified level). §4.3 fork (b) stands strengthened with the
+   pattern class closed.
+4. §2.5's D1/D2 fix designs are superseded by the shipped correction; the
+   flagged nested-level mid-sync class (same analysis per pair) is expected
+   healed by the same slot ownership but is NOT measured here (single
+   canonical case, max-level 1).
+
+Reproduction: A-B rows probed on disk at
+`results_sim_AMR_ball_2x2/{ab_pull_base,ab_push_base,ab_pull_geier,ab_push_geier}/results_sim_AMR_ball_res002_np001/`
+(built from `build-ab` = AB_PULL, `build` = AB_PUSH); A-A rows run this session
+at `build-aa` with the sim's macro lines toggled at `sim_AMR_ball.cu:1-2`
+(committed bytes = 2017+ANTIALIAS ON; commented bytes = neither), binaries via
+`cmake --build build-aa --target sim_AMR_ball`, run from a fresh CWD as
+`build-aa/sim_AMR/sim_AMR_ball --resolution 2 --lattice-viscosity 0.001
+--phys-final-time 1.0 --max-level 1 --adios-config <repo>/adios2.xml` (stdouts
+kept at `/tmp/opencode/checker_recheck/runs/aa_{neither,geier}/stdout.txt`,
+per-frame metrics JSONL at `/tmp/opencode/checker_recheck/metrics.jsonl`, run
+dirs deleted for tmpfs hygiene); probe
+`python3 /tmp/opencode/checker_recheck/checkerboard_probe.py <results_dir>
+--frames 10,20`, conventions in the probe docstring (calibrated rows above);
+working tree restored byte-exact (md5, `git status --short` shows only the
+user's own `sim_AMR_ball.cu` macro comments), `build-aa` sim_AMR_ball relinked
+against the restored source.
+
+
+### 2.7 Round 5 (2026-09-21) — the operator root cause: a transcription defect in the antialiasing derivative estimator, eliminated at col_cum.h (`11cd893`)
+
+§2.6 verdict 3 left the T1-found operator antialias channel as the surviving
+carrier (~1250× pattern-symmetric amplification). A verify-only literature
+audit of the antialiasing terms was commissioned before designing any flip;
+its outcome relocates the carrier entirely and nulls the §5 candidate list on
+the canonical case.
+
+**The defect (100 % confidence, JCP-closed).** The `Dxu` estimator at
+`col_cum.h:341` subtracted `(rho − 1)` from `(C200+C020+C002)` instead of the
+full density. JCP 348 Part I Eq (27) prints `(C200+C020+C002 − κ000)`
+(`docs/references/CuLBM/02_...:441–446,467,471`), with the paper defining its
+variables as well-conditioned distributions **f̂ = f − w** and
+`ρ = δρ + 1, δρ = m000` (`02_...:218–223`) — i.e. κ000 = δρ = ρ−1 *in the
+paper's variables*. The faithful port into this operator's raw variables
+subtracts the full density (`−rho`), which is the exact expression that has
+sat **commented out one line above** since the code's early history
+(`col_cum.h:338`). As coded, the bracket evaluates to **+1 at local
+equilibrium** instead of 0: every near-equilibrated cell carries a persistent
+`Dxu ≈ −ω2/(2ρ) ≈ −0.5` bias, injected per collision through the very
+Eqs 33–35 channel this investigation measured as the artifact's only carrier.
+Quantified (canonical-case τ): spurious deviatoric forcing
+≈ 2.3–5.9e-6 *per step* — the T1-seed scale, but persistent and coherent —
+plus a ~8e-4 trace inflation and an O(1e-3)-class leak into the 2017 Eq-45
+A-term; the intended feedback signal (~1e-9–1e-8) is buried ~10³–10⁴ below
+it. **Every "ANTIALIAS vs none" arm in §2.3/§2.4 therefore measured
+*defective feedback vs none*, not paper feedback vs none.**
+`col_cum_well.h:284` was initially flagged under the same verdict and
+**flipped on print evidence**: its κ000 = δρ *and* its cumulants are
+conditioning-shifted, so its line is verbatim Eq (27) in the paper's own
+variables — never defective, and thereby the natural always-correct control
+operator used below. Everything else audited is faithful verbatim (JCP
+anchors): A/B cross-derivative terms + recombination, A/B constants,
+ω3/ω4/ω5 parametrizations, limiter Eq (116), transforms; the AMR coupling's
+compact-moment conversion chain is thesis-exact — no coupling-side mirror
+defect class exists. Provenance: deviation introduced 2019-01-18 (misread
+δρ as "rho^(2) = 1−rho"), sign-flipped 2021-03-18 (`37de8de`), never
+paper-matched. **Fix commit `11cd893`** (restore the full-density bracket,
+drop the ρ⁽²⁾ remark); collateral commit `bed30e3` (the 2017-without-
+ANTIALIAS `#else` compile landmine; citation anchors; the mislabeled
+`docs/references/AMR/23_Geier_2017_*` corpus renamed to `*_2015_*`).
+
+**Acceptance on the canonical case — full 2×2×2 matrix** (corrected operator;
+pattern × operator-class × macros, frame-0020 probe, calibrated pipeline;
+`results_sim_AMR_ball_2x2x2/`):
+
+| cell (pattern/operator/macros) | parity | seam mean | seam max | rho_std | final mass |
+|---|---|---|---|---|---|
+| pull std base | 2.6078e-6 | 4.2416e-5 | 3.6056e-4 | 6.2119e-5 | 5.029922e+05 |
+| pull std geier (**fixed**) | **1.8429e-6** | **3.0923e-5** | 2.4003e-4 | 5.5268e-5 | 5.029546e+05 |
+| pull well base | 2.6005e-6 | 4.2416e-5 | 3.6005e-4 | 6.2140e-5 | 5.029940e+05 |
+| pull well geier | 2.0116e-6 | 2.9348e-5 | 2.0493e-4 | 5.5242e-5 | 5.029563e+05 |
+| push std base | 2.6099e-6 | 4.2420e-5 | 3.6057e-4 | 6.2117e-5 | 5.029922e+05 |
+| push std geier (**fixed**) | 1.8374e-6 | 3.0932e-5 | 2.4004e-4 | 5.5267e-5 | 5.029546e+05 |
+| push well base | 2.5989e-6 | 4.2416e-5 | 3.6004e-4 | 6.2140e-5 | 5.029940e+05 |
+| push well geier | 2.0108e-6 | 2.9348e-5 | 2.0494e-4 | 5.5242e-5 | 5.029563e+05 |
+
+(defective-era reference: geier parity 3.2487e-3, seam 1.5256e-3, seam max
+2.3697e-3, rho_std 5.0753e-4, recirc −9.96e-4-era; base rows unchanged at
+print precision.)
+
+**Visual seal** (same palette + shared range, local untracked):
+`results_sim_AMR_ball_2x2x2/snapshots_vx_xz/ab_pull_geier_pre-correction.png`
+vs `ab_pull_std_geier.png` — the defective frame shows the fine patch
+completely filled with dense alternating red/white seam-band striping,
+abruptly terminating at the right seam line; the corrected frame is perfectly
+smooth with the patch footprint invisible.
+
+**Verdict (signed).**
+
+1. **The surviving §2.6 carrier is eliminated:** the corrected antialias arm
+   lands *below* the macros-off floor (parity 1.84e-6 vs base 2.61e-6; seam
+   3.09e-5 vs 4.24e-5) — the paper-faithful feedback is benign at this case,
+   even mildly suppressive. The 1250× amplification chain was the response of
+   a polluted estimator, not of the published terms.
+2. **Cross-validation signed:** the never-defective CUM_WELL operator and the
+   corrected standard operator agree on every metric within ~1–4 % (geier
+   rows) and ~0.01 % (base rows), pull ≡ push at FP noise throughout; the
+   7-digit conservation/KE agreement between patterns holds per cell.
+3. **§6 Tier-1 bars pass WITHOUT any refill flip:** parity 1.84e-6 ≤ 1e-5,
+   seam mean 3.09e-5 ≤ 4e-4, seam max 2.40e-4 ≤ 1e-3, rho_std improved vs
+   baseline, development intact (max|vx| class preserved; recirc −2.29e-3
+   between the two macro states — the genuine operator-physics difference the
+   correction is supposed to make). **The default flip recorded in §5 is
+   therefore not needed on the canonical case:** the T1 seed persists
+   (~2e-6, honest baseline) but its amplification engine was never in the
+   band — it sat in the operator text. §5's ranked candidates stand
+   measured-not-adopted (reference arms for the residual campaign below).
+4. **§4.3 resolution (signed):** the Part-II-class interface was seeded and
+   seen. The artifact's two authors were code-level: the D1/D2 placement
+   traffic (closed by the slot refactor, §2.6) and the operator's
+   transcription defect (closed here). No intrinsic or unresolved third
+   author remains on the canonical case; what remains is the null remnant
+   plus the DFMAX == 1 class issue below.
+5. **Standing open issues (moved to §7 register):** (a) the DFMAX == 1
+   parity-class mass pump at BC-adjacent interfaces (AA + ESO trio; channel
+   superlinear pump, ball runaway — pre-existing, byte-identical to stock
+   `build-aa` with and without the new ESO code) — the next campaign's
+   subject; (b) Tier-0 housekeeping: the canonical bitidentity gate sits at
+   16/19 with three documented digest classes (two doctest line-reference
+   shifts, two deliberate AA data moves) pending the owner's re-record
+   ruling — current accepted reference behavior is established by this
+   document, not by the recording; (c) unrun Tier-1 long-window legs
+   (t = 5 s/10 s) and Tier-2/3 items; (d) the +0.52 AA pile audit; (e)
+   Oracle LOW follow-ups (direction-table hoisting, CMake stickiness docs).
+
+Reproduction: operator fix `11cd893`; macro/operator toggles at
+`sim_AMR_ball.cu:1-2` (macros) and `:553-554` (`D3Q27_CUM` ↔ `D3Q27_CUM_WELL`
+with `EQ_INV_CUM_WELL`), per-state rebuilds of both trees; runs at the §1
+canonical args into `results_sim_AMR_ball_2x2x2/<pattern>_<std|well>_<base|geier>/`;
+probe = the §2.6-calibrated `checkerboard_probe.py`; snapshot pipeline
+`snapshots_vx_xz/snapshot_xz_vx.py` + the pre-correction one-off it spawned.
 
 ---
 
@@ -509,6 +747,11 @@ preprint (section/figure numbering may differ from the published version).
 
 ### 4.3 Open problem (recorded 2026-09-05): is the Part-II interface clean by mechanism, or seeded and unseen?
 
+**Resolved 2026-09-21 by §2.6/§2.7: seeded and seen.** The artifact's two
+authors were code-level (the D1/D2 placement traffic; the operator's
+antialiasing transcription defect) and are both closed; no intrinsic third
+author remains on the canonical case.
+
 A close read of the thesis stepwise description (`47_...:2947–3053`, Figs 7.4–7.10)
 settles a reading that the terse 2011 passage (`45_...:218–234`) leaves open: the
 rings are live stream participants, not passive receivers — invalidity arrives
@@ -599,6 +842,13 @@ than a masking conjecture.
 ---
 
 ## 5. Ranked production-fix candidates
+
+**Superseding note (2026-09-21, §2.7):** on the canonical case these
+candidates are measured-not-adopted — the Tier-1 bars pass with no flip
+because the amplification engine was the operator's transcription defect, not
+the substep-2 mixed shell. Keep them as reference arms for the residual
+DFMAX == 1 campaign; the §6 matrix remains the ruling instrument if any
+residual artifact class emerges there.
 
 Constraints: keep the measured 332× suppression; keep the widened substep-1 launch
 untouched (it is load-bearing for conservation/transport — it is the device that

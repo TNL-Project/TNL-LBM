@@ -1531,11 +1531,7 @@ __global__ void cudaAMR_CoarseToFine(
 			for (int ju_x = 0; ju_x <= umax[0] - umin[0]; ju_x++) {
 				const idx cx = umin[0] + ju_x;
 				AMR_CM_MACROS_AND_KMOMENTS(read_coarse_df, cx, cy, cz);
-		#ifndef C2F_EQ_ONLY
-					// (skipped under the C2F_EQ_ONLY debug experiment, as in
-					// the single-destination branch)
-					AMR_CM_PI_NEQ;
-			#endif
+				AMR_CM_PI_NEQ;
 				AMR_CM_KMOMENTS(omega_s);
 				su_rho[ju_z][ju_y][ju_x] = rho_n;
 				su_vx[ju_z][ju_y][ju_x] = u;
@@ -1804,7 +1800,8 @@ __global__ void cudaAMR_CoarseToFine(
 				write_fine_macro(x, y, z, rho_f, vx_f, vy_f, vz_f);
 			}
 		}
-	}#endif
+	}
+#endif
 }
 
 /**
@@ -1960,7 +1957,6 @@ __global__ void cudaAMR_FineToCoarse(
 		"the AMR coupling supports the AA, AB_PULL, AB_PUSH and the esoteric in-place "
 		"(ESO_TWIST, ESO_PULL, ESO_PUSH) streaming patterns"
 	);
-
 
 	const idx x = threadIdx.x + blockIdx.x * blockDim.x + coarse_begin.x();
 	const idx y = threadIdx.y + blockIdx.y * blockDim.y + coarse_begin.y();
@@ -2141,8 +2137,8 @@ __global__ void cudaAMR_FineToCoarse(
 	if (is_coupling_cell) {
 		const auto store_coarse_df = [&coarse_SD_next, coarse_even_iter, x, y, z](int q, dreal f) -> void
 		{
-		// the back-transformation emits STORAGE-convention values directly:
-		// physical DFs on D3Q27_COMMON, fhat = f - w_q on D3Q27_COMMON_WELL
+			// the back-transformation emits STORAGE-convention values directly:
+			// physical DFs on D3Q27_COMMON, fhat = f - w_q on D3Q27_COMMON_WELL
 			// the skin's authored population of direction q is consumed by
 			// the downstream cell t = x + c_q: write the NEXT consuming
 			// coarse substep's preCollisionSlot there (pattern-owned
