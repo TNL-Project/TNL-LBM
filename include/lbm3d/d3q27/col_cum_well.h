@@ -231,7 +231,8 @@ struct D3Q27_CUM_WELL : D3Q27_COMMON_WELL<TRAITS, LBM_EQ>
 		const dreal omega1 = no1 / (no3 * KS.lbmViscosity + n1o2);	// shear viscosity
 		const dreal omega2 = no1;  //(no3*KS.lbmViscosity*no2 + n1o2); // bulkViscosity > Viscosity ... test: bulkViscosity = 2 shearViscosity
 #ifdef USE_GEIER_CUM_2017
-		const dreal lambda3 = (dreal) (0.01);  // Section 7 @ Geier 2017 http://dx.doi.org/10.1016/j.jcp.2017.05.040
+		// limiter: JCP 2017 Part I Section 6, threshold evaluated as NC0.01 in Section 7 http://dx.doi.org/10.1016/j.jcp.2017.05.040
+		const dreal lambda3 = (dreal) (0.01);
 		const dreal lambda4 = (dreal) (0.01);
 		const dreal lambda5 = (dreal) (0.01);
 		const dreal omega3 = no8 * (omega1 - no2) * (omega2 * (no3 * omega1 - no1) - no5 * omega1)
@@ -396,7 +397,7 @@ struct D3Q27_CUM_WELL : D3Q27_COMMON_WELL<TRAITS, LBM_EQ>
 			- (k_000 * k_000 - k_000) * n1o27 * rho_inv * rho_inv;
 
 		// backward central moment transformation
-		// Geier 2017: forcing scheme
+		// forcing scheme: Eq 85-87 from Geier 2015 (JCP 2017 Part I explicitly omits forcing)
 		const dreal ks_100 = -k_100;
 		const dreal ks_010 = -k_010;
 		const dreal ks_001 = -k_001;
