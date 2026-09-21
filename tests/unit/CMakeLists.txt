@@ -105,7 +105,7 @@ endforeach()
 
 # standalone per-define doctest driver: the F2C_SCHONHERR branch selects a
 # different body of the same kernel template symbol (ODR hazard), so the
-# define gets its own binary, built from doctest_main_amr.cu + the shared driver
+# define gets its own binary, built from doctest_main.cu + the shared driver
 # TU. Driven by tests/unit/test_amr_f2c_schonherr.py, NOT by the gate module
 foreach(pattern IN ITEMS ${AMR_TEST_PATTERNS})
     amr_pattern_define(${pattern} pattern_options)
