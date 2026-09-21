@@ -246,6 +246,10 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal Dxu = 0;
 		const dreal Dyv = 0;
 		const dreal Dzw = 0;
+		// plus their combination: Eq 30 - 32
+		const dreal DxvDyu = 0;
+		const dreal DxwDzu = 0;
+		const dreal DywDzv = 0;
 #endif
 		// Eqs 33-35
 		const dreal Eq33RHS = (no1 - omega1) * (C_200 - C_020) - no3 * rho * (no1 - omega1 * n1o2) * (vx_sqr * Dxu - vy_sqr * Dyv);
