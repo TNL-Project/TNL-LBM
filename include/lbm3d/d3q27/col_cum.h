@@ -195,7 +195,8 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal omega1 = no1 / (no3 * KS.lbmViscosity + n1o2);	// shear viscosity
 		const dreal omega2 = no1;  //(no3*KS.lbmViscosity*no2 + n1o2); // bulkViscosity > Viscosity ... test: bulkViscosity = 2/3 shearViscosity
 #ifdef USE_GEIER_CUM_2017
-		const dreal lambda3 = (dreal) (0.01);  // Section 7 @ Geier 2017 http://dx.doi.org/10.1016/j.jcp.2017.05.040
+		// limiter: JCP 2017 Part I Section 6, threshold evaluated as NC0.01 in Section 7 http://dx.doi.org/10.1016/j.jcp.2017.05.040
+		const dreal lambda3 = (dreal) (0.01);
 		const dreal lambda4 = (dreal) (0.01);
 		const dreal lambda5 = (dreal) (0.01);
 		const dreal omega3 = no8 * (omega1 - no2) * (omega2 * (no3 * omega1 - no1) - no5 * omega1)
@@ -233,10 +234,9 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal Cs_011 = (no1 - omega1) * C_011;
 #ifdef USE_GEIER_CUM_ANTIALIAS
 		// derivatives of v: notation taken from Geier's paper 2017 part I: Eq 27-29
-		// const dreal Dxu = - omega1/no2/rho * (no2*C_200-C_020-C_002) - omega2/no2/rho*(C_200+C_020+C_002-k_000);
-		const dreal Dxu =
-			-omega1 * n1o2 * rho_inv * (no2 * C_200 - C_020 - C_002)
-			- omega2 * n1o2 * rho_inv * (C_200 + C_020 + C_002 - (-no1 + rho));	 // remark: rho <--> rho^(2), i.e. rho^(2) = 1-rho = 1-k_000
+		// (in the paper's well-conditioned variables the last term is -kappa_000 = -delta_rho;
+		// in this operator's raw variables k_000 = rho, so the form subtracts the full density)
+		const dreal Dxu = -omega1 * n1o2 * rho_inv * (no2 * C_200 - C_020 - C_002) - omega2 * n1o2 * rho_inv * (C_200 + C_020 + C_002 - k_000);
 		const dreal Dyv = Dxu + n3o2 * omega1 * rho_inv * (C_200 - C_020);
 		const dreal Dzw = Dxu + n3o2 * omega1 * rho_inv * (C_200 - C_002);
 		// plus their combination: Eq 30 - 32
@@ -247,6 +247,10 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal Dxu = 0;
 		const dreal Dyv = 0;
 		const dreal Dzw = 0;
+		// plus their combination: Eq 30 - 32
+		const dreal DxvDyu = 0;
+		const dreal DxwDzu = 0;
+		const dreal DywDzv = 0;
 #endif
 		// Eqs 33-35
 		const dreal Eq33RHS = (no1 - omega1) * (C_200 - C_020) - no3 * rho * (no1 - omega1 * n1o2) * (vx_sqr * Dxu - vy_sqr * Dyv);
@@ -367,7 +371,7 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 
 		// backward central moment transformation
 		const dreal ks_000 = k_000;
-		// Geier 2017: forcing scheme
+		// forcing scheme: Eq 85-87 from Geier 2015 (JCP 2017 Part I explicitly omits forcing)
 		const dreal ks_100 = -k_100;
 		const dreal ks_010 = -k_010;
 		const dreal ks_001 = -k_001;
