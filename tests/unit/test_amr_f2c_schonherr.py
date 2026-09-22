@@ -22,7 +22,9 @@ velocity exact; quadratic-velocity + linear-density exact at t = (0,0,0);
 CE-consistent strain round-trip at σ = 2; and Σf = d0 exactly at the
 destination (see the source header for the derivation and tolerance
 documentation).  A missing binary is a hard failure with a build hint,
-never a silent skip.
+never a silent skip — with one exception: a single-pattern AA tree builds
+only the ``aa`` binaries (``AMR_TEST_PATTERNS = aa``,
+tests/unit/CMakeLists.txt), so the ``ab`` parametrization skips there.
 """
 
 from __future__ import annotations
@@ -45,6 +47,11 @@ def _binary_path(pattern: str) -> pathlib.Path:
 def test_f2c_schonherr_exactness(pattern: str, test_dir: pathlib.Path) -> None:
     binary = _binary_path(pattern)
     if not binary.is_file():
+        if pattern == "ab" and _binary_path("aa").is_file():
+            pytest.skip(
+                "single-pattern AA tree: the AB-pinned exactness binary is "
+                "intentionally not built (AMR_TEST_PATTERNS = aa)"
+            )
         pytest.fail(
             f"cannot find {binary} — build the smoke targets first: "
             f"cmake --build {BUILD_DIR} --target test_amr_f2c_schonherr_{pattern}",
