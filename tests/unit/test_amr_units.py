@@ -12,7 +12,9 @@ The suites are doctests: every legacy PASS/FAIL site maps one-to-one to a
 ``CHECK_MESSAGE`` (positive-coverage counting preserved; see the
 amr-doctest-port plan), so pytest asserts the doctest all-pass banner
 beyond the bare exit code. A missing binary is a hard failure with a
-build hint, never a silent skip.
+build hint, never a silent skip — with one exception: a single-pattern AA
+tree builds only the ``aa`` binaries (``AMR_TEST_PATTERNS = aa``,
+tests/unit/CMakeLists.txt), so the ``ab`` parametrizations skip there.
 """
 
 from __future__ import annotations
@@ -41,6 +43,14 @@ GATE_CASES = [(suite, pattern) for pattern in PATTERNS for suite in GATE_SUITES]
 def test_amr_gate_suite(suite: str, pattern: str, test_dir: pathlib.Path) -> None:
     binary = BUILD_DIR / "tests" / f"test_amr_units_{pattern}"
     if not binary.is_file():
+        sibling = (
+            BUILD_DIR / "tests" / f"test_amr_units_{'aa' if pattern == 'ab' else 'ab'}"
+        )
+        if pattern == "ab" and sibling.is_file():
+            pytest.skip(
+                "single-pattern AA tree: the AB-pinned gate binary is "
+                "intentionally not built (AMR_TEST_PATTERNS = aa)"
+            )
         pytest.fail(
             f"cannot find {binary} — build the gate target first: "
             f"cmake --build {BUILD_DIR} --target test_amr_units_{pattern}",
