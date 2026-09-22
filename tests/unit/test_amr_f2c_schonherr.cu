@@ -226,23 +226,52 @@ struct MockBlock
 	}
 };
 
+// Store the post-collision DF of direction `q` in the slot the coupling
+// kernel reads back as the post-collision population of direction `q` of
+// site (x,y,z) (mirror of STREAMING::postCollisionSlot, the same idiom as
+// tests/unit/test_amr_coupling.cu):
+// - A-B pattern: df_out[q] in natural orientation (the parity argument is
+//   A-A-only state, ignored by the kernels)
+// - A-A pattern with even_iter == true (post-collision, twisted): direction
+//   q sits in df_cur[opposite_direction(q)] at the own site
+// - A-A pattern with even_iter == false (odd push-scatter): direction q of
+//   site (x,y,z) sits in df_cur[q] at the downwind target site (x,y,z) + c_q
 void storePostCollisionDF(MockBlock& block, bool even_iter, int q, idx x, idx y, idx z, dreal value)
 {
-	if constexpr (is_AA_v<NSE_CONFIG::STREAMING>)
-		block.hfs[df_cur](even_iter ? opposite_direction(q) : q, x, y, z) = value;
+	if constexpr (is_AA_v<NSE_CONFIG::STREAMING>) {
+		if (even_iter) {
+			block.hfs[df_cur](opposite_direction(q), x, y, z) = value;
+		}
+		else {
+			const idx rx = x + dir27_cx(q);
+			const idx ry = y + dir27_cy(q);
+			const idx rz = z + dir27_cz(q);
+			if (rx >= -block.ov && rx < block.size + block.ov && ry >= -block.ov && ry < block.size + block.ov && rz >= -block.ov
+				&& rz < block.size + block.ov)
+				block.hfs[df_cur](q, rx, ry, rz) = value;
+		}
+	}
 	else {
 		static_cast<void>(even_iter);
 		block.hfs[df_out](q, x, y, z) = value;
 	}
 }
 
-// host-side readback of a destination DF written by the F2C kernel: AB
-// writes the logical df_out in natural orientation; AA writes df_cur natural
-// when the next substep is even ("reflect") and twisted when odd
+// host-side readback of a destination DF written by the F2C kernel: the
+// kernel's store places the authored DF of direction q into the next
+// consuming coarse substep's preCollisionSlot at the consumer address
+// (x,y,z) + c_q (see the kernel docstring and the mirror readAuthoredF2CDF
+// of tests/unit/test_amr_coupling.cu): AB writes the logical df_out in
+// natural orientation at the own site; AA writes df_cur[opposite(q)] at the
+// own site when the next substep is odd, df_cur[q] at the DOWNWIND consumer
+// site (x,y,z) + c_q when it is even
 dreal readCoarseDF(const MockBlock& block, bool coarse_even_iter, int q, idx x, idx y, idx z)
 {
-	if constexpr (is_AA_v<NSE_CONFIG::STREAMING>)
-		return block.hfs[df_cur](coarse_even_iter ? q : opposite_direction(q), x, y, z);
+	if constexpr (is_AA_v<NSE_CONFIG::STREAMING>) {
+		if (coarse_even_iter)
+			return block.hfs[df_cur](q, x + dir27_cx(q), y + dir27_cy(q), z + dir27_cz(q));
+		return block.hfs[df_cur](opposite_direction(q), x, y, z);
+	}
 	else {
 		static_cast<void>(coarse_even_iter);
 		return block.hfs[df_out](q, x, y, z);
