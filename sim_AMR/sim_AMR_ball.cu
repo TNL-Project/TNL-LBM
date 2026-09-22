@@ -30,17 +30,30 @@
 // (GEO_OUTFLOW_RIGHT_INTERP), symmetry planes y/z at 1 and N-2, GEO_NOTHING
 // on every edge plane (the A-A extra-layer idiom sim_3 already carries).
 //
-// Level-1 footprint "1 2R 11R 11R 21R 8R 8R" (coarse cells; R = 1:
-// [2,23) x [11,19) x [11,19)): the ball plus the beginning of its wake --
-// the analogue of the channel sim's developing-region slab. The wake side
-// reaches coarse x = 22, about 5.5 D behind the ball's back face; both y/z
-// faces keep ~2.6 coarse cells (~1 D) of margin from the ball surface; all
-// six ring faces sit on collision-active fluid except the x-min face at
-// R = 1 (see below). The box also satisfies the Schonherr-ch7 band
-// registration w.r.t. the level-0 ball: every stamped ball cell sits at
-// footprint depth >= 2 (the depth-1 skin row is the F2C destination band
-// and must stay frozen GEO_NOTHING; the ball surface stops exactly one
-// coarse cell above the floor at x = 4 vs. origin 2).
+// Level-1 footprint "1 2R 12R 12R 21R 8R 8R" (coarse cells; R = 2:
+// [4,46) x [24,40) x [24,40), i.e. the 12R cells below/band/above layout
+// of the 32R-cell cross-section): y/z-centered on the ball, x-aligned
+// with its near wake. The ball's continuous center (0.55 m) sits exactly
+// on a level-0 cell face (y/z face index 16*R - 1), so the stamped ball
+// column -- and everything the renderer draws from it -- falls on the
+// side cells and renders half a coarse cell above the continuous center;
+// the 8R-cell band [(12R), (20R)) has center (16R - 0.5) * DL, dead on
+// the stamped column: in the map/render views the ball sits exactly in
+// the band's center. The true band-ball mismatch is the remaining half
+// coarse cell (one finest-level cell at level 1, inside the tolerated
+// one-finest-cell bound), and the telescoping chain below shares the same
+// inset on every face, so all derived levels share it. The stamped ball
+// column (computed and logged at SimInit; 12 cells at R = 1: x in
+// {5,6,7}, y/z in {15,16} by lbmDrawSphere's truncating phys2lbmPoint +
+// cell-center l2Norm test) keeps depth >= 2 from every face -- the depth-2
+// floor of the Schonherr-ch7 band registration (the depth-1 skin row is
+// the F2C destination band and must stay frozen GEO_NOTHING).
+//
+// The x extent is sim's original ball-plus-near-wake slab: from the
+// maximum upwind margin (origin 2, halo on the inflow plane at R = 1 --
+// see below) past the ball (surface x in [4.09, 6.91]) to coarse x = 22,
+// about 5.5 D behind the ball's back face. All six ring faces sit on
+// collision-active fluid except the x-min face at R = 1 (see below).
 //
 // The x-min face is INFLOW-ADJACENT at R = 1: origin 2 puts the halo row on
 // the inflow plane x = 1 (origin >= 2 is forced by the depth-2 ball
@@ -72,15 +85,17 @@
 // faces interior -- no wall-shared faces anywhere, so the whole chain sits
 // in the V-suite's no-warning tier), derived by deriveAMRBallChain below
 // (the same integer parent-cell rect arithmetic as amr_chain_solver.h; the
-// derived spec is logged). The telescoping x-min face chases the fixed ball
-// position, so the chain budget exhausts at low R: the derivation
-// hard-fails when a derived level no longer contains the ball surface with
-// >= 2 of its own cells of margin per face (R = 1 supports levels 0..2 --
-// at level 2 the ball-front margin thins to ~2.4 finest cells, the
-// resolution floor of sim_3's ball-at-2D on a 32-cell cross-section;
-// levels 3..4 need R >= 2 / R >= 3 respectively, the guard names the
-// failing face). --max-level 0 is the uniform sim_3-equivalent reference
-// run (all AMR machinery off, write3D_AMR no-ops).
+// derived spec is logged). The telescoping closes in symmetrically, so
+// every derived level keeps the box centered on the ball in y/z; the chain
+// budget exhausts at low R: the derivation hard-fails when a derived level
+// no longer contains the stamped ball column with >= 2 of its own cells of
+// margin per face (with the 8R-cell band the y/z margins are 6 own cells
+// on every face at every hop at R = 1 and only grow with R, so R = 1
+// admits levels 0..4 -- the full five-level chain; the SimInit V-suite
+// and map-pattern guards remain the authoritative gate and the derivation
+// names the failing face when the budget exhausts at even deeper
+// levels). --max-level 0 is the uniform sim_3-equivalent reference run
+// (all AMR machinery off, write3D_AMR no-ops).
 //
 // Physics (sim_3 verbatim): PHYS_VISCOSITY = 0.001 m^2/s, LBM_VISCOSITY =
 // 0.001 (--lattice-viscosity overrides), PHYS_VELOCITY = Re * nu / D with
@@ -131,8 +146,8 @@ struct AMRBallChain
 inline AMRBallChain deriveAMRBallChain(
 	int R,
 	int max_level,
-	const std::array<double, 3>& ball_surf_min_l0,	// ball surface AABB lower corner in continuous level-0 cell units
-	const std::array<double, 3>& ball_surf_max_l0	// upper corner
+	const std::array<double, 3>& ball_col_min_l0,  // inclusive lower cell of the stamped ball column on the level-0 lattice
+	const std::array<double, 3>& ball_col_max_l0   // inclusive upper cell
 )
 {
 	// telescoping inset per face per hop, in parent-level cells (3 = the
@@ -161,11 +176,15 @@ inline AMRBallChain deriveAMRBallChain(
 		std::array<int, 3> span;
 	};
 
-	// the anchor: the level-1 footprint "1 2R 11R 11R 21R 8R 8R" doubled
-	// into level-1 cells (emission below reproduces that string exactly)
+	// the anchor: x is the original ball-wake slab doubled into level-1
+	// cells; y/z are "1 2R 12R 12R 21R 8R 8R" doubled into level-1 cells:
+	// an 8R-cell band whose center (16R - 0.5) * DL sits half a coarse
+	// cell above the ball's continuous center -- dead on the stamped ball
+	// column, which is quantized onto the cell-face boundary next to the
+	// continuous center (see the file header for the exact arithmetic)
 	std::vector<Rect> rects;
 	rects.push_back(Rect{{0, 0, 0}, {0, 0, 0}});  // level 0 unused (indexing by level)
-	rects.push_back(Rect{{4 * R, 22 * R, 22 * R}, {42 * R, 16 * R, 16 * R}});
+	rects.push_back(Rect{{4 * R, 24 * R, 24 * R}, {42 * R, 16 * R, 16 * R}});
 
 	for (int L = 2; L <= max_level; L++) {
 		const Rect& parent = rects[L - 1];
@@ -194,22 +213,24 @@ inline AMRBallChain deriveAMRBallChain(
 		rects.push_back(child);
 	}
 
-	// ball containment: every derived level must keep the ball surface at
-	// least `ball_margin` of its own cells inside the rect on every face
-	// (the conservative continuous-surface floor -- the stamped cells sit
-	// up to half a cell deeper inside); the x-min face is the binding one
-	// at low R (the file header comment)
+	// ball containment: every derived level must keep the STAMPED ball
+	// column at least `ball_margin` of its own cells inside the rect on
+	// every face (stamped cells, not the continuous surface -- the
+	// registration map-pattern gate binds MAP cells, which sit up to a
+	// cell outside the continuous surface AABB on the truncating
+	// rounding side). Stamped level-0 cell i covers [i, i+1) of the
+	// level-0 lattice, i.e. [i, i+1) * scale level-L cells
 	for (int L = 1; L <= max_level; L++) {
 		const Rect& rect = rects[L];
 		const double scale = 1 << L;  // level-L cells per level-0 cell
 		for (int a = 0; a < 3; a++) {
-			const double surf_min = ball_surf_min_l0[a] * scale;
-			const double surf_max = ball_surf_max_l0[a] * scale;
-			if (rect.lo[a] > surf_min - ball_margin || rect.lo[a] + rect.span[a] < surf_max + ball_margin) {
+			const double col_min = ball_col_min_l0[a] * scale;
+			const double col_max = (ball_col_max_l0[a] + 1.0) * scale;
+			if (rect.lo[a] > col_min - ball_margin || rect.lo[a] + rect.span[a] < col_max + ball_margin) {
 				const std::string message = fmt::format(
-					"AMR ball chain: level-{} footprint [{},{},{}] + [{},{},{}] no longer contains the ball surface ([{}..{}] on "
-					"axis {}) with the {}-cell clearance at R = {}: the telescoping budget is exhausted; raise --resolution or "
-					"lower --max-level",
+					"AMR ball chain: level-{} footprint [{},{},{}] + [{},{},{}] no longer contains the stamped ball column (cells "
+					"[{}..{}] on axis {}) with the {}-cell clearance at R = {}: the telescoping budget is exhausted; raise "
+					"--resolution or lower --max-level",
 					L,
 					rect.lo[0],
 					rect.lo[1],
@@ -217,8 +238,8 @@ inline AMRBallChain deriveAMRBallChain(
 					rect.span[0],
 					rect.span[1],
 					rect.span[2],
-					surf_min,
-					surf_max,
+					col_min,
+					col_max,
 					char('x' + a),
 					ball_margin,
 					R
@@ -256,7 +277,7 @@ inline AMRBallChain deriveAMRBallChain(
 	}
 
 	spdlog::info(
-		"AMR ball chain: derived {} level(s) on top of the ball-wake anchor (R = {}, inset = {} parent-level cells on every "
+		"AMR ball chain: derived {} level(s) on top of the y/z-centered ball-wake anchor (R = {}, inset = {} parent-level cells on every "
 		"face, no wall-shared faces; ball contained with >= {} own-cell margins)",
 		max_level,
 		R,
@@ -518,19 +539,50 @@ sim(const std::string& adios_config = "adios2.xml",
 	// State_AMR::SimInit's own markAMRInterface call re-derives the correct set afterwards
 	// (sim_AMR_channel's ruling; the re-invocation is idempotent by construction)
 	if (max_level > 0) {
-		// ball surface AABB in continuous level-0 cell units:
-		// the nested chain derivation's containment floor (see the file header)
-		const std::array<double, 3> ball_surf_min{
-			(state.ball_c[0] - 0.5 * state.ball_diameter) / PHYS_DL,
-			(state.ball_c[1] - 0.5 * state.ball_diameter) / PHYS_DL,
-			(state.ball_c[2] - 0.5 * state.ball_diameter) / PHYS_DL
-		};
-		const std::array<double, 3> ball_surf_max{
-			(state.ball_c[0] + 0.5 * state.ball_diameter) / PHYS_DL,
-			(state.ball_c[1] + 0.5 * state.ball_diameter) / PHYS_DL,
-			(state.ball_c[2] + 0.5 * state.ball_diameter) / PHYS_DL
-		};
-		const std::string amr_config = deriveAMRBallChain(R, max_level, ball_surf_min, ball_surf_max).region_config;
+		// stamped ball column on the level-0 lattice: a host-side replica of
+		// lbmDrawSphere's truncating phys2lbmPoint + cell-center l2Norm test
+		// (obstacles_lbm.h). The nested-chain containment margin must clear
+		// stamped MAP cells, which sit up to a cell outside the continuous
+		// surface AABB on the truncating rounding side (see the file header)
+		const typename NSE::TRAITS::idx3d ball_c_l0{
+			(idx) (state.ball_c[0] / PHYS_DL + 0.5),
+			(idx) (state.ball_c[1] / PHYS_DL + 0.5),
+			(idx) (state.ball_c[2] / PHYS_DL + 0.5)};
+		const real lbm_radius = 0.5 * state.ball_diameter / PHYS_DL;
+		const idx range = (idx) ceil(lbm_radius) + 1;
+		idx col_min[3]{LBM_X, LBM_Y, LBM_Z};
+		idx col_max[3]{0, 0, 0};
+		for (idx py = ball_c_l0.y() - range; py <= ball_c_l0.y() + range; py++)
+			for (idx pz = ball_c_l0.z() - range; pz <= ball_c_l0.z() + range; pz++)
+				for (idx px = ball_c_l0.x() - range; px <= ball_c_l0.x() + range; px++) {
+					const point_t p{(px - 0.5) * PHYS_DL, (py - 0.5) * PHYS_DL, (pz - 0.5) * PHYS_DL};
+					if (TNL::l2Norm(p - state.ball_c) >= 0.5 * state.ball_diameter)
+						continue;
+					if (px < col_min[0])
+						col_min[0] = px;
+					if (px > col_max[0])
+						col_max[0] = px;
+					if (py < col_min[1])
+						col_min[1] = py;
+					if (py > col_max[1])
+						col_max[1] = py;
+					if (pz < col_min[2])
+						col_min[2] = pz;
+					if (pz > col_max[2])
+						col_max[2] = pz;
+				}
+		const std::array<double, 3> ball_col_min_l0{(double) col_min[0], (double) col_min[1], (double) col_min[2]};
+		const std::array<double, 3> ball_col_max_l0{(double) col_max[0], (double) col_max[1], (double) col_max[2]};
+		spdlog::info(
+			"stamped ball column on level 0: x [{}..{}], y [{}..{}], z [{}..{}]",
+			col_min[0],
+			col_max[0],
+			col_min[1],
+			col_max[1],
+			col_min[2],
+			col_max[2]
+		);
+		const std::string amr_config = deriveAMRBallChain(R, max_level, ball_col_min_l0, ball_col_max_l0).region_config;
 
 		state.nse.allocateHostData();
 		state.nse.allocateDeviceData();
@@ -554,8 +606,8 @@ run(const std::string& adios_config,
 	double Re = 100.0,
 	double ball_diameter = 0.10)
 {
-	using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
-	//using COLL = D3Q27_CUM_WELL<TRAITS, D3Q27_EQ_INV_CUM_WELL<TRAITS>>;
+	//using COLL = D3Q27_CUM<TRAITS, D3Q27_EQ_INV_CUM<TRAITS>>;
+	using COLL = D3Q27_CUM_WELL<TRAITS, D3Q27_EQ_INV_CUM_WELL<TRAITS>>;
 
 	using NSE_CONFIG = LBM_CONFIG<
 		TRAITS,
@@ -576,7 +628,7 @@ int main(int argc, char** argv)
 
 	argparse::ArgumentParser program("sim_AMR_ball");
 	program.add_description(
-		"AMR ball-in-channel simulation (a sim_3 port): Dirichlet inflow/outflow channel, refinement box around the ball and its near wake."
+		"AMR ball-in-channel simulation (a sim_3 port): Dirichlet inflow/outflow channel, y/z-centered refinement boxes around the ball and its near wake."
 	);
 	program.add_argument("--adios-config").help("path to ADIOS2 configuration file").default_value(std::string("adios2.xml")).nargs(1);
 	program.add_argument("--resolution").help("resolution of the lattice").scan<'i', int>().default_value(1).nargs(1);
@@ -584,7 +636,7 @@ int main(int argc, char** argv)
 		.help(
 			"maximum AMR refinement level: 0 = uniform sim_3-equivalent reference, 1 = the default 2-level ball-wake "
 			"footprint, 2..4 = the derived nested interior chain of that depth (subject to the ball-containment "
-			"budget at this resolution: R = 1 admits levels 0..2)"
+			"budget at this resolution: R = 1 admits levels 0..4 with the 8R-cell y/z band)"
 		)
 		.scan<'i', int>()
 		.default_value(1)
