@@ -88,6 +88,22 @@ function(amr_pattern_define pattern out_var)
     set(${out_var} "${opts}" PARENT_SCOPE)
 endfunction()
 
+# the registration/exactness census suites hand-stage and read back mock DF
+# state with the A-B pull storage idioms (DF slot staging, parity frames,
+# downwind slot lookups), so they only compile against an AB_PULL pattern
+# context -- under AA/AB_PUSH/ESO trees the census walk then reads a
+# corrupted layout (SIGSEGV in T10f on all six non-AB_PULL CI arms). The
+# per-pattern kernel coverage deliberately lives elsewhere (the aa gate
+# binaries and the test_amr_f2c_schonherr_{ab,aa} exactness drivers), so
+# the census TUs pin the AB_PULL reference with the same strip-and-pin
+# idiom as the ab binaries
+amr_pattern_define(ab census_pattern_options)
+set_source_files_properties(
+    test_amr_schonherr_registration.cu
+    test_amr_schonherr_exactness.cu
+    PROPERTIES COMPILE_OPTIONS "${census_pattern_options}"
+)
+
 # the AMR gate binaries are built only in MPI-configured trees: their mock
 # suites need the mutable run-time overlaps of the DistributedNDArray array
 # types (the single-MPI-rank driver design)
