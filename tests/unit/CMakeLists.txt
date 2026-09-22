@@ -11,10 +11,21 @@ set(unit_test_sources
     test_streaming_mpi.cu
     test_streaming_mpi_bc2d.cu
     test_streaming_mpi_bc3d.cu
-    test_amr_schonherr_registration.cu
-    test_amr_schonherr_exactness.cu
     doctest_main.cu
 )
+
+# the AMR mock-test TUs need the MPI-build array types (mutable run-time
+# overlaps of the DistributedNDArray wrappers): under a non-MPI configure the
+# aliases collapse to the plain compile-time-overlap NDArrays (zero overlap
+# at the type level, defs.h) and the hand-wired ghost-layer MockBlock cannot
+# exist; the whole AMR driver is a single-MPI-rank design, so the suites are
+# simply not built without MPI
+if(MPI_FOUND AND TNL_LBM_USE_MPI)
+    list(APPEND unit_test_sources
+        test_amr_schonherr_registration.cu
+        test_amr_schonherr_exactness.cu
+    )
+endif()
 
 add_executable(test_cpp_units ${unit_test_sources})
 target_link_libraries(test_cpp_units PUBLIC TNL::TNL_LBM PRIVATE doctest::doctest)
@@ -77,6 +88,10 @@ function(amr_pattern_define pattern out_var)
     set(${out_var} "${opts}" PARENT_SCOPE)
 endfunction()
 
+# the AMR gate binaries are built only in MPI-configured trees: their mock
+# suites need the mutable run-time overlaps of the DistributedNDArray array
+# types (the single-MPI-rank driver design)
+if(MPI_FOUND AND TNL_LBM_USE_MPI)
 foreach(pattern IN ITEMS ${AMR_TEST_PATTERNS})
     amr_pattern_define(${pattern} pattern_options)
     set(target "test_amr_units_${pattern}")
@@ -97,16 +112,20 @@ foreach(pattern IN ITEMS ${AMR_TEST_PATTERNS})
         target_compile_definitions(${target} PRIVATE ${TNL_LBM_F2C_STRATEGY})
     endif()
 
-    # force language to HIP
+    # force language to HIP (the doctest_main_amr.cu runner TU must be
+    # marked too: a HIP-only tree would otherwise drop it from the object
+    # list and link without main)
     if(TNL_LBM_BUILD_HIP)
         set_source_files_properties(doctest_main_amr.cu ${AMR_SUITE_SOURCES} PROPERTIES LANGUAGE HIP)
     endif()
 endforeach()
+endif()
 
 # standalone per-define doctest driver: the F2C_SCHONHERR branch selects a
 # different body of the same kernel template symbol (ODR hazard), so the
 # define gets its own binary, built from doctest_main.cu + the shared driver
 # TU. Driven by tests/unit/test_amr_f2c_schonherr.py, NOT by the gate module
+if(MPI_FOUND AND TNL_LBM_USE_MPI)
 foreach(pattern IN ITEMS ${AMR_TEST_PATTERNS})
     amr_pattern_define(${pattern} pattern_options)
     set(target "test_amr_f2c_schonherr_${pattern}")
@@ -121,6 +140,7 @@ foreach(pattern IN ITEMS ${AMR_TEST_PATTERNS})
         set_source_files_properties(doctest_main_amr.cu test_amr_f2c_schonherr.cu PROPERTIES LANGUAGE HIP)
     endif()
 endforeach()
+endif()
 
 # an AA-configured tree does not build the AB-pinned targets above: drop their
 # stale outputs left over from a previous A-B configure, so that test drivers
