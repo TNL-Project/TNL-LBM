@@ -11,9 +11,13 @@
 
 // AMR ball-in-channel simulation: a port of sim_NSE/sim_3.cu ("LBM simulation
 // with ball in 3D") onto the State_AMR Berger-Colella subcycling driver of
-// sim_AMR/sim_AMR_channel.cu. Same collision/streaming/macro configuration
-// and CLI surface as the other two sim_AMR binaries; the physics constants,
-// boundary conditions and the level-0 obstacle stamping are sim_3's verbatim.
+// sim_AMR/sim_AMR_channel.cu. Same streaming/macro configuration and CLI
+// surface as the other two sim_AMR binaries; the physics constants, boundary
+// conditions and the level-0 obstacle stamping are sim_3's verbatim. The
+// collision operator is the well-conditioned cumulant variant
+// (D3Q27_CUM_WELL with D3Q27_EQ_INV_CUM_WELL: stored DFs are f - w with
+// sum(w) = 1, see d3q27/common.h) instead of sim_3's plain D3Q27_CUM; the
+// Geier 2017 A,B-term and antialiasing improvements are honored by both.
 //
 // Geometry (coarse level-0 cells, R = --resolution; sim_3's formulas
 // byte-for-byte): domain H = 11*ball_diameter tall/deep (LBM_Y = LBM_Z =
