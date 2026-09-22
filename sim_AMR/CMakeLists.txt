@@ -27,26 +27,6 @@ set(TNL_LBM_C2F_STRATEGY "" CACHE STRING "C2F strategy define for AMR targets (C
 # subcells inside that else-branch.
 set(TNL_LBM_F2C_STRATEGY "F2C_SCHONHERR" CACHE STRING "F2C transfer strategy define for AMR targets (default F2C_SCHONHERR; F2C_LAGRAVA opts out to the 4x4x4 Lagrange filter, F2C_BOX_AVERAGE to the 1/8 box average)")
 
-# 2026-08-23 (simulated-band flip): the C2F carve pre-pass was
-# HARD-REMOVED -- under the ch7 band registration every nominal source
-# window of a valid coupling straddles live GEO_AMR_INTERFACE cells only
-# (asserted statically by checkCouplingMapPattern at SimInit), so a covered
-# window is an invalid registration, not a runtime case. The formerly
-# default-on carve and its C2F_CARVE/C2F_NO_CARVE opt knobs have no code
-# left to gate; configuring with either set warns loudly here.
-if(C2F_CARVE OR C2F_NO_CARVE)
-    message(WARNING "C2F_CARVE/C2F_NO_CARVE were retired on 2026-08-23: the carve pre-pass is hard-removed (the ch7 band map-pattern assertion makes covered windows an invalid registration, not a runtime case). Remove the define from your configure line.")
-endif()
-
-# 2026-08-20 (Schönherr six-step cycle, plan ruling (d)): the H9
-# time-centered first-fill experiment was HARD-REMOVED together with the
-# legacy per-substep BVP refill -- the cycle now fills both AB frames once
-# per cycle end with identical content, so there is no code left for the
-# knob to gate. Configuring with C2F_H9 set warns loudly here.
-if(C2F_H9)
-    message(WARNING "C2F_H9 was retired on 2026-08-20 (Schönherr six-step cycle): the time-centered first fill and the per-substep BVP refill are hard-removed -- the cycle fills both frames once per cycle end with identical content. Remove -DC2F_H9 from your configure line.")
-endif()
-
 # 2026-08-16 (gate B ruling + D.1): the F2C skin feedback became the ONLY
 # fine-to-coarse channel -- the former F2C_SKIN_ONLY experiment define was
 # retired together with the ring-F2C code it gated, so there is no feedback
