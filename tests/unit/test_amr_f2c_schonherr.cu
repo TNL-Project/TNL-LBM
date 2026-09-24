@@ -226,34 +226,66 @@ struct MockBlock
 	}
 };
 
+// single-DF-array (in-place) streaming patterns (A-A and the three esoteric
+// schemes): parity-driven storage on df_cur only
+constexpr bool single_array_pattern = NSE_CONFIG::DFMAX == 1;
+
 // Store the post-collision DF of direction `q` in the slot the coupling
 // kernel reads back as the post-collision population of direction `q` of
 // site (x,y,z) (mirror of STREAMING::postCollisionSlot, the same idiom as
 // tests/unit/test_amr_coupling.cu):
 // - A-B pattern: df_out[q] in natural orientation (the parity argument is
-//   A-A-only state, ignored by the kernels)
+//   in-place-pattern-only state, ignored by the kernels)
 // - A-A pattern with even_iter == true (post-collision, twisted): direction
 //   q sits in df_cur[opposite_direction(q)] at the own site
 // - A-A pattern with even_iter == false (odd push-scatter): direction q of
 //   site (x,y,z) sits in df_cur[q] at the downwind target site (x,y,z) + c_q
+// - esoteric in-place patterns: (slot, site) shifts transcribed from
+//   streaming_ESO_{TWIST,PULL,PUSH}.h::postCollisionSlot (TWIST shifts the
+//   site by the positive components of c_q and flips the slot at parity
+//   false; PULL shifts pair heads by c_q with the same flip; PUSH shifts
+//   pair tails by c_q and flips the slot at parity true)
 void storePostCollisionDF(MockBlock& block, bool even_iter, int q, idx x, idx y, idx z, dreal value)
 {
-	if constexpr (is_AA_v<NSE_CONFIG::STREAMING>) {
-		if (even_iter) {
-			block.hfs[df_cur](opposite_direction(q), x, y, z) = value;
-		}
-		else {
-			const idx rx = x + dir27_cx(q);
-			const idx ry = y + dir27_cy(q);
-			const idx rz = z + dir27_cz(q);
-			if (rx >= -block.ov && rx < block.size + block.ov && ry >= -block.ov && ry < block.size + block.ov && rz >= -block.ov
-				&& rz < block.size + block.ov)
-				block.hfs[df_cur](q, rx, ry, rz) = value;
-		}
-	}
-	else {
+	if constexpr (! single_array_pattern) {
 		static_cast<void>(even_iter);
 		block.hfs[df_out](q, x, y, z) = value;
+	}
+	else {
+		int slot;
+		idx rx = x, ry = y, rz = z;
+		if constexpr (is_AA_v<NSE_CONFIG::STREAMING>) {
+			if (even_iter)
+				slot = opposite_direction(q);
+			else {
+				slot = q;
+				rx += dir27_cx(q);
+				ry += dir27_cy(q);
+				rz += dir27_cz(q);
+			}
+		}
+		else if constexpr (is_ESO_TWIST_v<NSE_CONFIG::STREAMING>) {
+			slot = even_iter ? q : opposite_direction(q);
+			rx += dir27_cx(q) > 0 ? 1 : 0;
+			ry += dir27_cy(q) > 0 ? 1 : 0;
+			rz += dir27_cz(q) > 0 ? 1 : 0;
+		}
+		else if constexpr (is_ESO_PULL_v<NSE_CONFIG::STREAMING>) {
+			slot = even_iter ? q : opposite_direction(q);
+			rx += is_pair_head(q) ? dir27_cx(q) : 0;
+			ry += is_pair_head(q) ? dir27_cy(q) : 0;
+			rz += is_pair_head(q) ? dir27_cz(q) : 0;
+		}
+		else {
+			// ESO_PUSH
+			slot = even_iter ? opposite_direction(q) : q;
+			rx += is_pair_head(q) ? 0 : dir27_cx(q);
+			ry += is_pair_head(q) ? 0 : dir27_cy(q);
+			rz += is_pair_head(q) ? 0 : dir27_cz(q);
+		}
+		if (rx >= -block.ov && rx < block.size + block.ov && ry >= -block.ov && ry < block.size + block.ov && rz >= -block.ov
+			&& rz < block.size + block.ov)
+			block.hfs[df_cur](slot, rx, ry, rz) = value;
 	}
 }
 
@@ -264,17 +296,45 @@ void storePostCollisionDF(MockBlock& block, bool even_iter, int q, idx x, idx y,
 // of tests/unit/test_amr_coupling.cu): AB writes the logical df_out in
 // natural orientation at the own site; AA writes df_cur[opposite(q)] at the
 // own site when the next substep is odd, df_cur[q] at the DOWNWIND consumer
-// site (x,y,z) + c_q when it is even
+// site (x,y,z) + c_q when it is even; the esoteric in-place patterns follow
+// their preCollisionSlot head/tail placement (TWIST shifts the site by the
+// positive components of c_q, PULL shifts pair heads, PUSH pair tails, with
+// the TWIST/PULL slot flipping at parity true and the PUSH slot at parity
+// false)
 dreal readCoarseDF(const MockBlock& block, bool coarse_even_iter, int q, idx x, idx y, idx z)
 {
-	if constexpr (is_AA_v<NSE_CONFIG::STREAMING>) {
+	if constexpr (! single_array_pattern) {
+		static_cast<void>(coarse_even_iter);
+		return block.hfs[df_out](q, x, y, z);
+	}
+	else if constexpr (is_AA_v<NSE_CONFIG::STREAMING>) {
 		if (coarse_even_iter)
 			return block.hfs[df_cur](q, x + dir27_cx(q), y + dir27_cy(q), z + dir27_cz(q));
 		return block.hfs[df_cur](opposite_direction(q), x, y, z);
 	}
 	else {
-		static_cast<void>(coarse_even_iter);
-		return block.hfs[df_out](q, x, y, z);
+		int slot;
+		idx rx = x, ry = y, rz = z;
+		if constexpr (is_ESO_TWIST_v<NSE_CONFIG::STREAMING>) {
+			slot = coarse_even_iter ? opposite_direction(q) : q;
+			rx += dir27_cx(q) > 0 ? 1 : 0;
+			ry += dir27_cy(q) > 0 ? 1 : 0;
+			rz += dir27_cz(q) > 0 ? 1 : 0;
+		}
+		else if constexpr (is_ESO_PULL_v<NSE_CONFIG::STREAMING>) {
+			slot = coarse_even_iter ? opposite_direction(q) : q;
+			rx += is_pair_head(q) ? dir27_cx(q) : 0;
+			ry += is_pair_head(q) ? dir27_cy(q) : 0;
+			rz += is_pair_head(q) ? dir27_cz(q) : 0;
+		}
+		else {
+			// ESO_PUSH
+			slot = coarse_even_iter ? q : opposite_direction(q);
+			rx += is_pair_head(q) ? 0 : dir27_cx(q);
+			ry += is_pair_head(q) ? 0 : dir27_cy(q);
+			rz += is_pair_head(q) ? 0 : dir27_cz(q);
+		}
+		return block.hfs[df_cur](slot, rx, ry, rz);
 	}
 }
 

@@ -1,10 +1,11 @@
 """Compile-and-run exactness locks for the F2C_SCHONHERR branch (T14).
 
-Drives the two ``test_amr_f2c_schonherr_{ab,aa}`` executables — one binary
-per streaming pattern, compiled from ``tests/unit/doctest_main.cu`` and
-``tests/unit/test_amr_f2c_schonherr.cu`` with ``F2C_SCHONHERR`` hardcoded
-(Schönherr ch7 conversion, commit 13 / plan row 14; the default strategy
-since commit 15 / T17; doctest-based since the amr-doctest-port).
+Drives the ``test_amr_f2c_schonherr_{ab,aa,eso_twist,eso_pull,eso_push}``
+executables — one binary per streaming pattern, compiled from
+``tests/unit/doctest_main.cu`` and ``tests/unit/test_amr_f2c_schonherr.cu``
+with ``F2C_SCHONHERR`` hardcoded (Schönherr ch7 conversion, commit 13 /
+plan row 14; the default strategy since commit 15 / T17; doctest-based
+since the amr-doctest-port).
 
 The define is a per-TU compile-time switch selecting the thesis §7.2
 σ-form compact-moment transfer (σ = 2) inside ``cudaAMR_FineToCoarse`` and
@@ -21,9 +22,11 @@ field, and asserts the T14 exactness classes: constant exact; linear
 velocity exact; quadratic-velocity + linear-density exact at t = (0,0,0);
 CE-consistent strain round-trip at σ = 2; and Σf = d0 exactly at the
 destination (see the source header for the derivation and tolerance
-documentation).  A missing binary is a hard failure with a build hint,
+documentation).  The esoteric in-place pins are unconditional in every
+tree (no opt-in cache variable), so every configured MPI tree builds all
+five binaries.  A missing binary is a hard failure with a build hint,
 never a silent skip — with one exception: a single-pattern AA tree builds
-only the ``aa`` binaries (``AMR_TEST_PATTERNS = aa``,
+only the ``aa``/``eso_*`` binaries (``AMR_TEST_PATTERNS``,
 tests/unit/CMakeLists.txt), so the ``ab`` parametrization skips there.
 """
 
@@ -36,7 +39,7 @@ import pytest
 
 from tests.lbmtest import BUILD_DIR, run_sim
 
-PATTERNS = ["ab", "aa"]
+PATTERNS = ["ab", "aa", "eso_twist", "eso_pull", "eso_push"]
 
 
 def _binary_path(pattern: str) -> pathlib.Path:
@@ -50,7 +53,8 @@ def test_f2c_schonherr_exactness(pattern: str, test_dir: pathlib.Path) -> None:
         if pattern == "ab" and _binary_path("aa").is_file():
             pytest.skip(
                 "single-pattern AA tree: the AB-pinned exactness binary is "
-                "intentionally not built (AMR_TEST_PATTERNS = aa)"
+                "intentionally not built (AMR_TEST_PATTERNS = "
+                "aa eso_twist eso_pull eso_push)"
             )
         pytest.fail(
             f"cannot find {binary} — build the smoke targets first: "

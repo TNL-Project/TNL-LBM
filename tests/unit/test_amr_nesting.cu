@@ -836,7 +836,7 @@ const char* stageName(St stage)
 // the captured df_cur pointer aliases; AA: the captured even_iter flag)
 int capturedRotation(const BLOCK& block, const void* captured_cur, bool captured_even)
 {
-	if constexpr (is_AA_v<NSE_CONFIG::STREAMING>) {
+	if constexpr (single_array_pattern) {
 		static_cast<void>(block);
 		static_cast<void>(captured_cur);
 		return captured_even ? 1 : 0;
@@ -894,7 +894,7 @@ bool checkCycleEvents(
 		const void* fine_cur = nullptr;
 		const void* parent_cur = nullptr;
 		bool fine_even = false, parent_even = false;
-		if constexpr (is_AA_v<NSE_CONFIG::STREAMING>) {
+		if constexpr (single_array_pattern) {
 			fine_even = evt.fine_even;
 			parent_even = evt.parent_even;
 		}
@@ -906,7 +906,7 @@ bool checkCycleEvents(
 			// the level-0 step is driven by the global updateKernelData
 			// clock (set before SimUpdate) and must not be re-armed by any
 			// fine-level preparation
-			if constexpr (is_AA_v<NSE_CONFIG::STREAMING>) {
+			if constexpr (single_array_pattern) {
 				if (evt.coarse_even != (clock_rot == 1)) {
 					failure = fmt::format("event {} (kernel L0): level-0 even_iter does not match the global clock of cycle {}", i + 1, cycle);
 					return false;
@@ -1023,7 +1023,7 @@ void checkScheduleCensus(int max_level, const char* regions, const char* label, 
 		const auto& evt = state.events[L - 1];
 		BLOCK* block = state.nse.getBlocksAtLevel(L).front();
 		init_ok = evt.stage == St::c2f && evt.level == L;
-		if constexpr (is_AA_v<NSE_CONFIG::STREAMING>)
+		if constexpr (single_array_pattern)
 			init_ok = init_ok && evt.fine_even == false;
 		else
 			init_ok = init_ok && evt.fine_cur == block->dfs[0].getData();
