@@ -741,7 +741,9 @@ struct StateLocal_AMR_Ball : State_AMR<NSE>
 	// momentum-exchange sample per cnt[PROBE2] tick, appended to a CSV
 	double drag_probe_period = -1;	// [s] <= 0: disabled
 	std::string drag_csv_path = "drag_probe.csv";
-	BallForceAccumulator* d_force = nullptr;
+	// device accumulator (TNL array: portable under both CUDA and HIP,
+	// unlike raw cudaMalloc/cudaMemcpy calls)
+	TNL::Containers::Array<BallForceAccumulator, TNL::Devices::Cuda, int> d_force;
 	std::ofstream drag_csv;
 	long drag_sample_count = 0;
 	double drag_cd_ema = 0;
@@ -886,10 +888,15 @@ struct StateLocal_AMR_Ball : State_AMR<NSE>
 			return;
 
 		const int probe_level = nse.max_level;	// 0 selects the uniform reference run
-		if (d_force == nullptr && cudaMalloc(&d_force, sizeof(BallForceAccumulator)) != cudaSuccess) {
-			spdlog::error("drag probe: device accumulator allocation failed; probe disabled");
-			drag_probe_period = -1;
-			return;
+		if (d_force.getSize() == 0) {
+			try {
+				d_force.setSize(1);
+			}
+			catch (const std::exception& e) {
+				spdlog::error("drag probe: device accumulator allocation failed ({}); probe disabled", e.what());
+				drag_probe_period = -1;
+				return;
+			}
 		}
 
 		BallForceAccumulator total;
@@ -906,15 +913,14 @@ struct StateLocal_AMR_Ball : State_AMR<NSE>
 				begin[a] = TNL::max((idx) 0, c[a] - half);
 				end[a] = TNL::min(block.local[a], c[a] + half + 1);
 			}
-			cudaMemsetAsync(d_force, 0, sizeof(BallForceAccumulator));
+			d_force.setElement(0, BallForceAccumulator{});
 			const auto direction = TNL::Containers::SyncDirection::None;
 			TNL::Backend::LaunchConfiguration launch_config;
 			launch_config.blockSize = block.computeData.at(direction).blockSize;
 			launch_config.gridSize = block.getCudaGridSize(end - begin, launch_config.blockSize);
-			TNL::Backend::launchKernelAsync(cudaBallForceKernel<NSE>, launch_config, block.data, begin, end, d_force);
+			TNL::Backend::launchKernelAsync(cudaBallForceKernel<NSE>, launch_config, block.data, begin, end, d_force.getData());
 			TNL::Backend::streamSynchronize(0);
-			BallForceAccumulator block_acc;
-			cudaMemcpy(&block_acc, d_force, sizeof(BallForceAccumulator), cudaMemcpyDeviceToHost);
+			const BallForceAccumulator block_acc = d_force.getElement(0);
 			total.fx += block_acc.fx;
 			total.fy += block_acc.fy;
 			total.fz += block_acc.fz;
