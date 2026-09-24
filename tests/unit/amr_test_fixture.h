@@ -53,7 +53,17 @@ using NSE_CONFIG = LBM_CONFIG<
 	D3Q27_MACRO_Default<TRAITS>>;
 
 // display name of the compiled-in streaming pattern (log/id strings only)
-constexpr const char* pattern_name = is_AA_v<NSE_CONFIG::STREAMING> ? "AA" : "AB";
+constexpr const char* pattern_name = is_AA_v<NSE_CONFIG::STREAMING>		   ? "AA"
+								   : is_ESO_TWIST_v<NSE_CONFIG::STREAMING> ? "ESO_TWIST"
+								   : is_ESO_PULL_v<NSE_CONFIG::STREAMING>  ? "ESO_PULL"
+								   : is_ESO_PUSH_v<NSE_CONFIG::STREAMING>  ? "ESO_PUSH"
+																		   : "AB";
+
+// single-DF-array (in-place) streaming patterns: A-A and the three esoteric
+// schemes. Their kernels are parity-driven on the single df_cur array
+// (even_iter is the parity evidence), so the schedule/parity arms below that
+// were written for the A-A pattern apply to the esoteric patterns unchanged
+constexpr bool single_array_pattern = NSE_CONFIG::DFMAX == 1;
 
 using idx = typename TRAITS::idx;
 using idx3d = typename TRAITS::idx3d;
@@ -182,7 +192,7 @@ template <typename STATE>
 std::string levelStateString(const STATE& state, const BLOCK& block, int level)
 {
 	std::string s = fmt::format("level {}:", level);
-	if constexpr (is_AA_v<typename NSE_CONFIG::STREAMING>)
+	if constexpr (single_array_pattern)
 		s += fmt::format(" even_iter = {}", block.data.even_iter);
 	else
 		s += fmt::format(" dfs rotation = {}", dfsSwapped(block) ? "substep-1 (swapped)" : "substep-0 (identity)");
@@ -260,7 +270,9 @@ struct StateSchedule_AMR : StateLocal_AMR<NSE>
 		BLOCK_NSE* fine = level > 0 ? this->nse.getBlocksAtLevel(level).front() : nullptr;
 		BLOCK_NSE* coarse = this->nse.getBlocksAtLevel(0).front();
 		BLOCK_NSE* parent = level > 0 ? this->nse.getBlocksAtLevel(level - 1).front() : nullptr;
-		if constexpr (is_AA_v<typename NSE::STREAMING>) {
+		if constexpr (NSE::DFMAX == 1) {
+			// single-array patterns (A-A and the esoteric schemes) share the
+			// even_iter parity evidence; two-array patterns rotate pointers
 			if (fine != nullptr)
 				e.fine_even = fine->data.even_iter;
 			if (parent != nullptr)
@@ -431,7 +443,7 @@ inline FineGhostScan captureFineGhost(BLOCK& block)
 					scan.map.push_back(block.hmap(x, y, z));
 					scan.frame0.push_back(block.hfs[0](q, x, y, z));
 					// the second DF frame exists only in two-array (A-B) patterns
-					if constexpr (! is_AA_v<typename NSE_CONFIG::STREAMING>)
+					if constexpr (NSE_CONFIG::DFMAX >= 2)
 						scan.frame1.push_back(block.hfs[1](q, x, y, z));
 				}
 	return scan;

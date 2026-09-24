@@ -117,7 +117,7 @@ void test_subcycling_schedule()
 		CHECK_MESSAGE(false, fmt::format("Test 1 setup: SimInit launched {} events, expected exactly 1 (C2F frame 0)", state.events.size()));
 		return;
 	}
-	if constexpr (! is_AA_v<NSE_CONFIG::STREAMING>) {
+	if constexpr (! single_array_pattern) {
 		{
 			const void* const P = fine->dfs[0].getData();
 			CHECK_MESSAGE(
@@ -152,7 +152,7 @@ void test_subcycling_schedule()
 		using Stage = typename StateSchedule_AMR<NSE_CONFIG>::Stage;
 		const Evt* ev = state.events.size() >= base + 5 ? state.events.data() + base : nullptr;
 		bool call_ok = iter_ok && ev != nullptr;
-		if constexpr (! is_AA_v<NSE_CONFIG::STREAMING>) {
+		if constexpr (! single_array_pattern) {
 			const void* const P = fine->dfs[0].getData();
 			const void* const Q = fine->dfs[1].getData();
 			const void* const expected_coarse = ((call - 1) % 2 == 0) ? coarse->dfs[0].getData() : coarse->dfs[1].getData();
@@ -597,7 +597,7 @@ void test_interface_ring_freshness()
 		)
 	);
 
-if constexpr (! is_AA_v<NSE_CONFIG::STREAMING>) {
+if constexpr (! single_array_pattern) {
 	// LOCK 5 (the pair discriminates the simulated band from both the old
 	// both-frames fill and from a no-widening regression):
 	// (SB1) the widened substep-1 kernel INTEGRATED the inner overlap rows:
@@ -752,7 +752,7 @@ void test_interface_ring_freshness_model()
 		);
 	}
 
-if constexpr (! is_AA_v<NSE_CONFIG::STREAMING>) {
+if constexpr (! single_array_pattern) {
 	// M2a: the frame-1 INNER layer is fresh substep-1 kernel output every
 	// cycle -- it must differ from the SimInit anchor and from the previous
 	// cycle's inner content at every cycle end
@@ -887,7 +887,7 @@ void test_schedule_parity_structure()
 		for (int k = 1; k < cycles; k++) {
 			const Evt& ref = state.events[slot];
 			const Evt& cur = state.events[5 * k + slot];
-			if constexpr (! is_AA_v<NSE_CONFIG::STREAMING>) {
+			if constexpr (! single_array_pattern) {
 				invariant_ok = invariant_ok && ref.fine_cur == cur.fine_cur && ref.fine_out == cur.fine_out;
 			} else {
 				invariant_ok = invariant_ok && ref.fine_even == cur.fine_even;
@@ -904,7 +904,7 @@ void test_schedule_parity_structure()
 	bool alternation_ok = true;
 	for (int slot = 2; slot < 5; slot++)
 		for (int k = 0; k + 1 < cycles; k++) {
-			if constexpr (! is_AA_v<NSE_CONFIG::STREAMING>) {
+			if constexpr (! single_array_pattern) {
 				alternation_ok = alternation_ok && state.events[5 * k + slot].coarse_cur != state.events[5 * (k + 1) + slot].coarse_cur;
 			} else {
 				alternation_ok = alternation_ok && state.events[5 * k + slot].coarse_even != state.events[5 * (k + 1) + slot].coarse_even;
@@ -912,7 +912,7 @@ void test_schedule_parity_structure()
 		}
 	for (int slot = 2; slot < 5; slot++)
 		for (int k = 0; k + 2 < cycles; k++) {
-			if constexpr (! is_AA_v<NSE_CONFIG::STREAMING>) {
+			if constexpr (! single_array_pattern) {
 				alternation_ok = alternation_ok && state.events[5 * k + slot].coarse_cur == state.events[5 * (k + 2) + slot].coarse_cur;
 			} else {
 				alternation_ok = alternation_ok && state.events[5 * k + slot].coarse_even == state.events[5 * (k + 2) + slot].coarse_even;
@@ -934,7 +934,7 @@ void test_schedule_parity_structure()
 		const Evt& substep1 = state.events[5 * k];
 		const Evt& substep2 = state.events[5 * k + 1];
 		const Evt& fill = state.events[5 * (k - 1) + 4];
-		if constexpr (! is_AA_v<NSE_CONFIG::STREAMING>) {
+		if constexpr (! single_array_pattern) {
 			consumption_ok = consumption_ok && substep1.fine_cur == fill.fine_cur && substep2.fine_cur == substep1.fine_out;
 		} else {
 			consumption_ok = consumption_ok && substep1.fine_even == fill.fine_even && substep2.fine_even != substep1.fine_even;
