@@ -319,25 +319,23 @@ struct AMR_InterfacePatch
 
 /**
  * \brief CM Pi tensor accumulation over the 27 directions (the
- * non-equilibrium part of Eqs. 7.5-7.9). Declares the D3Q27
- * lattice-velocity component tables it reads (enumeration from defs.h:
- * the p/m/z letters map to +1/-1/0 in x/y/z order).
+ * non-equilibrium part of Eqs. 7.5-7.9). The D3Q27 lattice-velocity
+ * components are read from the constexpr dir27_cx/dir27_cy/dir27_cz
+ * functions in defs.h (enumeration: the p/m/z letters map to +1/-1/0
+ * in x/y/z order).
  */
-#define AMR_CM_PI_NEQ                                                                                                              \
-	constexpr signed char vel_cx[27] = {0, 1, -1, 0, 0, 0, 0, 1, -1, 1, -1, 1, -1, 1, -1, 0, 0, 0, 0, 1, -1, 1, -1, 1, -1, 1, -1}; \
-	constexpr signed char vel_cy[27] = {0, 0, 0, 1, -1, 0, 0, 1, -1, -1, 1, 0, 0, 0, 0, 1, -1, 1, -1, 1, -1, 1, -1, -1, 1, -1, 1}; \
-	constexpr signed char vel_cz[27] = {0, 0, 0, 0, 0, 1, -1, 0, 0, 0, 0, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1}; \
-	for (int q = 0; q < CONFIG::Q; q++) {                                                                                          \
-		const dreal f_neq = KS_C.f[q] - KS_E.f[q];                                                                                 \
-		const dreal cqx = static_cast<dreal>(vel_cx[q]);                                                                           \
-		const dreal cqy = static_cast<dreal>(vel_cy[q]);                                                                           \
-		const dreal cqz = static_cast<dreal>(vel_cz[q]);                                                                           \
-		Pi_xx += cqx * cqx * f_neq;                                                                                                \
-		Pi_yy += cqy * cqy * f_neq;                                                                                                \
-		Pi_zz += cqz * cqz * f_neq;                                                                                                \
-		Pi_xy += cqx * cqy * f_neq;                                                                                                \
-		Pi_xz += cqx * cqz * f_neq;                                                                                                \
-		Pi_yz += cqy * cqz * f_neq;                                                                                                \
+#define AMR_CM_PI_NEQ                                \
+	for (int q = 0; q < CONFIG::Q; q++) {               \
+		const dreal f_neq = KS_C.f[q] - KS_E.f[q];         \
+		const dreal cqx = static_cast<dreal>(dir27_cx(q)); \
+		const dreal cqy = static_cast<dreal>(dir27_cy(q)); \
+		const dreal cqz = static_cast<dreal>(dir27_cz(q)); \
+		Pi_xx += cqx * cqx * f_neq;                        \
+		Pi_yy += cqy * cqy * f_neq;                        \
+		Pi_zz += cqz * cqz * f_neq;                        \
+		Pi_xy += cqx * cqy * f_neq;                        \
+		Pi_xz += cqx * cqz * f_neq;                        \
+		Pi_yz += cqy * cqz * f_neq;                        \
 	}
 
 #ifdef USE_GEIER_CUM_2017
@@ -361,23 +359,20 @@ struct AMR_InterfacePatch
 	 * state, so the third-order cumulants transfer IDENTITY-wise (no
 	 * relaxation-rate rescaling: they are mode state, not strain encodings).
 	 */
-	#define AMR_CM_THIRD_MOMENTS                                                                                                    \
-		constexpr signed char v3x[27] = {0, 1, -1, 0, 0, 0, 0, 1, -1, 1, -1, 1, -1, 1, -1, 0, 0, 0, 0, 1, -1, 1, -1, 1, -1, 1, -1}; \
-		constexpr signed char v3y[27] = {0, 0, 0, 1, -1, 0, 0, 1, -1, -1, 1, 0, 0, 0, 0, 1, -1, 1, -1, 1, -1, 1, -1, -1, 1, -1, 1}; \
-		constexpr signed char v3z[27] = {0, 0, 0, 0, 0, 1, -1, 0, 0, 0, 0, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1}; \
-		dreal k_120 = 0, k_210 = 0, k_201 = 0, k_102 = 0, k_012 = 0, k_021 = 0, k_111 = 0;                                          \
-		for (int q = 0; q < CONFIG::Q; q++) {                                                                                       \
-			const dreal f_neq = KS_C.f[q] - KS_E.f[q];                                                                              \
-			const dreal gx = static_cast<dreal>(v3x[q]) - u;                                                                        \
-			const dreal gy = static_cast<dreal>(v3y[q]) - v;                                                                        \
-			const dreal gz = static_cast<dreal>(v3z[q]) - w;                                                                        \
-			k_120 += gx * gy * gy * f_neq;                                                                                          \
-			k_210 += gy * gx * gx * f_neq;                                                                                          \
-			k_201 += gz * gx * gx * f_neq;                                                                                          \
-			k_102 += gx * gz * gz * f_neq;                                                                                          \
-			k_012 += gy * gz * gz * f_neq;                                                                                          \
-			k_021 += gz * gy * gy * f_neq;                                                                                          \
-			k_111 += gx * gy * gz * f_neq;                                                                                          \
+	#define AMR_CM_THIRD_MOMENTS                                                        \
+		dreal k_120 = 0, k_210 = 0, k_201 = 0, k_102 = 0, k_012 = 0, k_021 = 0, k_111 = 0; \
+		for (int q = 0; q < CONFIG::Q; q++) {                                              \
+			const dreal f_neq = KS_C.f[q] - KS_E.f[q];                                        \
+			const dreal gx = static_cast<dreal>(dir27_cx(q)) - u;                             \
+			const dreal gy = static_cast<dreal>(dir27_cy(q)) - v;                             \
+			const dreal gz = static_cast<dreal>(dir27_cz(q)) - w;                             \
+			k_120 += gx * gy * gy * f_neq;                                                    \
+			k_210 += gy * gx * gx * f_neq;                                                    \
+			k_201 += gz * gx * gx * f_neq;                                                    \
+			k_102 += gx * gz * gz * f_neq;                                                    \
+			k_012 += gy * gz * gz * f_neq;                                                    \
+			k_021 += gz * gy * gy * f_neq;                                                    \
+			k_111 += gx * gy * gz * f_neq;                                                    \
 		}
 #endif
 
