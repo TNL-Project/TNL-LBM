@@ -65,7 +65,11 @@ void UniformDataWriter<TRAITS>::write(const std::string& varName, const DataSour
 			}
 
 	this->recordVariable(varName, 1);
-	this->dataManager->template outputData<ValueType>(varName, buffer.data(), this->ioName);
+	// select this writer's own sub-box: all blocks share one variable definition, so a stale
+	// first-block selection would marshal more elements from the buffer than it holds
+	const adios2::Dims start{static_cast<std::size_t>(offset.z()), static_cast<std::size_t>(offset.y()), static_cast<std::size_t>(offset.x())};
+	const adios2::Dims count{static_cast<std::size_t>(local.z()), static_cast<std::size_t>(local.y()), static_cast<std::size_t>(local.x())};
+	this->dataManager->template outputData<ValueType>(varName, buffer.data(), start, count, this->ioName);
 }
 
 template <typename TRAITS>

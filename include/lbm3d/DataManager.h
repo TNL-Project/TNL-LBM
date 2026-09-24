@@ -263,6 +263,42 @@ public:
 		}
 	}
 
+	// pointer overload with an explicit selection: writers targeting a sub-box of a global-shaped
+	// variable (e.g. per-block boxes in State::write3D) must refresh the selection before every
+	// Put, because one variable can be written with several different sub-selections in one step
+	template <typename T>
+	void outputData(const std::string& varName, const T* data, const adios2::Dims& start, const adios2::Dims& count, const std::string& ioName)
+	{
+		if (! isEngineOpen(ioName)) {
+			throw std::runtime_error(fmt::format("Engine for '{}' is not initialized", ioName));
+		}
+
+		if (current_mode_[ioName] != adios2::Mode::Write && current_mode_[ioName] != adios2::Mode::Append) {
+			throw std::runtime_error("Engine not in write mode");
+		}
+
+		adios2::Variable<T> var = ios_[ioName].InquireVariable<T>(varName);
+		if (! var) {
+			throw std::runtime_error(fmt::format("Variable '{}' not found", varName));
+		}
+
+		// refuse empty or out-of-shape selections: they cannot be marshalled and such data is not
+		// representable in the variable anyway (e.g. AMR fine blocks live on a refined coordinate
+		// frame whose sub-box may exceed the coarse-shaped uniform image of State::write3D)
+		const adios2::Dims shape = var.Shape();
+		if (shape.size() != start.size() || start.size() != count.size()) {
+			throw std::runtime_error(fmt::format("Selection rank mismatch for variable '{}'", varName));
+		}
+		for (std::size_t d = 0; d < shape.size(); d++)
+			if (count[d] == 0 || start[d] + count[d] > shape[d]) {
+				spdlog::debug("Skipping empty or out-of-shape write of variable '{}'", varName);
+				return;
+			}
+
+		var.SetSelection({start, count});
+		engines_[ioName].Put(var, data);
+	}
+
 	// Methods for reading
 	template <typename T>
 	T readAttribute(const std::string& attrName, const std::string& ioName)
