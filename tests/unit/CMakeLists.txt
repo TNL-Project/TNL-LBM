@@ -36,19 +36,24 @@ target_link_libraries(test_cpp_units PUBLIC TNL::TNL_LBM PRIVATE doctest::doctes
 # and the split lets ninja schedule the model TUs in parallel
 
 # per-pattern test binaries: the pattern is pinned per target via the
-# umbrella TNL_LBM_STREAMING_PATTERN_{AB_PULL,AA} definitions consumed by
-# the streaming.h alias tables. The TNL_LBM interface target always
+# umbrella TNL_LBM_STREAMING_PATTERN_{AB_PULL,AA,ESO_*} definitions consumed
+# by the streaming.h alias tables. The TNL_LBM interface target always
 # propagates the tree-wide selection, but the alias tables match
 # TNL_LBM_STREAMING_PATTERN_AA first, so the aa pin wins in a default (A-B)
 # tree; in an AA-configured tree the same precedence would silently turn
 # the "ab" binaries into second AA builds, so they are created only in the
 # default A-B tree (the AA tree still gets the aa-pinned binaries and the
-# default-pattern test_cpp_units)
+# default-pattern test_cpp_units). The esoteric in-place pins
+# (ESO_TWIST/ESO_PULL/ESO_PUSH) are unconditional in every tree: no pin ever
+# duplicates the tree-level pattern of another pin (the ab pin is absent
+# exactly where it would collide with the AA tree pattern), so no two targets
+# compile identical sources with identical defines and there is nothing to
+# deduplicate
 if(TNL_LBM_STREAMING_PATTERN STREQUAL "AA")
-    set(AMR_TEST_PATTERNS aa)
+    set(AMR_TEST_PATTERNS aa eso_twist eso_pull eso_push)
     message(STATUS "tests/unit: AA-pattern build tree - skipping the AB-pinned per-pattern test targets")
 else()
-    set(AMR_TEST_PATTERNS ab aa)
+    set(AMR_TEST_PATTERNS ab aa eso_twist eso_pull eso_push)
 endif()
 
 # force language to HIP
@@ -68,18 +73,24 @@ set(AMR_SUITE_SOURCES
     test_amr_nesting.cu
 )
 
-# the "ab"/"aa" binary suffixes pin the A-B pull reference and the A-A
-# pattern respectively via the umbrella selection definitions; the pin is
-# applied through COMPILE OPTIONS so it lands after the DEFINES group on
-# the compile command line (strip the tree-level interface define, then
-# pin): the umbrella's #if/#elif first-match precedence otherwise defeats
-# a plain compile definition whenever the tree pattern is checked earlier
-# than the pinned one (e.g. an AB_PUSH tree vs the AB_PULL pin)
+# the pin is applied through COMPILE OPTIONS so it lands after the DEFINES
+# group on the compile command line (strip the tree-level interface define,
+# then pin): the umbrella's #if/#elif first-match precedence otherwise
+# defeats a plain compile definition whenever the tree pattern is checked
+# earlier than the pinned one (e.g. an AB_PUSH tree vs the AB_PULL pin)
+# the "ab"/"aa"/"eso_*" binary suffixes pin the A-B pull reference, the A-A
+# pattern and the three esoteric in-place patterns respectively via the
+# umbrella selection definitions
 function(amr_pattern_define pattern out_var)
-    if(pattern STREQUAL "aa")
-        set(pin_define "TNL_LBM_STREAMING_PATTERN_AA")
-    else()
+    if(pattern STREQUAL "ab")
         set(pin_define "TNL_LBM_STREAMING_PATTERN_AB_PULL")
+    elseif(pattern STREQUAL "aa")
+        set(pin_define "TNL_LBM_STREAMING_PATTERN_AA")
+    elseif(pattern MATCHES "^eso_(twist|pull|push)$")
+        string(TOUPPER "${pattern}" pin_upper)
+        set(pin_define "TNL_LBM_STREAMING_PATTERN_${pin_upper}")
+    else()
+        message(FATAL_ERROR "amr_pattern_define: unknown pattern pin '${pattern}'")
     endif()
     set(opts "-D${pin_define}")
     if(TNL_LBM_STREAMING_PATTERN)
@@ -168,4 +179,45 @@ if(TNL_LBM_STREAMING_PATTERN STREQUAL "AA")
         ${CMAKE_BINARY_DIR}/tests/test_amr_units_ab
         ${CMAKE_BINARY_DIR}/tests/test_amr_f2c_schonherr_ab
     )
+endif()
+
+# cross-pattern bitwise lock of the AMR machinery: ONE binary per tree that
+# co-instantiates the streaming patterns through the explicit
+# D3Q27_STREAMING_{AB_PULL,AA,ESO_*} types (pattern diversity lives in the
+# translation units, not in per-pattern defines, so the tree-level umbrella
+# selection is irrelevant here). The five per-pattern scenario-runner TUs
+# carry the full State_AMR kernel instantiations; the TU split lets ninja
+# compile them in parallel (the compile-time split precedent of
+# test_streaming_mpi_bc{2d,3d}.cu), while the comparator TU
+# (test_amr_bitwise_lock.cu) instantiates no kernel at all. Driven by
+# tests/unit/test_amr_bitwise_lock.py
+if(MPI_FOUND AND TNL_LBM_USE_MPI)
+    add_executable(
+        test_amr_bitwise_lock
+        doctest_main_amr.cu
+        test_amr_bitwise_lock.cu
+        test_amr_bitwise_lock_ab.cu
+        test_amr_bitwise_lock_aa.cu
+        test_amr_bitwise_lock_eso_twist.cu
+        test_amr_bitwise_lock_eso_pull.cu
+        test_amr_bitwise_lock_eso_push.cu
+    )
+    target_link_libraries(test_amr_bitwise_lock PUBLIC TNL::TNL_LBM PRIVATE doctest::doctest)
+    set_target_properties(test_amr_bitwise_lock PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+
+    # force language to HIP (the runner TU must be marked too: a HIP-only
+    # tree would otherwise drop it from the object list and link without
+    # main)
+    if(TNL_LBM_BUILD_HIP)
+        set_source_files_properties(
+            doctest_main_amr.cu
+            test_amr_bitwise_lock.cu
+            test_amr_bitwise_lock_ab.cu
+            test_amr_bitwise_lock_aa.cu
+            test_amr_bitwise_lock_eso_twist.cu
+            test_amr_bitwise_lock_eso_pull.cu
+            test_amr_bitwise_lock_eso_push.cu
+            PROPERTIES LANGUAGE HIP
+        )
+    endif()
 endif()

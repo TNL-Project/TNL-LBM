@@ -1,19 +1,21 @@
 """AMR gate doctest suites: the four consolidated per-pattern binary runs.
 
-Drives the two ``test_amr_units_{ab,aa}`` executables — the doctest
-consolidation of the coupling, subcycling, vtkhdf-writer and nesting test
-suites, one binary per streaming pattern (the per-pattern defines select
-the A-B/A-A kernels throughout) — once per TEST_SUITE via doctest's
-``--test-suite=`` filter. These 2×4 runs are the gate half of the AMR
-battery (the ParaView end-to-end arms live in
-``tests/integration/test_amr_paraview.py``).
+Drives the ``test_amr_units_{ab,aa,eso_twist,eso_pull,eso_push}``
+executables — the doctest consolidation of the coupling, subcycling,
+vtkhdf-writer and nesting test suites, one binary per streaming pattern
+(the per-pattern defines select the A-B/A-A/esoteric kernels throughout) —
+once per TEST_SUITE via doctest's ``--test-suite=`` filter. These runs are
+the gate half of the AMR battery (the ParaView end-to-end arms live in
+``tests/integration/test_amr_paraview.py``). The esoteric in-place pins
+are unconditional in every tree (no opt-in cache variable), so every
+configured MPI tree builds all five binaries.
 
 The suites are doctests: every legacy PASS/FAIL site maps one-to-one to a
 ``CHECK_MESSAGE`` (positive-coverage counting preserved; see the
 amr-doctest-port plan), so pytest asserts the doctest all-pass banner
 beyond the bare exit code. A missing binary is a hard failure with a
 build hint, never a silent skip — with one exception: a single-pattern AA
-tree builds only the ``aa`` binaries (``AMR_TEST_PATTERNS = aa``,
+tree builds only the ``aa``/``eso_*`` binaries (``AMR_TEST_PATTERNS``,
 tests/unit/CMakeLists.txt), so the ``ab`` parametrizations skip there.
 """
 
@@ -27,7 +29,7 @@ import pytest
 
 from tests.lbmtest import ADIOS_CONFIG, BUILD_DIR, run_sim
 
-PATTERNS = ["ab", "aa"]
+PATTERNS = ["ab", "aa", "eso_twist", "eso_pull", "eso_push"]
 GATE_SUITES = ["amr_coupling", "amr_subcycling", "amr_vtkhdf_writer", "amr_nesting"]
 
 GATE_CASES = [(suite, pattern) for pattern in PATTERNS for suite in GATE_SUITES]
@@ -43,13 +45,11 @@ GATE_CASES = [(suite, pattern) for pattern in PATTERNS for suite in GATE_SUITES]
 def test_amr_gate_suite(suite: str, pattern: str, test_dir: pathlib.Path) -> None:
     binary = BUILD_DIR / "tests" / f"test_amr_units_{pattern}"
     if not binary.is_file():
-        sibling = (
-            BUILD_DIR / "tests" / f"test_amr_units_{'aa' if pattern == 'ab' else 'ab'}"
-        )
-        if pattern == "ab" and sibling.is_file():
+        if pattern == "ab" and (BUILD_DIR / "tests" / "test_amr_units_aa").is_file():
             pytest.skip(
                 "single-pattern AA tree: the AB-pinned gate binary is "
-                "intentionally not built (AMR_TEST_PATTERNS = aa)"
+                "intentionally not built (AMR_TEST_PATTERNS = "
+                "aa eso_twist eso_pull eso_push)"
             )
         pytest.fail(
             f"cannot find {binary} — build the gate target first: "
