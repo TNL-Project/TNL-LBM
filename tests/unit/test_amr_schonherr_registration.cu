@@ -1,14 +1,14 @@
 /*
  * Schönherr-2015 ch.7 AMR conversion -- registration/parity/conservation census
- * locks and buildCouplings geometry fingerprints (plan row 3 of
- * .omo/plans/schonherr-ch7-conversion.md; contract doc
+ * locks and buildCouplings geometry fingerprints (the TDD census row of
+ * the Schönherr ch7 conversion; contract doc
  * docs/AMR-schonherr-ch7-target-contract.md sections 1.2 and 2).
  *
  * This file is the TDD land-first commit of the conversion: every expected
  * value below is computed from the RULING FORMULAS (cited next to each
  * expectation), never from the current runtime output. The new-geometry locks
  * are RED by design against the current band geometry and flip green when the
- * commits 4-7 geometry lands.
+ * re-anchored band geometry lands.
  *
  * Two doctest suites:
  * - "amr_schonherr_registration_formulas": pure formula-level sanity cases
@@ -17,7 +17,7 @@
  * - "amr_schonherr_registration_locks": runtime locks against real State_AMR
  *   fixtures (same mock-state idiom as tests/unit/test_amr_subcycling.cu). The
  *   pytest wrapper (tests/unit/test_cpp_units.py) marks this suite's batch
- *   xfail(strict=True); the mark is removed at the commit-7 stage-1 gate.
+ *   xfail(strict=True); the mark is removed at the band-geometry landing gate.
  *
  * Fixture (shared by all runtime cases): 16^3 periodic domain with one
  * centered level-1 region, coarse footprint go = (4,4,4), gs = K = 8 cells
@@ -210,7 +210,7 @@ long rectVolume(const idx3d& size)
 TEST_SUITE_BEGIN("amr_schonherr_registration_formulas");
 
 // Pins the census arithmetic itself: every identity is a formula from contract
-// section 2.4 / plan section 1.2 evaluated on the K=8 fixture and on the K=32
+// section 2.4 / contract section 1.2 evaluated on the K=8 fixture and on the K=32
 // TGV region. No runtime geometry involved -- these stay GREEN at all times.
 TEST_CASE("census shell formulas (K=8 fixture, K=32 TGV region)")
 {
@@ -250,13 +250,13 @@ TEST_CASE("census shell formulas (K=8 fixture, K=32 TGV region)")
 	CHECK(31 * 31 * 31 - nothingCensus(32) == 2791);
 }
 
-// The band-map parity invariant (plan section 2, T0'; contract section 2.2):
+// The band-map parity invariant (contract section 2.2):
 // under the new indexer old = new + 1, every band row keeps its fine-global
 // coordinate fg, hence its (home, t) storage parity. Pure arithmetic, no
 // runtime geometry -- stays GREEN.
 TEST_CASE("parity row mapping old = new + 1")
 {
-	// band rows of plan section 1.1: (old local, new local) pairs
+	// band rows of the re-anchor map: (old local, new local) pairs
 	// dest row 1: -1 -> -2; dest row 2: 0 -> -1; standard row 0: 1 -> 0;
 	// F2C source rows: {2, 3} -> {1, 2}
 	const std::pair<int, int> band_rows[] = {{-1, -2}, {0, -1}, {1, 0}, {2, 1}, {3, 2}};
@@ -281,7 +281,7 @@ TEST_SUITE_BEGIN("amr_schonherr_registration_locks");
 // (K+2)^3 - K^3 = 488 plus the reactivated c=0 surface shell K^3 - (K-2)^3 =
 // 296); expected GEO_NOTHING = (K-2)^3 = 216. The current geometry tags only
 // the halo ring (488) and the whole footprint (512), so this lock is RED
-// until the commit-6 retag.
+// until the reactivated-shell retag.
 TEST_CASE("ring + GEO_NOTHING census (K=8 fixture)")
 {
 	StateLock_AMR<NSE_CONFIG> state = makeState("schonherr_locks_census");
@@ -338,7 +338,7 @@ TEST_CASE("ring + GEO_NOTHING census (K=8 fixture)")
 // outside the simulated interior: total 3088 = 18^3 - 14^3 with the per-face
 // family split {648, 648, 504, 504, 392, 392} and the corner/edge/face
 // interior split 64/672/2352. Current code pushes the old 1-coarse-row halo
-// (3904 fine cells nominal), so the lock is RED until commit 7.
+// (3904 fine cells nominal), so the lock is RED until the geometry lands.
 TEST_CASE("C2F patch destination census + splits")
 {
 	StateLock_AMR<NSE_CONFIG> state = makeState("schonherr_locks_c2f_census");
@@ -398,11 +398,11 @@ TEST_CASE("C2F patch destination census + splits")
 	CHECK(by_class[0] == 0);	// no destination cell inside the simulated interior
 }
 
-// F2C skin census (contract 2.4, plan T4): the interior_patches pushed by
+// F2C skin census (contract 2.4): the interior_patches pushed by
 // buildCouplings must partition the depth-1 shell INSIDE the footprint,
 // (K-2)^3 - (K-4)^3 = 152 cells, with the per-family rectangle split
 // {36, 36, 24, 24, 16, 16}. Current code pushes the depth-0 footprint surface
-// (8^3 - 6^3 = 296), so the lock is RED until commit 7.
+// (8^3 - 6^3 = 296), so the lock is RED until the geometry lands.
 TEST_CASE("F2C skin destination census (depth-1 shell)")
 {
 	StateLock_AMR<NSE_CONFIG> state = makeState("schonherr_locks_f2c_census");
@@ -435,18 +435,18 @@ TEST_CASE("F2C skin destination census (depth-1 shell)")
 	CHECK(total == 152);	  // (K-2)^3 - (K-4)^3 depth-1 shell
 	CHECK(total == static_cast<long>(union_cells.size()));	// disjoint partition
 	// per-family split (formulas from the begin+1 / tangent insets+2 idiom of
-	// plan section 2-T4: x face (K-2)^2 = 36, y face (K-4)(K-2) = 24,
+	// the skin partition: x face (K-2)^2 = 36, y face (K-4)(K-2) = 24,
 	// z face (K-4)^2 = 16 -- per rectangle)
 	CHECK(family[0] == 2 * 36);
 	CHECK(family[1] == 2 * 24);
 	CHECK(family[2] == 2 * 16);
 }
 
-// Parity lock (contract 2.2, plan T0'). Under the re-anchored indexer the
+// Parity lock (contract 2.2). Under the re-anchored indexer the
 // fine block of the fixture has offset' = 2*origin+1 = 9 and local' = 2K-2 =
 // 14 per axis, while the stored extent 2K+2 = 18 and the first stored
 // fine-global row 2*go-1 = 7 stay invariant. The current block has offset 8
-// and local 16, so the identities are RED until commit 4.
+// and local 16, so the identities are RED until the re-anchor lands.
 TEST_CASE("fine indexer parity identities under the re-anchor")
 {
 	StateLock_AMR<NSE_CONFIG> state = makeState("schonherr_locks_parity");
@@ -485,14 +485,14 @@ TEST_CASE("fine indexer parity identities under the re-anchor")
 	CHECK(fg_consistent);
 }
 
-// Conservation recount (contract 2.3, plan T4). Two sub-locks:
+// Conservation recount (contract 2.3). Two sub-locks:
 // (i)  the excluded-volume census drops 512 (K^3, today) -> 216 ((K-2)^3):
 //      the reactivated c=0 shell must be counted again;
 // (ii) the positive-inclusion sentinel: injecting sentinel rho ONLY into the
 //      296 reactivated ring cells must shift the total counted mass by
 //      exactly 296 * sentinel (volume factor 1 on level 0). Under the current
 //      geometry those cells are GEO_NOTHING and excluded, so the shift is 0
-//      and both locks are RED until the commit-6 retag.
+//      and both locks are RED until the reactivated-shell retag.
 TEST_CASE("conservation recount: excluded census + sentinel positive inclusion")
 {
 	StateLock_AMR<NSE_CONFIG> state = makeState("schonherr_locks_conservation");
@@ -569,12 +569,12 @@ TEST_CASE("conservation recount: excluded census + sentinel positive inclusion")
 	CHECK(std::abs(s1.total_mass - ref_mass) <= 1e-6 * std::max({1.0, std::abs(s1.total_mass), std::abs(ref_mass)}));
 }
 
-// Geometry fingerprint of the halo (C2F) patches (plan T5/T6, Oracle F2):
-// the exact coarse and fine rectangles that commit 7's buildCouplings must
+// Geometry fingerprint of the halo (C2F) patches:
+// the exact coarse and fine rectangles that the landed buildCouplings must
 // push, derived from the ruling formulas -- NEVER from the runtime output.
 // Coarse: 2-thick face-normal rectangles partitioning the ring (total 784);
 // fine: the disjoint partition of contract 2.4 (total 3088), written once
-// each. RED against the current 1-thick halo geometry until commit 7.
+// each. RED against the current 1-thick halo geometry until the geometry lands.
 TEST_CASE("halo patch rectangle fingerprint (buildCouplings)")
 {
 	StateLock_AMR<NSE_CONFIG> state = makeState("schonherr_locks_halo_fingerprint");
@@ -631,10 +631,10 @@ TEST_CASE("halo patch rectangle fingerprint (buildCouplings)")
 	}
 }
 
-// Geometry fingerprint of the F2C skin rectangles (plan T4/T6): the exact
+// Geometry fingerprint of the F2C skin rectangles: the exact
 // depth-1 shell partition inside the footprint (begin+1, tangent insets+2
 // idiom; total 152 = (K-2)^3 - (K-4)^3). RED against the current depth-0
-// surface partition (296) until commit 7.
+// surface partition (296) until the geometry lands.
 TEST_CASE("skin rectangle fingerprint (buildCouplings)")
 {
 	StateLock_AMR<NSE_CONFIG> state = makeState("schonherr_locks_skin_fingerprint");
@@ -644,7 +644,7 @@ TEST_CASE("skin rectangle fingerprint (buildCouplings)")
 	const auto& rects = coupling.interior_patches;
 	CHECK(rects.size() == 6);
 
-	// expected rectangles from the ruling formulas (plan section 2-T4):
+	// expected rectangles from the ruling formulas (the skin partition):
 	// min x face: [go+1, go+2) x [go+1, go+K-1)^2
 	// min y face: [go+2, go+K-2) x [go+1, go+2) x [go+1, go+K-1)
 	// min z face: [go+2, go+K-2)^2 x [go+1, go+2); max faces mirrored
@@ -672,7 +672,7 @@ TEST_CASE("skin rectangle fingerprint (buildCouplings)")
 	CHECK(actual == want);
 }
 
-// Registration map-pattern assertion (plan T6/Oracle F2; debug builds
+// Registration map-pattern assertion (debug builds
 // only): SimInit runs the SimInit-internal guard on every fixture of this
 // suite -- its non-firing is therefore already pinned by every case above
 // -- and the guard must FIRE on a deliberately 1-cell-misregistered map.

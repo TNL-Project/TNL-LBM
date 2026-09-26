@@ -157,14 +157,13 @@ for _suite in _suites:
 BATCHES: list[Batch] = _batches
 BATCH_IDS = [label for label, _, _, _ in BATCHES]
 
-# TDD lock suites of the Schönherr ch7 AMR conversion (plan row 3, commit 3
-# of .omo/plans/schonherr-ch7-conversion.md): the registration/parity/
-# conservation census and geometry fingerprint cases in
-# tests/unit/test_amr_schonherr_registration.cu assert the POST-conversion
-# band geometry from the ruling formulas. They were carried xfail(strict)
-# through the declared red window (commits 4--6) via an XFAIL_SUITE_REASONS
-# marks table on this wrapper; the marks were REMOVED at the commit-7
-# stage-1 gate where the geometry landed and the suite passes outright.
+# TDD lock suites of the Schönherr ch7 AMR conversion: the
+# registration/parity/conservation census and geometry fingerprint cases
+# in tests/unit/test_amr_schonherr_registration.cu assert the
+# POST-conversion band geometry from the ruling formulas. They were
+# carried xfail(strict) through the conversion's declared red window via
+# an XFAIL_SUITE_REASONS marks table on this wrapper; the marks were
+# REMOVED when the geometry landed and the suite passes outright.
 
 BATCH_PARAMS = [pytest.param(batch, id=batch[0]) for batch in BATCHES]
 

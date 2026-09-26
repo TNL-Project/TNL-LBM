@@ -1,12 +1,12 @@
 /*
  * Schönherr-2015 ch.7 AMR conversion -- §7.2 compact-moment (C2F CM) exactness
- * locks (commit 10 / plan row 11, stage T10 of
- * .omo/plans/schonherr-ch7-conversion.md).
+ * locks of the Schönherr ch7 conversion. The suite is the executable
+ * side of the §7.2 equation audit below.
  *
  * NORMATIVE REFERENCE: the CODE family of the CM branch
- * (include/lbm3d/d3q27/amr_coupling.h, the default branch). The T9 §7.2
- * equation audit (.omo/evidence/schonherr_conversion/eq-audit-draft.md, plan
- * Appendix A ¶B) verdict: 45/56 formulas match the printed §7.2, 0 code bugs;
+ * (include/lbm3d/d3q27/amr_coupling.h, the default branch). The §7.2
+ * equation audit of the conversion (the contract doc's audit appendix)
+ * verdict: 45/56 formulas match the printed §7.2, 0 code bugs;
  * the only code<->print deviations are Eqs. 7.18/7.23/7.24 (+ cyclic b/c
  * analogs), where the CODE family is the nodal-consistent one (proof in the
  * audit's §A.3.3-note) and the print carries suspected errata (concern R1).
@@ -14,7 +14,7 @@
  * print-aligned implementation of 7.18/7.23/7.24 must FAIL case (T10c) here,
  * never the reverse.
  *
- * Cases (the task letters refer to plan row 11 / T10):
+ * Cases (the letters name the doctest cases below):
  * - (T10a) constant-field destination fills: bitwise cross-cell uniformity,
  *   determinism across launches, DF value lock at the Test-1 tolerance class.
  * - (T10b) linear rho + linear velocity exactness on BOTH destination rows
@@ -29,7 +29,7 @@
  *   registration assertion uses).
  * - (T10f) corner destination census on the 3088-cell fixture: every
  *   destination cell of the disjoint patch partition is written exactly
- *   once per fill launch (coverage measured; disjointness is the row-3
+ *   once per fill launch (coverage measured; disjointness is the
  *   registration suite's structural lock, cited in the case).
  * - (T11) wall-attached C2F window transit (thesis Sec. 7.3): the fill
  *   from a nominal source tuple covering a GEO_WALL row must come from
@@ -47,7 +47,7 @@
  * sections 1.1/1.2): fine block offset 9, local 14, overlap 2 (the "1 4 4 4
  * 8 8 8" fixture's level-1 block; destination rows = fine locals {-2, -1}
  * on min faces and {14, 15} on max faces), coarse block 16^3, overlap 2,
- * offset 0. The six launch rectangles are copied verbatim from the row-3
+ * offset 0. The six launch rectangles are copied verbatim from the
  * halo-fingerprint lock (tests/unit/test_amr_schonherr_registration.cu's
  * expected patch table), so the fills write exactly the production
  * destination cells. Coarse cells with any coordinate outside
@@ -59,7 +59,7 @@
  * valid faces (the carve lanes are Tests 10-13/17 of
  * tests/unit/test_amr_coupling.cu, untouched by this suite).
  *
- * TOLERANCE DOCUMENTATION (plan row 11 MUST-DO: each numeric tolerance is
+ * TOLERANCE DOCUMENTATION (each numeric tolerance is
  * derived from first principles; bitwise only where structurally sound):
  * - BITWISE (sound): cross-cell uniformity and re-launch determinism of a
  *   constant-field fill (cell-independent inputs + a deterministic kernel
@@ -440,7 +440,7 @@ void launchCoarseToFine(MockBlock& fine, MockBlock& coarse, idx3d begin, idx3d e
 }
 
 // the six production C2F destination rectangles of the post-re-anchor band
-// (fine local coordinates; verbatim from the row-3 halo-fingerprint lock of
+// (fine local coordinates; verbatim from the halo-fingerprint lock of
 // tests/unit/test_amr_schonherr_registration.cu, which asserts the runtime
 // buildCouplings pushes exactly these). Union = 3088 = 18^3 - 14^3 cells,
 // a disjoint partition, two destination rows per face.
@@ -623,7 +623,7 @@ void poisonDestRectsFine(MockBlock& fine, dreal sentinel)
 						fine.hfs[df_cur](q, x, y, z) = sentinel;
 }
 
-// the same 16^3 periodic box in physical units as the row-3 fixture
+// the same 16^3 periodic box in physical units as the registration fixture
 // (tests/unit/test_amr_subcycling.cu idiom: nu_lb coarse 0.005)
 lat_t makeLattice()
 {
@@ -651,7 +651,7 @@ std::string adiosConfigPath()
 	return (root / "adios2.xml").string();
 }
 
-// minimal State_AMR subclass (the row-3 suite's idiom)
+// minimal State_AMR subclass (the registration suite's idiom)
 template <typename NSE>
 struct StateLock_AMR : State_AMR<NSE>
 {
@@ -968,8 +968,8 @@ TEST_CASE("T10c quadratic-velocity CE-strain exactness on both destination rows 
 // BOTH paths verbatim on the device over 8192 deterministic pseudo-random
 // states -- the C2F kernel itself never evaluates t = 0 (its destinations
 // sit at |t_rel| = 0.25 nominal / 0.75 carved), so the identity cannot go
-// through the production launcher; the F2C arm of T14 (commit 13) will
-// consume this identity, and the audit requires it locked before that.
+// through the production launcher; the Schönherr-transfer F2C arm
+// consumes this identity, so the audit required it locked first.
 TEST_CASE("T10d avk cancellation at t=0 reduces cumulants to the sk means")
 {
 	constexpr int N = 8192;
@@ -1093,7 +1093,7 @@ TEST_CASE("T10e destination-row window census: both rows read the ring pair")
 // destination cell must hold a non-sentinel finite DF after its frame's
 // fill while the OTHER frame and every non-destination cell stay bitwise
 // untouched (frame isolation + write-closure of the launcher). <= 1 (no
-// double writes) is the disjoint-partition structural lock of the row-3
+// double writes) is the disjoint-partition structural lock of the
 // registration suite ("C2F patch destination census + splits": pushed
 // volume == union size == 3088). Coverage + disjointness = exactly once.
 // The 64 corner cells (8 boxes of 2^3, the overlap-prone class whose

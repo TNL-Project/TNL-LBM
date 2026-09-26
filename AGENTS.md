@@ -375,14 +375,15 @@ nesting addendum §11).
   the ch7 band map-pattern assertion rejects covered windows at SimInit, so
   the pre-pass could never fire; `C2F_CARVE`/`C2F_NO_CARVE` warn at configure
   and gate no code. F2C default
-  is `TNL_LBM_F2C_STRATEGY=F2C_SCHONHERR` (the §7.2 σ = 2 compact-moment
-  transfer, default since commit 15); `=F2C_LAGRAVA` opts out to the 4×4×4
-  Lagrava filter — a named no-op define: the kernel splits on
-  `#ifdef F2C_SCHONHERR` only, and `F2C_BOX_AVERAGE` selects the 1/8 average
-  inside that else-branch; nested wall sharing hard-errors under F2C_LAGRAVA
-  at SimInit (the R4 pedestal depth 3 covers only the Schönherr own-8 window).
-  Pre-flip build caches keep the
-  old empty strategy — re-default with `cmake -B build -S . -UTNL_LBM_F2C_STRATEGY`.
+  is the §7.2 σ = 2 compact-moment transfer (the F2C_SCHONHERR strategy,
+  default since commit 15, UNTAGGED since 2026-09-27: the define was
+  retired, the default build passes no F2C define, and the former
+  `F2C_SCHONHERR` value of the cache variable is accepted as a no-op so
+  pre-flip caches self-heal); `TNL_LBM_F2C_STRATEGY=F2C_LAGRAVA` opts out
+  to the 4×4×4 Lagrava filter, and `F2C_BOX_AVERAGE` selects the 1/8
+  average inside that opt-out branch; nested wall sharing hard-errors
+  under F2C_LAGRAVA at SimInit (the R4 pedestal depth 3 covers only the
+  Schönherr own-8 window).
 - **AMR gate** (fully pytest-native; the shell launchers were retired):
   `pytest tests/unit/test_amr_units.py tests/unit/test_amr_f2c_schonherr.py tests/unit/test_amr_bitwise_lock.py tests/integration/test_amr_paraview.py`
   runs the AMR targets — the 4 gate TEST_SUITEs

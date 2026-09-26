@@ -389,7 +389,7 @@ struct D3Q27_BC_All
 		// GEO_AMR_INTERFACE cells (the collision-active ring around each fine
 		// footprint) proceed through the normal streaming path; the coarse
 		// kernel is their only writer since the ring fine-to-coarse launch
-		// was removed (gate B ruling, D.1 hard-delete) -- fine feedback
+		// was removed on 2026-08-16 -- fine feedback
 		// reaches them through streaming from the F2C-written skin cells
 
 		// modify pull location for streaming

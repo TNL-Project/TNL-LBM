@@ -62,7 +62,7 @@ if(TNL_LBM_BUILD_HIP)
     set_source_files_properties(${unit_test_sources} PROPERTIES LANGUAGE HIP)
 endif()
 
-# doctest-based AMR gate binaries (the amr-doctest-port plan): the four mock
+# doctest-based AMR gate binaries (the amr-doctest-port): the four mock
 # suites consolidated per streaming pattern -- coupling, subcycling,
 # vtkhdf_writer and nesting, each a TEST_SUITE inside one binary. Emitted
 # into build/tests/ so tests/unit/test_amr_units.py, the bit-identity
@@ -130,8 +130,11 @@ foreach(pattern IN ITEMS ${AMR_TEST_PATTERNS})
 
     # optional C2F/F2C strategy compile-checks (same cache vars as sim_AMR):
     # the suites pin BOTH strategies natively via compile-time
-    # strategy-split expectations and the source-level deferral arms, so
-    # these binaries compile and run green under either strategy build;
+    # strategy-split expectations (default-arm locks keyed on the ABSENCE
+    # of F2C_LAGRAVA/F2C_BOX_AVERAGE since the 2026-09-27 switch removal,
+    # when the F2C_SCHONHERR default define was retired) and the
+    # source-level deferral arms, so these binaries compile and run green
+    # under either strategy build;
     # the pytest gate module itself drives only the default build
     if(TNL_LBM_C2F_STRATEGY)
         target_compile_definitions(${target} PRIVATE ${TNL_LBM_C2F_STRATEGY})
@@ -149,16 +152,19 @@ foreach(pattern IN ITEMS ${AMR_TEST_PATTERNS})
 endforeach()
 endif()
 
-# standalone per-define doctest driver: the F2C_SCHONHERR branch selects a
-# different body of the same kernel template symbol (ODR hazard), so the
-# define gets its own binary, built from doctest_main.cu + the shared driver
-# TU. Driven by tests/unit/test_amr_f2c_schonherr.py, NOT by the gate module
+# standalone default-strategy doctest driver: the fine-to-coarse kernel's
+# default branch (the F2C_SCHONHERR compact-moment transfer, untagged
+# since the 2026-09-27 switch removal) selects a different body of the
+# same kernel template symbol than the F2C_LAGRAVA/F2C_BOX_AVERAGE
+# opt-outs (ODR hazard), so the exactness locks get their own binary,
+# built from doctest_main.cu + the shared driver TU with NO strategy
+# define (the test TU hard-errors if an opt-out define is passed).
+# Driven by tests/unit/test_amr_f2c_schonherr.py, NOT by the gate module
 if(MPI_FOUND AND TNL_LBM_USE_MPI)
 foreach(pattern IN ITEMS ${AMR_TEST_PATTERNS})
     amr_pattern_define(${pattern} pattern_options)
     set(target "test_amr_f2c_schonherr_${pattern}")
     add_executable(${target} doctest_main_amr.cu test_amr_f2c_schonherr.cu)
-    target_compile_definitions(${target} PRIVATE "F2C_SCHONHERR")
     target_compile_options(${target} PRIVATE ${pattern_options})
     target_link_libraries(${target} PUBLIC TNL::TNL_LBM PRIVATE doctest::doctest)
     set_target_properties(${target} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
