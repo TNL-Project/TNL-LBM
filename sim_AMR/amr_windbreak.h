@@ -1,8 +1,8 @@
 #pragma once
 
 // Windbreak rod layout and stamping of sim_AMR_channel's nested mode
-// (commit G of the amr-nlevel-nesting plan; the user-locked windbreak
-// geometry of plan sec. 9): two streamwise rows of thin vertical
+// (the user-locked windbreak geometry of the
+// nested windbreak channel target): two streamwise rows of thin vertical
 // cylindrical posts, staggered by half a pitch, standing on the bottom
 // wall plane and stopping below the footprint top (partial height),
 // GEO_WALL-stamped on the FINEST level's map only -- every parent level

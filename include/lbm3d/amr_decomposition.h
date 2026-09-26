@@ -58,7 +58,7 @@
  *
  * Lines beginning with '#' are comments and blank lines are skipped.
  *
- * Multi-level nesting (the amr-nlevel-nesting plan): regions at level >= 2
+ * Multi-level nesting: regions at level >= 2
  * nest inside a unique earlier level-(level-1) region; createAMRBlocks'
  * phase-1 validation enforces the V-suite on the parent-frame projections
  * (all conversions use the amrParentFrameOrigin / amrFineOffset /
@@ -294,7 +294,7 @@ void createAMRBlocks(LBM<CONFIG>& lbm, const std::vector<AMR_Region<CONFIG>>& re
 		// not admit under either F2C strategy -- and the fine interior
 		// (local 2 for gs = 2) would also put the F2C sources of the
 		// destination cell into the C2F fill rows (the own-8 subcells under
-		// the F2C_SCHONHERR transfer default; the Lagrava opt-out's 4-node
+		// the default F2C transfer; the Lagrava opt-out's 4-node
 		// window would additionally underflow the storage extent). At level
 		// >= 2 the footprint is measured in PARENT-level cells (an exact
 		// division by the alignment check below), which reduces to the

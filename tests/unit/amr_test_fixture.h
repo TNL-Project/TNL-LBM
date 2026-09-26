@@ -380,7 +380,7 @@ inline double maxAbsDiffSnapshots(const HostSnapshot& a, const HostSnapshot& b)
 
 // scan-order capture of a coarse block's (map tag, macro quad) per local
 // cell -- the cross-state comparison carrier of Test 4's kernels-only
-// reference lock (B.5)
+// reference lock
 struct CoarseMacroScan
 {
 	std::vector<int> map;
@@ -508,7 +508,7 @@ inline bool closeRel(double a, double b)
 	return std::abs(a - b) <= 1e-6 * std::max({1.0, std::abs(a), std::abs(b)});
 }
 
-// Wall-chain tagging fixture (the amr-nlevel-nesting plan's commit E wall
+// Wall-chain tagging fixture (the amr-nlevel-nesting wall-chain
 // tests): sim_AMR_channel's setupBoundaries idiom generalized to a nested
 // wall-shared chain. The single-level channel tags the fine wall row over the
 // fine-INTERIOR tangential columns only; a nested wall-shared face can

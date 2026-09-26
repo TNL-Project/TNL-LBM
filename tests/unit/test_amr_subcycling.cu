@@ -38,14 +38,14 @@
 // The shared fixture machinery (lattice factory, spy states, census carriers,
 // reference-stat helpers) lives in tests/unit/amr_test_fixture.h so that
 // test_amr_nesting.cu reuses it; this file keeps the tests themselves
-// (extraction precondition of the amr-nlevel-nesting commit B).
+// (the fixture-sharing precondition of the amr-nlevel-nesting arc).
 #include "amr_test_fixture.h"
 
 TEST_SUITE_BEGIN("amr_subcycling");
 
 // Tests 1 and 2: cycle launch census with parity-at-call-site locks, and
 // time synchronization. Per SimUpdate call the schedule must record
-// exactly this ordered census per level pair (plan contract sec. 1.3,
+// exactly this ordered census per level pair (contract sec. 1.3,
 // cycle steps named in State_AMR's file docstring):
 //
 //   #   stage        AB frame pairing at the call site (P = dfs[0], Q = dfs[1])
@@ -323,7 +323,7 @@ void test_max_level_zero_fallthrough()
 	}
 }
 
-// Test 4 (B.5 lock, sole variant since D.1): after one cycle every ring
+// Test 4 (kernel-produced ring lock, single variant since 2026-08-16): after one cycle every ring
 // cell's macros must equal the KERNEL-PRODUCED values, and the fine-level
 // C2F destination cells must carry the single-fill, simulated-band state of
 // the Schönherr cycle contract: the cycle-end fill rewrites BOTH overlap
@@ -355,7 +355,7 @@ void test_max_level_zero_fallthrough()
 // historical test asserts does NOT detect a coupling channel's absence on
 // this driver path -- on the non-uniform sine IC the collision-active
 // kernel computes real macros at ring cells and evicts (1,0,0,0) either
-// way (B.1 finding, mock-matrix.md subcycling item 4). The kernels-only
+// way (the placeholder-probe blind spot found in the subcycling re-scope). The kernels-only
 // reference comparison closes that blind spot and keeps this test the
 // regression lock for the placeholder-defect class: a resurrected coupling
 // write onto ring cells (e.g. a re-added ring launch) overwrites the ring
@@ -364,7 +364,7 @@ void test_max_level_zero_fallthrough()
 // (trips the kept placeholder probe), and a coupling channel misfiring
 // onto ring cells trips the reference comparison.
 //
-// D.1 (2026-08-16, gate B ruling): the ring fine-to-coarse launch this
+// Hard-delete (2026-08-16): the ring fine-to-coarse launch this
 // test's former detection demonstration emulated was HARD-DELETED. The
 // demonstration block (a third state + one manual emulation of the retired
 // ring launch + its teeth/confinement assertions) was removed with it: at
@@ -418,7 +418,7 @@ void test_interface_ring_freshness()
 		state.cnt[OUT3DCUT].period = 1e-30;
 
 		// one coupled Schönherr cycle (2 fine substeps + coarse step + F2C +
-		// the cycle-end single-frame C2F fill; ring F2C removed in D.1, the
+		// the cycle-end single-frame C2F fill; ring F2C removed on 2026-08-16, the
 		// skin F2C transfer runs unconditionally as the only fine-to-coarse
 		// channel)
 		state.updateKernelData();
@@ -442,7 +442,7 @@ void test_interface_ring_freshness()
 		subject_ghost = captureFineGhost(*fine);
 	}
 
-	// deterministic kernels-only reference (the plan's construction):
+	// deterministic kernels-only reference construction:
 	// same initialization, advanced by the SAME SimUpdate with ALL coupling
 	// launches disabled
 	CoarseMacroScan reference;
@@ -510,7 +510,7 @@ void test_interface_ring_freshness()
 		fmt::format("Test 4 setup: GEO_AMR_INTERFACE ring has 784 cells around the 8^3 footprint (got {})", ring_cells)
 	);
 
-	// LOCK 1 (the plan's B.5 replacement assertion): every ring cell's
+	// LOCK 1 (the kernels-only reference assertion): every ring cell's
 	// macros equal the kernels-only reference, bitwise; LOCK 2 (kept): no
 	// ring cell holds the (rho = 1, v = 0) placeholder (collision-inactive
 	// defect class: ring cells would hold fresh IC values when their only
@@ -647,7 +647,7 @@ if constexpr (! single_array_pattern) {
 }
 }
 
-// Test 8 (T8 generative fill-freshness model, N cycles): the fine block's
+// Test 8 (generative fill-freshness model, N cycles): the fine block's
 // C2F destination complement is filled ONCE per cycle (the single-fill
 // simulated-band schedule: the frame-0 complement is fill-owned -- no
 // kernel writes frame 0's ghost rows, a model premise locked by the census
@@ -805,9 +805,9 @@ if constexpr (! single_array_pattern) {
 }
 }
 
-// Test 9 (T8 parity-structure lock): the re-paired 10-iter seam metric
+// Test 9 (parity-structure lock): the re-paired 10-iter seam metric
 // alternates even/odd cycles (approx. -3e-05 even vs -1.6e-05 odd after the
-// six-step reorder; row-8 verification, artifact cited in the commit body).
+// six-step reorder; verified on the seam-metric artifact cited in the commit body).
 // A sim belongs to the gate artifacts, not to a unit test, so this lock pins
 // the schedule structure from which that alternation FOLLOWS, derived from
 // the recorded launch stream of 4 cycles (even->odd and odd->even
@@ -955,11 +955,11 @@ void test_schedule_parity_structure()
 // placeholder) hidden cells double-counts it. The GEO_AMR_INTERFACE ring
 // cells are real coarse fluid cells and must KEEP counting (they are part
 // of the reference sums below).
-// [B.5 catalog note (mock-matrix.md subcycling items 1-3), updated for the
-// D.1 single-configuration reality: the printed conservation values are the
+// [Catalog note of the subcycling re-scope, updated for the
+// skin-era single-configuration reality: the printed conservation values are the
 // skin-era numbers (mass 4.120695e+03, KE L0 4.285964e-04, KE L1
 // 2.435120e-04 bitwise) -- the ring macros are kernel-produced since the
-// ring-F2C launch was removed (gate B ruling, D.1 hard-delete); the
+// ring-F2C launch was removed on 2026-08-16; the
 // pre-deletion default-arm values (mass 4.120714e+03, KE L0 4.170924e-04)
 // are historical. The SimInit geometry line reads "6 interface patches, 6
 // interior patches" (the 8^3 footprint's skin rectangles). This test's
@@ -1238,7 +1238,7 @@ void test_skin_partition_geometry()
 {
 	check_skin_partition("1 4 4 4 8 8 8", {4, 4, 4}, {8, 8, 8}, 6, "8x8x8");
 	// gs = 3 cube: the depth-1 shell is a single cell, owned by the x-min
-	// face alone -- the other 5 rectangles dedupe-clamp empty (commit-6
+	// face alone -- the other 5 rectangles dedupe-clamp empty (early
 	// runtime evidence: "1 cells pushed, 1 distinct")
 	check_skin_partition("1 4 4 4 3 3 3", {4, 4, 4}, {3, 3, 3}, 1, "3x3x3");
 	// thin x-axis (gs = 3, the new minimum): the 1x6x6 depth-1 slab is
@@ -1298,7 +1298,7 @@ void test_footprint_min_size_validation()
 			)
 		);
 
-		// T8 exact-wording lock: the FULL rejection message (createAMRBlocks'
+		// Exact-wording lock: the FULL rejection message (createAMRBlocks'
 		// reject()-envelope with the region index/level/origin/size fields plus
 		// the reason text) must match verbatim -- the substring check above
 		// cannot see envelope edits, and the wording is user-facing (the

@@ -1,14 +1,16 @@
-"""Compile-and-run exactness locks for the F2C_SCHONHERR branch (T14).
+"""Compile-and-run exactness locks for the default (F2C_SCHONHERR) branch.
 
 Drives the ``test_amr_f2c_schonherr_{ab,aa,eso_twist,eso_pull,eso_push}``
 executables — one binary per streaming pattern, compiled from
 ``tests/unit/doctest_main.cu`` and ``tests/unit/test_amr_f2c_schonherr.cu``
-with ``F2C_SCHONHERR`` hardcoded (Schönherr ch7 conversion, commit 13 /
-plan row 14; the default strategy since commit 15 / T17; doctest-based
-since the amr-doctest-port).
+without any strategy define (Schönherr ch7 conversion; the default
+strategy since 2026-08-22; the untagged default since the 2026-09-27
+switch removal; doctest-based since the
+amr-doctest-port).
 
-The define is a per-TU compile-time switch selecting the thesis §7.2
-σ-form compact-moment transfer (σ = 2) inside ``cudaAMR_FineToCoarse`` and
+The default branch compiles the thesis §7.2 σ-form compact-moment
+transfer (σ = 2) inside ``cudaAMR_FineToCoarse`` when no
+``F2C_LAGRAVA`` / ``F2C_BOX_AVERAGE`` define is passed, and it
 cannot share a binary with the F2C_LAGRAVA opt-out build (ODR hazard on
 the kernel template symbol), so the locks live in standalone per-pattern
 binaries.  The strategy builds of the ``amr_coupling``
@@ -18,7 +20,7 @@ separately, so the two batteries are green under both strategies.
 
 Each binary runs the F2C transfer on (i) a uniform field, (ii) a
 CE-consistent linear field, and (iii) a CE-consistent quadratic-velocity
-field, and asserts the T14 exactness classes: constant exact; linear
+field, and asserts the conversion's exactness classes: constant exact; linear
 velocity exact; quadratic-velocity + linear-density exact at t = (0,0,0);
 CE-consistent strain round-trip at σ = 2; and Σf = d0 exactly at the
 destination (see the source header for the derivation and tolerance

@@ -1,5 +1,5 @@
 // Unit tests for the multi-level nesting validation in createAMRBlocks
-// (include/lbm3d/amr_decomposition.h, the amr-nlevel-nesting plan's V-suite
+// (include/lbm3d/amr_decomposition.h, the multi-level V-suite
 // replacing the level > 1 reject) and for block creation on 3-level nested
 // region chains, and for the advancePair schedule recursion of State_AMR
 // (include/lbm3d/amr_state.h) running SimUpdate on nested configurations.
@@ -18,7 +18,7 @@
 //   footprint contained in the parent-level global lattice), which reduce
 //   to the historical level-1 formulas at level 1.
 // - test_vsuite_gap2_warning / test_vsuite_sep2_warning: the user-decided
-//   advisory tier (plan sec. 11 item 2): gap exactly 2 parent-level cells is
+//   advisory tier: gap exactly 2 parent-level cells is
 //   VALID but warns (coupling-authored cells enter the transfer windows);
 //   both cases must be ACCEPTED and still create the blocks.
 // - test_three_level_creation: a valid telescoping 3-level chain (z-min
@@ -35,9 +35,9 @@
 //   tagging on the wall-shared faces (halo rows land in the parent block's
 //   ghost zone and must be clipped away), and re-invocation idempotency.
 // - test_two_level_schedule_census / test_three_level_schedule_census: the
-//   advancePair schedule recursion (amr-nlevel-nesting commit C) observed
+//   advancePair schedule recursion (the amr-nlevel-nesting arc) observed
 //   through the StateSchedule_AMR spy of the shared fixture on nested
-//   mocks: the per-cycle event expansion of the plan's sec. 3.4 table at
+//   mocks: the per-cycle event expansion of the subcycling schedule table at
 //   max_level == 2 and its one-level-deeper expansion at max_level == 3,
 //   with per-event rotation locks (AB df-pointer identity / AA even_iter),
 //   the {true, false} next-substep parity alternation at the mid/end f2c
@@ -47,21 +47,21 @@
 //   consistent with the GEO_NOTHING-excluding reference, with the global
 //   mass stable.
 // - test_wall_chain_masks / test_wall_pedestal_prisms /
-//   test_wall_chain_failfast / test_wall_chain_lagrava_guard: the commit-E
-//   wall chain (plan sec. 5 Tests 12--14 + the sec. 5.4 strategy guard): the
+//   test_wall_chain_failfast / test_wall_chain_lagrava_guard: the nested
+//   wall chain (parent-keyed masks + the F2C_LAGRAVA strategy guard): the
 //   fine wall masks derive from the immediate parent's map at every level
 //   (the 3-level all-z-min wall-shared stack), the launch windows deepen to
 //   the wall row on every level, the R4 wall-pedestal prisms author the deep
 //   frozen rows behind the parent's upward fine-to-coarse window, the three
 //   silent-lane misconfigurations throw named errors, and the F2C_LAGRAVA
 //   opt-out is hard-guarded against nested wall-sharing.
-// - test_five_level_channel_chain_creation: the commit-F 5-level channel
+// - test_five_level_channel_chain_creation: the nested 5-level channel
 //   chain (sim_AMR/amr_chain_solver.h's derivation at R = 1, locked here as
 //   the five_level_channel_chain fixture constant): createAMRBlocks accepts
 //   the derived chain on the 64 x 16 x 16 channel lattice, blocks 0..4 with
 //   one block per level, exact parent-frame global_offset / fine offset /
 //   fine local per level, zero advisory warnings.
-// - test_windbreak_rod_census: the commit-G windbreak rod array
+// - test_windbreak_rod_census: the windbreak rod array
 //   (sim_AMR/amr_windbreak.h's layout and stamping, the same helper
 //   sim_AMR_channel rides) on the 5-level chain's level-4 block: the
 //   staggered two-row census matches the analytic cross-section integral
@@ -339,7 +339,7 @@ constexpr const char* three_level_chain = "1 8 1 4 12 30 12\n"
 
 // conservation-smoke chain: telescoping with gaps >= 3 on EVERY face, so all
 // six coarse-to-fine destination bands of every level receive a fill (the
-// commit-B chain above shares wall-candidate faces whose destinations clip
+// wall-shared chain above shares wall-candidate faces whose destinations clip
 // empty against the parent interior pre-wall-machinery -- those bands keep
 // their all-zero initial state and sink rho to NaN in a few cycles, a
 // geometry-bound effect unrelated to the nested schedule the smoke must pin)
@@ -740,7 +740,7 @@ void test_three_level_mark_census()
 }
 
 // Schedule census on nested mocks (the advancePair recursion's event
-// expansion; plan sec. 3.2-3.4).
+// expansion in the tables below).
 
 using St = StateSchedule_AMR<NSE_CONFIG>::Stage;
 
@@ -764,7 +764,7 @@ struct ExpectedEvent
 constexpr int EVT_NA = -1;	  // field not asserted
 constexpr int EVT_CLOCK = -2; // level-0 global clock value at this cycle
 
-// the 2-level per-cycle expansion (plan sec. 3.4, s_1 = s_2 = 0 at cycle 0;
+// the 2-level per-cycle expansion (s_1 = s_2 = 0 at cycle 0;
 // rotations repeat every cycle because each level's per-cycle substep count
 // 2^L is even and updateKernelDataForLevel is an absolute mod-2 setter)
 const ExpectedEvent table_max2[13] = {
@@ -1191,12 +1191,12 @@ void test_three_level_conservation_smoke()
 	CHECK_MESSAGE((state.nse.iterations == 20 && ! state.nse.terminate), "3-level conservation smoke: 20 coupled cycles, no termination");
 }
 
-// Commit E wall-chain tests (plan sec. 5 + sec. 5.5 Tests 12--14): the wall
-// masks derive from the IMMEDIATE PARENT's map at every level (plan sec. 5.1),
-// the wall-shared faces keep their empty coarse-to-fine destinations with the
+// Wall-chain tests: the wall masks derive from the IMMEDIATE PARENT's map at
+// every level, the wall-shared faces keep their empty
+// coarse-to-fine destinations with the
 // launch windows deepened to the wall row, the R4 wall-pedestal prisms author
-// the deep frozen rows the parent's own-8 upward fine-to-coarse window reads
-// (plan sec. 5.3), and the fail-fast rails reject every silent lane. The
+// the deep frozen rows the parent's own-8 upward fine-to-coarse window reads,
+// and the fail-fast rails reject every silent lane. The
 // geometry is three_level_chain with all z-min faces wall-backed down to a
 // level-0 plane (the StateWallChain_AMR fixture).
 
@@ -1233,7 +1233,7 @@ void test_wall_chain_masks()
 #if defined(F2C_LAGRAVA)
 	CHECK_MESSAGE(
 		true,
-		"wall chain: masks census is a default-strategy (F2C_SCHONHERR) resident -- under F2C_LAGRAVA the wall chain is "
+		"wall chain: masks census is a default-strategy resident -- under F2C_LAGRAVA the wall chain is "
 		"guard-rejected at SimInit (see the Lagrava guard test)"
 	);
 	return;
@@ -1304,7 +1304,7 @@ void test_wall_chain_masks()
 				zmin_destinations_empty = false;
 	CHECK_MESSAGE(zmin_destinations_empty, "wall chain: no coupling carries a coarse-to-fine fill on any z-min (wall-shared) face");
 
-	// nested channel smoke (plan sec. 8 row E): 3 coupled cycles over the
+	// nested channel smoke: 3 coupled cycles over the
 	// wall chain run cleanly -- the deepened launches process every level's
 	// wall row without termination, and the conservation stats stay finite
 	for (int cycle = 0; cycle < 3 && ! state.nse.terminate; cycle++) {
@@ -1323,7 +1323,7 @@ void test_wall_chain_masks()
 	CHECK_MESSAGE(finite, "wall chain: conservation entries finite after 3 cycles over the wall chain");
 }
 
-// Test 14 (R4 census) + the census invariants of plan sec. 5: the (1,2)
+// Wall-pedestal census + the wall-chain census invariants: the (1,2)
 // coupling carries the standard 6 depth-1 skins plus exactly 1 R4 prism on
 // the z-min face at relative rows {1,2} beyond the skin; the (2,3) coupling
 // carries no prism (the level-3 footprint's twice-inset tangents are empty on
@@ -1335,7 +1335,7 @@ void test_wall_pedestal_prisms()
 #if defined(F2C_LAGRAVA)
 	CHECK_MESSAGE(
 		true,
-		"R4 pedestal: census is a default-strategy (F2C_SCHONHERR) resident -- under F2C_LAGRAVA the wall chain is "
+		"R4 pedestal: census is a default-strategy resident -- under F2C_LAGRAVA the wall chain is "
 		"guard-rejected at SimInit (see the Lagrava guard test)"
 	);
 	return;
@@ -1469,7 +1469,7 @@ void test_wall_chain_failfast()
 #if defined(F2C_LAGRAVA)
 	CHECK_MESSAGE(
 		true,
-		"wall fail-fast: the three wall-chain rails are default-strategy (F2C_SCHONHERR) residents -- under F2C_LAGRAVA the "
+		"wall fail-fast: the three wall-chain rails are default-strategy residents -- under F2C_LAGRAVA the "
 		"guard fires first at SimInit (see the Lagrava guard test)"
 	);
 	return;
@@ -1578,12 +1578,12 @@ void test_wall_chain_failfast()
 	}
 }
 
-// Test (c) (strategy coupling guard, plan sec. 5.4): nested wall-shared faces
+// Strategy coupling guard: nested wall-shared faces
 // + the F2C_LAGRAVA fine-to-coarse strategy (whose 4-node window underflows
 // the 3-row wall pedestal) must hard-error at SimInit naming the required
 // strategy. The guard is compiled only under the F2C_LAGRAVA define (the
 // binaries build green under either strategy, mirroring the strategy-split
-// idiom of test_amr_coupling.cu); under the default F2C_SCHONHERR build the
+// idiom of test_amr_coupling.cu); under the default build the
 // guard is inactive and the wall chain initializes cleanly (asserted by the
 // mask census above)
 void test_wall_chain_lagrava_guard()
@@ -1610,7 +1610,7 @@ void test_wall_chain_lagrava_guard()
 		message = e.what();
 	}
 	CHECK_MESSAGE((
-		message.find("wall-shared nesting requires F2C_SCHONHERR") != std::string::npos && message.find("F2C_LAGRAVA") != std::string::npos),
+		message.find("wall-shared nesting requires the default fine-to-coarse strategy") != std::string::npos && message.find("F2C_LAGRAVA") != std::string::npos),
 		fmt::format(
 			"Lagrava guard: nested wall-shared faces under F2C_LAGRAVA hard-error at SimInit naming the strategy -- {}",
 			message.empty() ? "no exception thrown" : fmt::format("threw: {}", message)
@@ -1619,13 +1619,13 @@ void test_wall_chain_lagrava_guard()
 #else
 	CHECK_MESSAGE(
 		true,
-		"Lagrava guard: default F2C_SCHONHERR build -- the guard is compiled out and the wall chain SimInit runs green "
+		"Lagrava guard: default build -- the guard is compiled out and the wall chain SimInit runs green "
 		"(see the wall-chain mask census); the F2C_LAGRAVA arm is exercised by a strategy-flipped binary"
 	);
 #endif
 }
 
-// the commit-F 5-level channel chain at R = 1 (the regression lock of
+// the nested 5-level channel chain at R = 1 (the regression lock of
 // sim_AMR/amr_chain_solver.h's derivation: level 1 is the 2-level channel's
 // anchor footprint, levels 2..4 telescope with insets >= 3 parent-level
 // cells on every non-wall face and a gap-0 wall-shared z-min face per hop,
@@ -1717,7 +1717,7 @@ void test_five_level_channel_chain_creation()
 	);
 }
 
-// the commit-G windbreak rod array (sim_AMR/amr_windbreak.h's layout and
+// the nested-channel windbreak rod array (sim_AMR/amr_windbreak.h's layout and
 // stamping, the same helper sim_AMR_channel rides) on the
 // five_level_channel_chain level-4 block: the staggered two-row census
 // matches the analytic cross-section integral (per-layer disc cells times
@@ -1725,9 +1725,9 @@ void test_five_level_channel_chain_creation()
 // them), the array keeps its clearance to every footprint face except the
 // wall plane it stands on, the 12 face wall rows stay fluid so the
 // buildFineWallMasks census is unchanged (rods are interior obstacles, not
-// face walls), and no parent block sees a rod cell (plan sec. 9 locked
-// item 1). The layout guardrails reject the forbidden classes with named
-// errors.
+// face walls), and no parent block sees a rod cell (a locked item of
+// the windbreak geometry). The layout guardrails reject the forbidden
+// classes with named errors.
 void test_windbreak_rod_census()
 {
 	// the channel lattice at R = 1 (the five_level_channel_chain fixture)

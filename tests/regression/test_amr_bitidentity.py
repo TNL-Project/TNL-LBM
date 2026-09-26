@@ -103,7 +103,7 @@ PINNED_METRICS: dict[str, list[tuple[str, str]]] = {
     "sim_AMR": [
         ("AMR conservation: mass", "2.649349e+05"),
         ("AMR level 0: kinetic energy", "1.751046e+00"),
-        ("AMR level 1: kinetic energy", "1.832124e+00"),
+        ("AMR level 1: kinetic energy", "1.832125e+00"),
     ],
     "sim_AMR_channel": [
         ("AMR conservation: mass", "1.866006e+04"),

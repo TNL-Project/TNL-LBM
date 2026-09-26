@@ -33,14 +33,14 @@
 // quantities, which both patterns produce identically from an equilibrium
 // state). Everything is single-rank.
 //
-// NESTING (the amr-nlevel-nesting plan's commit D): a second test pins the
+// NESTING (the amr-nlevel-nesting arc): a second test pins the
 // writer's per-level structure on a 3-level telescoping chain (levels
 // 0..3): per-level block grouping, spacing = physDl/2^level, AMRBox extents
 // covering exactly each level's own footprint, and the vtkGhostType census
 // -- REFINEDCELL on exactly the cells covered by the DIRECT level-below
 // footprint at every level (the 2-level idiom generalized). STDOUT
 // CONTRACT: the bit-identity harness pins this suite's full normalized
-// stdout against the pre-nesting manifest (sec. 7.5), so the nesting
+// stdout against the pre-nesting manifest, so the nesting
 // census runs silent on success (a LogMute keeps the second LBM ctor and
 // writer call off the stream) and loud on failure.
 
@@ -434,7 +434,7 @@ void test_vtkhdf_structure()
 	// its dataset content (the writer's real output is part of the battery)
 }
 
-// Nesting census (the amr-nlevel-nesting plan's commit D): the writer on a
+// Nesting census (the amr-nlevel-nesting arc): the writer on a
 // 3-level telescoping chain (levels 0..3, one block per level), pinning per
 // level the block grouping, the halved spacing, the AMRBox extents covering
 // exactly the level's own footprint and the vtkGhostType census --

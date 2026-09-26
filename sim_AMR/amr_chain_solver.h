@@ -1,7 +1,7 @@
 #pragma once
 
-// Footprint-chain solver of sim_AMR_channel's nested mode (commit F of the
-// amr-nlevel-nesting plan): derives the level-2..4 AMR footprints instead of
+// Footprint-chain solver of sim_AMR_channel's nested mode (the
+// amr-nlevel-nesting arc): derives the level-2..4 AMR footprints instead of
 // hand-writing the region string. Every derived level is wall-attached to the
 // bottom plane (the user-locked target geometry: the V10 wall chain 0..4,
 // each level's z-min footprint face aligned with its parent's edge, gap 0,

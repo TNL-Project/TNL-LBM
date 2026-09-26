@@ -53,7 +53,7 @@ void LBM_BLOCK<CONFIG>::initLevelLattice(const lat_t& base_lat, int level)
 	// refinement-level blocks own the inter-level ghost ring that the
 	// coupling kernels fill/read (see d3q27/amr_coupling.h)
 	if (level > 0)
-		// Schönherr ch.7 band registration (T3 of the conversion): two
+		// Schönherr ch.7 band registration: two
 		// ghost cells deep -- the overlap hosts the TWO coarse-to-fine
 		// destination rows of the band, and the C2F storability clip
 		// (df_overlap_* in amr_state.h) adapts automatically. The

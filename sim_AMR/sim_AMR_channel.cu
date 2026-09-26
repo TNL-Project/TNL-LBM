@@ -7,12 +7,12 @@
 #include "amr_chain_solver.h"
 #include "amr_windbreak.h"
 
-// 2-level AMR developing-channel diagnostic (Experiment B, task B.7 artifact):
+// 2-level AMR developing-channel diagnostic:
 // Dirichlet inflow/outflow channel with the refinement patch placed in the
 // developing-flow region so that the mean flux passes through the patch's
 // skin/interface region — a regime the decaying (periodic) Taylor-Green
-// benchmark of sim_AMR.cu cannot probe. This file is the B.7 "Decision 0
-// cousin" variant of sim_AMR/sim_AMR.cu: same collision/streaming/macro
+// benchmark of sim_AMR.cu cannot probe. This file is the inflow/outflow
+// variant of sim_AMR/sim_AMR.cu: same collision/streaming/macro
 // configuration, same CLI surface, same State_AMR Berger-Colella driver.
 //
 // Geometry (coarse level-0 cells, R = --resolution):
@@ -33,8 +33,8 @@
 //   wall guard steers the window onto the {ring, skin} pair {R+1, R+2});
 //   the x/y faces and the z-max face stay strictly interior (ring cells at
 //   x=23/40, y=3/12, z=9/10 collision-active fluid), so the mean flux passes
-//   through the footprint's x-min/x-max skin faces (B-off: ring-F2C +
-//   full-footprint interior; B-on: skin rect faces only).
+// through the footprint's x-min/x-max skin faces (skin rect faces only
+// today; the former ring-F2C arm also wrote ring + full-footprint interior).
 // - fine-level wall BC (2026-08-25): the fine block additionally imposes
 //   its OWN bounce-back wall on every footprint face whose face-adjacent
 //   coarse halo row is GEO_WALL (in this channel only the z-min face: the
@@ -70,12 +70,12 @@
 // Reference path: uniform fine-resolution run of THE SAME variant with
 // --max-level 0 --resolution 2 --lattice-viscosity 0.01 (uniform 2R grid with
 // nu_lb matching the AMR fine level). The production write3D_AMR no-ops for
-// max_level == 0 (see .omo/notepads issues.md), so the reference VTKHDF
-// series is emitted by the untracked helper driver
-// .omo/b67/sim_channel_ref_vtkhdf.cu (byte-copy + the P0.3-established two
-// deltas), NOT by editing the production writer guard.
+// max_level == 0, so the reference VTKHDF series is
+// emitted by an untracked byte-copy helper driver (with the two
+// established deltas of that copy), NOT by editing the production
+// writer guard.
 //
-// Nested mode (commit F of the amr-nlevel-nesting plan, opt-in via
+// Nested mode (the amr-nlevel-nesting arc, opt-in via
 // --max-level 2..4; the default --max-level 1 channel is byte-identical to
 // the 2-level config above): levels 2..max_level telescope inside the
 // level-1 footprint, every level wall-attached to the bottom plane (the V10
@@ -87,8 +87,8 @@
 // (the derived region spec is logged), never hand-written; --max-level 4 is
 // the target five lattice levels 0..4.
 //
-// Windbreak mode (commit G of the amr-nlevel-nesting plan; the user-locked
-// windbreak geometry of plan sec. 9): in nested mode a staggered two-row
+// Windbreak mode (the user-locked windbreak geometry of the
+// windbreak channel target): in nested mode a staggered two-row
 // array of thin vertical cylindrical rods is GEO_WALL-stamped on the FINEST
 // level's map only (every parent treats the rod columns as plain fluid --
 // locked item 1), standing on the bottom wall plane (the base row rides the
@@ -106,9 +106,9 @@
 // rejected at CLI parse). The stamping rides amr_windbreak.h's integer
 // layout helper -- the same arithmetic the rod-map census test locks -- and
 // runs AFTER the wall-chain tagging below. Enabled by default in nested
-// mode; --no-windbreak reproduces the commit-F no-rod run bit-for-bit.
+// mode; --no-windbreak reproduces the no-rod nested run bit-for-bit.
 // Conservation stats count the constant GEO_WALL rod cells as a documented
-// constant offset (plan sec. 9 locked item 5).
+// constant offset (locked with the windbreak geometry).
 
 template <typename NSE>
 struct StateLocal_AMR_Channel : State_AMR<NSE>
@@ -130,7 +130,7 @@ struct StateLocal_AMR_Channel : State_AMR<NSE>
 	// problem parameters (set before execute(), consumed by the init/BC hooks)
 	dreal phys_inflow_velocity = 0;	 // [m/s] uniform inflow velocity
 	idx res = 1;					 // resolution factor R (coarse cells per 0.041m/16)
-	// windbreak rod array (commit G, the header comment): when set, the
+	// windbreak rod array (the header comment): when set, the
 	// staggered two-row array is GEO_WALL-stamped on the FINEST level's map
 	// in setupBoundaries after the wall-chain tagging (nested mode only;
 	// the layout helper validates the guardrails and throws on a fit
@@ -409,7 +409,7 @@ void sim(
 	state.res = R;
 	// the windbreak rod array exists only in nested mode and only on the
 	// finest level (the header comment); --no-windbreak reproduces the
-	// commit-F no-rod run bit-for-bit
+	// no-rod nested run bit-for-bit
 	state.windbreak = max_level >= 2 && ! no_windbreak;
 	state.windbreak_params = windbreak_params;
 

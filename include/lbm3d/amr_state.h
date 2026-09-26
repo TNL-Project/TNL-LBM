@@ -176,10 +176,10 @@ __global__ void cudaAMRConservationReduce(
  * a multi-level block hierarchy in time with the classic Berger & Colella
  * (1989) subcycling schedule, ordered into the Schönherr cycle with
  * SIMULATED band (Schönherr 2015 thesis ch.7; the cycle contract of
- * docs/AMR-schonherr-ch7-target-contract.md / plan
- * .omo/plans/schonherr-ch7-conversion.md sec. 1.3; the passive-band form
- * shipped by the conversion was flipped to the simulated band after the
- * T16 20-tc null verdict - contract sec. 4 fork row (c)). One global
+ * docs/AMR-schonherr-ch7-target-contract.md sec. 1.3; the passive-band
+ * form shipped by the conversion was flipped to the simulated band
+ * after the long Taylor-Green run's 20-tc null verdict - contract
+ * sec. 4 fork row (c)). One global
  * iteration performs the Berger-Colella PAIR recursion (\ref advancePair):
  * one pair at level L covers 2 dt_L = dt_{L-1} and nests the finer level's
  * own pairs and sync points inside, so each cycle performs per level pair
@@ -212,7 +212,7 @@ __global__ void cudaAMRConservationReduce(
  *    `iterations` counter). Coarse cells tagged `GEO_AMR_INTERFACE` (the
  *    interface ring around each fine footprint) are collision-active
  *    inside the kernel (they stream and collide like fluid); since the
- *    ring fine-to-coarse launch was removed (gate B ruling, 2026-08-16)
+ *    ring fine-to-coarse launch was removed on 2026-08-16,
  *    the coarse kernel is their only writer -- fine feedback reaches them
  *    through streaming from the skin cells the interior F2C wrote at the
  *    end of the previous cycle (step 4 below),
@@ -221,7 +221,7 @@ __global__ void cudaAMRConservationReduce(
  *    immediately when both levels are time-aligned (twice per pair of
  *    level L -- for L == 1 that is the historical ONCE-per-cycle cadence),
  *    transferring the strategy-selected fine state (the Schönherr
- *    compact-moment reconstruction of the F2C_SCHONHERR default; the
+ *    compact-moment reconstruction of the default F2C branch; the
  *    Lagrava-filtered fine state under the F2C_LAGRAVA opt-out) back
  *    onto the frozen GEO_NOTHING skin cells of level L-1, reading the
  *    fine level's rotation-1 frame (the post-substep array of the pair
@@ -405,8 +405,8 @@ struct State_AMR : State<NSE>
 	virtual void launchCoarseToFineTransfers(int fine_level);
 	// project fine-averaged DFs onto the frozen GEO_NOTHING skin cells of
 	// each fine footprint (interior_patches of \ref couplings) -- the ONLY
-	// fine-to-coarse channel since the ring F2C launch was removed (gate B
-	// ruling, D.1 hard-delete)
+	// fine-to-coarse channel since the ring F2C launch was removed on
+	// 2026-08-16)
 	virtual void launchFineToCoarseTransfersInterior(int fine_level);
 
 	// per-direction transfer streams of the asynchronous coupling overlap
@@ -461,8 +461,8 @@ struct State_AMR : State<NSE>
 	void buildCouplings();
 
 #ifndef NDEBUG
-	// registration map-pattern guard (Schönherr-ch7 conversion, plan
-	// T6/Oracle F2, debug builds only): static structural check that the
+	// registration map-pattern guard (Schönherr-ch7 conversion,
+	// debug builds only): static structural check that the
 	// \ref buildCouplings patch geometry agrees with the map tags; returns
 	// false on the first violation (SimInit sets the terminate flag then)
 	bool checkCouplingMapPattern();
@@ -498,7 +498,7 @@ struct State_AMR : State<NSE>
 	// fine substep (kernelLaunchWindow). Filled by buildFineWallMasks at
 	// SimInit from the IMMEDIATE PARENT level's boundary map (the wall
 	// chain: a nested wall-shared face is backed by the parent's own fine
-	// wall row, plan sec. 5.1); keyed by block id, missing entries read as
+	// wall row); keyed by block id, missing entries read as
 	// 0 (no fine wall).
 	std::map<int, std::uint8_t> fine_wall_masks;
 
@@ -601,7 +601,7 @@ struct State_AMR : State<NSE>
 	// or on a wall without the per-axis storage override
 	void buildFineWallMasks();
 
-	// R4 wall-pedestal prisms of one fine block (the plan's sec. 5.3 refill
+	// R4 wall-pedestal prisms of one fine block (the wall-pedestal refill
 	// mechanism): on a wall-shared face of a NESTED block (level >= 2) the
 	// parent's own-8 upward fine-to-coarse window reads the footprint's
 	// frozen rows at face-normal depths {2,3} below the depth-1 skin
@@ -750,21 +750,21 @@ void State_AMR<NSE>::SimInit()
 	buildFineWallMasks();
 
 #ifdef F2C_LAGRAVA
-	// strategy coupling guard (the plan's sec. 5.4 v1 ruling): the
+	// strategy coupling guard (the wall-chain coupling guard ruling): the
 	// F2C_LAGRAVA filter reads a 4-node window one fine cell deeper than
-	// F2C_SCHONHERR's own-8, so a nested wall-shared face's 3-row pedestal
+	// the default compact-moment transfer's own-8, so a nested wall-shared face's 3-row pedestal
 	// (the depth-{1,2,3} destination set of the R4 prisms) underflows it by
 	// one row -- the parent's upward fine-to-coarse window would then read
 	// a never-written deep-core cell. Nested wall sharing therefore
-	// requires the F2C_SCHONHERR default; non-nested (level-1-only) wall
+	// requires the default F2C strategy; non-nested (level-1-only) wall
 	// runs under the Lagrava opt-out are unaffected
 	for (const auto& block : this->nse.blocks)
 		if (block.level >= 2 && fineWallMask(block) != 0) {
 			const std::string message = fmt::format(
-				"State_AMR: wall-shared nesting requires F2C_SCHONHERR: fine block {} at level {} carries wall-shared faces "
+				"State_AMR: wall-shared nesting requires the default fine-to-coarse strategy: fine block {} at level {} carries wall-shared faces "
 				"(fine_wall_masks = {}), but the active fine-to-coarse strategy is F2C_LAGRAVA, whose 4-node window underflows "
-				"the wall pedestal's 3-row depth and would read a never-written deep-core cell; rebuild with "
-				"-DTNL_LBM_F2C_STRATEGY=F2C_SCHONHERR or remove the nested wall-shared face",
+				"the wall pedestal's 3-row depth and would read a never-written deep-core cell; rebuild without an F2C strategy "
+				"define (the default) or remove the nested wall-shared face",
 				block.id,
 				block.level,
 				static_cast<int>(fineWallMask(block))
@@ -779,10 +779,10 @@ void State_AMR<NSE>::SimInit()
 	buildCouplings();
 
 #ifndef NDEBUG
-	// registration map-pattern guard (Schönherr-ch7 conversion, plan T6 /
-	// Oracle F2): static structural check that the patch geometry agrees
+	// registration map-pattern guard of the Schönherr-ch7 conversion:
+	// static structural check that the patch geometry agrees
 	// with the map tags -- a host-side abort cannot be xfail-marked, so it
-	// lands with the commit-7 band geometry whose nominal source pairs and
+	// lands with the re-anchored band geometry whose nominal source pairs and
 	// skin destinations satisfy the asserted pattern by construction
 	if (! checkCouplingMapPattern()) {
 		spdlog::error("State_AMR: registration map-pattern assertion FAILED (coupling patch geometry disagrees with the map tags); terminating");
@@ -836,8 +836,8 @@ void State_AMR<NSE>::SimInit()
 
 /**
  * \brief Derive \ref fine_wall_masks from the IMMEDIATE PARENT's boundary
- * map (the wall-chain resolution rule of the amr-nlevel-nesting plan, sec.
- * 5.1: key on the parent level's map, never the level-0 map at depth).
+ * map (the wall-chain resolution rule for nested wall-shared faces:
+ * key on the parent level's map, never the level-0 map at depth).
  *
  * For each fine block and each of the footprint's six faces the block's
  * interior cross-section columns are scanned (tangential fine-local
@@ -1469,9 +1469,9 @@ auto State_AMR<NSE>::computeConservationStats() -> AMRConservationStats
  * disjoint inset-face SKIN rectangles (the depth-1 shell one coarse row
  * inside the reactivated c=0 ring row, the same disjoint partition idiom
  * as the halo faces above).
- * They carry the ONLY fine-to-coarse feedback channel (changes 2+3 of the
- * AMR interface redesign): the ring fine-to-coarse launch was removed
- * (gate B ruling, D.1 hard-delete), the deep frozen core is never written,
+ * They carry the ONLY fine-to-coarse feedback channel (the AMR
+ * interface redesign): the ring fine-to-coarse launch was removed
+ * on 2026-08-16, the deep frozen core is never written,
  * and the collision-active ring cells are driven by the coarse kernel only
  * (see `launchFineToCoarseTransfersInterior`).
  *
@@ -1641,10 +1641,10 @@ void State_AMR<NSE>::buildCouplings()
 				}
 			}
 
-			// interior patches (changes 2+3 of the AMR interface redesign,
-			// docs/AMR-interface-proposed-diagram.md §3/§7 — unconditional
-			// since the ring F2C path was removed, gate B ruling + D.1
-			// hard-delete): the one-coarse-cell-deep SKIN of the fine
+			// interior patches (the AMR interface redesign of
+			// docs/AMR-interface-proposed-diagram.md §3/§7, unconditional
+			// since the ring F2C path was removed on 2026-08-16): the
+			// one-coarse-cell-deep SKIN of the fine
 			// footprint AT DEPTH 1 (frozen GEO_NOTHING cells one coarse row
 			// INSIDE the reactivated c=0 ring row of
 			// docs/AMR-schonherr-ch7-target-contract.md sec. 2.1,
@@ -1722,7 +1722,7 @@ void State_AMR<NSE>::buildCouplings()
 				}
 			}
 
-			// R4 wall-pedestal prisms (the plan's sec. 5.3 refill mechanism,
+			// R4 wall-pedestal prisms (the wall-pedestal refill mechanism,
 			// nested wall-shared faces only -- the helper returns nothing on
 			// level-1 blocks, so the single-fine-level regression contract
 			// keeps its exact interior-patch census): the frozen rows at
@@ -1765,8 +1765,8 @@ void State_AMR<NSE>::buildCouplings()
 
 #ifndef NDEBUG
 /**
- * \brief Registration map-pattern guard (Schönherr-ch7 conversion, plan
- * T6/Oracle F2) -- debug builds only.
+ * \brief Registration map-pattern guard (Schönherr-ch7 conversion) --
+ * debug builds only.
  *
  * Static structural check that the coupling patch geometry built by
  * \ref buildCouplings agrees with the map tags: a one-cell registration
@@ -1787,7 +1787,7 @@ void State_AMR<NSE>::buildCouplings()
  * - (b) every fine-to-coarse (interior patch) destination cell is
  *   `GEO_NOTHING` at EXACTLY footprint surface-depth 1 (c = 1 / c =
  *   gs-2), or, on a nested wall-shared face, one of the R4 wall-pedestal
- *   prism cells at face-normal depths {2,3} (the plan's sec. 5.3 refill
+ *   prism cells at face-normal depths {2,3} (the wall-pedestal refill
  *   mechanism; the depth set is {1} normally, {1,2,3} on the pedestal
  *   rows).
  *
@@ -1973,7 +1973,7 @@ bool State_AMR<NSE>::checkCouplingMapPattern()
 		// (b) F2C interior patches: every destination cell must be frozen
 		// GEO_NOTHING at exactly footprint surface-depth 1 (c=1 / c=gs-2),
 		// except the R4 wall-pedestal prism cells of a nested wall-shared face,
-		// which sit at face-normal depths {2,3} (plan sec. 5.3: the face-
+		// which sit at face-normal depths {2,3} (the face-
 		// specific depth set is {1} normally, {1,2,3} on the pedestal rows;
 		// every destination stays frozen)
 		for (std::size_t i = 0; i < coupling.interior_patches.size(); i++) {
@@ -2173,7 +2173,7 @@ void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level)
 	// single barrier is the caller's synchronizeTransfers()
 }
 
-// D.1 hard-delete (gate-B ruling, 2026-08-16): the ring fine-to-coarse
+// Ring fine-to-coarse hard-delete (2026-08-16): the ring fine-to-coarse
 // launch (`launchFineToCoarseTransfers` over the halo `patches`) was
 // removed -- the skin F2C of \ref launchFineToCoarseTransfersInterior is
 // now the ONLY fine-to-coarse channel. The halo `patches` of \ref couplings
@@ -2181,23 +2181,24 @@ void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level)
 // \ref launchCoarseToFineTransfers.
 /**
  * \brief Skin (under-footprint) fine-to-coarse transfer -- the ONLY
- * fine-to-coarse channel (gate B ruling, ring path removed in D.1).
+ * fine-to-coarse channel (ring path removed on 2026-08-16).
  *
  * Iterates the interior_patches of \ref couplings (the 6 disjoint inset-face
  * SKIN rectangles built in `buildCouplings`, one coarse cell deep inside
  * the footprint) and launches `cudaAMR_FineToCoarse` over each rectangle.
  * The under-footprint coarse cells are frozen as GEO_NOTHING (no
  * stream/collide); the written cells' DFs are set exclusively by this
- * transfer — the strategy-selected F2C state (F2C_SCHONHERR default;
- * Lagrava-filtered fine-averaged DFs under the F2C_LAGRAVA opt-out),
+ * transfer — the strategy-selected F2C state (default compact-moment
+ * transfer; Lagrava-filtered fine-averaged DFs under the F2C_LAGRAVA
+ * opt-out),
  * full overwrite. The deep frozen
  * core is never written (and never read: the coarse C2F stencil
  * reaches at most 1 cell into the footprint). This is the two-way feedback
  * channel: fine-interior information reaches the coarse lattice through
  * the written skin cells, which the collision-active ring cells stream
  * from at the next coarse step. Every written skin cell reads fine state
- * of the fine interior only (its own 8 subcells under the F2C_SCHONHERR
- * default; the window with the kernel's lo = 0 interior clamp under the
+ * of the fine interior only (its own 8 subcells under the default
+ * branch; the window with the kernel's lo = 0 interior clamp under the
  * Lagrava opt-out). When \ref couplings is empty (no marked interface
  * cells), this is a silent no-op (SimInit logged a warning).
  */
@@ -2301,8 +2302,8 @@ void State_AMR<NSE>::synchronizeTransfers()
  * window is deepened to the fine wall's GEO_WALL row), then substep B on
  * the interior-only extent (its boundary data is substep A's updated inner
  * ghost rows in the other AB frame, so it needs no fill). With
- * L < max_level the pair nests the finer level's own pairs per the plan's
- * schedule tables (.omo/plans/amr-nlevel-nesting.md sec. 3):
+ * L < max_level the pair nests the finer level's own pairs per the
+ * subcycling schedule tabled below:
  *
  * - after substep A and before substep B, the finer pair covering
  *   [t, t+dt_L) runs, followed by the mid-sync F2C(L+1 -> L) and the
@@ -2481,7 +2482,7 @@ void State_AMR<NSE>::SimUpdate()
 	// the Berger-Colella pair recursion (the file docstring): level 1's pair
 	// consumes 2 dt_1 = dt_0 per coarse step, with the finer levels' pairs,
 	// the mid-sync F2C + fill, and the end-sync F2C nested inside per the
-	// plan's schedule tables (.omo/plans/amr-nlevel-nesting.md sec. 3)
+	// nested-pair schedule of the file docstring
 	advancePair(1, compute_macro, sync_macro);
 
 	// ---------- Schönherr cycle step 3: one coarse (level 0) LBM step ----------
@@ -2489,7 +2490,7 @@ void State_AMR<NSE>::SimUpdate()
 	// level-0 even_iter parity / DF rotation from the global `iterations`.
 	// GEO_AMR_INTERFACE cells are collision-active inside the kernel
 	// (BC::doCollision == true); the coarse kernel is their only writer
-	// since the ring fine-to-coarse launch was removed (D.1) - fine
+	// since the ring fine-to-coarse launch was removed - fine
 	// feedback reaches them through streaming from the skin cells the
 	// interior F2C wrote at the end of the previous cycle
 	launchLBMKernelForLevel(0, compute_macro, /*ghost_layers=*/0);
@@ -2509,11 +2510,11 @@ void State_AMR<NSE>::SimUpdate()
 	// ---------- Schönherr cycle steps 4-5: transfers at the cycle end ----------
 	// end-sync fine-to-coarse, reading the level-1 rotation-1 frame (the
 	// post-substep-2 array): inject the strategy-selected fine state
-	// (F2C_SCHONHERR default; Lagrava-filtered under the F2C_LAGRAVA
-	// opt-out) into the frozen GEO_NOTHING skin cells of each level-1
+	// (default compact-moment transfer; Lagrava-filtered under the
+	// F2C_LAGRAVA opt-out) into the frozen GEO_NOTHING skin cells of each level-1
 	// footprint (two-way feedback; the nested couplings' end-syncs already
 	// ran inside the recursion above). Ring cells stream+collide only --
-	// the ring F2C launch was removed (gate B ruling, D.1 hard-delete) and
+	// the ring F2C launch was removed on 2026-08-16 and
 	// the fine feedback reaches them through streaming from the freshly
 	// F2C-written skin on the next coarse step (df_out -> next df_cur
 	// convention, no kernel change). The relative order of the F2C against

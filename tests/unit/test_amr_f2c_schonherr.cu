@@ -1,19 +1,24 @@
-// Compile-and-run exactness locks for the F2C_SCHONHERR fine-to-coarse
+// Compile-and-run exactness locks for the default (compact-moment) F2C
 // branch of cudaAMR_FineToCoarse (include/lbm3d/d3q27/amr_coupling.h;
-// plan T14 / commit 13 of .omo/plans/schonherr-ch7-conversion.md).
+// the σ = 2 compact-moment transfer of the Schönherr ch7 conversion; the
+// F2C_SCHONHERR strategy).
 //
-// The F2C_SCHONHERR define is a per-TU compile-time switch selecting the
-// thesis sec. 7.2 sigma-form compact-moment transfer (sigma_{f->c} = 2)
-// inside the F2C kernel and cannot share a binary with the default
-// Lagrava-filter build (ODR hazard on the kernel template symbol), so it
-// locks as standalone per-pattern doctest binaries: tests/unit/CMakeLists.txt
-// compiles doctest_main.cu + this source once per streaming pattern with
-// the define hardcoded, registering the "amr_f2c_schonherr" TEST_SUITE as
+// This branch selects the thesis sec. 7.2 sigma-form compact-moment
+// transfer (sigma_{f->c} = 2) inside the F2C kernel. It was gated by the
+// F2C_SCHONHERR define until the 2026-09-27 switch removal, when it
+// became the untagged default (the F2C_LAGRAVA / F2C_BOX_AVERAGE defines
+// select the opt-out branch instead). It cannot share a binary with the
+// Lagrava-filter opt-out build (ODR hazard on the kernel template
+// symbol), so it locks as standalone per-pattern doctest binaries:
+// tests/unit/CMakeLists.txt compiles doctest_main.cu + this source once
+// per streaming pattern with NO strategy define (the default branch),
+// registering the "amr_f2c_schonherr" TEST_SUITE as
 // test_amr_f2c_schonherr_{ab,aa}, and tests/unit/test_amr_f2c_schonherr.py
 // drives them. The
 // default build (tests/unit/test_amr_coupling.cu, driven by
 // tests/unit/test_amr_units.py)
-// keeps the Lagrava path pinned separately, so the pair of batteries is
+// keeps the Lagrava opt-out path pinned separately (compiled only when
+// F2C_LAGRAVA / F2C_BOX_AVERAGE is passed), so the pair of batteries is
 // green under BOTH strategies.
 //
 // Branch semantics under test (Schönherr 2015 thesis sec. 7.2 + contract
@@ -52,8 +57,8 @@
 //       the reduced-cumulant targets above (atol 1e-6 + rtol 1e-4).
 //   L5 mass identity: the sum of the 27 destination DFs equals d_0 == the
 //       mean of the 8 subcell densities exactly (the transfer is a
-//       mean-density transfer with no conservation claim -- T15's T4a
-//       successor), reported against the gate rtol 1e-6 / atol 1e-7.
+//       mean-density transfer with no conservation claim -- the
+//       strategy split's mean-density arm), reported against the gate rtol 1e-6 / atol 1e-7.
 //
 // Every check is one plain CHECK_MESSAGE() doctest assertion: the
 // measured maxima travel in the assertion messages, and the doctest
@@ -84,8 +89,8 @@ using NSE_CONFIG = LBM_CONFIG<
 	D3Q27_BC_All,
 	D3Q27_MACRO_Default<TRAITS>>;
 
-#ifndef F2C_SCHONHERR
-	#error "test_amr_f2c_schonherr must be compiled with -DF2C_SCHONHERR (see tests/unit/CMakeLists.txt)"
+#if defined(F2C_LAGRAVA) || defined(F2C_BOX_AVERAGE)
+	#error "test_amr_f2c_schonherr pins the default (compact-moment) F2C branch and must be compiled WITHOUT an opt-out define (no F2C_LAGRAVA / F2C_BOX_AVERAGE; see tests/unit/CMakeLists.txt)"
 #endif
 
 using idx = typename TRAITS::idx;

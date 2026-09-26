@@ -11,9 +11,9 @@ are unconditional in every tree (no opt-in cache variable), so every
 configured MPI tree builds all five binaries.
 
 The suites are doctests: every legacy PASS/FAIL site maps one-to-one to a
-``CHECK_MESSAGE`` (positive-coverage counting preserved; see the
-amr-doctest-port plan), so pytest asserts the doctest all-pass banner
-beyond the bare exit code. A missing binary is a hard failure with a
+``CHECK_MESSAGE`` (positive-coverage counting preserved), so pytest
+asserts the doctest all-pass banner beyond the bare exit code. A
+missing binary is a hard failure with a
 build hint, never a silent skip — with one exception: a single-pattern AA
 tree builds only the ``aa``/``eso_*`` binaries (``AMR_TEST_PATTERNS``,
 tests/unit/CMakeLists.txt), so the ``ab`` parametrizations skip there.
