@@ -805,9 +805,11 @@ __device__ __forceinline__ void amrCmCorrectedCumulants(
  * cumulants at omega9 = omega10 = 1 every step, so the
  * factorized-from-lower-moments expressions below are exactly the
  * collision's own post-collision central moments. Cs_211/121/112 and
- * Cs_220/202/022 keep the factorized forms of the plain chain: the
- * collision's A,B correction terms of O(nu * strain * rho) (~1e-6 at the
- * AMR sim parameters) are a documented residual, not transferred.
+ * Cs_220/202/022 keep the factorized forms of the plain chain, with
+ * the collision's A,B strain corrections of col_cum.h's Eqs. 43-48
+ * (O(nu * strain * rho), ~1e-6 at the AMR sim parameters) carried on
+ * top since 2026-09-27 -- gated like the collision's own Eqs. 27-32
+ * antialias estimates, so absent without USE_GEIER_CUM_ANTIALIAS.
  */
 template <typename CONFIG, typename StoreDF>
 __device__ __forceinline__ void amrCmBacktransformPlain(
@@ -821,6 +823,7 @@ __device__ __forceinline__ void amrCmBacktransformPlain(
 	const typename CONFIG::TRAITS::dreal C110,
 	const typename CONFIG::TRAITS::dreal C101,
 	const typename CONFIG::TRAITS::dreal C011,
+	[[maybe_unused]] const typename CONFIG::TRAITS::dreal omega_d,
 	[[maybe_unused]] const AMR_CM_ThirdOrder<CONFIG>& k3,
 	StoreDF store_df
 )
@@ -860,12 +863,63 @@ __device__ __forceinline__ void amrCmBacktransformPlain(
 	const dreal vy_sqr = vy_f * vy_f;
 	const dreal vz_sqr = vz_f * vz_f;
 
+#if defined(USE_GEIER_CUM_2017)
+	// the 2017 collision's own post-collision fourth-order central moments:
+	// the A,B strain corrections of col_cum.h's Eqs. 43-48, carried since
+	// 2026-09-27, replacing the former factorized-form residual (~1e-6 at
+	// the AMR sim parameters). omega1/omega2 are the local rates of the
+	// 2017 branch (production pins the bulk rate to no1); the Eqs. 27-32
+	// gradient estimates fire only under USE_GEIER_CUM_ANTIALIAS, mirroring
+	// the collision's own gate
+	const dreal omega1 = omega_d;
+	const dreal omega2 = no1;
+	const dreal A = (no4 * omega1 * omega1 + no2 * omega1 * omega2 * (omega1 - no6) + omega2 * omega2 * (omega1 * (no10 - no3 * omega1) - no4))
+				  / (omega1 - omega2) / (omega2 * (no2 + no3 * omega1) - no8 * omega1);
+	const dreal B =
+		(no4 * omega1 * omega2 * (no9 * omega1 - no16) - no4 * omega1 * omega1 - no2 * omega2 * omega2 * (no2 + no9 * omega1 * (omega1 - no2))) * n1o3
+		/ (omega1 - omega2) / (omega2 * (no2 + no3 * omega1) - no8 * omega1);
+	#if defined(USE_GEIER_CUM_ANTIALIAS)
+	// Eqs. 27-29: the von Neumann strain estimate built from the second-order
+	// cumulants; the same formula text is exact for the well chain since the
+	// diagonal equilibrium shifts cancel in these combinations
+	const dreal Dxu = -omega1 * n1o2 * rho_inv * (no2 * ks_200 - ks_020 - ks_002) - omega2 * n1o2 * rho_inv * (ks_200 + ks_020 + ks_002 - ks_000);
+	const dreal Dyv = Dxu + n3o2 * omega1 * rho_inv * (ks_200 - ks_020);
+	const dreal Dzw = Dxu + n3o2 * omega1 * rho_inv * (ks_200 - ks_002);
+	// Eqs. 30-32
+	const dreal DxvDyu = -no3 * omega1 * rho_inv * ks_110;
+	const dreal DxwDzu = -no3 * omega1 * rho_inv * ks_101;
+	const dreal DywDzv = -no3 * omega1 * rho_inv * ks_011;
+	#else
+	const dreal Dxu = 0, Dyv = 0, Dzw = 0, DxvDyu = 0, DxwDzu = 0, DywDzv = 0;
+	#endif
+	// Eqs. 43-45 with the collision's omega6 = omega7 = 1 relaxation and this
+	// mode filter's pre-collision C_2-family = 0: only the A * rho * strain
+	// branch survives
+	const dreal Eq43RHS = n2o3 * (no1 / omega1 - n1o2) * A * rho_f * (Dxu - no2 * Dyv + Dzw);
+	const dreal Eq44RHS = n2o3 * (no1 / omega1 - n1o2) * A * rho_f * (Dxu + Dyv - no2 * Dzw);
+	const dreal Eq45RHS = -n4o3 * (no1 / omega1 - n1o2) * A * rho_f * (Dxu + Dyv + Dzw);
+	const dreal Cs_220 = n1o3 * (Eq43RHS + Eq44RHS + Eq45RHS);
+	const dreal Cs_202 = n1o3 * (-Eq43RHS + Eq45RHS);
+	const dreal Cs_022 = n1o3 * (-Eq44RHS + Eq45RHS);
+	// Eqs. 46-48, omega8 = 1
+	const dreal Cs_211 = -n1o3 * (no1 / omega1 - n1o2) * B * rho_f * DywDzv;
+	const dreal Cs_121 = -n1o3 * (no1 / omega1 - n1o2) * B * rho_f * DxwDzu;
+	const dreal Cs_112 = -n1o3 * (no1 / omega1 - n1o2) * B * rho_f * DxvDyu;
+
+	const dreal ks_211 = Cs_211 + (ks_200 * ks_011 + no2 * ks_101 * ks_110) * rho_inv;
+	const dreal ks_121 = Cs_121 + (ks_020 * ks_101 + no2 * ks_110 * ks_011) * rho_inv;
+	const dreal ks_112 = Cs_112 + (ks_002 * ks_110 + no2 * ks_011 * ks_101) * rho_inv;
+	const dreal ks_220 = Cs_220 + (ks_020 * ks_200 + no2 * ks_110 * ks_110) * rho_inv;
+	const dreal ks_022 = Cs_022 + (ks_002 * ks_020 + no2 * ks_011 * ks_011) * rho_inv;
+	const dreal ks_202 = Cs_202 + (ks_200 * ks_002 + no2 * ks_101 * ks_101) * rho_inv;
+#else
 	const dreal ks_211 = (ks_200 * ks_011 + no2 * ks_101 * ks_110) * rho_inv;
 	const dreal ks_121 = (ks_020 * ks_101 + no2 * ks_110 * ks_011) * rho_inv;
 	const dreal ks_112 = (ks_002 * ks_110 + no2 * ks_011 * ks_101) * rho_inv;
 	const dreal ks_220 = (ks_020 * ks_200 + no2 * ks_110 * ks_110) * rho_inv;
 	const dreal ks_022 = (ks_002 * ks_020 + no2 * ks_011 * ks_011) * rho_inv;
 	const dreal ks_202 = (ks_200 * ks_002 + no2 * ks_101 * ks_101) * rho_inv;
+#endif
 
 #if defined(USE_GEIER_CUM_2017)
 	const dreal ks_122 = (ks_020 * ks_102 + ks_002 * ks_120 + no4 * ks_011 * ks_111 + no2 * (ks_110 * ks_012 + ks_101 * ks_021)) * rho_inv;
@@ -1012,8 +1066,9 @@ __device__ __forceinline__ void amrCmBacktransformPlain(
  * fourth-order central moments take the K-corrected full Eq. 83/84 forms,
  * i.e. col_cum_well.h's Eqs. 55/56 with Cs_122 = Cs_212 = Cs_221 = 0 and
  * Cs_222 = 0 (the collision relaxes them at omega9 = omega10 = 1); the
- * A,B-correction residual of Cs_211/121/112 and Cs_220/202/022 noted
- * there applies unchanged. The weight-factorization argument above
+ * A,B strain corrections of Cs_211/121/112 and Cs_220/202/022 carried
+ * there since 2026-09-27 are added on top of the K-corrected factorized
+ * forms below. The weight-factorization argument above
  * extends to the larger cumulant set: the (1/6, 2/3, 1/6) column's
  * per-axis fourth cumulant is 1/3 - 3*(1/3)^2 = 0 and every odd raw
  * moment vanishes, so the seven transferred third-order cumulants enter
@@ -1044,6 +1099,7 @@ __device__ __forceinline__ void amrCmBacktransformWell(
 	const typename CONFIG::TRAITS::dreal C110,
 	const typename CONFIG::TRAITS::dreal C101,
 	const typename CONFIG::TRAITS::dreal C011,
+	[[maybe_unused]] const typename CONFIG::TRAITS::dreal omega_d,
 	[[maybe_unused]] const AMR_CM_ThirdOrder<CONFIG>& k3,
 	StoreDF store_df
 )
@@ -1103,12 +1159,57 @@ __device__ __forceinline__ void amrCmBacktransformWell(
 	const dreal vy_sqr = vy_f * vy_f;
 	const dreal vz_sqr = vz_f * vz_f;
 
+#if defined(USE_GEIER_CUM_2017)
+	// the same A,B strain corrections of col_cum.h's Eqs. 43-48 as in the
+	// plain body above, added on top of the K-corrected factorized forms;
+	// the Eqs. 27-32 estimate text is verbatim exact here since the KWC_3
+	// diagonal shifts cancel in these combinations
+	const dreal omega1 = omega_d;
+	const dreal omega2 = no1;
+	const dreal A = (no4 * omega1 * omega1 + no2 * omega1 * omega2 * (omega1 - no6) + omega2 * omega2 * (omega1 * (no10 - no3 * omega1) - no4))
+				  / (omega1 - omega2) / (omega2 * (no2 + no3 * omega1) - no8 * omega1);
+	const dreal B =
+		(no4 * omega1 * omega2 * (no9 * omega1 - no16) - no4 * omega1 * omega1 - no2 * omega2 * omega2 * (no2 + no9 * omega1 * (omega1 - no2))) * n1o3
+		/ (omega1 - omega2) / (omega2 * (no2 + no3 * omega1) - no8 * omega1);
+	#if defined(USE_GEIER_CUM_ANTIALIAS)
+	// Eqs. 27-29
+	const dreal Dxu = -omega1 * n1o2 * rho_inv * (no2 * ks_200 - ks_020 - ks_002) - omega2 * n1o2 * rho_inv * (ks_200 + ks_020 + ks_002 - ks_000);
+	const dreal Dyv = Dxu + n3o2 * omega1 * rho_inv * (ks_200 - ks_020);
+	const dreal Dzw = Dxu + n3o2 * omega1 * rho_inv * (ks_200 - ks_002);
+	// Eqs. 30-32
+	const dreal DxvDyu = -no3 * omega1 * rho_inv * ks_110;
+	const dreal DxwDzu = -no3 * omega1 * rho_inv * ks_101;
+	const dreal DywDzv = -no3 * omega1 * rho_inv * ks_011;
+	#else
+	const dreal Dxu = 0, Dyv = 0, Dzw = 0, DxvDyu = 0, DxwDzu = 0, DywDzv = 0;
+	#endif
+	// Eqs. 43-45 (omega6 = omega7 = 1 relaxation, this mode filter's
+	// pre-collision C_2-family = 0)
+	const dreal Eq43RHS = n2o3 * (no1 / omega1 - n1o2) * A * rho_f * (Dxu - no2 * Dyv + Dzw);
+	const dreal Eq44RHS = n2o3 * (no1 / omega1 - n1o2) * A * rho_f * (Dxu + Dyv - no2 * Dzw);
+	const dreal Eq45RHS = -n4o3 * (no1 / omega1 - n1o2) * A * rho_f * (Dxu + Dyv + Dzw);
+	const dreal Cs_220 = n1o3 * (Eq43RHS + Eq44RHS + Eq45RHS);
+	const dreal Cs_202 = n1o3 * (-Eq43RHS + Eq45RHS);
+	const dreal Cs_022 = n1o3 * (-Eq44RHS + Eq45RHS);
+	// Eqs. 46-48, omega8 = 1
+	const dreal Cs_211 = -n1o3 * (no1 / omega1 - n1o2) * B * rho_f * DywDzv;
+	const dreal Cs_121 = -n1o3 * (no1 / omega1 - n1o2) * B * rho_f * DxwDzu;
+	const dreal Cs_112 = -n1o3 * (no1 / omega1 - n1o2) * B * rho_f * DxvDyu;
+
+	const dreal ks_211 = Cs_211 + ((ks_200 + KWC_3) * ks_011 + no2 * ks_101 * ks_110) * rho_inv;
+	const dreal ks_121 = Cs_121 + ((ks_020 + KWC_3) * ks_101 + no2 * ks_110 * ks_011) * rho_inv;
+	const dreal ks_112 = Cs_112 + ((ks_002 + KWC_3) * ks_110 + no2 * ks_011 * ks_101) * rho_inv;
+	const dreal ks_220 = Cs_220 + ((ks_020 * ks_200 + no2 * ks_110 * ks_110) + (ks_020 + ks_200) * KWC_3 - KWC_9 * ks_000) * rho_inv;
+	const dreal ks_022 = Cs_022 + ((ks_002 * ks_020 + no2 * ks_011 * ks_011) + (ks_002 + ks_020) * KWC_3 - KWC_9 * ks_000) * rho_inv;
+	const dreal ks_202 = Cs_202 + ((ks_200 * ks_002 + no2 * ks_101 * ks_101) + (ks_200 + ks_002) * KWC_3 - KWC_9 * ks_000) * rho_inv;
+#else
 	const dreal ks_211 = ((ks_200 + KWC_3) * ks_011 + no2 * ks_101 * ks_110) * rho_inv;
 	const dreal ks_121 = ((ks_020 + KWC_3) * ks_101 + no2 * ks_110 * ks_011) * rho_inv;
 	const dreal ks_112 = ((ks_002 + KWC_3) * ks_110 + no2 * ks_011 * ks_101) * rho_inv;
 	const dreal ks_220 = ((ks_020 * ks_200 + no2 * ks_110 * ks_110) + (ks_020 + ks_200) * KWC_3 - KWC_9 * ks_000) * rho_inv;
 	const dreal ks_022 = ((ks_002 * ks_020 + no2 * ks_011 * ks_011) + (ks_002 + ks_020) * KWC_3 - KWC_9 * ks_000) * rho_inv;
 	const dreal ks_202 = ((ks_200 * ks_002 + no2 * ks_101 * ks_101) + (ks_200 + ks_002) * KWC_3 - KWC_9 * ks_000) * rho_inv;
+#endif
 
 #if defined(USE_GEIER_CUM_2017)
 	const dreal ks_122 =
@@ -1255,16 +1356,17 @@ __device__ __forceinline__ void amrCmBacktransform(
 	const typename CONFIG::TRAITS::dreal C110,
 	const typename CONFIG::TRAITS::dreal C101,
 	const typename CONFIG::TRAITS::dreal C011,
+	const typename CONFIG::TRAITS::dreal omega_d,
 	const AMR_CM_ThirdOrder<CONFIG>& k3,
 	StoreDF store_df
 )
 {
 	using COLL = typename CONFIG::COLL;
 	if constexpr (COLL::is_well_conditioned) {
-		amrCmBacktransformWell<CONFIG>(rho_f, vx_f, vy_f, vz_f, C200, C020, C002, C110, C101, C011, k3, store_df);
+		amrCmBacktransformWell<CONFIG>(rho_f, vx_f, vy_f, vz_f, C200, C020, C002, C110, C101, C011, omega_d, k3, store_df);
 	}
 	else {
-		amrCmBacktransformPlain<CONFIG>(rho_f, vx_f, vy_f, vz_f, C200, C020, C002, C110, C101, C011, k3, store_df);
+		amrCmBacktransformPlain<CONFIG>(rho_f, vx_f, vy_f, vz_f, C200, C020, C002, C110, C101, C011, omega_d, k3, store_df);
 	}
 }
 
@@ -1825,7 +1927,7 @@ __global__ void cudaAMR_CoarseToFine(
 	#else
 		const AMR_CM_ThirdOrder<CONFIG> k3 = {};
 	#endif
-		amrCmBacktransform<CONFIG>(rho_f, vx_f, vy_f, vz_f, C200, C020, C002, C110, C101, C011, k3, store_df_cell);
+		amrCmBacktransform<CONFIG>(rho_f, vx_f, vy_f, vz_f, C200, C020, C002, C110, C101, C011, omega_d, k3, store_df_cell);
 
 		write_fine_macro(fx, fy, fz, rho_f, vx_f, vy_f, vz_f);
 	}
@@ -2300,7 +2402,7 @@ __global__ void cudaAMR_FineToCoarse(
 				CONFIG::STREAMING::preCollisionSlot(coarse_SD_next, q, rx, ry, rz, coarse_even_iter) = f;
 		};
 
-		amrCmBacktransform<CONFIG>(rho_f, vx_f, vy_f, vz_f, C200, C020, C002, C110, C101, C011, k3, store_coarse_df);
+		amrCmBacktransform<CONFIG>(rho_f, vx_f, vy_f, vz_f, C200, C020, C002, C110, C101, C011, omega_d, k3, store_coarse_df);
 
 		// macros for coupling cells (GEO_AMR_INTERFACE ring or GEO_NOTHING
 		// frozen hidden cells): authoritative coupling value for output
