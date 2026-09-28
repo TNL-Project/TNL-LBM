@@ -297,31 +297,51 @@ struct D3Q27_STREAMING_ESO_TWIST
 	// postcoll_{n-1}(i) at site t_i = (anchor, tangential -c_i), where the
 	// anchor is the fluid-side neighbor column one cell inward.
 	// FACE is a compile-time template parameter, so the per-direction
-	// components and site offsets fold to constants.
+	// components and site offsets fold to constants. Tangential coordinates
+	// select among the kernel's already-wrapped neighbors (kernelInitIndices):
+	// interior rows read the raw neighbor, periodic-seam rows the wrapped
+	// neighbor, distributed axes the halo; boundary rows on non-periodic
+	// tangential axes are unreachable (ghost-layer idiom stamps walls/
+	// GEO_NOTHING there).
 	template <int FACE, typename LBM_DATA, typename LBM_KS>
-	__cuda_callable__ static void streamingOutflowImpl(LBM_DATA& SD, LBM_KS& KS, idx anchor, idx x, idx y, idx z)
+	__cuda_callable__ static void streamingOutflowImpl(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
 		constexpr int axis = (FACE & (bc_face::XP | bc_face::XM)) ? 0
 						   : (FACE & (bc_face::YP | bc_face::YM)) ? 1
 																  : 2;	// normal axis: 0 = x, 1 = y, 2 = z
+		// anchor column: the fluid-side neighbor one cell inward (opposite the outward normal)
+		const idx anchor = (FACE == bc_face::XP) ? xm
+						 : (FACE == bc_face::XM) ? xp
+						 : (FACE == bc_face::YP) ? ym
+						 : (FACE == bc_face::YM) ? yp
+						 : (FACE == bc_face::ZP) ? zm
+												 : zp;
 		for (int i = 0; i < 27; i++) {
+			// placement shift + slot identical to postCollValue, but folded into the
+			// net tangential offset used for the neighbor select: that engages on
+			// the FINAL storage coordinate (logical site + shift), not on the
+			// logical gather site
+			const idx px = dir27_cx(i) > 0 ? 1 : 0;
+			const idx py = dir27_cy(i) > 0 ? 1 : 0;
+			const idx pz = dir27_cz(i) > 0 ? 1 : 0;
+			const int slot = SD.even_iter ? opposite_direction(i) : i;
 			idx wx, wy, wz;
 			if constexpr (axis == 0) {
-				wx = anchor;
-				wy = y - dir27_cy(i);
-				wz = z - dir27_cz(i);
+				wx = anchor + px;
+				wy = dir27_cy(i) - py > 0 ? ym : (dir27_cy(i) - py < 0 ? yp : y);
+				wz = dir27_cz(i) - pz > 0 ? zm : (dir27_cz(i) - pz < 0 ? zp : z);
 			}
 			else if constexpr (axis == 1) {
-				wx = x - dir27_cx(i);
-				wy = anchor;
-				wz = z - dir27_cz(i);
+				wx = dir27_cx(i) - px > 0 ? xm : (dir27_cx(i) - px < 0 ? xp : x);
+				wy = anchor + py;
+				wz = dir27_cz(i) - pz > 0 ? zm : (dir27_cz(i) - pz < 0 ? zp : z);
 			}
 			else {
-				wx = x - dir27_cx(i);
-				wy = y - dir27_cy(i);
-				wz = anchor;
+				wx = dir27_cx(i) - px > 0 ? xm : (dir27_cx(i) - px < 0 ? xp : x);
+				wy = dir27_cy(i) - py > 0 ? ym : (dir27_cy(i) - py < 0 ? yp : y);
+				wz = anchor + pz;
 			}
-			KS.f[i] = postCollValue(SD, i, wx, wy, wz);
+			KS.f[i] = TNL::Backend::ldg(SD.df(df_cur, slot, wx, wy, wz));
 		}
 	}
 
@@ -331,35 +351,24 @@ struct D3Q27_STREAMING_ESO_TWIST
 	{
 		switch (face) {
 			case bc_face::XP:
-				streamingOutflowImpl<bc_face::XP>(SD, KS, xm, x, y, z);
+				streamingOutflowImpl<bc_face::XP>(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				break;
 			case bc_face::XM:
-				streamingOutflowImpl<bc_face::XM>(SD, KS, xp, x, y, z);
+				streamingOutflowImpl<bc_face::XM>(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				break;
 			case bc_face::YP:
-				streamingOutflowImpl<bc_face::YP>(SD, KS, ym, x, y, z);
+				streamingOutflowImpl<bc_face::YP>(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				break;
 			case bc_face::YM:
-				streamingOutflowImpl<bc_face::YM>(SD, KS, yp, x, y, z);
+				streamingOutflowImpl<bc_face::YM>(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				break;
 			case bc_face::ZP:
-				streamingOutflowImpl<bc_face::ZP>(SD, KS, zm, x, y, z);
+				streamingOutflowImpl<bc_face::ZP>(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				break;
 			default:
-				streamingOutflowImpl<bc_face::ZM>(SD, KS, zp, x, y, z);
+				streamingOutflowImpl<bc_face::ZM>(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				break;
 		}
-	}
-
-	// interpolated-outflow blend in the pinned lbm_fma_rn form:
-	// the first site delivers the anchor-column postcoll (weight cs),
-	// the second site the own-column postcoll (weight 1-cs)
-	template <typename LBM_DATA>
-	__cuda_callable__ static dreal outflowInterpBlend(LBM_DATA& SD, int i, idx ax, idx ay, idx az, idx bx, idx by, idx bz)
-	{
-		// NOTE: velocity is neglected (for the case velocity << speed of sound)
-		constexpr dreal SpeedOfSound = 0.5773502691896257;
-		return lbm_fma_rn(SpeedOfSound, postCollValue(SD, i, ax, ay, az), (1 - SpeedOfSound) * postCollValue(SD, i, bx, by, bz));
 	}
 
 	// interpolated outflow (Geier 2015) for an arbitrary face: the population
@@ -367,46 +376,70 @@ struct D3Q27_STREAMING_ESO_TWIST
 	// column with the outflow cell's own postcoll, the perpendicular population
 	// takes the cell's own postcoll, the outward-moving population comes from
 	// the anchor column; all of it is previous-launch state finalized before
-	// the pass runs.
+	// the pass runs; the tangential coordinates select among the wrapped
+	// neighbors like in the plain gather above.
 	template <int FACE, typename LBM_DATA, typename LBM_KS>
-	__cuda_callable__ static void streamingOutflowInterpImpl(LBM_DATA& SD, LBM_KS& KS, idx anchor, idx x, idx y, idx z)
+	__cuda_callable__ static void
+	streamingOutflowInterpImpl(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
 		constexpr int axis = (FACE & (bc_face::XP | bc_face::XM)) ? 0 : (FACE & (bc_face::YP | bc_face::YM)) ? 1 : 2;
 		constexpr int out_sign = (FACE & (bc_face::XM | bc_face::YM | bc_face::ZM)) ? -1 : 1;
+		// anchor column: the fluid-side neighbor one cell inward (opposite the outward normal)
+		const idx anchor = (FACE == bc_face::XP) ? xm
+						 : (FACE == bc_face::XM) ? xp
+						 : (FACE == bc_face::YP) ? ym
+						 : (FACE == bc_face::YM) ? yp
+						 : (FACE == bc_face::ZP) ? zm
+												 : zp;
 		for (int i = 0; i < 27; i++) {
 			const int cn = (axis == 0) ? dir27_cx(i) : (axis == 1) ? dir27_cy(i) : dir27_cz(i);	 // normal component of c_i
+			// placement shift + slot identical to postCollValue, but folded into the
+			// net tangential offset used for the neighbor select: that engages on
+			// the FINAL storage coordinate (logical site + shift), not on the
+			// logical gather site
+			const idx px = dir27_cx(i) > 0 ? 1 : 0;
+			const idx py = dir27_cy(i) > 0 ? 1 : 0;
+			const idx pz = dir27_cz(i) > 0 ? 1 : 0;
+			const int slot = SD.even_iter ? opposite_direction(i) : i;
 			// value at the anchor column and at the own column, tangential -c offsets
 			idx nx, ny, nz, ox, oy, oz;
 			if constexpr (axis == 0) {
-				nx = anchor;
-				ny = y - dir27_cy(i);
-				nz = z - dir27_cz(i);
-				ox = x;
-				oy = y - dir27_cy(i);
-				oz = z - dir27_cz(i);
+				nx = anchor + px;
+				ny = dir27_cy(i) - py > 0 ? ym : (dir27_cy(i) - py < 0 ? yp : y);
+				nz = dir27_cz(i) - pz > 0 ? zm : (dir27_cz(i) - pz < 0 ? zp : z);
+				ox = x + px;
+				oy = ny;
+				oz = nz;
 			}
 			else if constexpr (axis == 1) {
-				nx = x - dir27_cx(i);
-				ny = anchor;
-				nz = z - dir27_cz(i);
-				ox = x - dir27_cx(i);
-				oy = y;
-				oz = z - dir27_cz(i);
+				nx = dir27_cx(i) - px > 0 ? xm : (dir27_cx(i) - px < 0 ? xp : x);
+				ny = anchor + py;
+				nz = dir27_cz(i) - pz > 0 ? zm : (dir27_cz(i) - pz < 0 ? zp : z);
+				ox = nx;
+				oy = y + py;
+				oz = nz;
 			}
 			else {
-				nx = x - dir27_cx(i);
-				ny = y - dir27_cy(i);
-				nz = anchor;
-				ox = x - dir27_cx(i);
-				oy = y - dir27_cy(i);
-				oz = z;
+				nx = dir27_cx(i) - px > 0 ? xm : (dir27_cx(i) - px < 0 ? xp : x);
+				ny = dir27_cy(i) - py > 0 ? ym : (dir27_cy(i) - py < 0 ? yp : y);
+				nz = anchor + pz;
+				ox = nx;
+				oy = ny;
+				oz = z + pz;
 			}
 			if (cn == out_sign)
-				KS.f[i] = postCollValue(SD, i, nx, ny, nz);
+				KS.f[i] = TNL::Backend::ldg(SD.df(df_cur, slot, nx, ny, nz));
 			else if (cn == 0)
-				KS.f[i] = postCollValue(SD, i, ox, oy, oz);
-			else
-				KS.f[i] = outflowInterpBlend(SD, i, nx, ny, nz, ox, oy, oz);
+				KS.f[i] = TNL::Backend::ldg(SD.df(df_cur, slot, ox, oy, oz));
+			else {
+				// the outflowInterpBlend form (velocity neglected)
+				constexpr dreal SpeedOfSound = 0.5773502691896257;
+				KS.f[i] = lbm_fma_rn(
+					SpeedOfSound,
+					TNL::Backend::ldg(SD.df(df_cur, slot, nx, ny, nz)),
+					(1 - SpeedOfSound) * TNL::Backend::ldg(SD.df(df_cur, slot, ox, oy, oz))
+				);
+			}
 		}
 	}
 
@@ -416,22 +449,22 @@ struct D3Q27_STREAMING_ESO_TWIST
 	{
 		switch (face) {
 			case bc_face::XP:
-				streamingOutflowInterpImpl<bc_face::XP>(SD, KS, xm, x, y, z);
+				streamingOutflowInterpImpl<bc_face::XP>(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				break;
 			case bc_face::XM:
-				streamingOutflowInterpImpl<bc_face::XM>(SD, KS, xp, x, y, z);
+				streamingOutflowInterpImpl<bc_face::XM>(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				break;
 			case bc_face::YP:
-				streamingOutflowInterpImpl<bc_face::YP>(SD, KS, ym, x, y, z);
+				streamingOutflowInterpImpl<bc_face::YP>(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				break;
 			case bc_face::YM:
-				streamingOutflowInterpImpl<bc_face::YM>(SD, KS, yp, x, y, z);
+				streamingOutflowInterpImpl<bc_face::YM>(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				break;
 			case bc_face::ZP:
-				streamingOutflowInterpImpl<bc_face::ZP>(SD, KS, zm, x, y, z);
+				streamingOutflowInterpImpl<bc_face::ZP>(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				break;
 			default:
-				streamingOutflowInterpImpl<bc_face::ZM>(SD, KS, zp, x, y, z);
+				streamingOutflowInterpImpl<bc_face::ZM>(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				break;
 		}
 	}

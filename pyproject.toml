@@ -33,6 +33,16 @@ select = [
     "YTT",   # flake8-2020
 ]
 
+[tool.ruff.lint.per-file-ignores]
+"streamlit_app.py" = [
+    "ANN",   # Streamlit callbacks/closures are untyped by nature
+    "C901",  # main() is a monolithic Streamlit UI function
+    "E731",  # lambdas used as callbacks/factories
+    "RUF001", # Greek letters in UI labels are intentional
+    "RUF002", # Greek letters in docstrings are intentional
+    "RUF003", # Greek letters in comments are intentional
+]
+
 # Configuration for mypy / basedmypy
 # https://kotlinisland.github.io/basedmypy/config_file.html
 # https://kotlinisland.github.io/basedmypy/config_file.html#example-pyproject-toml

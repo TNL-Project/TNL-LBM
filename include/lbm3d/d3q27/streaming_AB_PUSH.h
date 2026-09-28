@@ -167,6 +167,9 @@ struct D3Q27_STREAMING_AB_PUSH
 	__cuda_callable__ static void
 	streamingOutflow(LBM_DATA& SD, LBM_KS& KS, int face, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
+		// the post-stream layout gathers need no tangential wrap:
+		// the sample sites always use the cell's own tangential coordinates
+		// (only the normal coordinate leaves the cell)
 		switch (face) {
 			case bc_face::XP:
 				streamingOutflowImpl<bc_face::XP>(SD, KS, xm, x, y, z);

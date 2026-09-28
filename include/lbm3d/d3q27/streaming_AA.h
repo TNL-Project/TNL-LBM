@@ -4,21 +4,6 @@
 #include "lbm_common/rounding.h"
 
 // A-A pattern
-//
-// LIMITATION: The non-Newtonian methods streamingRho / streamingVx / streamingVy
-// / streamingVz read df_cur from two-step neighbors (xp+1, xm-1, etc.).  In the
-// AA pattern, postCollisionStreaming writes df_cur at one-step neighbors within
-// the SAME kernel launch.  For regular streaming this is safe because each
-// df_cur[dir, pos] is read and written by the SAME thread (the one at
-// pos - vel(dir)).  The two-step offsets break this property: df_cur[dir, xp+1]
-// is read by thread (x,y,z) but written by thread (xp,y,z) — a different thread.
-// If these methods were called from the main LBM kernel (where df_cur is
-// read-write), the result would be non-deterministic.
-//
-// Currently safe because these methods are called only from
-// computeNonNewtonianKernels (a separate kernel launch that is read-only on
-// df_cur and synchronized before the main kernel).  Do NOT move these calls
-// into the main LBM kernel or any other kernel that writes df_cur.
 template <typename TRAITS>
 struct D3Q27_STREAMING_AA
 {
@@ -241,303 +226,6 @@ struct D3Q27_STREAMING_AA
 		streamingAdjoint(df_cur, SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 	}
 
-	// Bounce-back streaming for the non-Newtonian kernel's wall cells.
-	// Delegates to streaming() (which handles even/odd branching) and then
-	// swaps all 13 opposite DF pairs — the same effect as the GEO_WALL
-	// bounce-back collision.  The pair swaps are local to KS.f, so no
-	// even/odd distinction is needed for the swap step.
-	template <typename LBM_DATA, typename LBM_KS>
-	__cuda_callable__ static void streamingBounceBack(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
-	{
-		streaming(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
-		TNL::swap(KS.f[mmm], KS.f[ppp]);
-		TNL::swap(KS.f[mmz], KS.f[ppz]);
-		TNL::swap(KS.f[mmp], KS.f[ppm]);
-		TNL::swap(KS.f[mzm], KS.f[pzp]);
-		TNL::swap(KS.f[mzz], KS.f[pzz]);
-		TNL::swap(KS.f[mzp], KS.f[pzm]);
-		TNL::swap(KS.f[mpm], KS.f[pmp]);
-		TNL::swap(KS.f[mpz], KS.f[pmz]);
-		TNL::swap(KS.f[mpp], KS.f[pmm]);
-		TNL::swap(KS.f[zmm], KS.f[zpp]);
-		TNL::swap(KS.f[zzm], KS.f[zzp]);
-		TNL::swap(KS.f[zmz], KS.f[zpz]);
-		TNL::swap(KS.f[zmp], KS.f[zpm]);
-	}
-
-	// Computes the post-stream density at position P = (xp, y, z) — the first
-	// fluid cell to the right of the inflow boundary.  Used by the non-Newtonian
-	// kernel to set KS.rho for inflow cells before calling setEquilibrium.
-	//
-	// Even: df_cur is post-stream (natural orientation).  All 27 directions
-	//   are already at their post-stream positions, so rho = sum_dir df_cur[dir, P].
-	//
-	// Odd: df_cur is pre-stream (twisted: opp(dir) stored at each site).
-	//   The pull-scheme formula rho(P) = sum_dir pre-stream[dir, P - vel(dir)]
-	//   becomes rho(P) = sum_dir df_cur[opp(dir), P - vel(dir)], yielding the
-	//   same x-offsets as AB: xp+1 / xp / x for m* / z* / p* dirs.
-	template <typename LBM_DATA, typename LBM_KS>
-	__cuda_callable__ static void streamingRho(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
-	{
-		dreal rho;
-		if (SD.even_iter) {
-			// clang-format off
-			rho =
-				  SD.df(df_cur, mmm, xp, y, z)
-				+ SD.df(df_cur, mmz, xp, y, z)
-				+ SD.df(df_cur, mmp, xp, y, z)
-				+ SD.df(df_cur, mzm, xp, y, z)
-				+ SD.df(df_cur, mzz, xp, y, z)
-				+ SD.df(df_cur, mzp, xp, y, z)
-				+ SD.df(df_cur, mpm, xp, y, z)
-				+ SD.df(df_cur, mpz, xp, y, z)
-				+ SD.df(df_cur, mpp, xp, y, z)
-				+ SD.df(df_cur, zmm, xp, y, z)
-				+ SD.df(df_cur, zmz, xp, y, z)
-				+ SD.df(df_cur, zmp, xp, y, z)
-				+ SD.df(df_cur, zzm, xp, y, z)
-				+ SD.df(df_cur, zzp, xp, y, z)
-				+ SD.df(df_cur, zzz, xp, y, z)
-				+ SD.df(df_cur, zpm, xp, y, z)
-				+ SD.df(df_cur, zpz, xp, y, z)
-				+ SD.df(df_cur, zpp, xp, y, z)
-				+ SD.df(df_cur, pmm, xp, y, z)
-				+ SD.df(df_cur, pmz, xp, y, z)
-				+ SD.df(df_cur, pmp, xp, y, z)
-				+ SD.df(df_cur, pzm, xp, y, z)
-				+ SD.df(df_cur, pzz, xp, y, z)
-				+ SD.df(df_cur, pzp, xp, y, z)
-				+ SD.df(df_cur, ppm, xp, y, z)
-				+ SD.df(df_cur, ppz, xp, y, z)
-				+ SD.df(df_cur, ppp, xp, y, z);
-			// clang-format on
-		}
-		else {
-			const idx xpp = xp + 1;
-			// clang-format off
-			rho =
-				  SD.df(df_cur, ppp, xpp, yp, zp)
-				+ SD.df(df_cur, ppz, xpp, yp, z)
-				+ SD.df(df_cur, ppm, xpp, yp, zm)
-				+ SD.df(df_cur, pzp, xpp, y,  zp)
-				+ SD.df(df_cur, pzz, xpp, y,  z)
-				+ SD.df(df_cur, pzm, xpp, y,  zm)
-				+ SD.df(df_cur, pmp, xpp, ym, zp)
-				+ SD.df(df_cur, pmz, xpp, ym, z)
-				+ SD.df(df_cur, pmm, xpp, ym, zm)
-				+ SD.df(df_cur, zpp, xp,  yp, zp)
-				+ SD.df(df_cur, zpz, xp,  yp, z)
-				+ SD.df(df_cur, zpm, xp,  yp, zm)
-				+ SD.df(df_cur, zzp, xp,  y,  zp)
-				+ SD.df(df_cur, zzm, xp,  y,  zm)
-				+ SD.df(df_cur, zzz, xp,  y,  z)
-				+ SD.df(df_cur, zmp, xp,  ym, zp)
-				+ SD.df(df_cur, zmz, xp,  ym, z)
-				+ SD.df(df_cur, zmm, xp,  ym, zm)
-				+ SD.df(df_cur, mpp, x,   yp, zp)
-				+ SD.df(df_cur, mpz, x,   yp, z)
-				+ SD.df(df_cur, mpm, x,   yp, zm)
-				+ SD.df(df_cur, mzp, x,   y,  zp)
-				+ SD.df(df_cur, mzz, x,   y,  z)
-				+ SD.df(df_cur, mzm, x,   y,  zm)
-				+ SD.df(df_cur, mmp, x,   ym, zp)
-				+ SD.df(df_cur, mmz, x,   ym, z)
-				+ SD.df(df_cur, mmm, x,   ym, zm);
-			// clang-format on
-		}
-		KS.rho = rho;
-	}
-
-	// Computes the post-stream x-velocity at position P = (xm, y, z) — the first
-	// fluid cell to the left of the outflow boundary.  Used by the non-Newtonian
-	// kernel to set KS.vx for outflow cells.
-	//
-	// Even: df_cur is post-stream (natural).
-	//   vx = sum_p df_cur[p, P] - sum_m df_cur[m, P].
-	//
-	// Odd: df_cur is pre-stream (twisted).
-	//   Same pull-scheme positions as AB (P - vel(dir) → xm-1 / xm / x),
-	//   but with opp(dir) direction index.
-	template <typename LBM_DATA, typename LBM_KS>
-	__cuda_callable__ static void streamingVx(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
-	{
-		dreal vx;
-		if (SD.even_iter) {
-			// clang-format off
-			vx =
-				  SD.df(df_cur, pmm, xm, y, z)
-				+ SD.df(df_cur, pmz, xm, y, z)
-				+ SD.df(df_cur, pmp, xm, y, z)
-				+ SD.df(df_cur, ppm, xm, y, z)
-				+ SD.df(df_cur, ppz, xm, y, z)
-				+ SD.df(df_cur, ppp, xm, y, z)
-				+ SD.df(df_cur, pzm, xm, y, z)
-				+ SD.df(df_cur, pzz, xm, y, z)
-				+ SD.df(df_cur, pzp, xm, y, z)
-				- SD.df(df_cur, mmm, xm, y, z)
-				- SD.df(df_cur, mmz, xm, y, z)
-				- SD.df(df_cur, mmp, xm, y, z)
-				- SD.df(df_cur, mzm, xm, y, z)
-				- SD.df(df_cur, mzz, xm, y, z)
-				- SD.df(df_cur, mzp, xm, y, z)
-				- SD.df(df_cur, mpm, xm, y, z)
-				- SD.df(df_cur, mpz, xm, y, z)
-				- SD.df(df_cur, mpp, xm, y, z);
-			// clang-format on
-		}
-		else {
-			const idx xmm = xm - 1;
-			// clang-format off
-			vx =
-				  SD.df(df_cur, mpp, xmm, yp, zp)
-				+ SD.df(df_cur, mpz, xmm, yp, z)
-				+ SD.df(df_cur, mpm, xmm, yp, zm)
-				+ SD.df(df_cur, mmp, xmm, ym, zp)
-				+ SD.df(df_cur, mmz, xmm, ym, z)
-				+ SD.df(df_cur, mmm, xmm, ym, zm)
-				+ SD.df(df_cur, mzp, xmm, y,  zp)
-				+ SD.df(df_cur, mzz, xmm, y,  z)
-				+ SD.df(df_cur, mzm, xmm, y,  zm)
-				- SD.df(df_cur, pzp, x,   y,  zp)
-				- SD.df(df_cur, pzz, x,   y,  z)
-				- SD.df(df_cur, pzm, x,   y,  zm)
-				- SD.df(df_cur, ppp, x,   yp, zp)
-				- SD.df(df_cur, ppz, x,   yp, z)
-				- SD.df(df_cur, ppm, x,   yp, zm)
-				- SD.df(df_cur, pmp, x,   ym, zp)
-				- SD.df(df_cur, pmz, x,   ym, z)
-				- SD.df(df_cur, pmm, x,   ym, zm);
-			// clang-format on
-		}
-		KS.vx = vx;
-	}
-
-	// Computes the post-stream y-velocity at position P = (xm, y, z) — the first
-	// fluid cell to the left of the outflow boundary.  Used by the non-Newtonian
-	// kernel to set KS.vy for outflow cells.
-	//
-	// Even: df_cur is post-stream (natural).
-	//   vy = sum_{p_y} df_cur[dir, P] - sum_{m_y} df_cur[dir, P].
-	//
-	// Odd: df_cur is pre-stream (twisted).
-	//   Same pull-scheme positions as AB, but with opp(dir) direction index.
-	template <typename LBM_DATA, typename LBM_KS>
-	__cuda_callable__ static void streamingVy(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
-	{
-		dreal vy;
-		if (SD.even_iter) {
-			// clang-format off
-			vy =
-				  SD.df(df_cur, mpm, xm, y, z)
-				+ SD.df(df_cur, mpz, xm, y, z)
-				+ SD.df(df_cur, mpp, xm, y, z)
-				+ SD.df(df_cur, zpm, xm, y, z)
-				+ SD.df(df_cur, zpz, xm, y, z)
-				+ SD.df(df_cur, zpp, xm, y, z)
-				+ SD.df(df_cur, ppm, xm, y, z)
-				+ SD.df(df_cur, ppz, xm, y, z)
-				+ SD.df(df_cur, ppp, xm, y, z)
-				- SD.df(df_cur, zmm, xm, y, z)
-				- SD.df(df_cur, zmz, xm, y, z)
-				- SD.df(df_cur, zmp, xm, y, z)
-				- SD.df(df_cur, pmm, xm, y, z)
-				- SD.df(df_cur, pmz, xm, y, z)
-				- SD.df(df_cur, pmp, xm, y, z)
-				- SD.df(df_cur, mmm, xm, y, z)
-				- SD.df(df_cur, mmz, xm, y, z)
-				- SD.df(df_cur, mmp, xm, y, z);
-			// clang-format on
-		}
-		else {
-			const idx xmm = xm - 1;
-			// clang-format off
-			vy =
-				  SD.df(df_cur, pmp, x,   ym, zp)
-				+ SD.df(df_cur, pmz, x,   ym, z)
-				+ SD.df(df_cur, pmm, x,   ym, zm)
-				+ SD.df(df_cur, zmp, xm,  ym, zp)
-				+ SD.df(df_cur, zmz, xm,  ym, z)
-				+ SD.df(df_cur, zmm, xm,  ym, zm)
-				+ SD.df(df_cur, mmp, xmm, ym, zp)
-				+ SD.df(df_cur, mmz, xmm, ym, z)
-				+ SD.df(df_cur, mmm, xmm, ym, zm)
-				- SD.df(df_cur, zpp, xm,  yp, zp)
-				- SD.df(df_cur, zpz, xm,  yp, z)
-				- SD.df(df_cur, zpm, xm,  yp, zm)
-				- SD.df(df_cur, mpp, xmm, yp, zp)
-				- SD.df(df_cur, mpz, xmm, yp, z)
-				- SD.df(df_cur, mpm, xmm, yp, zm)
-				- SD.df(df_cur, ppp, x,   yp, zp)
-				- SD.df(df_cur, ppz, x,   yp, z)
-				- SD.df(df_cur, ppm, x,   yp, zm);
-			// clang-format on
-		}
-		KS.vy = vy;
-	}
-
-	// Computes the post-stream z-velocity at position P = (xm, y, z) — the first
-	// fluid cell to the left of the outflow boundary.  Used by the non-Newtonian
-	// kernel to set KS.vz for outflow cells.
-	//
-	// Even: df_cur is post-stream (natural).
-	//   vz = sum_{p_z} df_cur[dir, P] - sum_{m_z} df_cur[dir, P].
-	//
-	// Odd: df_cur is pre-stream (twisted).
-	//   Same pull-scheme positions as AB, but with opp(dir) direction index.
-	template <typename LBM_DATA, typename LBM_KS>
-	__cuda_callable__ static void streamingVz(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
-	{
-		dreal vz;
-		if (SD.even_iter) {
-			// clang-format off
-			vz =
-				  SD.df(df_cur, mmp, xm, y, z)
-				+ SD.df(df_cur, pmp, xm, y, z)
-				+ SD.df(df_cur, zmp, xm, y, z)
-				+ SD.df(df_cur, pzp, xm, y, z)
-				+ SD.df(df_cur, zzp, xm, y, z)
-				+ SD.df(df_cur, mzp, xm, y, z)
-				+ SD.df(df_cur, ppp, xm, y, z)
-				+ SD.df(df_cur, zpp, xm, y, z)
-				+ SD.df(df_cur, mpp, xm, y, z)
-				- SD.df(df_cur, mmm, xm, y, z)
-				- SD.df(df_cur, pmm, xm, y, z)
-				- SD.df(df_cur, zmm, xm, y, z)
-				- SD.df(df_cur, pzm, xm, y, z)
-				- SD.df(df_cur, zzm, xm, y, z)
-				- SD.df(df_cur, mzm, xm, y, z)
-				- SD.df(df_cur, ppm, xm, y, z)
-				- SD.df(df_cur, zpm, xm, y, z)
-				- SD.df(df_cur, mpm, xm, y, z);
-			// clang-format on
-		}
-		else {
-			const idx xmm = xm - 1;
-			// clang-format off
-			vz =
-				  SD.df(df_cur, ppm, x,   yp, zm)
-				+ SD.df(df_cur, mpm, xmm, yp, zm)
-				+ SD.df(df_cur, zpm, xm,  yp, zm)
-				+ SD.df(df_cur, mzm, xmm, y,  zm)
-				+ SD.df(df_cur, zzm, xm,  y,  zm)
-				+ SD.df(df_cur, pzm, x,   y,  zm)
-				+ SD.df(df_cur, mmm, xmm, ym, zm)
-				+ SD.df(df_cur, zmm, xm,  ym, zm)
-				+ SD.df(df_cur, pmm, x,   ym, zm)
-				- SD.df(df_cur, ppp, x,   yp, zp)
-				- SD.df(df_cur, mpp, xmm, yp, zp)
-				- SD.df(df_cur, zpp, xm,  yp, zp)
-				- SD.df(df_cur, mzp, xmm, y,  zp)
-				- SD.df(df_cur, zzp, xm,  y,  zp)
-				- SD.df(df_cur, pzp, x,   y,  zp)
-				- SD.df(df_cur, mmp, xmm, ym, zp)
-				- SD.df(df_cur, zmp, xm,  ym, zp)
-				- SD.df(df_cur, pmp, x,   ym, zp);
-			// clang-format on
-		}
-		KS.vz = vz;
-	}
-
 	// Gathers for the outflow-pass processing (a separate kernel launched
 	// before the main one for deterministic outflow handling - the outflow
 	// pass is a type of processing, not a BC type), parameterized by the
@@ -550,13 +238,25 @@ struct D3Q27_STREAMING_AA
 	// parities, so no race-free in-launch gather exists and the pass must run
 	// before the main kernel.
 	// FACE is a compile-time template parameter, so the per-direction
-	// components and site offsets fold to constants.
+	// components and site offsets fold to constants. Tangential coordinates
+	// select among the kernel's already-wrapped neighbors (kernelInitIndices):
+	// interior rows read the raw neighbor, periodic-seam rows the wrapped
+	// neighbor, distributed axes the halo; boundary rows on non-periodic
+	// tangential axes are unreachable (ghost-layer idiom stamps walls/
+	// GEO_NOTHING there).
 	template <int FACE, typename LBM_DATA, typename LBM_KS>
-	__cuda_callable__ static void streamingOutflowImpl(LBM_DATA& SD, LBM_KS& KS, idx anchor, idx x, idx y, idx z)
+	__cuda_callable__ static void streamingOutflowImpl(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
 		constexpr int axis = (FACE & (bc_face::XP | bc_face::XM)) ? 0
 						   : (FACE & (bc_face::YP | bc_face::YM)) ? 1
 																  : 2;	// normal axis: 0 = x, 1 = y, 2 = z
+		// anchor column: the fluid-side neighbor one cell inward (opposite the outward normal)
+		const idx anchor = (FACE == bc_face::XP) ? xm
+						 : (FACE == bc_face::XM) ? xp
+						 : (FACE == bc_face::YP) ? ym
+						 : (FACE == bc_face::YM) ? yp
+						 : (FACE == bc_face::ZP) ? zm
+												 : zp;
 		if (SD.even_iter) {
 			// natural layout: slot (i, t + c_i) = postcoll_{n-1}(i, t) with
 			// t = (anchor, tangential -c_i); the tangential offsets cancel
@@ -588,17 +288,17 @@ struct D3Q27_STREAMING_AA
 				idx sx, sy, sz;
 				if constexpr (axis == 0) {
 					sx = anchor;
-					sy = y - dir27_cy(i);
-					sz = z - dir27_cz(i);
+					sy = dir27_cy(i) > 0 ? ym : (dir27_cy(i) < 0 ? yp : y);
+					sz = dir27_cz(i) > 0 ? zm : (dir27_cz(i) < 0 ? zp : z);
 				}
 				else if constexpr (axis == 1) {
-					sx = x - dir27_cx(i);
+					sx = dir27_cx(i) > 0 ? xm : (dir27_cx(i) < 0 ? xp : x);
 					sy = anchor;
-					sz = z - dir27_cz(i);
+					sz = dir27_cz(i) > 0 ? zm : (dir27_cz(i) < 0 ? zp : z);
 				}
 				else {
-					sx = x - dir27_cx(i);
-					sy = y - dir27_cy(i);
+					sx = dir27_cx(i) > 0 ? xm : (dir27_cx(i) < 0 ? xp : x);
+					sy = dir27_cy(i) > 0 ? ym : (dir27_cy(i) < 0 ? yp : y);
 					sz = anchor;
 				}
 				KS.f[i] = TNL::Backend::ldg(SD.df(df_cur, opposite_direction(i), sx, sy, sz));
@@ -612,22 +312,22 @@ struct D3Q27_STREAMING_AA
 	{
 		switch (face) {
 			case bc_face::XP:
-				streamingOutflowImpl<bc_face::XP>(SD, KS, xm, x, y, z);
+				streamingOutflowImpl<bc_face::XP>(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				break;
 			case bc_face::XM:
-				streamingOutflowImpl<bc_face::XM>(SD, KS, xp, x, y, z);
+				streamingOutflowImpl<bc_face::XM>(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				break;
 			case bc_face::YP:
-				streamingOutflowImpl<bc_face::YP>(SD, KS, ym, x, y, z);
+				streamingOutflowImpl<bc_face::YP>(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				break;
 			case bc_face::YM:
-				streamingOutflowImpl<bc_face::YM>(SD, KS, yp, x, y, z);
+				streamingOutflowImpl<bc_face::YM>(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				break;
 			case bc_face::ZP:
-				streamingOutflowImpl<bc_face::ZP>(SD, KS, zm, x, y, z);
+				streamingOutflowImpl<bc_face::ZP>(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				break;
 			default:
-				streamingOutflowImpl<bc_face::ZM>(SD, KS, zp, x, y, z);
+				streamingOutflowImpl<bc_face::ZM>(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				break;
 		}
 	}
@@ -651,12 +351,21 @@ struct D3Q27_STREAMING_AA
 	// postcoll_{n-1} from the anchor column with the outflow cell's own postcoll,
 	// the perpendicular population takes the cell's own postcoll, the outward-
 	// moving population comes from the anchor column; all of it is previous-launch
-	// state finalized before the pass runs.
+	// state finalized before the pass runs; the tangential coordinates select among
+	// the wrapped neighbors like in the plain gather above.
 	template <int FACE, typename LBM_DATA, typename LBM_KS>
-	__cuda_callable__ static void streamingOutflowInterpImpl(LBM_DATA& SD, LBM_KS& KS, idx anchor, idx x, idx y, idx z)
+	__cuda_callable__ static void
+	streamingOutflowInterpImpl(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
 		constexpr int axis = (FACE & (bc_face::XP | bc_face::XM)) ? 0 : (FACE & (bc_face::YP | bc_face::YM)) ? 1 : 2;
 		constexpr int out_sign = (FACE & (bc_face::XM | bc_face::YM | bc_face::ZM)) ? -1 : 1;
+		// anchor column: the fluid-side neighbor one cell inward (opposite the outward normal)
+		const idx anchor = (FACE == bc_face::XP) ? xm
+						 : (FACE == bc_face::XM) ? xp
+						 : (FACE == bc_face::YP) ? ym
+						 : (FACE == bc_face::YM) ? yp
+						 : (FACE == bc_face::ZP) ? zm
+												 : zp;
 		if (SD.even_iter) {
 			// natural layout: the outward- and perpendicular-moving populations
 			// take the cell's own postcoll, the inward-moving population blends
@@ -683,26 +392,26 @@ struct D3Q27_STREAMING_AA
 				idx nx, ny, nz, ox, oy, oz;
 				if constexpr (axis == 0) {
 					nx = anchor;
-					ny = y - dir27_cy(i);
-					nz = z - dir27_cz(i);
+					ny = dir27_cy(i) > 0 ? ym : (dir27_cy(i) < 0 ? yp : y);
+					nz = dir27_cz(i) > 0 ? zm : (dir27_cz(i) < 0 ? zp : z);
 					ox = x;
-					oy = y - dir27_cy(i);
-					oz = z - dir27_cz(i);
+					oy = ny;
+					oz = nz;
 				}
 				else if constexpr (axis == 1) {
-					nx = x - dir27_cx(i);
+					nx = dir27_cx(i) > 0 ? xm : (dir27_cx(i) < 0 ? xp : x);
 					ny = anchor;
-					nz = z - dir27_cz(i);
-					ox = x - dir27_cx(i);
+					nz = dir27_cz(i) > 0 ? zm : (dir27_cz(i) < 0 ? zp : z);
+					ox = nx;
 					oy = y;
-					oz = z - dir27_cz(i);
+					oz = nz;
 				}
 				else {
-					nx = x - dir27_cx(i);
-					ny = y - dir27_cy(i);
+					nx = dir27_cx(i) > 0 ? xm : (dir27_cx(i) < 0 ? xp : x);
+					ny = dir27_cy(i) > 0 ? ym : (dir27_cy(i) < 0 ? yp : y);
 					nz = anchor;
-					ox = x - dir27_cx(i);
-					oy = y - dir27_cy(i);
+					ox = nx;
+					oy = ny;
 					oz = z;
 				}
 				if (cn == out_sign)
@@ -721,22 +430,22 @@ struct D3Q27_STREAMING_AA
 	{
 		switch (face) {
 			case bc_face::XP:
-				streamingOutflowInterpImpl<bc_face::XP>(SD, KS, xm, x, y, z);
+				streamingOutflowInterpImpl<bc_face::XP>(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				break;
 			case bc_face::XM:
-				streamingOutflowInterpImpl<bc_face::XM>(SD, KS, xp, x, y, z);
+				streamingOutflowInterpImpl<bc_face::XM>(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				break;
 			case bc_face::YP:
-				streamingOutflowInterpImpl<bc_face::YP>(SD, KS, ym, x, y, z);
+				streamingOutflowInterpImpl<bc_face::YP>(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				break;
 			case bc_face::YM:
-				streamingOutflowInterpImpl<bc_face::YM>(SD, KS, yp, x, y, z);
+				streamingOutflowInterpImpl<bc_face::YM>(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				break;
 			case bc_face::ZP:
-				streamingOutflowInterpImpl<bc_face::ZP>(SD, KS, zm, x, y, z);
+				streamingOutflowInterpImpl<bc_face::ZP>(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				break;
 			default:
-				streamingOutflowInterpImpl<bc_face::ZM>(SD, KS, zp, x, y, z);
+				streamingOutflowInterpImpl<bc_face::ZM>(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 				break;
 		}
 	}

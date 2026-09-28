@@ -53,7 +53,7 @@ include/lbm3d/
 | Add immersed-boundary geometry | `obstacles_ibm.h` | Rectangle and cylinder point-cloud builders |
 | Add Eulerian wall geometry | `obstacles_lbm.h` | Cube, sphere, cylinder, bounding-box helpers |
 | Expose types to Python | `py_*.h` | One `export_<Thing>(m, "Name")` per wrapper |
-| Implement non-Newtonian models | `nonNewtonian.h` | Viscosity update and map-check kernels |
+| Implement non-Newtonian models | `nonNewtonian.h` | `LBMKernelStress` (strain rate from f_i^neq second moment), `computeForcing` (split-viscosity body force) |
 | Find D2Q9 direction constants | `defs.h` `struct dir9` | Enum: zz, pz, mz, zp, zm, pp, mm, pm, mp |
 | Outflow-region rectangle cover | `lbm_block.h` | `updateOutflowPassRegion()` — greedy cover merging to ≤64 boxes |
 

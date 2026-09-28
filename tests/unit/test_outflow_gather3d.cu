@@ -106,7 +106,8 @@ struct GatherMock
 
 // device driver: run one outflow gather and copy the kernel struct out
 template <typename STREAMING>
-__global__ void gatherKernel(GatherMock sd, KS* out, int face, bool interp, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
+__global__ void
+gatherKernel(GatherMock sd, KS* out, int face, bool interp, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 {
 	KS ks;
 	for (int i = 0; i < 27; i++)
@@ -173,7 +174,8 @@ static void runGather(int face, bool interp, bool even, int x, int y, int z, KS&
 	TNL::Containers::Array<KS, TNL::Devices::Cuda> devOut(1);
 
 	GatherMock sd{dev.getData(), even};
-	gatherKernel<STREAMING><<<1, 1>>>(sd, devOut.getData(), face, interp, x - 1, x, x + 1, y - 1, y, y + 1, z - 1, z, z + 1);
+	gatherKernel<STREAMING>
+		<<<1, 1>>>(sd, devOut.getData(), face, interp, x - 1, x, x + 1, y - 1, y, y + 1, z - 1, z, z + 1);
 	TNL::Backend::deviceSynchronize();
 	TNL::Backend::memcpy(&out, devOut.getData(), sizeof(KS), TNL::Backend::MemcpyDeviceToHost);
 }
