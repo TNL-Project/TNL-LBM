@@ -119,7 +119,6 @@ static void checkFace3D(const FaceSpec& fs, const double vel[3])
 	KS3 out;
 	TNL::Backend::memcpy(&out, devOut.getData(), sizeof(KS3), TNL::Backend::MemcpyDeviceToHost);
 
-	const double vn = axisComp(vel, fs.axis);
 	const double vt1 = axisComp(vel, fs.t1);
 	const double vt2 = axisComp(vel, fs.t2);
 

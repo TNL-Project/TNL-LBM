@@ -572,7 +572,7 @@ void LBM_BLOCK<CONFIG>::setInitialCondition(IC&& ic)
 			TNL::Algorithms::parallelFor<DeviceType>(
 				begin,
 				end,
-				[local_df, h, t, overlap_x, overlap_y, overlap_z, nx, ny, nz, A, B] __cuda_callable__(idx3d yzx) mutable
+				[local_df, h, t, overlap_x, overlap_y, overlap_z, nx, ny, A, B] __cuda_callable__(idx3d yzx) mutable
 				{
 					const auto& [y, z, x] = yzx;
 					const idx f = ((z + overlap_z) * ny + (y + overlap_y)) * nx + (x + overlap_x);
@@ -593,7 +593,6 @@ void LBM_BLOCK<CONFIG>::setInitialCondition(IC&& ic)
 				 overlap_z,
 				 nx,
 				 ny,
-				 nz,
 				 lx,
 				 ly,
 				 lz,
@@ -725,6 +724,7 @@ void LBM_BLOCK<CONFIG>::setEquilibrium(real rho, real vx, real vy, real vz)
 			(void) gx;
 			(void) gy;
 			(void) gz;
+			(void) vz;	// consumed only for CONFIG::D == 3
 			if constexpr (CONFIG::Q == 7)
 				KS.phi = rho;
 			else
