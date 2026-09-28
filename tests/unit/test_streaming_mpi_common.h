@@ -748,7 +748,11 @@ static void checkTGV(const char* model_tag, const TGVSetup& setup, std::initiali
 // non-periodic channel exercising the real BC dispatch per pattern: walls on
 // the y (2D and 3D) and z (3D) faces, a moment inflow on the left x face and
 // a two-pass outflow (plain or interpolated) on the right x face; the map
-// follows the ghost-layer idiom required by the single-array patterns
+// follows the ghost-layer idiom required by the single-array patterns.
+// With periodic_y the y axis is domain-periodic instead (no walls, no ghost
+// frame on y): the outflow plane then spans the periodic seam rows and the
+// outflow-pass gathers must wrap the tangential coordinates there (the 3D
+// variant keeps the z walls, so the map mixes periodic and wall tangentials)
 struct ChannelSetup
 {
 	int X = 24;
@@ -760,6 +764,7 @@ struct ChannelSetup
 	double phys_viscosity = 1.5e-5;
 	double phys_V_0 = 5e-3;
 	bool interp_outflow = false;
+	bool periodic_y = false;
 };
 
 // run one pattern instance through the channel: init snapshot (the map, the
@@ -772,13 +777,17 @@ static std::vector<double> runChannel(const std::string& id, const ChannelSetup&
 	using real = typename TRAITS_::real;
 	using idx = typename TRAITS_::idx;
 	using dreal = typename TRAITS_::dreal;
+	using bool3d = typename TRAITS_::bool3d;
 	using lat_t = Lattice<3, real, idx>;
 	using BC = typename NSE::BC;
 
 	INFO("pattern instance: ", id);
 	lat_t lat = makeLat<TRAITS_>(s);
-	// non-periodic on every axis: all domain boundaries come from the map
-	LBM<NSE> nse(MPI_COMM_WORLD, lat);
+	// non-periodic on every axis: all domain boundaries come from the map;
+	// with periodic_y the y axis is domain-periodic and its planes are not
+	// stamped at all (the rows y=0 and y=Y-1 are ordinary outflow/seam rows)
+	const bool3d periodic = s.periodic_y ? bool3d{false, true, false} : bool3d{false, false, false};
+	LBM<NSE> nse(MPI_COMM_WORLD, lat, periodic);
 	nse.allocateHostData();
 	nse.allocateDeviceData();
 	for (auto& block : nse.blocks)
@@ -790,16 +799,20 @@ static std::vector<double> runChannel(const std::string& id, const ChannelSetup&
 	nse.resetMap(BC::GEO_FLUID);
 	nse.setBoundaryX(1, BC::GEO_INFLOW_MOMENT);
 	nse.setBoundaryX(s.X - 2, s.interp_outflow ? BC::GEO_OUTFLOW_RIGHT_INTERP : BC::GEO_OUTFLOW_RIGHT);
-	nse.setBoundaryY(1, BC::GEO_WALL);
-	nse.setBoundaryY(s.Y - 2, BC::GEO_WALL);
+	if (! s.periodic_y) {
+		nse.setBoundaryY(1, BC::GEO_WALL);
+		nse.setBoundaryY(s.Y - 2, BC::GEO_WALL);
+	}
 	if constexpr (NSE::D == 3) {
 		nse.setBoundaryZ(1, BC::GEO_WALL);
 		nse.setBoundaryZ(s.Z - 2, BC::GEO_WALL);
 	}
 	nse.setBoundaryX(0, BC::GEO_NOTHING);
 	nse.setBoundaryX(s.X - 1, BC::GEO_NOTHING);
-	nse.setBoundaryY(0, BC::GEO_NOTHING);
-	nse.setBoundaryY(s.Y - 1, BC::GEO_NOTHING);
+	if (! s.periodic_y) {
+		nse.setBoundaryY(0, BC::GEO_NOTHING);
+		nse.setBoundaryY(s.Y - 1, BC::GEO_NOTHING);
+	}
 	if constexpr (NSE::D == 3) {
 		nse.setBoundaryZ(0, BC::GEO_NOTHING);
 		nse.setBoundaryZ(s.Z - 1, BC::GEO_NOTHING);

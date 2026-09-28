@@ -66,14 +66,21 @@ struct D2Q9_STREAMING_AB_PULL
 	// the df_out writes of the current one).
 	// FACE is a compile-time template parameter, so the per-direction
 	// components, site offsets and family branches fold to constants.
+	// Tangential coordinates select among the kernel's already-wrapped
+	// neighbors (kernelInitIndices): interior rows read the raw neighbor,
+	// periodic-seam rows the wrapped neighbor, distributed axes the halo;
+	// boundary rows on non-periodic tangential axes are unreachable
+	// (ghost-layer idiom stamps walls/GEO_NOTHING there).
 	template <int FACE, typename LBM_DATA, typename LBM_KS>
-	__cuda_callable__ static void streamingOutflowImpl(LBM_DATA& SD, LBM_KS& KS, idx anchor, idx x, idx y, idx z)
+	__cuda_callable__ static void streamingOutflowImpl(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx z)
 	{
 		constexpr bool axis_x = (FACE & (bc_face::XP | bc_face::XM)) != 0;
+		// anchor column: the fluid-side neighbor one cell inward (opposite the outward normal)
+		const idx anchor = (FACE == bc_face::XP) ? xm : (FACE == bc_face::XM) ? xp : (FACE == bc_face::YP) ? ym : yp;
 		for (int i = 0; i < 9; i++) {
 			// normal coordinate: the anchor column; tangential: -c offset (pull scheme)
-			const idx sx = axis_x ? anchor : x - dir9_cx(i);
-			const idx sy = axis_x ? y - dir9_cy(i) : anchor;
+			const idx sx = axis_x ? anchor : (dir9_cx(i) > 0 ? xm : (dir9_cx(i) < 0 ? xp : x));
+			const idx sy = axis_x ? (dir9_cy(i) > 0 ? ym : (dir9_cy(i) < 0 ? yp : y)) : anchor;
 			KS.f[i] = TNL::Backend::ldg(SD.df(df_cur, i, sx, sy, z));
 		}
 	}
@@ -83,16 +90,16 @@ struct D2Q9_STREAMING_AB_PULL
 	{
 		switch (face) {
 			case bc_face::XP:
-				streamingOutflowImpl<bc_face::XP>(SD, KS, xm, x, y, z);
+				streamingOutflowImpl<bc_face::XP>(SD, KS, xm, x, xp, ym, y, yp, z);
 				break;
 			case bc_face::XM:
-				streamingOutflowImpl<bc_face::XM>(SD, KS, xp, x, y, z);
+				streamingOutflowImpl<bc_face::XM>(SD, KS, xm, x, xp, ym, y, yp, z);
 				break;
 			case bc_face::YP:
-				streamingOutflowImpl<bc_face::YP>(SD, KS, ym, x, y, z);
+				streamingOutflowImpl<bc_face::YP>(SD, KS, xm, x, xp, ym, y, yp, z);
 				break;
 			default:
-				streamingOutflowImpl<bc_face::YM>(SD, KS, yp, x, y, z);
+				streamingOutflowImpl<bc_face::YM>(SD, KS, xm, x, xp, ym, y, yp, z);
 				break;
 		}
 	}
@@ -116,21 +123,25 @@ struct D2Q9_STREAMING_AB_PULL
 	// moving against the outward normal blends postcoll_{n-1} from the anchor
 	// column with the outflow cell's own postcoll, the perpendicular population
 	// streams ordinarily (own column), the outward-moving population takes the
-	// pulled state of the anchor column.
+	// pulled state of the anchor column; the tangential coordinates select among
+	// the wrapped neighbors like in the plain gather above.
 	// FACE is a compile-time template parameter, so the per-direction
 	// components, site offsets and family branches fold to constants.
 	template <int FACE, typename LBM_DATA, typename LBM_KS>
-	__cuda_callable__ static void streamingOutflowInterpImpl(LBM_DATA& SD, LBM_KS& KS, idx anchor, idx x, idx y, idx z)
+	__cuda_callable__ static void streamingOutflowInterpImpl(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx z)
 	{
 		constexpr bool axis_x = (FACE & (bc_face::XP | bc_face::XM)) != 0;
 		constexpr int out_sign = (FACE & (bc_face::XM | bc_face::YM)) ? -1 : 1;
+		// anchor column: the fluid-side neighbor one cell inward (opposite the outward normal)
+		const idx anchor = (FACE == bc_face::XP) ? xm : (FACE == bc_face::XM) ? xp : (FACE == bc_face::YP) ? ym : yp;
 		for (int i = 0; i < 9; i++) {
 			const int cn = axis_x ? dir9_cx(i) : dir9_cy(i);  // normal component of c_i
 			// sites in the anchor column and the own column, tangential -c offsets
-			const idx nx = axis_x ? anchor : x - dir9_cx(i);
-			const idx ny = axis_x ? y - dir9_cy(i) : anchor;
-			const idx ox = axis_x ? x : x - dir9_cx(i);
-			const idx oy = axis_x ? y - dir9_cy(i) : y;
+			const idx t = axis_x ? (dir9_cy(i) > 0 ? ym : (dir9_cy(i) < 0 ? yp : y)) : (dir9_cx(i) > 0 ? xm : (dir9_cx(i) < 0 ? xp : x));
+			const idx nx = axis_x ? anchor : t;
+			const idx ny = axis_x ? t : anchor;
+			const idx ox = axis_x ? x : t;
+			const idx oy = axis_x ? t : y;
 			if (cn == out_sign)
 				KS.f[i] = TNL::Backend::ldg(SD.df(df_cur, i, nx, ny, z));
 			else if (cn == 0)
@@ -145,16 +156,16 @@ struct D2Q9_STREAMING_AB_PULL
 	{
 		switch (face) {
 			case bc_face::XP:
-				streamingOutflowInterpImpl<bc_face::XP>(SD, KS, xm, x, y, z);
+				streamingOutflowInterpImpl<bc_face::XP>(SD, KS, xm, x, xp, ym, y, yp, z);
 				break;
 			case bc_face::XM:
-				streamingOutflowInterpImpl<bc_face::XM>(SD, KS, xp, x, y, z);
+				streamingOutflowInterpImpl<bc_face::XM>(SD, KS, xm, x, xp, ym, y, yp, z);
 				break;
 			case bc_face::YP:
-				streamingOutflowInterpImpl<bc_face::YP>(SD, KS, ym, x, y, z);
+				streamingOutflowInterpImpl<bc_face::YP>(SD, KS, xm, x, xp, ym, y, yp, z);
 				break;
 			default:
-				streamingOutflowInterpImpl<bc_face::YM>(SD, KS, yp, x, y, z);
+				streamingOutflowInterpImpl<bc_face::YM>(SD, KS, xm, x, xp, ym, y, yp, z);
 				break;
 		}
 	}
