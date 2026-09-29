@@ -8,9 +8,13 @@ CompileFlags:
     - "-DHAVE_MPI"
     - "-DADIOS2_USE_MPI"
     - "-DUSE_CUDA"
-    # FIXME: clangd 21 and cuda 13 do not work together
-    #- "-xcu"
-    - "-xc++"
+    # do not truncate diagnostic cascades ("Too many errors emitted")
+    - "-ferror-limit=0"
+    # CUDA 13 moved libcu++ to include/cccl and the extra -isystem is needed
+    # for clangd to find cuda/std/* there
+    - "-xcu"
+    - "--cuda-path=/opt/cuda"
+    - "-isystem/opt/cuda/include/cccl"
   Remove:
     # remove all nvcc-specific flags that may appear in the compile_commands.json file
     - "-Xcompiler"

@@ -1,10 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
 
-# Set default CUDA architecture
-if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-    set(CMAKE_CUDA_ARCHITECTURES "native")
-endif()
-
 project(TNL-LBM LANGUAGES CXX)
 
 # Declare all CMake options for the project
@@ -57,8 +52,46 @@ if(TNL_LBM_USE_CUDA)
     include(CheckLanguage)
     check_language(CUDA)
     if(CMAKE_CUDA_COMPILER)
+        # Remember whether a specific CUDA architecture was requested, because
+        # enable_language(CUDA) itself initializes CMAKE_CUDA_ARCHITECTURES (to
+        # a compatibility default) when it is undefined
+        if(DEFINED CMAKE_CUDA_ARCHITECTURES)
+            set(_user_cuda_architectures TRUE)
+        endif()
+
         enable_language(CUDA)
         set(TNL_LBM_BUILD_CUDA TRUE)
+
+        # Select one default GPU architecture to avoid building for all GPU architectures
+        if(NOT _user_cuda_architectures)
+            if(CMAKE_CUDA_COMPILER_ID STREQUAL "NVIDIA")
+                set(CMAKE_CUDA_ARCHITECTURES "native")
+            else()
+                # CMake's native GPU arch detection works with Clang only for compilation: CMake's
+                # own device-link step for Clang and CUDA_SEPARABLE_COMPILATION composes the nvlink
+                # command itself from the unresolved CMAKE_CUDA_ARCHITECTURES value, passing it
+                # literally as -arch=sm_native, which nvlink does not accept
+                execute_process(
+                    COMMAND "nvidia-smi" "--query-gpu=compute_cap" "--format=csv,noheader"
+                    RESULT_VARIABLE _status
+                    OUTPUT_VARIABLE _stdout
+                    ERROR_VARIABLE _stderr
+                    OUTPUT_STRIP_TRAILING_WHITESPACE
+                    ERROR_STRIP_TRAILING_WHITESPACE
+                )
+                if(${_status} EQUAL 0)
+                    string(REPLACE "." "" _stdout ${_stdout})
+                    string(REGEX REPLACE "[ \t\r\n]+" ";" CMAKE_CUDA_ARCHITECTURES ${_stdout})
+                    list(REMOVE_DUPLICATES CMAKE_CUDA_ARCHITECTURES)
+                else()
+                    message(WARNING "Failed to detect native GPU architecture using nvidia-smi: ${_stderr}")
+                endif()
+            endif()
+            # Update the compatibility default that enable_language(CUDA) put in the cache
+            set(CMAKE_CUDA_ARCHITECTURES "${CMAKE_CUDA_ARCHITECTURES}" CACHE STRING "CUDA architectures" FORCE)
+            message("-- Selected CMAKE_CUDA_ARCHITECTURES = ${CMAKE_CUDA_ARCHITECTURES}")
+        endif()
+        unset(_user_cuda_architectures)
 
         # Require C++17, and disable compiler-specific extensions (if possible).
         set(CMAKE_CUDA_STANDARD 17)

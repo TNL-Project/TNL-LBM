@@ -3,6 +3,7 @@
 [tool.ruff]
 target-version = "py312"
 builtins = ["_"]
+line-length = 128
 
 [tool.ruff.lint]
 select = [
@@ -42,6 +43,20 @@ select = [
     "RUF002", # Greek letters in docstrings are intentional
     "RUF003", # Greek letters in comments are intentional
 ]
+"catalyst/plugin/lbm-pipeline.py" = [
+    "ANN",     # ParaView proxies are duck-typed by nature
+    "F403",    # `from paraview.simple import *` is the idiomatic Catalyst pattern
+    "F405",    # names come from the paraview.simple star import
+    "PLW0603", # Catalyst pipeline state is kept in module globals
+]
+"catalyst/tnl_lbm_common.py" = [
+    "PLC0415", # mpi4py is imported lazily because it is an optional dependency
+]
+"catalyst/tnl_lbm_export_frames.py" = [
+    "C901",    # _consume_stream_once orchestrates the whole export loop
+    "ICN001",  # the matplotlib import needs no alias as it is used only for backend selection
+    "PLC0415", # matplotlib is imported lazily because it is an optional dependency
+]
 
 # Configuration for mypy / basedmypy
 # https://kotlinisland.github.io/basedmypy/config_file.html
@@ -55,8 +70,19 @@ mypy_path = ["build/pytnl_lbm"]
 # https://github.com/microsoft/pyright/blob/main/docs/configuration.md
 [tool.pyright]
 pythonVersion = "3.12"
-exclude = ["build", ".venv", "results_*"]
-extraPaths = ["build/pytnl_lbm"]
+exclude = [
+  "build*",  # includes parallel build trees (build-aa, build-eso_*, ...)
+  ".venv",
+  ".gitlab-ci-local",
+  "results_*",
+  "docs",  # standalone tooling scripts, not part of the codebase
+]
+extraPaths = [
+  "build/pytnl_lbm",
+  # the pytnl package built by FetchContent in the pytnl_lbm step
+  # (same path sim_1.py appends to sys.path at runtime)
+  "build/_deps/pytnl-build/src",
+]
 
 # Configuration for pytest (native TOML, requires pytest 9)
 # https://docs.pytest.org/en/stable/reference/customize.html
