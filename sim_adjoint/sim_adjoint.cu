@@ -694,17 +694,13 @@ void saveLossFunctionToFile(const std::string& dirname, int adjointIteration, do
 	const std::string fname = fmt::format("{}/lossFunction.txt", dirname);
 	if (adjointIteration == 1) {
 		std::ofstream lossFunctionFile(fname);
-		std::ostringstream s;
-		s << std::setprecision(10) << lossFunction;
-		lossFunctionFile << s.str() << "\n";
+		lossFunctionFile << fmt::format("{:.10g}\n", lossFunction);
 		lossFunctionFile.close();
 		return;
 	}
 	std::ofstream lossFunctionFile;
 	lossFunctionFile.open(fname, std::ofstream::app);
-	std::ostringstream s;
-	s << std::setprecision(10) << lossFunction;
-	lossFunctionFile << s.str() << "\n";
+	lossFunctionFile << fmt::format("{:.10g}\n", lossFunction);
 	lossFunctionFile.close();
 }
 

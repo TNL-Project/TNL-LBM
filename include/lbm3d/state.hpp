@@ -137,7 +137,7 @@ void State<NSE>::ensureFidesJsonModel(const std::string& dimsVariable, const std
 
 		std::ofstream out(jsonPath);
 		if (! out) {
-			throw std::runtime_error("Failed to open Fides JSON file for writing: " + jsonPath);
+			throw std::runtime_error(fmt::format("Failed to open Fides JSON file for writing: {}", jsonPath));
 		}
 		out << std::setw(2) << root << std::endl;
 	}

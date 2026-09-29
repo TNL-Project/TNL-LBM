@@ -43,41 +43,44 @@ void UnstructuredPointsWriter<TRAITS>::addVTKAttributes()
 			continue;
 		switch (dim) {
 			case 0:
-				dataArrays += "<DataArray Name=\"" + name + "\"> " + name + " </DataArray>\n";
+				dataArrays += fmt::format("<DataArray Name=\"{}\"> {} </DataArray>\n", name, name);
 				break;
 			case 1:
-				dataArrays += "<DataArray Name=\"" + name + "\"/>\n";
+				dataArrays += fmt::format("<DataArray Name=\"{}\"/>\n", name);
 				break;
 			case 3:
-				dataArrays += "<DataArray Name=\"" + name + "\"/>\n";
-				//dataArrays += "<DataArray Name=\"" + name + "\" NumberOfComponents=\"3\"/>\n";
+				dataArrays += fmt::format("<DataArray Name=\"{}\"/>\n", name);
+				//dataArrays += fmt::format("<DataArray Name=\"{}\" NumberOfComponents=\"3\"/>\n", name);
 				break;
 		}
 	}
 
 	// https://adios2.readthedocs.io/en/latest/ecosystem/visualization.html#saving-the-vtk-xml-data-model
-	const std::string dataModel = R"(
+	const std::string dataModel = fmt::format(
+		R"(
         <?xml version="1.0"?>
         <VTKFile type="UnstructuredGrid" version="0.1" byte_order="LittleEndian">
 			<UnstructuredGrid>
-				<Piece NumberOfPoints=")"
-								+ num_points_variable + R"(" NumberOfCells=")" + num_points_variable + R"(" >
+				<Piece NumberOfPoints="{}" NumberOfCells="{}" >
 					<Points>
-						<DataArray Name=")"
-								+ coordinates_variable + R"(" />
+						<DataArray Name="{}" />
 					</Points>
 					<Cells>
-						<DataArray Name=")"
-								+ connectivity_variable + R"(" />
-						<DataArray Name=")"
-								+ cell_types_variable + R"(" />
+						<DataArray Name="{}" />
+						<DataArray Name="{}" />
 					</Cells>
-					<CellData Scalars="data">)"
-								+ dataArrays + R"(
+					<CellData Scalars="data">{}
 					</CellData>
 				</Piece>
 			</UnstructuredGrid>
-        </VTKFile>)";
+        </VTKFile>)",
+		num_points_variable,
+		num_points_variable,
+		coordinates_variable,
+		connectivity_variable,
+		cell_types_variable,
+		dataArrays
+	);
 
 	this->dataManager->template defineAttribute<std::string>("vtk.xml", dataModel, this->ioName);
 }

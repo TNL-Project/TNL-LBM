@@ -275,7 +275,7 @@ std::map<TNL::Containers::SyncDirection, int> findNeighbors(
 				find(direction, getBlockVertex(reference, direction), opposite(direction));
 				break;
 			default:
-				throw std::logic_error("unhandled direction: " + std::to_string(static_cast<std::uint8_t>(direction)));
+				throw std::logic_error(fmt::format("unhandled direction: {}", static_cast<int>(direction)));
 		}
 	}
 
