@@ -119,7 +119,8 @@ struct StreamMock
 
 	__cuda_callable__ double& df(int type, int slot, int x, int y, int z) const
 	{
-		const size_t idx = ((size_t) type * DIRS::Q + slot) * MS * MS * MS + ((size_t) clampMS(x) * MS + clampMS(y)) * MS + clampMS(z);
+		const size_t idx =
+			(static_cast<size_t>(type) * DIRS::Q + slot) * MS * MS * MS + (static_cast<size_t>(clampMS(x)) * MS + clampMS(y)) * MS + clampMS(z);
 		return mem[idx];
 	}
 };
@@ -195,7 +196,7 @@ static void runRoundTrip(int x, int y, int z, typename DIRS::ks_t& ks1, typename
 						// pre-stream layout: slot (i, s) holds pat(i, s)
 						v = pat(slot, xx, yy, zz);
 					}
-					host[((size_t) slot) * MS * MS * MS + ((size_t) xx * MS + yy) * MS + zz] = v;
+					host[(static_cast<size_t>(slot)) * MS * MS * MS + (static_cast<size_t>(xx) * MS + yy) * MS + zz] = v;
 				}
 
 	TNL::Containers::Array<double, TNL::Devices::Host> hostArr(host.size());

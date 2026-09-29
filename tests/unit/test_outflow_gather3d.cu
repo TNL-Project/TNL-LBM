@@ -40,16 +40,15 @@
 
 using TRAITS = Traits<double>;	// dreal = double: exact comparisons against the double ground truth
 using COLL = D3Q27_SRT<TRAITS>;
-using CONFIG =
-	LBM_CONFIG<TRAITS, D3Q27_KernelStruct, NSE_Data, COLL, typename COLL::EQ, D3Q27_STREAMING<TRAITS>, D3Q27_BC_All, D3Q27_MACRO_Default<TRAITS>>;
+using CONFIG = LBM_CONFIG<TRAITS, D3Q27_KernelStruct, NSE_Data, COLL, COLL::EQ, D3Q27_STREAMING<TRAITS>, D3Q27_BC_All, D3Q27_MACRO_Default<TRAITS>>;
 using STREAM_AB_PULL = D3Q27_STREAMING_AB_PULL<TRAITS>;
 using STREAM_AB_PUSH = D3Q27_STREAMING_AB_PUSH<TRAITS>;
 using STREAM_AA = D3Q27_STREAMING_AA<TRAITS>;
-using BC = typename CONFIG::BC;
-using KS = D3Q27_KernelStruct<typename TRAITS::dreal>;
-using idx = typename TRAITS::idx;
-using idx3d = typename TRAITS::idx3d;
-using bool3d = typename TRAITS::bool3d;
+using BC = CONFIG::BC;
+using KS = D3Q27_KernelStruct<TRAITS::dreal>;
+using idx = TRAITS::idx;
+using idx3d = TRAITS::idx3d;
+using bool3d = TRAITS::bool3d;
 
 // direction names in the D3Q27 enum order (must match defs.h); the
 // ground-truth components are parsed from these, independently of the
@@ -110,8 +109,8 @@ template <typename STREAMING>
 __global__ void gatherKernel(GatherMock sd, KS* out, int face, bool interp, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 {
 	KS ks;
-	for (int i = 0; i < 27; i++)
-		ks.f[i] = std::numeric_limits<double>::quiet_NaN();
+	for (double& f : ks.f)
+		f = std::numeric_limits<double>::quiet_NaN();
 	if (interp)
 		STREAMING::streamingOutflowInterp(sd, ks, face, xm, x, xp, ym, y, yp, zm, z, zp);
 	else
@@ -135,7 +134,7 @@ static void resolveBlends(double* exp, const double* blendA, const double* blend
 	std::vector<double> in;
 	std::vector<int> slots;
 	for (int i = 0; i < n; i++)
-		if (isBlend[i]) {
+		if (isBlend[i] != 0) {
 			in.push_back(blendA[i]);
 			in.push_back(blendB[i]);
 			slots.push_back(i);
@@ -148,7 +147,7 @@ static void resolveBlends(double* exp, const double* blendA, const double* blend
 	TNL::Containers::Array<double, TNL::Devices::Cuda> devIn;
 	devIn = hostIn;
 	TNL::Containers::Array<double, TNL::Devices::Cuda> devOut(slots.size());
-	blendKernel3d<<<1, 27>>>(devIn.getData(), devOut.getData(), (int) slots.size());
+	blendKernel3d<<<1, 27>>>(devIn.getData(), devOut.getData(), static_cast<int>(slots.size()));
 	TNL::Backend::deviceSynchronize();
 	std::vector<double> res(slots.size());
 	TNL::Backend::memcpy(res.data(), devOut.getData(), res.size() * sizeof(double), TNL::Backend::MemcpyDeviceToHost);
@@ -159,12 +158,12 @@ static void resolveBlends(double* exp, const double* blendA, const double* blend
 template <typename STREAMING>
 static void runGather(int face, bool interp, bool even, int x, int y, int z, KS& out)
 {
-	std::vector<double> host((size_t) 27 * MS * MS * MS);
+	std::vector<double> host(static_cast<size_t>(27) * MS * MS * MS);
 	for (int s = 0; s < 27; s++)
 		for (int xx = 0; xx < MS; xx++)
 			for (int yy = 0; yy < MS; yy++)
 				for (int zz = 0; zz < MS; zz++)
-					host[((size_t) s * MS + xx) * MS * MS + yy * MS + zz] = pat(s, xx, yy, zz);
+					host[(static_cast<size_t>(s) * MS + xx) * MS * MS + yy * MS + zz] = pat(s, xx, yy, zz);
 
 	TNL::Containers::Array<double, TNL::Devices::Host> hostArr(host.size());
 	for (size_t i = 0; i < host.size(); i++)
@@ -304,7 +303,9 @@ TEST_SUITE_BEGIN("outflowgather3d");
 template <typename STREAMING>
 static void checkGatherFaces(bool interp)
 {
-	const int x = 8, y = 9, z = 10;
+	const int x = 8;
+	const int y = 9;
+	const int z = 10;
 	const int faces[6] = {bc_face::XP, bc_face::XM, bc_face::YP, bc_face::YM, bc_face::ZP, bc_face::ZM};
 	for (int face : faces) {
 		INFO("face=", face);
@@ -313,7 +314,8 @@ static void checkGatherFaces(bool interp)
 			KS ks;
 			runGather<STREAMING>(face, interp, even, x, y, z, ks);
 			double exp[27];
-			double blendA[27] = {}, blendB[27] = {};
+			double blendA[27] = {};
+			double blendB[27] = {};
 			char isBlend[27] = {};
 			computeExpected<STREAMING>(face, interp, even, x, y, z, exp, blendA, blendB, isBlend);
 			resolveBlends(exp, blendA, blendB, isBlend, 27);
@@ -357,7 +359,9 @@ TEST_CASE("detect-faces")
 	block.data.XYZ = block.data.indexer.getStorageSize();
 	block.data.dmap = block.hmap.getData();
 
-	const int x = 8, y = 9, z = 10;
+	const int x = 8;
+	const int y = 9;
+	const int z = 10;
 	struct Case
 	{
 		int face;
@@ -407,7 +411,9 @@ TEST_CASE("validate-face-detected")
 		block.data.dmap = block.dmap.getData();
 	};
 
-	const int x = 8, y = 9, z = 10;
+	const int x = 8;
+	const int y = 9;
+	const int z = 10;
 
 	// walls everywhere, one outflow site anchored to a single fluid cell: valid
 	block.hmap.setValue(BC::GEO_WALL);

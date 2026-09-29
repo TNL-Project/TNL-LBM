@@ -325,7 +325,9 @@ struct D3Q27_STREAMING_ESO_TWIST
 			const idx py = dir27_cy(i) > 0 ? 1 : 0;
 			const idx pz = dir27_cz(i) > 0 ? 1 : 0;
 			const int slot = SD.even_iter ? opposite_direction(i) : i;
-			idx wx, wy, wz;
+			idx wx;
+			idx wy;
+			idx wz;
 			if constexpr (axis == 0) {
 				wx = anchor + px;
 				wy = dir27_cy(i) - py > 0 ? ym : (dir27_cy(i) - py < 0 ? yp : y);
@@ -402,7 +404,12 @@ struct D3Q27_STREAMING_ESO_TWIST
 			const idx pz = dir27_cz(i) > 0 ? 1 : 0;
 			const int slot = SD.even_iter ? opposite_direction(i) : i;
 			// value at the anchor column and at the own column, tangential -c offsets
-			idx nx, ny, nz, ox, oy, oz;
+			idx nx;
+			idx ny;
+			idx nz;
+			idx ox;
+			idx oy;
+			idx oz;
 			if constexpr (axis == 0) {
 				nx = anchor + px;
 				ny = dir27_cy(i) - py > 0 ? ym : (dir27_cy(i) - py < 0 ? yp : y);

@@ -907,7 +907,7 @@ void LBM_BLOCK<CONFIG>::validateFaceDetectedBC()
 			}
 		);
 
-		TNL::Backend::streamSynchronize(0);
+		TNL::Backend::streamSynchronize(nullptr);
 		TNL::Containers::Array<TNL::Atomic<int, DeviceType>, TNL::Devices::Host> hfailure(dfailure);
 		if (hfailure[0] > 0)
 			throw std::runtime_error(

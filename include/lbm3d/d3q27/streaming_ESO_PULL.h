@@ -371,7 +371,9 @@ struct D3Q27_STREAMING_ESO_PULL
 			const idx py = is_pair_head(i) ? dir27_cy(i) : 0;
 			const idx pz = is_pair_head(i) ? dir27_cz(i) : 0;
 			const int slot = SD.even_iter ? opposite_direction(i) : i;
-			idx wx, wy, wz;
+			idx wx;
+			idx wy;
+			idx wz;
 			if constexpr (axis == 0) {
 				wx = anchor + px;
 				wy = dir27_cy(i) - py > 0 ? ym : (dir27_cy(i) - py < 0 ? yp : y);
@@ -448,7 +450,12 @@ struct D3Q27_STREAMING_ESO_PULL
 			const idx pz = is_pair_head(i) ? dir27_cz(i) : 0;
 			const int slot = SD.even_iter ? opposite_direction(i) : i;
 			// value at the anchor column and at the own column, tangential -c offsets
-			idx nx, ny, nz, ox, oy, oz;
+			idx nx;
+			idx ny;
+			idx nz;
+			idx ox;
+			idx oy;
+			idx oz;
 			if constexpr (axis == 0) {
 				nx = anchor + px;
 				ny = dir27_cy(i) - py > 0 ? ym : (dir27_cy(i) - py < 0 ? yp : y);
@@ -536,7 +543,7 @@ struct D3Q27_STREAMING_ESO_PULL
 	__cuda_callable__ static constexpr int dfSyncOffset(int dir, int axis, bool even_iter)
 	{
 		(void) axis;
-		return even_iter ? int(is_pair_head(dir)) : int(! is_pair_head(dir));
+		return even_iter ? static_cast<int>(is_pair_head(dir)) : static_cast<int>(! is_pair_head(dir));
 	}
 };
 

@@ -35,7 +35,7 @@ static inline int mkdir_p(const char* path, mode_t mode)
 	strcpy(_path, path);
 
 	// iterate the string
-	for (p = _path + 1; *p; p++) {
+	for (p = _path + 1; *p != '\0'; p++) {
 		if (*p == '/') {
 			// temporarily truncate
 			*p = '\0';
@@ -82,7 +82,7 @@ static inline int create_file(const char* fname)
 
 	// create the file
 	FILE* fp = fopen(fname, "wb");
-	if (fp == NULL) {
+	if (fp == nullptr) {
 		fprintf(stderr, "error: failed to create file %s: %s\n", fname, strerror(errno));
 		return -1;
 	}

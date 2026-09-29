@@ -103,7 +103,12 @@ CUDA_HOSTDEV void LBMKernel(
 
 	map_t gi_map = SD.map(x, y, z);
 
-	idx xp, xm, yp, ym, zp, zm;
+	idx xp;
+	idx xm;
+	idx yp;
+	idx ym;
+	idx zp;
+	idx zm;
 	kernelInitIndices<NSE>(SD, distributed, x, y, z, xp, xm, yp, ym, zp, zm);
 
 	typename NSE::template KernelStruct<dreal> KS;
@@ -168,7 +173,12 @@ CUDA_HOSTDEV void LBMKernelOutflow(
 		if (! NSE::BC::isOutflowPassBC(gi_map))
 			return;
 
-		idx xp, xm, yp, ym, zp, zm;
+		idx xp;
+		idx xm;
+		idx yp;
+		idx ym;
+		idx zp;
+		idx zm;
 		kernelInitIndices<NSE>(SD, distributed, x, y, z, xp, xm, yp, ym, zp, zm);
 
 		typename NSE::template KernelStruct<dreal> KS;
@@ -221,7 +231,12 @@ CUDA_HOSTDEV void LBMKernel(
 	const map_t NSE_mapgi = NSE_SD.map(x, y, z);
 	const map_t ADE_mapgi = ADE_SD.map(x, y, z);
 
-	idx xp, xm, yp, ym, zp, zm;
+	idx xp;
+	idx xm;
+	idx yp;
+	idx ym;
+	idx zp;
+	idx zm;
 	kernelInitIndices<NSE>(NSE_SD, distributed, x, y, z, xp, xm, yp, ym, zp, zm);
 
 	// NSE part
@@ -300,7 +315,12 @@ void LBMComputeVelocitiesStarAndZeroForce(
 	// copy quantities
 	NSE::MACRO::copyQuantities(SD, KS, x, y, z);
 
-	idx xp, xm, yp, ym, zp, zm;
+	idx xp;
+	idx xm;
+	idx yp;
+	idx ym;
+	idx zp;
+	idx zm;
 	kernelInitIndices<NSE>(SD, distributed, x, y, z, xp, xm, yp, ym, zp, zm);
 
 	NSE::MACRO::zeroForcesInKS(KS);

@@ -19,7 +19,7 @@ public:
 		defaultIO = adios->DeclareIO("Output");
 	}
 
-	bool isPluginEngine() const
+	[[nodiscard]] bool isPluginEngine() const
 	{
 		return defaultIO.EngineType() == "plugin";
 	}
@@ -29,7 +29,7 @@ public:
 		pluginDataModelPath_ = std::move(path);
 	}
 
-	const std::string& getPluginDataModelPath() const
+	[[nodiscard]] const std::string& getPluginDataModelPath() const
 	{
 		return pluginDataModelPath_;
 	}
@@ -115,7 +115,7 @@ public:
 	std::vector<T>& newStepBuffer(std::size_t reserve = 0)
 	{
 		std::any& any_buffer = stepBuffers_.emplace_back(std::make_any<std::vector<T>>());
-		std::vector<T>& buffer = std::any_cast<std::vector<T>&>(any_buffer);
+		auto& buffer = std::any_cast<std::vector<T>&>(any_buffer);
 		if (reserve > 0)
 			buffer.reserve(reserve);
 		return buffer;

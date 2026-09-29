@@ -163,8 +163,6 @@ void export_State(nb::module_& m, const char* name)
 	using State = ::State<NSE>;
 	using PyState = ::PyState<NSE>;
 	using idx = typename State::idx;
-	using real = typename State::real;
-	using point_t = typename State::point_t;
 	using lat_t = typename State::lat_t;
 
 	auto state =  //

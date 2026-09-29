@@ -651,7 +651,7 @@ constexpr int dir27_cz(int dir)
 // with its opposite as consecutive values (1↔2, 3↔4, ...), with zzz/zz self-opposite.
 constexpr int opposite_direction(int dir)
 {
-	return dir == 0 ? 0 : (dir & 1) ? dir + 1 : dir - 1;
+	return dir == 0 ? 0 : (dir & 1) != 0 ? dir + 1 : dir - 1;
 }
 
 // head slot of an opposite-direction pair: the odd-numbered slot of each

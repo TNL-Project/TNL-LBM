@@ -80,7 +80,7 @@ public:
 		else if (currentMode == adios2::Mode::Read) {
 			// Read the attribute
 			try {
-				CastToType value = dataManager->readAttribute<CastToType>(name, currentCheckpointName);
+				auto value = dataManager->readAttribute<CastToType>(name, currentCheckpointName);
 				variable = static_cast<T>(value);
 			}
 			catch (const std::runtime_error& e) {

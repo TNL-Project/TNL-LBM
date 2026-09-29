@@ -760,7 +760,7 @@ void adjointFullSim(int resolution, std::size_t epochs, double eps, double hide,
 	std::unique_ptr<double[]> guessZ = initGuess(VelocityProfile::zero, Y, Z);
 
 	double step = eps;
-	for (std::size_t i = (std::size_t) 1; i <= epochs; i++) {
+	for (auto i = static_cast<std::size_t>(1); i <= epochs; i++) {
 		//! remove directories
 		std::string dirname = fmt::format("results_sim_adjoint_res{:02d}_np{:03d}", resolution, TNL::MPI::GetSize(MPI_COMM_WORLD));
 		std::filesystem::remove_all(dirname.c_str());
@@ -768,7 +768,7 @@ void adjointFullSim(int resolution, std::size_t epochs, double eps, double hide,
 		std::filesystem::remove_all(dirname.c_str());
 
 		const bool print = (i == epochs);
-		if (adjointEpoch(resolution, hide, guessX.get(), guessY.get(), guessZ.get(), (int) i, step, print, adios_config) != 0) {
+		if (adjointEpoch(resolution, hide, guessX.get(), guessY.get(), guessZ.get(), static_cast<int>(i), step, print, adios_config) != 0) {
 			step /= 2.0;
 			spdlog::warn("Loss function increased instead of decreased - halving step size = {}", step);
 			if (step < MIN_STEP_SIZE) {

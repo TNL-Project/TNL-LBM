@@ -623,7 +623,7 @@ static void checkSnapshotBitwiseMatch(const char* tag, const std::vector<double>
 	for (std::size_t i = 0; i < candidate.size(); i++)
 		if (candidate[i] != reference[i]) {
 			ndiff++;
-			maxdiff = std::max(maxdiff, (double) std::abs(candidate[i] - reference[i]));
+			maxdiff = std::max(maxdiff, std::abs(candidate[i] - reference[i]));
 		}
 	INFO("differing cells: ", ndiff, " of ", candidate.size(), " (max|diff| = ", maxdiff, ")");
 	CHECK(ndiff == 0);

@@ -4,7 +4,7 @@ template <typename NSE, typename ADE>
 struct State_NSE_ADE : State<NSE>
 {
 	// using different TRAITS is not implemented (probably does not make sense...)
-	static_assert(std::is_same<typename NSE::TRAITS, typename ADE::TRAITS>::value, "TRAITS must be the same type in NSE and ADE.");
+	static_assert(std::is_same_v<typename NSE::TRAITS, typename ADE::TRAITS>, "TRAITS must be the same type in NSE and ADE.");
 	using TRAITS = typename NSE::TRAITS;
 	using BLOCK_NSE = LBM_BLOCK<NSE>;
 	using BLOCK_ADE = LBM_BLOCK<ADE>;
@@ -211,7 +211,7 @@ struct State_NSE_ADE : State<NSE>
 				);
 			}
 			// synchronize the null-stream after all grids
-			TNL::Backend::streamSynchronize(0);
+			TNL::Backend::streamSynchronize(nullptr);
 			// copying of overlaps is not necessary for nproc == 1 (nproc is checked in streaming as well)
 	#ifdef HAVE_MPI
 		}

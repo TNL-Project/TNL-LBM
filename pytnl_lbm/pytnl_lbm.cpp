@@ -49,18 +49,18 @@ NB_MODULE(pytnl_lbm, m)
 	m.def("execute", execute<State<SP_D3Q27_CUM_ConstInflow>>);
 	m.def("getMacroView", getMacroView<SP_D3Q27_CUM_ConstInflow::TRAITS, SP_D3Q27_CUM_ConstInflow::TRAITS::hmacro_array_t>);
 
-	using macro_indexer_t = typename SP_D3Q27_CUM_ConstInflow::TRAITS::__hmacro_array_t::IndexerType;
-	using local_hmacro_array_t = typename SP_D3Q27_CUM_ConstInflow::TRAITS::__hmacro_array_t;
-	using local_dmacro_array_t = typename SP_D3Q27_CUM_ConstInflow::TRAITS::__dmacro_array_t;
+	using macro_indexer_t = SP_D3Q27_CUM_ConstInflow::TRAITS::__hmacro_array_t::IndexerType;
+	using local_hmacro_array_t = SP_D3Q27_CUM_ConstInflow::TRAITS::__hmacro_array_t;
+	using local_dmacro_array_t = SP_D3Q27_CUM_ConstInflow::TRAITS::__dmacro_array_t;
 	export_NDArrayIndexer<macro_indexer_t>(m, "macro_indexer_SP_D3Q27_CUM_ConstInflow");
 	export_NDArray<local_hmacro_array_t>(m, "hmacro_array_SP_D3Q27_CUM_ConstInflow");
 	export_NDArray<local_dmacro_array_t>(m, "dmacro_array_SP_D3Q27_CUM_ConstInflow");
-	export_NDArray<typename local_hmacro_array_t::ViewType>(m, "hmacro_view_SP_D3Q27_CUM_ConstInflow");
-	export_NDArray<typename local_dmacro_array_t::ViewType>(m, "dmacro_view_SP_D3Q27_CUM_ConstInflow");
+	export_NDArray<local_hmacro_array_t::ViewType>(m, "hmacro_view_SP_D3Q27_CUM_ConstInflow");
+	export_NDArray<local_dmacro_array_t::ViewType>(m, "dmacro_view_SP_D3Q27_CUM_ConstInflow");
 
 #ifdef HAVE_MPI
-	using hmacro_array_t = typename SP_D3Q27_CUM_ConstInflow::TRAITS::hmacro_array_t;
-	using dmacro_array_t = typename SP_D3Q27_CUM_ConstInflow::TRAITS::dmacro_array_t;
+	using hmacro_array_t = SP_D3Q27_CUM_ConstInflow::TRAITS::hmacro_array_t;
+	using dmacro_array_t = SP_D3Q27_CUM_ConstInflow::TRAITS::dmacro_array_t;
 	export_DistributedNDArray<hmacro_array_t>(m, "dist_hmacro_array_SP_D3Q27_CUM_ConstInflow");
 	export_DistributedNDArray<dmacro_array_t>(m, "dist_dmacro_array_SP_D3Q27_CUM_ConstInflow");
 

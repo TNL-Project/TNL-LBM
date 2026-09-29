@@ -75,13 +75,12 @@
 
 using TRAITS = Traits<float, double, int>;
 using COLL = D2Q9_SRT<TRAITS>;
-using CONFIG =
-	LBM_CONFIG<TRAITS, D2Q9_KernelStruct, NSE_Data, COLL, typename COLL::EQ, D2Q9_STREAMING<TRAITS>, D2Q9_BC_All, D2Q9_MACRO_Default<TRAITS>>;
+using CONFIG = LBM_CONFIG<TRAITS, D2Q9_KernelStruct, NSE_Data, COLL, COLL::EQ, D2Q9_STREAMING<TRAITS>, D2Q9_BC_All, D2Q9_MACRO_Default<TRAITS>>;
 
 using BLOCK = LBM_BLOCK<CONFIG>;
-using idx = typename TRAITS::idx;
-using idx3d = typename TRAITS::idx3d;
-using BC = typename CONFIG::BC;
+using idx = TRAITS::idx;
+using idx3d = TRAITS::idx3d;
+using BC = CONFIG::BC;
 
 // a box {xb, yb, zb, xe, ye, ze} with EXCLUSIVE ends in LOCAL indices,
 // mirroring OutflowBox's begin/end fields (TestBox[0..2] = begin, TestBox[3..5] = end)
@@ -153,7 +152,7 @@ static void requireBoxes(const BLOCK& block, const std::vector<TestBox>& expect,
 static void checkInvariants(const BLOCK& block, const std::vector<std::uint8_t>& ref, const idx3d& local)
 {
 	const idx ncells = local.x() * local.y() * local.z();
-	if ((idx) block.outflow_boxes.size() > BLOCK::max_outflow_boxes) {
+	if (static_cast<idx>(block.outflow_boxes.size()) > BLOCK::max_outflow_boxes) {
 		dumpContext(block, ref, local);
 		FAIL("more than max_outflow_boxes boxes");
 	}
@@ -231,7 +230,7 @@ static long totalVolume(const BLOCK& block)
 
 static long testBoxVolume(const TestBox& b)
 {
-	return (long) (b[3] - b[0]) * (b[4] - b[1]) * (b[5] - b[2]);
+	return static_cast<long>(b[3] - b[0]) * (b[4] - b[1]) * (b[5] - b[2]);
 }
 
 // mirrors the pad phase of updateOutflowPassRegion for deriving the expected
@@ -501,7 +500,7 @@ TEST_CASE("boundary-64")
 	BLOCK block = makeBlock(local, local, offset);
 	block.allocateHostData();
 	fillBlock(block, ref, local, offset);
-	if (block.outflow_boxes.size() != (std::size_t) BLOCK::max_outflow_boxes) {
+	if (block.outflow_boxes.size() != static_cast<std::size_t>(BLOCK::max_outflow_boxes)) {
 		dumpContext(block, ref, local);
 		FAIL("expected exactly max_outflow_boxes boxes (merge-reduction must not fire)");
 	}

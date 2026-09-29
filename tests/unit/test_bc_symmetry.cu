@@ -24,13 +24,12 @@
 
 using TRAITS = Traits<float, double, int>;
 using COLL = D2Q9_SRT<TRAITS>;
-using CONFIG =
-	LBM_CONFIG<TRAITS, D2Q9_KernelStruct, NSE_Data, COLL, typename COLL::EQ, D2Q9_STREAMING<TRAITS>, D2Q9_BC_All, D2Q9_MACRO_Default<TRAITS>>;
+using CONFIG = LBM_CONFIG<TRAITS, D2Q9_KernelStruct, NSE_Data, COLL, COLL::EQ, D2Q9_STREAMING<TRAITS>, D2Q9_BC_All, D2Q9_MACRO_Default<TRAITS>>;
 using BLOCK = LBM_BLOCK<CONFIG>;
-using idx = typename TRAITS::idx;
-using idx3d = typename TRAITS::idx3d;
-using BC = typename CONFIG::BC;
-using KS = D2Q9_KernelStruct<typename TRAITS::dreal>;
+using idx = TRAITS::idx;
+using idx3d = TRAITS::idx3d;
+using BC = CONFIG::BC;
+using KS = D2Q9_KernelStruct<TRAITS::dreal>;
 
 static BLOCK makeBlock(idx nx, idx ny)
 {
@@ -52,7 +51,7 @@ static BLOCK makeBlock(idx nx, idx ny)
 	return block;
 }
 
-static void stamp(BLOCK& block, idx x, idx y, typename BC::map_t tag)
+static void stamp(BLOCK& block, idx x, idx y, BC::map_t tag)
 {
 	block.hmap(x, y, 0) = tag;
 }
@@ -61,7 +60,7 @@ static KS makeKS()
 {
 	KS ks;
 	for (int i = 0; i < 9; i++)
-		ks.f[i] = static_cast<typename TRAITS::dreal>(i + 1) * 10.0f;
+		ks.f[i] = static_cast<TRAITS::dreal>(i + 1) * 10.0F;
 	ks.rho = 1.0;
 	ks.vx = 0.0;
 	ks.vy = 0.0;
@@ -115,9 +114,9 @@ TEST_CASE("bcsymmetry: single-plane-ym")
 	CHECK(ks.f[dir9::zp] == doctest::Approx(ks.f[dir9::zm]));
 	CHECK(ks.f[dir9::pp] == doctest::Approx(ks.f[dir9::pm]));
 	CHECK(ks.f[dir9::mp] == doctest::Approx(ks.f[dir9::mm]));
-	CHECK(ks.f[dir9::zz] == doctest::Approx(10.0f));
-	CHECK(ks.f[dir9::pz] == doctest::Approx(20.0f));
-	CHECK(ks.f[dir9::mz] == doctest::Approx(30.0f));
+	CHECK(ks.f[dir9::zz] == doctest::Approx(10.0F));
+	CHECK(ks.f[dir9::pz] == doctest::Approx(20.0F));
+	CHECK(ks.f[dir9::mz] == doctest::Approx(30.0F));
 }
 
 // symmetry at y+1=(1,3), ghost at (0,2)=BC cell's x-1 → bc_face::XM
@@ -132,12 +131,12 @@ TEST_CASE("bcsymmetry: single-plane-xm")
 	BC::applySymmetryCorner(block.data, ks, 0, 1, 2, 1, 2, 3, 0, 0, 0);
 
 	// bc_face::XM: pz←mz=30, pp←mp=90, pm←mm=70
-	CHECK(ks.f[dir9::pz] == doctest::Approx(30.0f));
-	CHECK(ks.f[dir9::pp] == doctest::Approx(90.0f));
-	CHECK(ks.f[dir9::pm] == doctest::Approx(70.0f));
-	CHECK(ks.f[dir9::zz] == doctest::Approx(10.0f));
-	CHECK(ks.f[dir9::zp] == doctest::Approx(40.0f));
-	CHECK(ks.f[dir9::zm] == doctest::Approx(50.0f));
+	CHECK(ks.f[dir9::pz] == doctest::Approx(30.0F));
+	CHECK(ks.f[dir9::pp] == doctest::Approx(90.0F));
+	CHECK(ks.f[dir9::pm] == doctest::Approx(70.0F));
+	CHECK(ks.f[dir9::zz] == doctest::Approx(10.0F));
+	CHECK(ks.f[dir9::zp] == doctest::Approx(40.0F));
+	CHECK(ks.f[dir9::zm] == doctest::Approx(50.0F));
 }
 
 // symmetry at x+1, ghost at y+1 → bc_face::YP
@@ -152,12 +151,12 @@ TEST_CASE("bcsymmetry: single-plane-yp")
 	BC::applySymmetryCorner(block.data, ks, 0, 1, 2, 0, 1, 2, 0, 0, 0);
 
 	// bc_face::YP: zm←zp=40, mm←mp=90, pm←pp=60
-	CHECK(ks.f[dir9::zm] == doctest::Approx(40.0f));
-	CHECK(ks.f[dir9::mm] == doctest::Approx(90.0f));
-	CHECK(ks.f[dir9::pm] == doctest::Approx(60.0f));
-	CHECK(ks.f[dir9::zz] == doctest::Approx(10.0f));
-	CHECK(ks.f[dir9::pz] == doctest::Approx(20.0f));
-	CHECK(ks.f[dir9::mz] == doctest::Approx(30.0f));
+	CHECK(ks.f[dir9::zm] == doctest::Approx(40.0F));
+	CHECK(ks.f[dir9::mm] == doctest::Approx(90.0F));
+	CHECK(ks.f[dir9::pm] == doctest::Approx(60.0F));
+	CHECK(ks.f[dir9::zz] == doctest::Approx(10.0F));
+	CHECK(ks.f[dir9::pz] == doctest::Approx(20.0F));
+	CHECK(ks.f[dir9::mz] == doctest::Approx(30.0F));
 }
 
 // symmetry at y+1, ghost at x+1 → bc_face::XP
@@ -172,12 +171,12 @@ TEST_CASE("bcsymmetry: single-plane-xp")
 	BC::applySymmetryCorner(block.data, ks, 0, 1, 2, 1, 2, 3, 0, 0, 0);
 
 	// bc_face::XP: mz←pz=20, mm←pm=80, mp←pp=60
-	CHECK(ks.f[dir9::mz] == doctest::Approx(20.0f));
-	CHECK(ks.f[dir9::mm] == doctest::Approx(80.0f));
-	CHECK(ks.f[dir9::mp] == doctest::Approx(60.0f));
-	CHECK(ks.f[dir9::zz] == doctest::Approx(10.0f));
-	CHECK(ks.f[dir9::pz] == doctest::Approx(20.0f));
-	CHECK(ks.f[dir9::zp] == doctest::Approx(40.0f));
+	CHECK(ks.f[dir9::mz] == doctest::Approx(20.0F));
+	CHECK(ks.f[dir9::mm] == doctest::Approx(80.0F));
+	CHECK(ks.f[dir9::mp] == doctest::Approx(60.0F));
+	CHECK(ks.f[dir9::zz] == doctest::Approx(10.0F));
+	CHECK(ks.f[dir9::pz] == doctest::Approx(20.0F));
+	CHECK(ks.f[dir9::zp] == doctest::Approx(40.0F));
 }
 
 // symmetry on both x and y axes simultaneously → bc_face::XM|bc_face::YM
@@ -195,17 +194,17 @@ TEST_CASE("bcsymmetry: two-axis-symmetry")
 
 	// ghosts = bc_face::XM | bc_face::YM
 	// pp←mm=70 (both x and y flipped)
-	CHECK(ks.f[dir9::pp] == doctest::Approx(70.0f));
+	CHECK(ks.f[dir9::pp] == doctest::Approx(70.0F));
 	// pz←mz=30 (x flipped, y=z)
-	CHECK(ks.f[dir9::pz] == doctest::Approx(30.0f));
+	CHECK(ks.f[dir9::pz] == doctest::Approx(30.0F));
 	// zp←zm=50 (x=z, y flipped)
-	CHECK(ks.f[dir9::zp] == doctest::Approx(50.0f));
+	CHECK(ks.f[dir9::zp] == doctest::Approx(50.0F));
 	// pm←mm=70 (x flipped, y=m)
-	CHECK(ks.f[dir9::pm] == doctest::Approx(70.0f));
+	CHECK(ks.f[dir9::pm] == doctest::Approx(70.0F));
 	// mp←mm=70 (x=m, y flipped)
-	CHECK(ks.f[dir9::mp] == doctest::Approx(70.0f));
+	CHECK(ks.f[dir9::mp] == doctest::Approx(70.0F));
 	// zz unchanged
-	CHECK(ks.f[dir9::zz] == doctest::Approx(10.0f));
+	CHECK(ks.f[dir9::zz] == doctest::Approx(10.0F));
 }
 
 // symmetry at y-1, ghosts at both x-1 and x+1 (BC cell's own neighbors) → bc_face::XM|bc_face::XP
@@ -226,16 +225,16 @@ TEST_CASE("bcsymmetry: edge-x-both-sides")
 	// Original: mm=70, mz=30, mp=90, pm=80, pz=20, pp=60.
 	// m-family destroyed: mm←pm=80, mz←pz=20, mp←pp=60.
 	// p-family reads overwritten m-family: pm←mm=80, pz←mz=20, pp←mp=60.
-	CHECK(ks.f[dir9::mm] == doctest::Approx(80.0f));
-	CHECK(ks.f[dir9::mz] == doctest::Approx(20.0f));
-	CHECK(ks.f[dir9::mp] == doctest::Approx(60.0f));
-	CHECK(ks.f[dir9::pm] == doctest::Approx(80.0f));
-	CHECK(ks.f[dir9::pz] == doctest::Approx(20.0f));
-	CHECK(ks.f[dir9::pp] == doctest::Approx(60.0f));
+	CHECK(ks.f[dir9::mm] == doctest::Approx(80.0F));
+	CHECK(ks.f[dir9::mz] == doctest::Approx(20.0F));
+	CHECK(ks.f[dir9::mp] == doctest::Approx(60.0F));
+	CHECK(ks.f[dir9::pm] == doctest::Approx(80.0F));
+	CHECK(ks.f[dir9::pz] == doctest::Approx(20.0F));
+	CHECK(ks.f[dir9::pp] == doctest::Approx(60.0F));
 	// non-crossing unchanged
-	CHECK(ks.f[dir9::zz] == doctest::Approx(10.0f));
-	CHECK(ks.f[dir9::zp] == doctest::Approx(40.0f));
-	CHECK(ks.f[dir9::zm] == doctest::Approx(50.0f));
+	CHECK(ks.f[dir9::zz] == doctest::Approx(10.0F));
+	CHECK(ks.f[dir9::zp] == doctest::Approx(40.0F));
+	CHECK(ks.f[dir9::zm] == doctest::Approx(50.0F));
 }
 
 TEST_SUITE_END();
@@ -251,10 +250,10 @@ TEST_SUITE_END();
 using TRAITS3 = Traits<float, double, int>;
 using COLL3 = D3Q27_SRT<TRAITS3>;
 using CONFIG3 =
-	LBM_CONFIG<TRAITS3, D3Q27_KernelStruct, NSE_Data, COLL3, typename COLL3::EQ, D3Q27_STREAMING<TRAITS3>, D3Q27_BC_All, D3Q27_MACRO_Default<TRAITS3>>;
+	LBM_CONFIG<TRAITS3, D3Q27_KernelStruct, NSE_Data, COLL3, COLL3::EQ, D3Q27_STREAMING<TRAITS3>, D3Q27_BC_All, D3Q27_MACRO_Default<TRAITS3>>;
 using BLOCK3 = LBM_BLOCK<CONFIG3>;
-using BC3 = typename CONFIG3::BC;
-using KS3 = D3Q27_KernelStruct<typename TRAITS3::dreal>;
+using BC3 = CONFIG3::BC;
+using KS3 = D3Q27_KernelStruct<TRAITS3::dreal>;
 
 static BLOCK3 makeBlock3(idx nx, idx ny, idx nz)
 {
@@ -275,7 +274,7 @@ static BLOCK3 makeBlock3(idx nx, idx ny, idx nz)
 	return block;
 }
 
-static void stamp3(BLOCK3& block, idx x, idx y, idx z, typename BC3::map_t tag)
+static void stamp3(BLOCK3& block, idx x, idx y, idx z, BC3::map_t tag)
 {
 	block.hmap(x, y, z) = tag;
 }
@@ -284,7 +283,7 @@ static KS3 makeKS3()
 {
 	KS3 ks;
 	for (int i = 0; i < 27; i++)
-		ks.f[i] = static_cast<typename TRAITS3::dreal>(i + 1) * 10.0f;
+		ks.f[i] = static_cast<TRAITS3::dreal>(i + 1) * 10.0F;
 	ks.rho = 1.0;
 	ks.vx = 0.0;
 	ks.vy = 0.0;

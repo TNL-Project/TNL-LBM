@@ -139,7 +139,7 @@ void State<NSE>::ensureFidesJsonModel(const std::string& dimsVariable, const std
 		if (! out) {
 			throw std::runtime_error(fmt::format("Failed to open Fides JSON file for writing: {}", jsonPath));
 		}
-		out << std::setw(2) << root << std::endl;
+		out << std::setw(2) << root << "\n";
 	}
 
 	TNL::MPI::Barrier();
@@ -238,16 +238,18 @@ void State<NSE>::writePoints(const char* name, real time, int cycle, const typen
 	if (! dataManager.isVariableDefined<real>("TIME", fname)) {
 		// Define all variables before opening an engine
 		// TODO: make it distributed
-		adios2::Dims shape3{static_cast<std::size_t>(hLL_lat.getSize()), std::size_t(3)};
+		adios2::Dims shape3{static_cast<std::size_t>(hLL_lat.getSize()), static_cast<std::size_t>(3)};
 		adios2::Dims start3{static_cast<std::size_t>(0), static_cast<std::size_t>(0)};
 		adios2::Dims count3{static_cast<std::size_t>(hLL_lat.getSize()), static_cast<std::size_t>(3)};
+		// NOLINTNEXTLINE(readability-suspicious-call-argument) heuristic flags the (name, ioName) pair though the order is correct
 		dataManager.template defineData<float>(coordinates_variable, shape3, start3, count3, fname);
 
-		adios2::Dims shape{static_cast<std::size_t>(hLL_lat.getSize()), std::size_t(1)};
+		adios2::Dims shape{static_cast<std::size_t>(hLL_lat.getSize()), static_cast<std::size_t>(1)};
 		adios2::Dims start{static_cast<std::size_t>(0), static_cast<std::size_t>(0)};
 		adios2::Dims count{static_cast<std::size_t>(hLL_lat.getSize()), static_cast<std::size_t>(1)};
 		dataManager.template defineData<idx>(connectivity_variable, shape, start, count, fname);
 
+		// NOLINTNEXTLINE(readability-suspicious-call-argument) heuristic flags the (name, ioName) pair though the order is correct
 		dataManager.template defineData<std::uint32_t>(cell_types_variable, fname);
 		dataManager.template defineData<idx>("number_of_points", fname);
 		dataManager.template defineData<real>("TIME", fname);
@@ -975,7 +977,7 @@ void State<NSE>::saveState()
 		}
 		// update the modification timestamp on the checkpoint directory
 		// (it would be weird to keep the old timestamp of a moved directory)
-		status = utimensat(AT_FDCWD, dst_path.c_str(), NULL, 0);
+		status = utimensat(AT_FDCWD, dst_path.c_str(), nullptr, 0);
 		if (status != 0) {
 			spdlog::error("touch(\"{}\") failed: {}", dst_path, strerror(errno));
 		}
@@ -1275,7 +1277,7 @@ void State<NSE>::SimUpdate()
 #endif
 		}
 		// synchronize the null-stream after all grids
-		TNL::Backend::streamSynchronize(0);
+		TNL::Backend::streamSynchronize(nullptr);
 
 		ibm.computeForces(nse.physTime());
 	}
@@ -1318,7 +1320,7 @@ void State<NSE>::SimUpdate()
 					);
 				}
 			}
-			TNL::Backend::streamSynchronize(0);
+			TNL::Backend::streamSynchronize(nullptr);
 		}
 		for (auto& block : nse.blocks) {
 			const auto direction = TNL::Containers::SyncDirection::None;
@@ -1330,7 +1332,7 @@ void State<NSE>::SimUpdate()
 			);
 		}
 		// synchronize the null-stream after all grids
-		TNL::Backend::streamSynchronize(0);
+		TNL::Backend::streamSynchronize(nullptr);
 		// copying of overlaps is not necessary for nproc == 1 (nproc is checked in streaming as well)
 		timer_compute.stop();
 	#ifdef HAVE_MPI

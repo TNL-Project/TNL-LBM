@@ -26,43 +26,94 @@ void sinusVelocityProfile(double* velocityProfile, int sizeY, int sizeZ, int yBe
 	int blockSizeZ = zEnd - zBeg + 1;
 	for (int k = zBeg; k <= zEnd; k++)
 		for (int j = yBeg; j <= yEnd; j++) {
-			if (j - yBeg < (int) (0.15 * (blockSizeY - 1)) + 1 && k - zBeg < (int) (0.15 * (blockSizeZ - 1)) + 1)
-				velocityProfile[k * sizeY + j] = amplitude * std::pow(std::sin(M_PI * (double) (j - yBeg) / 0.3 / (double) (blockSizeY - 1)), 2)
-											   * std::pow(std::sin(M_PI * (double) (k - zBeg) / 0.3 / (double) (blockSizeZ - 1)), 2);
-			else if (j - yBeg < (int) (0.15 * (blockSizeY - 1)) + 1 && k - zBeg > (int) (0.85 * (blockSizeZ - 1)))
+			if (j - yBeg < static_cast<int>(0.15 * (blockSizeY - 1)) + 1 && k - zBeg < static_cast<int>(0.15 * (blockSizeZ - 1)) + 1)
 				velocityProfile[k * sizeY + j] =
-					amplitude * std::pow(std::sin(M_PI * (double) (j - yBeg) / 0.3 / (double) (blockSizeY - 1)), 2)
-					* std::pow(std::sin(M_PI * ((double) (k - zBeg) - (double) (blockSizeZ - 1)) / 0.3 / (double) (blockSizeZ - 1)), 2);
-			else if (j - yBeg > (int) (0.85 * (blockSizeY - 1)) && k - zBeg < (int) (0.15 * (blockSizeZ - 1)) + 1)
+					amplitude * std::pow(std::sin(M_PI * static_cast<double>(j - yBeg) / 0.3 / static_cast<double>(blockSizeY - 1)), 2)
+					* std::pow(std::sin(M_PI * static_cast<double>(k - zBeg) / 0.3 / static_cast<double>(blockSizeZ - 1)), 2);
+			else if (j - yBeg < static_cast<int>(0.15 * (blockSizeY - 1)) + 1 && k - zBeg > static_cast<int>(0.85 * (blockSizeZ - 1)))
 				velocityProfile[k * sizeY + j] =
-					amplitude * std::pow(std::sin(M_PI * ((double) (j - yBeg) - (double) (blockSizeY - 1)) / 0.3 / (double) (blockSizeY - 1)), 2)
-					* std::pow(std::sin(M_PI * (double) (k - zBeg) / 0.3 / (double) (blockSizeZ - 1)), 2);
-			else if (j - yBeg > (int) (0.85 * (blockSizeY - 1)) && k - zBeg > (int) (0.85 * (blockSizeZ - 1)))
+					amplitude * std::pow(std::sin(M_PI * static_cast<double>(j - yBeg) / 0.3 / static_cast<double>(blockSizeY - 1)), 2)
+					* std::pow(
+						std::sin(
+							M_PI * (static_cast<double>(k - zBeg) - static_cast<double>(blockSizeZ - 1)) / 0.3 / static_cast<double>(blockSizeZ - 1)
+						),
+						2
+					);
+			else if (j - yBeg > static_cast<int>(0.85 * (blockSizeY - 1)) && k - zBeg < static_cast<int>(0.15 * (blockSizeZ - 1)) + 1)
 				velocityProfile[k * sizeY + j] =
-					amplitude * std::pow(std::sin(M_PI * ((double) (j - yBeg) - (double) (blockSizeY - 1)) / 0.3 / (double) (blockSizeY - 1)), 2)
-					* std::pow(std::sin(M_PI * ((double) (k - zBeg) - (double) (blockSizeZ - 1)) / 0.3 / (double) (blockSizeZ - 1)), 2);
+					amplitude
+					* std::pow(
+						std::sin(
+							M_PI * (static_cast<double>(j - yBeg) - static_cast<double>(blockSizeY - 1)) / 0.3 / static_cast<double>(blockSizeY - 1)
+						),
+						2
+					)
+					* std::pow(std::sin(M_PI * static_cast<double>(k - zBeg) / 0.3 / static_cast<double>(blockSizeZ - 1)), 2);
+			else if (j - yBeg > static_cast<int>(0.85 * (blockSizeY - 1)) && k - zBeg > static_cast<int>(0.85 * (blockSizeZ - 1)))
+				velocityProfile[k * sizeY + j] =
+					amplitude
+					* std::pow(
+						std::sin(
+							M_PI * (static_cast<double>(j - yBeg) - static_cast<double>(blockSizeY - 1)) / 0.3 / static_cast<double>(blockSizeY - 1)
+						),
+						2
+					)
+					* std::pow(
+						std::sin(
+							M_PI * (static_cast<double>(k - zBeg) - static_cast<double>(blockSizeZ - 1)) / 0.3 / static_cast<double>(blockSizeZ - 1)
+						),
+						2
+					);
 			// y
-			else if (j - yBeg < (int) (0.15 * (blockSizeY - 1)) + 1)
-				velocityProfile[k * sizeY + j] = amplitude * std::pow(std::sin(M_PI * (double) (j - yBeg) / 0.3 / (double) (blockSizeY - 1)), 2);
-			else if (j - yBeg < (int) (0.15 * (blockSizeY - 1)) + 1)
-				velocityProfile[k * sizeY + j] = amplitude * std::pow(std::sin(M_PI * (double) (j - yBeg) / 0.3 / (double) (blockSizeY - 1)), 2);
-			else if (j - yBeg > (int) (0.85 * (blockSizeY - 1)))
+			else if (j - yBeg < static_cast<int>(0.15 * (blockSizeY - 1)) + 1)
 				velocityProfile[k * sizeY + j] =
-					amplitude * std::pow(std::sin(M_PI * ((double) (j - yBeg) - (double) (blockSizeY - 1)) / 0.3 / (double) (blockSizeY - 1)), 2);
-			else if (j - yBeg > (int) (0.85 * (blockSizeY - 1)))
+					amplitude * std::pow(std::sin(M_PI * static_cast<double>(j - yBeg) / 0.3 / static_cast<double>(blockSizeY - 1)), 2);
+			else if (j - yBeg < static_cast<int>(0.15 * (blockSizeY - 1)) + 1)
 				velocityProfile[k * sizeY + j] =
-					amplitude * std::pow(std::sin(M_PI * ((double) (j - yBeg) - (double) (blockSizeY - 1)) / 0.3 / (double) (blockSizeY - 1)), 2);
+					amplitude * std::pow(std::sin(M_PI * static_cast<double>(j - yBeg) / 0.3 / static_cast<double>(blockSizeY - 1)), 2);
+			else if (j - yBeg > static_cast<int>(0.85 * (blockSizeY - 1)))
+				velocityProfile[k * sizeY + j] =
+					amplitude
+					* std::pow(
+						std::sin(
+							M_PI * (static_cast<double>(j - yBeg) - static_cast<double>(blockSizeY - 1)) / 0.3 / static_cast<double>(blockSizeY - 1)
+						),
+						2
+					);
+			else if (j - yBeg > static_cast<int>(0.85 * (blockSizeY - 1)))
+				velocityProfile[k * sizeY + j] =
+					amplitude
+					* std::pow(
+						std::sin(
+							M_PI * (static_cast<double>(j - yBeg) - static_cast<double>(blockSizeY - 1)) / 0.3 / static_cast<double>(blockSizeY - 1)
+						),
+						2
+					);
 			// z
-			else if (k - zBeg < (int) (0.15 * (blockSizeZ - 1)) + 1)
-				velocityProfile[k * sizeY + j] = amplitude * std::pow(std::sin(M_PI * (double) (k - zBeg) / 0.3 / (double) (blockSizeZ - 1)), 2);
-			else if (k - zBeg < (int) (0.15 * (blockSizeZ - 1)) + 1)
-				velocityProfile[k * sizeY + j] = amplitude * std::pow(std::sin(M_PI * (double) (k - zBeg) / 0.3 / (double) (sizeZ - 1)), 2);
-			else if (k - zBeg > (int) (0.85 * (blockSizeZ - 1)))
+			else if (k - zBeg < static_cast<int>(0.15 * (blockSizeZ - 1)) + 1)
 				velocityProfile[k * sizeY + j] =
-					amplitude * std::pow(std::sin(M_PI * ((double) (k - zBeg) - (double) (blockSizeZ - 1)) / 0.3 / (double) (blockSizeZ - 1)), 2);
-			else if (k - zBeg > (int) (0.85 * (blockSizeZ - 1)))
+					amplitude * std::pow(std::sin(M_PI * static_cast<double>(k - zBeg) / 0.3 / static_cast<double>(blockSizeZ - 1)), 2);
+			else if (k - zBeg < static_cast<int>(0.15 * (blockSizeZ - 1)) + 1)
 				velocityProfile[k * sizeY + j] =
-					amplitude * std::pow(std::sin(M_PI * ((double) (k - zBeg) - (double) (blockSizeZ - 1)) / 0.3 / (double) (blockSizeZ - 1)), 2);
+					amplitude * std::pow(std::sin(M_PI * static_cast<double>(k - zBeg) / 0.3 / static_cast<double>(sizeZ - 1)), 2);
+			else if (k - zBeg > static_cast<int>(0.85 * (blockSizeZ - 1)))
+				velocityProfile[k * sizeY + j] =
+					amplitude
+					* std::pow(
+						std::sin(
+							M_PI * (static_cast<double>(k - zBeg) - static_cast<double>(blockSizeZ - 1)) / 0.3 / static_cast<double>(blockSizeZ - 1)
+						),
+						2
+					);
+			else if (k - zBeg > static_cast<int>(0.85 * (blockSizeZ - 1)))
+				velocityProfile[k * sizeY + j] =
+					amplitude
+					* std::pow(
+						std::sin(
+							M_PI * (static_cast<double>(k - zBeg) - static_cast<double>(blockSizeZ - 1)) / 0.3 / static_cast<double>(blockSizeZ - 1)
+						),
+						2
+					);
 			else
 				velocityProfile[k * sizeY + j] = amplitude;
 		}
@@ -86,7 +137,7 @@ std::unique_ptr<double[]> initGuess(VelocityProfile type, int sizeY, int sizeZ, 
 			sinusVelocityProfile(velocityProfile.get(), sizeY, sizeZ, 1, 1, sizeY - 2, sizeZ - 2, amplitude);
 			break;
 		case VelocityProfile::block:
-			sinusVelocityProfile(velocityProfile.get(), sizeY, sizeZ, 1, 1, (int) (sizeY * 0.5), (int) (sizeZ * 0.5), amplitude);
+			sinusVelocityProfile(velocityProfile.get(), sizeY, sizeZ, 1, 1, static_cast<int>(sizeY * 0.5), static_cast<int>(sizeZ * 0.5), amplitude);
 		default:
 			break;
 	}
@@ -101,7 +152,7 @@ void saveVelocityProfile(const std::string& dirname, const double* velocityProfi
 	if (f == nullptr) {
 		throw std::runtime_error("unable to access file velocityProfile");
 	}
-	if (fwrite(velocityProfile, sizeof(double), sizeY * sizeZ, f) != (std::size_t) (sizeY * sizeZ)) {
+	if (fwrite(velocityProfile, sizeof(double), sizeY * sizeZ, f) != static_cast<std::size_t>(sizeY * sizeZ)) {
 		throw std::runtime_error("failed to write data to velocityProfile");
 	}
 	fclose(f);
@@ -128,7 +179,7 @@ void loadVelocityProfile(const std::string& dirname, double* velocityProfile, in
 	if (f == nullptr) {
 		throw std::runtime_error("unable to access file velocityProfile");
 	}
-	if (fread(velocityProfile, sizeof(double), sizeY * sizeZ, f) != (std::size_t) (sizeY * sizeZ)) {
+	if (fread(velocityProfile, sizeof(double), sizeY * sizeZ, f) != static_cast<std::size_t>(sizeY * sizeZ)) {
 		throw std::runtime_error("failed to read data from velocityProfile");
 	}
 	fclose(f);

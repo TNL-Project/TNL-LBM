@@ -13,7 +13,7 @@ struct PNGTool
 	// rule:
 	// a=0 ... x=0
 	// a=1 ... x=width-1
-	int intensity(double ia, double ib)
+	[[nodiscard]] int intensity(double ia, double ib) const
 	{
 		if (! allocated) {
 			printf("PNGTool::intensity() png file not allocated returning 0\n");
@@ -36,24 +36,24 @@ struct PNGTool
 	bool readPNG(const char* filename)
 	{
 		FILE* fp = fopen(filename, "rb");
-		if (! fp) {
+		if (fp == nullptr) {
 			printf("file %s png does not exist\n", filename);
 			return false;
 		}
 
-		png_structp png = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
-		if (! png) {
+		png_structp png = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+		if (png == nullptr) {
 			printf("file %s png read error\n", filename);
 			return false;
 		}
 
 		png_infop info = png_create_info_struct(png);
-		if (! png) {
+		if (info == nullptr) {
 			printf("file %s png read error\n", filename);
 			return false;
 		}
 
-		if (setjmp(png_jmpbuf(png))) {
+		if (setjmp(png_jmpbuf(png))) {	// NOLINT(modernize-avoid-setjmp-longjmp) libpng mandates setjmp for error handling
 			printf("file %s png read error\n", filename);
 			return false;
 		}
@@ -76,7 +76,7 @@ struct PNGTool
 		if (color_type == PNG_COLOR_TYPE_GRAY && bit_depth < 8)
 			png_set_expand_gray_1_2_4_to_8(png);
 
-		if (png_get_valid(png, info, PNG_INFO_tRNS))
+		if (png_get_valid(png, info, PNG_INFO_tRNS) != 0)
 			png_set_tRNS_to_alpha(png);
 
 		// These color_type don't have an alpha channel then fill it with 0xff.
@@ -88,9 +88,9 @@ struct PNGTool
 
 		png_read_update_info(png, info);
 
-		row_pointers = (png_bytep*) malloc(sizeof(png_bytep) * height);
+		row_pointers = static_cast<png_bytep*>(malloc(sizeof(png_bytep) * height));
 		for (int y = 0; y < height; y++)
-			row_pointers[y] = (png_byte*) malloc(png_get_rowbytes(png, info));
+			row_pointers[y] = static_cast<png_byte*>(malloc(png_get_rowbytes(png, info)));
 		png_read_image(png, row_pointers);
 		fclose(fp);
 		return true;

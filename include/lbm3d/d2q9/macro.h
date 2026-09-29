@@ -10,6 +10,7 @@ struct D2Q9_MACRO_Base
 	using idx = typename TRAITS::idx;
 
 	// all quantities after `N` are ignored
+	// NOLINTNEXTLINE(performance-enum-size) ids are array indices; int width is deliberate
 	enum
 	{
 		N,
@@ -55,6 +56,7 @@ struct D2Q9_MACRO_Default : D2Q9_MACRO_Base<TRAITS>
 	using dreal = typename TRAITS::dreal;
 	using idx = typename TRAITS::idx;
 
+	// NOLINTNEXTLINE(performance-enum-size) ids are array indices; int width is deliberate
 	enum
 	{
 		e_rho,

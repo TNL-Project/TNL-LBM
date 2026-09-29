@@ -42,7 +42,7 @@ public:
 	template <typename T>
 	void write(std::string varName, std::vector<T>& val, int dim, idx num_points);
 
-	virtual ~UnstructuredPointsWriter();
+	~UnstructuredPointsWriter() override;
 };
 
 #include "UnstructuredPointsWriter.hpp"

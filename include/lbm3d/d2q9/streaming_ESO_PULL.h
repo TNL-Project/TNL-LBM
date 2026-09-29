@@ -261,7 +261,7 @@ struct D2Q9_STREAMING_ESO_PULL
 	__cuda_callable__ static constexpr int dfSyncOffset(int dir, int axis, bool even_iter)
 	{
 		(void) axis;
-		return even_iter ? int(is_pair_head(dir)) : int(! is_pair_head(dir));
+		return even_iter ? static_cast<int>(is_pair_head(dir)) : static_cast<int>(! is_pair_head(dir));
 	}
 };
 

@@ -15,7 +15,8 @@ struct D2Q9_BC_All
 	using idx = typename CONFIG::TRAITS::idx;
 	using dreal = typename CONFIG::TRAITS::dreal;
 
-	enum GEO : map_t
+	enum GEO : map_t  // NOLINT(performance-enum-size) base width must match the map_t storage type
+
 	{
 		GEO_FLUID,	// compulsory
 		GEO_WALL,	// compulsory

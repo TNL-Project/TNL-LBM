@@ -44,12 +44,11 @@
 
 using TRAITS = Traits<float, double, int>;
 using COLL = D2Q9_SRT<TRAITS>;
-using CONFIG =
-	LBM_CONFIG<TRAITS, D2Q9_KernelStruct, NSE_Data, COLL, typename COLL::EQ, D2Q9_STREAMING<TRAITS>, D2Q9_BC_All, D2Q9_MACRO_Default<TRAITS>>;
+using CONFIG = LBM_CONFIG<TRAITS, D2Q9_KernelStruct, NSE_Data, COLL, COLL::EQ, D2Q9_STREAMING<TRAITS>, D2Q9_BC_All, D2Q9_MACRO_Default<TRAITS>>;
 using BLOCK = LBM_BLOCK<CONFIG>;
-using idx = typename TRAITS::idx;
-using idx3d = typename TRAITS::idx3d;
-using bool3d = typename TRAITS::bool3d;
+using idx = TRAITS::idx;
+using idx3d = TRAITS::idx3d;
+using bool3d = TRAITS::bool3d;
 using Block3 = TNL::Containers::Block<3, idx>;
 using SD = TNL::Containers::SyncDirection;
 
@@ -149,7 +148,7 @@ static int expectedNeighbor(int rank, SD dir, int nx, int ny, int nz, bool3d per
 // for all 26 D3Q27 directions.
 static void checkDecomposition(const std::vector<Block3>& decomp, const Block3& global, int nx, int ny, int nz, bool3d periodic)
 {
-	for (int rank = 0; rank < (int) decomp.size(); rank++) {
+	for (int rank = 0; rank < static_cast<int>(decomp.size()); rank++) {
 		auto neighbors = findNeighbors(TNL::Containers::NDArraySyncPatterns::D3Q27, rank, decomp, global, periodic);
 		for (SD dir : TNL::Containers::NDArraySyncPatterns::D3Q27) {
 			int expected = expectedNeighbor(rank, dir, nx, ny, nz, periodic);
