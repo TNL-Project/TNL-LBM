@@ -1481,6 +1481,8 @@ void LBM_BLOCK<CONFIG>::allocateDeviceData()
 	data.XYZ = data.indexer.getStorageSize();
 	data.dmap = dmap.getData();
 	data.dmacro = dmacro.getData();
+
+	device_data_allocated = true;
 }
 
 template <typename CONFIG>

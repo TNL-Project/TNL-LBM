@@ -1087,6 +1087,18 @@ bool State<NSE>::estimateMemoryDemands()
 	const std::size_t total = TNL::Backend::getGlobalMemorySize(gpu_id);
 	GPUavail += free;
 	GPUtotal_hw += total;
+
+	bool device_preallocated = false;
+	for (const auto& block : nse.blocks)
+		device_preallocated = device_preallocated || block.device_data_allocated;
+	if (device_preallocated) {
+		// the blocks' device data was allocated before SimInit (createAMRBlocks
+		// allocates all levels up front), so the free-memory probe above
+		// already excludes the full need -- the successful allocation is the
+		// proof of fit, check the estimate against the hardware total instead
+		spdlog::info("Blocks' device data was allocated before SimInit -- checking the estimate against the total GPU RAM");
+		GPUavail = GPUtotal_hw;
+	}
 #endif
 
 	spdlog::info("Local memory budget analysis / estimation for MPI rank {}", nse.rank);

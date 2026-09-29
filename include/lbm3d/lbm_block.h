@@ -196,6 +196,13 @@ struct LBM_BLOCK
 	int storage_overlap_y = -1;
 	int storage_overlap_z = -1;
 
+	// Set by allocateDeviceData() so that State::estimateMemoryDemands can
+	// detect blocks whose device data was allocated before SimInit (e.g. by
+	// createAMRBlocks on the AMR branch): a free-memory probe taken after
+	// that point under-reports the rank's budget by exactly what the rank
+	// already holds on the device.
+	bool device_data_allocated = false;
+
 	int df_overlap_X()
 	{
 		return data.indexer.template getOverlap<0>();
