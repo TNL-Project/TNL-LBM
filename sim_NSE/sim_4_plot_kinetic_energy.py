@@ -30,7 +30,7 @@ if not os.path.exists(reference_path):
         f.write(r.content)
 
 
-def get_data(label, path):
+def get_data(label: str, path: str) -> tuple[np.ndarray, np.ndarray | None, np.ndarray, np.ndarray | None]:
     # Read data from file
     data = np.loadtxt(path, comments="#", skiprows=1)
 
@@ -70,9 +70,9 @@ def get_data(label, path):
     return time_col, kinetic_energy, epsilon, enstrophy_dissipation
 
 
-def plot(input_paths, output_path):
+def plot(input_paths: dict[str, str], output_path: str) -> None:
     # Create subplots
-    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 10))
+    _fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 10))
 
     for label, path in input_paths.items():
         if not os.path.exists(path):

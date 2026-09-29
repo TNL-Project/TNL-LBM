@@ -1,7 +1,6 @@
 #! /usr/bin/env python3
 
 import argparse
-import itertools
 import json
 import os
 import subprocess
@@ -12,25 +11,30 @@ from tabulate import tabulate
 SIM_NAME = "sim_IBM3"
 
 
-def run_sim(*, compute="gpu", dirac=1, method="modified", Re=100, hi=0, resolution=5):
+def run_sim(
+    *,
+    compute: str = "gpu",
+    dirac: int = 1,
+    method: str = "modified",
+    Re: float = 100,
+    hi: int = 0,
+    resolution: int = 5,
+) -> Path:
     hvals = [0.25, 0.5, 0.75, 1.0, 1.5, 2.0]
     assert hi in range(len(hvals))
     assert method in {"modified", "original"}
     assert compute in {"cpu", "gpu"}
-    if compute == "gpu":
-        compute = 0
-    elif compute == "cpu":
-        compute = 1
+    compute_id = 0 if compute == "gpu" else 1
 
     results_dir = (
-        f"results_{SIM_NAME}_CUM_{method}_dirac_{dirac}_res_{resolution}_Re_{Re}_nas_{hvals[hi]:.4f}_compute_{compute}"
+        f"results_{SIM_NAME}_CUM_{method}_dirac_{dirac}_res_{resolution}_Re_{Re}_nas_{hvals[hi]:.4f}_compute_{compute_id}"
     )
     log_file = Path(results_dir) / "log_ibm_rank000"
     if log_file.exists():
         log_file.unlink()
 
     print("Running simulation for Dirac", dirac)
-    runResult = subprocess.run(
+    subprocess.run(
         [
             f"./build/sim_NSE/{SIM_NAME}",
             "0" if method == "modified" else "1",
@@ -38,7 +42,7 @@ def run_sim(*, compute="gpu", dirac=1, method="modified", Re=100, hi=0, resoluti
             str(Re),
             str(hi),
             str(resolution),
-            str(compute),
+            str(compute_id),
         ],
         check=True,
     )
@@ -48,7 +52,7 @@ def run_sim(*, compute="gpu", dirac=1, method="modified", Re=100, hi=0, resoluti
     return log_file
 
 
-def run_simulations(compute, diracmin=1, diracmax=4):
+def run_simulations(compute: str, diracmin: int = 1, diracmax: int = 4) -> tuple[list[list], list[dict], str]:
     constructMatricesTableElements = []
     computeForcesTableElements = []
 
@@ -94,7 +98,7 @@ def run_simulations(compute, diracmin=1, diracmax=4):
     return (constructMatricesTableElements, computeForcesTableElements, variantString)
 
 
-def build(variantHaCapacities, variantHa):
+def build(variantHaCapacities: int, variantHa: int) -> None:
     subprocess.run(
         ["cmake -B build -DHA_CAPACITY_VARIANT=" + str(variantHaCapacities) + " -DHA_VARIANT=" + str(variantHa)],
         shell=True,
@@ -103,12 +107,12 @@ def build(variantHaCapacities, variantHa):
     subprocess.run("cmake --build build", shell=True, check=True)
 
 
-def cleanFiles():
-    subprocess.run(f"rm -rf ./results_{SIM_NAME}_*", shell=True)
-    subprocess.run("rm -f ./ibm_*.mtx", shell=True)
+def cleanFiles() -> None:
+    subprocess.run(f"rm -rf ./results_{SIM_NAME}_*", shell=True, check=True)
+    subprocess.run("rm -f ./ibm_*.mtx", shell=True, check=True)
 
 
-def main():
+def main() -> None:
     # parse arguments
     parser = argparse.ArgumentParser(
         prog="Parallel LBM-IBM Performance Table Maker",
@@ -126,7 +130,7 @@ def main():
         "-t",
         "--threads",
         type=int,
-        default=int(os.environ.get("OMP_NUM_THREADS", 0)),
+        default=int(os.environ.get("OMP_NUM_THREADS", "0")),
         help="Number of CPU threads (does not apply to GPU compute)",
     )
     parser.add_argument("--variantHaCapacities", type=int, default=1)

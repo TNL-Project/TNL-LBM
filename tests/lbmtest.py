@@ -110,7 +110,8 @@ def run_sim(
             exc_stderr = exc_stderr.decode(errors="replace")
         stdout_tail = "\n".join(exc_stdout.splitlines()[-50:])
         pytest.fail(
-            f"simulation timed out after {timeout:.0f}s: {' '.join(command)}\n--- stdout (last 50 lines) ---\n{stdout_tail}\n--- stderr ---\n{exc_stderr}",
+            f"simulation timed out after {timeout:.0f}s: {' '.join(command)}\n"
+            f"--- stdout (last 50 lines) ---\n{stdout_tail}\n--- stderr ---\n{exc_stderr}",
             pytrace=False,
         )
     except OSError as exc:

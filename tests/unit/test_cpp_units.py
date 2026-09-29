@@ -173,7 +173,8 @@ def test_cpp_units(
     _idx, (label, np_ranks, extra_args, expected) = batch
     if not _binary_available:
         pytest.fail(
-            f"cannot run {TEST_BINARY} — build the target first: cmake --build BUILD_DIR --target test_cpp_units\n{_binary_error}",
+            f"cannot run {TEST_BINARY} — build the target first: cmake --build BUILD_DIR --target test_cpp_units\n"
+            f"{_binary_error}",
             pytrace=False,
         )
     if expected <= 0:

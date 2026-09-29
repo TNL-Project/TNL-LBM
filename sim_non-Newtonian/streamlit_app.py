@@ -765,7 +765,8 @@ def main() -> None:
     )
     st.title("Non-Newtonian Poiseuille flow explorer")
     st.caption(
-        "Power-law, Carreau-Yasuda (CY), and Casson constitutive models with analytical velocity profiles and dimensionless quantity verification."
+        "Power-law, Carreau-Yasuda (CY), and Casson constitutive models "
+        "with analytical velocity profiles and dimensionless quantity verification."
     )
 
     st.sidebar.header("Flow Parameters")
@@ -1493,7 +1494,8 @@ def main() -> None:
     st.divider()
     st.subheader("Dimensionless quantities")
     st.caption(
-        "Verification across resolutions. Constraints: Ma < 0.1 (incompressible), ω ∈ [0.5, 1.9] (stable), Re_wall constant across resolutions."
+        "Verification across resolutions. Constraints: Ma < 0.1 (incompressible), "
+        "ω ∈ [0.5, 1.9] (stable), Re_wall constant across resolutions."
     )
 
     resolutions = st.multiselect(
@@ -1568,7 +1570,8 @@ def main() -> None:
     st.markdown("**Grid parameters** (model-independent)")
     st.dataframe(pd.DataFrame(grid_rows).style.format(precision=4))
     st.caption(
-        "dt is model-dependent — each model defines its own dt so that ν_lbm is the collision reference viscosity. See model-specific table below."
+        "dt is model-dependent — each model defines its own dt so that ν_lbm is the collision reference viscosity. "
+        "See model-specific table below."
     )
 
     st.markdown("**Model-specific quantities**")

@@ -1,10 +1,30 @@
-import os
-from paraview.simple import *
-from paraview import print_info
-from paraview import catalyst
+from typing import TYPE_CHECKING, Any
+
+from paraview import catalyst, print_info
+from paraview.simple import *  # pyright: ignore[reportWildcardImportFromLibrary]
+
+if TYPE_CHECKING:
+    # paraview.simple ships no type stubs and generates its API dynamically at
+    # import time, so the functions used below must be declared for checking
+    def CreateView(view_xml_name: str) -> Any: ...
+    def GetActiveCamera() -> Any: ...
+    def SetActiveView(view: Any) -> None: ...
+    def CreateLayout(name: str | None = None) -> Any: ...
+    def Show(proxy: Any = None, view: Any = None, representationType: str | None = None, **params: Any) -> Any: ...
+    def Hide(proxy: Any = None, view: Any = None) -> None: ...
+    def Render(view: Any = None) -> None: ...
+    def GetColorTransferFunction(arrayname: str, **params: Any) -> Any: ...
+    def GetScalarBar(ctf: Any, view: Any = None) -> Any: ...
+    def TrivialProducer(**params: Any) -> Any: ...
+    def Calculator(**params: Any) -> Any: ...
+    def Slice(**params: Any) -> Any: ...
+    def Contour(**params: Any) -> Any: ...
+    def Threshold(**params: Any) -> Any: ...
+
 
 # Catalyst options
 options = catalyst.Options()
+assert options is not None
 options.GlobalTrigger = "TimeStep"
 options.EnableCatalystLive = 1
 options.CatalystLiveTrigger = "TimeStep"
@@ -35,7 +55,7 @@ def SetupCatalystProducer():
 
 
 def SetupVisPipeline(producer, view):
-    producerDisplay = Show(producer, view, "GeometryRepresentation")
+    Show(producer, view, "GeometryRepresentation")
     view.ResetCamera()
 
     # Velocity magnitude & vector
@@ -62,7 +82,8 @@ def SetupVisPipeline(producer, view):
     slice1 = Slice(registrationName="Slice1", Input=calculator2)
     slice1.SliceType = "Plane"
     slice1.SliceOffsetValues = [0.0]
-    slice1.SliceType.Normal = [0.0, 0.0, 1.0]
+    sliceType: Any = slice1.SliceType
+    sliceType.Normal = [0.0, 0.0, 1.0]
 
     slice1Display = Show(slice1, view, "GeometryRepresentation")
     slice1Display.Representation = "Surface"
