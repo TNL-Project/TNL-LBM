@@ -159,9 +159,7 @@ def sim(adiosConfigPath: str = "adios2.xml", RESOLUTION: int = 2) -> None:
 
 # Define the main function
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Simple incompressible Navier-Stokes simulation example."
-    )
+    parser = argparse.ArgumentParser(description="Simple incompressible Navier-Stokes simulation example.")
     parser.add_argument(
         "--adios-config",
         type=str,

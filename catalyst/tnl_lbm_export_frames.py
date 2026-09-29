@@ -19,12 +19,10 @@ from typing import Dict, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
-try: 
+try:
     from adios2 import Adios, Stream
 except ImportError as exc:
-    sys.stderr.write(
-        "Error: failed to import the 'adios2'\n"
-    )
+    sys.stderr.write("Error: failed to import the 'adios2'\n")
     raise
 
 from tnl_lbm_common import *
@@ -66,7 +64,9 @@ def io_set_engine(io_handle, engine: str) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--instream", "-i", required=True, help="Input stream or BP file to read (e.g. results_.../output_3D).")
-    parser.add_argument("--config", "-c", default="adios2.xml", help="Path to ADIOS2 configuration file (default: %(default)s).")
+    parser.add_argument(
+        "--config", "-c", default="adios2.xml", help="Path to ADIOS2 configuration file (default: %(default)s)."
+    )
     parser.add_argument("--io-name", default="Output", help="Name of the IO object in the config (default: %(default)s).")
     parser.add_argument(
         "--outdir",
@@ -74,7 +74,9 @@ def parse_args() -> argparse.Namespace:
         help="Directory to store generated images (default: a 'frames' directory next to --instream).",
     )
     parser.add_argument("--prefix", default="frame", help="Filename prefix for saved images (default: %(default)s).")
-    parser.add_argument("--plane", choices=["xy", "xz", "yz", "all"], default="xy", help="Plane(s) to export (default: %(default)s).")
+    parser.add_argument(
+        "--plane", choices=["xy", "xz", "yz", "all"], default="xy", help="Plane(s) to export (default: %(default)s)."
+    )
     parser.add_argument(
         "--plane-index",
         action="append",

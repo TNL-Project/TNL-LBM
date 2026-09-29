@@ -12,9 +12,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
 
-def read_last_step(
-    bp_path: pathlib.Path, var_names: Iterable[str]
-) -> dict[str, np.ndarray]:
+def read_last_step(bp_path: pathlib.Path, var_names: Iterable[str]) -> dict[str, np.ndarray]:
     """Read the last step of the given variables from a BP5 file."""
     names = list(var_names)
     if not bp_path.exists():

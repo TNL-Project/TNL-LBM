@@ -47,5 +47,4 @@ struct D3Q7_COMMON
 		KS.f[zpz] = EQ::eq_zpz(KS.phi, KS.vx, KS.vy, KS.vz);
 		KS.f[pzz] = EQ::eq_pzz(KS.phi, KS.vx, KS.vy, KS.vz);
 	}
-
 };

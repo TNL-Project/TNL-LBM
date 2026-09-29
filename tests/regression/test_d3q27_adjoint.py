@@ -149,39 +149,27 @@ class TestAdjoint:
 
     def test_loss_finite_positive(self, loss_values: list[float]) -> None:
         assert loss_values, "loss function file is empty"
-        assert all(np.isfinite(v) and v > 0 for v in loss_values), (
-            f"loss values: {loss_values}"
-        )
+        assert all(np.isfinite(v) and v > 0 for v in loss_values), f"loss values: {loss_values}"
 
     def test_loss_monotonic(self, loss_values: list[float]) -> None:
         # Fewer than 2 recorded epochs means the optimizer made no progress
         # (a rejected step is never reverted, so it deadlocks — a regression).
-        assert len(loss_values) >= 2, (
-            f"optimizer recorded only {len(loss_values)} epoch(s): {loss_values}"
-        )
+        assert len(loss_values) >= 2, f"optimizer recorded only {len(loss_values)} epoch(s): {loss_values}"
         increases = [
-            (i, loss_values[i - 1], loss_values[i])
-            for i in range(1, len(loss_values))
-            if loss_values[i] > loss_values[i - 1]
+            (i, loss_values[i - 1], loss_values[i]) for i in range(1, len(loss_values)) if loss_values[i] > loss_values[i - 1]
         ]
         assert not increases, f"loss increased across epochs: {increases}"
 
     @pytest.mark.parametrize("axis", ["X", "Y", "Z"])
-    def test_velocity_profile(
-        self, adjoint_workflow: dict[str, pathlib.Path], axis: str
-    ) -> None:
+    def test_velocity_profile(self, adjoint_workflow: dict[str, pathlib.Path], axis: str) -> None:
         profile_file = adjoint_workflow["adjoint_data"] / f"velocityProfile{axis}.txt"
         assert profile_file.exists(), f"velocity profile not found: {profile_file}"
         profile = np.loadtxt(profile_file)
         n_bad = int(np.sum(~np.isfinite(profile)))
         assert n_bad == 0, f"velocityProfile{axis}.txt has {n_bad} non-finite values"
 
-    def test_primary_3d_finiteness(
-        self, adjoint_workflow: dict[str, pathlib.Path]
-    ) -> None:
-        primary_dirs = sorted(
-            adjoint_workflow["workspace"].glob("results_sim_primary_*")
-        )
+    def test_primary_3d_finiteness(self, adjoint_workflow: dict[str, pathlib.Path]) -> None:
+        primary_dirs = sorted(adjoint_workflow["workspace"].glob("results_sim_primary_*"))
         assert primary_dirs, "no results_sim_primary_* directory found"
         data = read_last_step(
             primary_dirs[0] / "output_3D.bp",
@@ -190,19 +178,13 @@ class TestAdjoint:
         assert_all_finite(data)
 
     def test_primary_mass(self, adjoint_workflow: dict[str, pathlib.Path]) -> None:
-        primary_dirs = sorted(
-            adjoint_workflow["workspace"].glob("results_sim_primary_*")
-        )
+        primary_dirs = sorted(adjoint_workflow["workspace"].glob("results_sim_primary_*"))
         assert primary_dirs, "no results_sim_primary_* directory found"
         data = read_last_step(primary_dirs[0] / "output_3D.bp", ["lbm_density"])
         assert_mass_conserved(data["lbm_density"], tolerance=5e-3)
 
-    def test_adjoint_3d_finiteness(
-        self, adjoint_workflow: dict[str, pathlib.Path]
-    ) -> None:
-        adjoint_dirs = sorted(
-            adjoint_workflow["workspace"].glob("results_sim_adjoint_*")
-        )
+    def test_adjoint_3d_finiteness(self, adjoint_workflow: dict[str, pathlib.Path]) -> None:
+        adjoint_dirs = sorted(adjoint_workflow["workspace"].glob("results_sim_adjoint_*"))
         assert adjoint_dirs, "no results_sim_adjoint_* directory found"
         data = read_last_step(
             adjoint_dirs[0] / "output_3D.bp",

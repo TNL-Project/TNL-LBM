@@ -1,6 +1,4 @@
-set(sources
-    pytnl_lbm.cpp
-)
+set(sources pytnl_lbm.cpp)
 
 foreach(source_file IN LISTS sources)
     if(TNL_LBM_BUILD_HIP)
@@ -46,12 +44,9 @@ set(pytnl_lbm_stub "${CMAKE_CURRENT_BINARY_DIR}/pytnl_lbm.pyi")
 add_custom_command(
     OUTPUT "${pytnl_lbm_stub}"
     COMMAND
-        ${CMAKE_COMMAND} -E env PYTHONPATH=$<TARGET_FILE_DIR:pytnl_lbm>${pytnl_stub_pythonpath}
-        OMPI_MCA_accelerator=null ${Python_EXECUTABLE} ${NB_STUBGEN}
-        -q -r -m pytnl_lbm
-        -i $<TARGET_FILE_DIR:pytnl_lbm> -i $<TARGET_FILE_DIR:pytnl_lbm>/..
-        ${pytnl_stub_inputs}
-        -O ${CMAKE_CURRENT_BINARY_DIR}
+        ${CMAKE_COMMAND} -E env PYTHONPATH=$<TARGET_FILE_DIR:pytnl_lbm>${pytnl_stub_pythonpath} OMPI_MCA_accelerator=null
+        ${Python_EXECUTABLE} ${NB_STUBGEN} -q -r -m pytnl_lbm -i $<TARGET_FILE_DIR:pytnl_lbm> -i $<TARGET_FILE_DIR:pytnl_lbm>/..
+        ${pytnl_stub_inputs} -O ${CMAKE_CURRENT_BINARY_DIR}
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
     DEPENDS pytnl_lbm "${NB_STUBGEN}"
 )

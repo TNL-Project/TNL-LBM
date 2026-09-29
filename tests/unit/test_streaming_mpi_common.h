@@ -842,7 +842,7 @@ static std::vector<double> runChannel(const std::string& id, const ChannelSetup&
 			block.data.inflow_vz = inflow_vz;
 	}
 	nse.setInitialCondition(
-		[V_0, inflow_vy, inflow_vz] __cuda_callable__(typename NSE::template KernelStruct<dreal> & KS, idx, idx, idx) mutable
+		[V_0, inflow_vy, inflow_vz] __cuda_callable__(typename NSE::template KernelStruct<dreal>& KS, idx, idx, idx) mutable
 		{
 			(void) inflow_vz;  // consumed only for NSE::D == 3
 			KS.rho = 1;

@@ -110,25 +110,19 @@ def run_sim(
             exc_stderr = exc_stderr.decode(errors="replace")
         stdout_tail = "\n".join(exc_stdout.splitlines()[-50:])
         pytest.fail(
-            f"simulation timed out after {timeout:.0f}s: {' '.join(command)}\n"
-            f"--- stdout (last 50 lines) ---\n{stdout_tail}\n"
-            f"--- stderr ---\n{exc_stderr}",
+            f"simulation timed out after {timeout:.0f}s: {' '.join(command)}\n--- stdout (last 50 lines) ---\n{stdout_tail}\n--- stderr ---\n{exc_stderr}",
             pytrace=False,
         )
     except OSError as exc:
         elapsed = time.perf_counter() - t0
-        _SIM_RUNS.append(
-            SimRun(command, np_ranks, elapsed, "launch-error", None, timeout)
-        )
+        _SIM_RUNS.append(SimRun(command, np_ranks, elapsed, "launch-error", None, timeout))
         pytest.fail(
             f"cannot launch simulation: {command[0]} ({exc}) — build the project first",
             pytrace=False,
         )
     elapsed = time.perf_counter() - t0
     if proc.returncode != 0:
-        _SIM_RUNS.append(
-            SimRun(command, np_ranks, elapsed, "failed", proc.returncode, timeout)
-        )
+        _SIM_RUNS.append(SimRun(command, np_ranks, elapsed, "failed", proc.returncode, timeout))
         # Simulations can print long logs; keep only the tail of stdout (where
         # the failure is usually visible) but show stderr in full.
         stdout_tail = "\n".join(proc.stdout.splitlines()[-50:])
@@ -145,14 +139,10 @@ def run_sim(
 def assert_all_finite(data: FieldData) -> None:
     """Assert every field contains only finite values."""
     for name, arr in data.items():
-        assert np.all(np.isfinite(arr)), (
-            f"{name} has {np.sum(~np.isfinite(arr))} non-finite values"
-        )
+        assert np.all(np.isfinite(arr)), f"{name} has {np.sum(~np.isfinite(arr))} non-finite values"
 
 
 def assert_mass_conserved(rho: np.ndarray, tolerance: float) -> None:
     """Assert the mean density deviates from 1 by less than tolerance."""
     mean_rho = float(np.mean(rho))
-    assert abs(mean_rho - 1.0) < tolerance, (
-        f"mean(rho)={mean_rho:.8e} deviates from 1 by more than {tolerance:.0e}"
-    )
+    assert abs(mean_rho - 1.0) < tolerance, f"mean(rho)={mean_rho:.8e} deviates from 1 by more than {tolerance:.0e}"

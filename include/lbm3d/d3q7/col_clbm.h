@@ -54,9 +54,9 @@ struct D3Q7_CLBM : D3Q7_COMMON<TRAITS, LBM_EQ>
 		//? no1 : (no2 - omega2); const dreal omega5 = (KS.phi < 0 || KS.phi > 1 || KS.phigradmag2 > 1e-7) ? omega2 : (no2 - omega2); const dreal
 		//omega5 = (KS.phigradmag2 > 1e-7 && TNL::abs(KS.qcrit) > 1e-7) ? omega2 : (KS.phigradmag2 > 1e-8 || TNL::abs(KS.qcrit) > 1e-7 ? no1 : no3 *
 		//(omega2 - no2) / (omega2 - no3)); const dreal omega5 = (KS.phigradmag2 > 1e-7 && TNL::abs(KS.qcrit) > 1e-7) ? omega2 : no1; dreal omega5 =
-		//no1; if (KS.x >= 50 && KS.x < 100) omega5 = no2*omega2-no2; if (KS.x > 25 && KS.x < 50) 	omega5 = (KS.x - 25) * (no2*omega2 - no3) / 25.; if
-		//(KS.x < 50) omega5 = no1; if (KS.phigradmag2 > 1e-7 && TNL::abs(KS.qcrit) > 1e-7) omega5 = omega2; const dreal omega6 = omega5; const dreal
-		//omega7 = omega5;
+		//no1; if (KS.x >= 50 && KS.x < 100) omega5 = no2*omega2-no2; if (KS.x > 25 && KS.x < 50) 	omega5 = (KS.x - 25) * (no2*omega2 - no3) / 25.;
+		//if (KS.x < 50) omega5 = no1; if (KS.phigradmag2 > 1e-7 && TNL::abs(KS.qcrit) > 1e-7) omega5 = omega2; const dreal omega6 = omega5; const
+		//dreal omega7 = omega5;
 
 		// k := kappa_neq = kappa_eq - kappa = kappa_eq - K * f
 		// (note that k_000 = 0)

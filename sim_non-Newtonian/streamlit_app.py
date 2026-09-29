@@ -53,9 +53,7 @@ MODEL_KEYS: Final[dict[str, list[str]]] = {
 # Bisection solver (from sim_nonnewtonian_poiseuille.cu: solve_monotone)
 
 
-def solve_monotone(
-    f: Callable[[float], float], rhs: float, tol: float = 1e-12
-) -> float:
+def solve_monotone(f: Callable[[float], float], rhs: float, tol: float = 1e-12) -> float:
     """Solve f(u) = rhs for u >= 0, f monotone increasing. Returns 0 if rhs <= 0
     or if f(0) >= rhs (plug region for yield-stress fluids)."""
     if rhs <= 0.0:
@@ -124,9 +122,7 @@ class CarreauYasuda:
     def nu(self, gamma: float) -> float:
         if gamma <= 0.0:
             return self.nu_0
-        return self.nu_inf + (self.nu_0 - self.nu_inf) * (
-            1.0 + (self.lambda_ * gamma) ** self.a
-        ) ** ((self.n - 1.0) / self.a)
+        return self.nu_inf + (self.nu_0 - self.nu_inf) * (1.0 + (self.lambda_ * gamma) ** self.a) ** ((self.n - 1.0) / self.a)
 
     def flux(self, u: float) -> float:
         return self.nu(u) * u
@@ -157,11 +153,7 @@ class Casson:
 
     def pot(self, u: float) -> float:
         su = math.sqrt(u)
-        return (
-            self.k0**2 * u
-            + (4.0 / 3.0) * self.k0 * self.k1 * u * su
-            + 0.5 * self.k1**2 * u * u
-        )
+        return self.k0**2 * u + (4.0 / 3.0) * self.k0 * self.k1 * u * su + 0.5 * self.k1**2 * u * u
 
 
 ConstitutiveModel = PowerLaw | CarreauYasuda | Casson
@@ -278,12 +270,7 @@ def _pl_u_max_phys(
     """
     if drive_mode.startswith("Body"):
         assert a_phys is not None
-        return (
-            (a_phys * rho / K_phys) ** (1.0 / n)
-            * n
-            / (n + 1.0)
-            * R_phys ** ((n + 1.0) / n)
-        )
+        return (a_phys * rho / K_phys) ** (1.0 / n) * n / (n + 1.0) * R_phys ** ((n + 1.0) / n)
     elif drive_mode.startswith("Max"):
         assert u_max_input is not None
         return u_max_input
@@ -386,9 +373,7 @@ def compute_dimensionless(
             u_max_phys = re_ref_target * nu_ref_phys / (2.0 * r_phys)
         else:
             assert re_target is not None
-            u_max_phys = _u_max_from_re_wall(
-                re_target, r_phys, r_lbm, nu_lbm, phys_dl, dt, n, nu_fn, flux_fn, pot_fn
-            )
+            u_max_phys = _u_max_from_re_wall(re_target, r_phys, r_lbm, nu_lbm, phys_dl, dt, n, nu_fn, flux_fn, pot_fn)
         u_max_lbm_tmp = u_max_phys * dt / phys_dl
         exponent = (n + 1.0) / n
         K_lbm_res = flux_fn(1.0)
@@ -401,9 +386,7 @@ def compute_dimensionless(
             u_max_phys = re_ref_target * nu_ref_phys / (2.0 * r_phys)
         else:
             assert re_target is not None
-            u_max_phys = _u_max_from_re_wall(
-                re_target, r_phys, r_lbm, nu_lbm, phys_dl, dt, n, nu_fn, flux_fn, pot_fn
-            )
+            u_max_phys = _u_max_from_re_wall(re_target, r_phys, r_lbm, nu_lbm, phys_dl, dt, n, nu_fn, flux_fn, pot_fn)
         u_max_lbm_tmp = u_max_phys * dt / phys_dl
         a_lbm = invert_A_lbm_from_umax(u_max_lbm_tmp, r_lbm, flux_fn, pot_fn)
 
@@ -555,12 +538,7 @@ def fit_by_velocity_profile(
     a_lbm_src = a_phys * source_dt**2 / dl
     s_phys_arr = np.linspace(0, R_phys * 0.99, n_points)
     s_lbm_arr = s_phys_arr / dl
-    w_src = np.array(
-        [
-            poiseuille_W(s, R_lbm, a_lbm_src, source_model.flux, source_model.pot)
-            for s in s_lbm_arr
-        ]
-    )
+    w_src = np.array([poiseuille_W(s, R_lbm, a_lbm_src, source_model.flux, source_model.pot) for s in s_lbm_arr])
     u_max_src = w_src[0]
     if u_max_src <= 0:
         return None
@@ -572,12 +550,7 @@ def fit_by_velocity_profile(
         except Exception:
             return 1e10
         a_lbm_tgt = a_phys * dt_tgt**2 / dl
-        w_tgt = np.array(
-            [
-                poiseuille_W(s, R_lbm, a_lbm_tgt, m_tgt.flux, m_tgt.pot)
-                for s in s_lbm_arr
-            ]
-        )
+        w_tgt = np.array([poiseuille_W(s, R_lbm, a_lbm_tgt, m_tgt.flux, m_tgt.pot) for s in s_lbm_arr])
         u_max_tgt = w_tgt[0]
         if u_max_tgt <= 0:
             return 1e10
@@ -678,10 +651,7 @@ def compute_model_state(
         u_max_lbm = u_max_phys * phys_dt / phys_dl
         exponent = (n_vel + 1.0) / n_vel
         K_lbm_model = flux_fn(1.0)
-        a_lbm = (
-            K_lbm_model
-            * (u_max_lbm * (n_vel + 1.0) / n_vel * r_lbm ** (-exponent)) ** n_vel
-        )
+        a_lbm = K_lbm_model * (u_max_lbm * (n_vel + 1.0) / n_vel * r_lbm ** (-exponent)) ** n_vel
     else:
         if u_max_phys_val is not None:
             u_max_phys = u_max_phys_val
@@ -744,9 +714,7 @@ def compute_model_state(
 
     u_max_lbm_val = poiseuille_W(0.0, r_lbm, a_lbm, flux_fn, pot_fn)
 
-    def w_newtonian_fn(
-        s_val: float, _u=u_max_lbm_val, _r=r_lbm, _dl=phys_dl, _dt=phys_dt
-    ) -> float:
+    def w_newtonian_fn(s_val: float, _u=u_max_lbm_val, _r=r_lbm, _dl=phys_dl, _dt=phys_dt) -> float:
         s_lbm = s_val / _dl
         w_lbm = _u * (_r**2 - s_lbm**2) / _r**2
         return w_lbm * _dl / _dt
@@ -757,9 +725,7 @@ def compute_model_state(
     gamma_wall_phys = gamma_wall_lbm / phys_dt
 
     visc_scale = phys_dl**2 / phys_dt
-    nu_phys_fn = lambda g, _m=model_obj, _dt=phys_dt, _vs=visc_scale: (
-        _m.nu(g * _dt) * _vs
-    )
+    nu_phys_fn = lambda g, _m=model_obj, _dt=phys_dt, _vs=visc_scale: _m.nu(g * _dt) * _vs
 
     return ModelState(
         name=name,
@@ -799,8 +765,7 @@ def main() -> None:
     )
     st.title("Non-Newtonian Poiseuille flow explorer")
     st.caption(
-        "Power-law, Carreau-Yasuda (CY), and Casson constitutive models "
-        "with analytical velocity profiles and dimensionless quantity verification."
+        "Power-law, Carreau-Yasuda (CY), and Casson constitutive models with analytical velocity profiles and dimensionless quantity verification."
     )
 
     st.sidebar.header("Flow Parameters")
@@ -812,10 +777,7 @@ def main() -> None:
         format="%.6f",
         step=0.001,
         key="lbm_viscosity",
-        help=(
-            "Reference lattice viscosity for the collision (must be ≤ 1/6). "
-            "Same for all models."
-        ),
+        help=("Reference lattice viscosity for the collision (must be ≤ 1/6). Same for all models."),
     )
     phys_height = st.sidebar.number_input(
         "Channel height H [m]",
@@ -1064,20 +1026,13 @@ def main() -> None:
 
         def pl_builder(params):
             n = float(params[0])
-            u_max = (
-                (a_phys * RHO / K_phys) ** (1.0 / n)
-                * n
-                / (n + 1.0)
-                * R_phys_fit ** ((n + 1.0) / n)
-            )
+            u_max = (a_phys * RHO / K_phys) ** (1.0 / n) * n / (n + 1.0) * R_phys_fit ** ((n + 1.0) / n)
             nu_ref = (K_phys / RHO) * (u_max / R_phys_fit) ** (n - 1.0)
             dt = nu_lbm * dl**2 / nu_ref
             K_lbm_model = (K_phys / RHO) * dt ** (2.0 - n) / dl**2
             return PowerLaw(K=K_lbm_model, n=n), dt
 
-        result = fit_by_velocity_profile(
-            cy, dt_src, pl_builder, [(0.1, 3.0)], a_phys, phys_height, dl
-        )
+        result = fit_by_velocity_profile(cy, dt_src, pl_builder, [(0.1, 3.0)], a_phys, phys_height, dl)
         if result is not None:
             p["n_pl"] = float(result[0])
         _switch_to_u_max(_compute_source_u_max(1))
@@ -1096,20 +1051,13 @@ def main() -> None:
 
         def pl_builder(params):
             n = float(params[0])
-            u_max = (
-                (a_phys * RHO / K_phys) ** (1.0 / n)
-                * n
-                / (n + 1.0)
-                * R_phys_fit ** ((n + 1.0) / n)
-            )
+            u_max = (a_phys * RHO / K_phys) ** (1.0 / n) * n / (n + 1.0) * R_phys_fit ** ((n + 1.0) / n)
             nu_ref = (K_phys / RHO) * (u_max / R_phys_fit) ** (n - 1.0)
             dt = nu_lbm * dl**2 / nu_ref
             K_lbm_model = (K_phys / RHO) * dt ** (2.0 - n) / dl**2
             return PowerLaw(K=K_lbm_model, n=n), dt
 
-        result = fit_by_velocity_profile(
-            cas, dt_src, pl_builder, [(0.1, 3.0)], a_phys, phys_height, dl
-        )
+        result = fit_by_velocity_profile(cas, dt_src, pl_builder, [(0.1, 3.0)], a_phys, phys_height, dl)
         if result is not None:
             p["n_pl"] = float(result[0])
         _switch_to_u_max(_compute_source_u_max(2))
@@ -1145,9 +1093,7 @@ def main() -> None:
             return m, dt_cy
 
         bounds = [(1e-12, eta_0), (1e-12, 1e6), (0.1, 5.0), (0.1, 3.0)]
-        result = fit_by_velocity_profile(
-            pl, dt_src, cy_builder, bounds, a_phys, phys_height, dl
-        )
+        result = fit_by_velocity_profile(pl, dt_src, cy_builder, bounds, a_phys, phys_height, dl)
         if result is not None:
             p["eta_inf"] = float(result[0])
             p["lambda_cy"] = float(result[1])
@@ -1186,9 +1132,7 @@ def main() -> None:
             return m, dt_cy
 
         bounds = [(1e-12, eta_0), (1e-12, 1e6), (0.1, 5.0), (0.1, 3.0)]
-        result = fit_by_velocity_profile(
-            cas, dt_src, cy_builder, bounds, a_phys, phys_height, dl
-        )
+        result = fit_by_velocity_profile(cas, dt_src, cy_builder, bounds, a_phys, phys_height, dl)
         if result is not None:
             p["eta_inf"] = float(result[0])
             p["lambda_cy"] = float(result[1])
@@ -1380,9 +1324,7 @@ def main() -> None:
         col_exp, col_imp = st.columns(2)
         with col_exp:
             if st.button("Export"):
-                export_data = {
-                    k: st.session_state.get(k, DEFAULTS.get(k)) for k in export_keys
-                }
+                export_data = {k: st.session_state.get(k, DEFAULTS.get(k)) for k in export_keys}
                 st.session_state["_export_text"] = json.dumps(export_data, indent=2)
         with col_imp:
             import_clicked = st.button("Import")
@@ -1421,9 +1363,7 @@ def main() -> None:
     n_fluid_demo = z_demo - 4
     phys_dl_demo = phys_height / n_fluid_demo
 
-    pl_obj, cy_obj, cas_obj, phys_dt_fn_pl, phys_dt_fn_cy, phys_dt_fn_cas = (
-        _make_models()
-    )
+    pl_obj, cy_obj, cas_obj, phys_dt_fn_pl, phys_dt_fn_cy, phys_dt_fn_cas = _make_models()
 
     nu_phys_pl = lbm_viscosity * phys_dl_demo**2 / phys_dt_fn_pl(phys_dl_demo)
     nu_phys_cy = eta_0 / RHO
@@ -1535,9 +1475,7 @@ def main() -> None:
 
             visc_models_dynamic.append((s_obj.name, make_dyn_fn(s_obj), s_obj.color))
 
-        fig_visc = plot_viscosity_multi(
-            visc_models_dynamic, gamma_min=1e-2, gamma_max=1e2
-        )
+        fig_visc = plot_viscosity_multi(visc_models_dynamic, gamma_min=1e-2, gamma_max=1e2)
         st.plotly_chart(fig_visc)
         wall_rates = ", ".join(f"{s.name}: {s.gamma_wall_phys:.4g}" for s in all_states)
         st.caption(f"Wall shear rate γ̇_w at res=1 — {wall_rates} [1/s]")
@@ -1546,9 +1484,7 @@ def main() -> None:
         st.subheader("Velocity profile")
         show_newtonian = st.session_state.get("newtonian_overlay", True)
         vel_models = [(s.name, s.w_fn, s.color) for s in all_states]
-        newt_models = (
-            [("", all_states[0].w_newtonian_fn, "#d62728")] if show_newtonian else None
-        )
+        newt_models = [("", all_states[0].w_newtonian_fn, "#d62728")] if show_newtonian else None
         fig_vel = plot_velocity_multi(vel_models, newt_models, R_phys)
         st.plotly_chart(fig_vel)
         st.checkbox("Overlay Newtonian parabola", value=True, key="newtonian_overlay")
@@ -1557,9 +1493,7 @@ def main() -> None:
     st.divider()
     st.subheader("Dimensionless quantities")
     st.caption(
-        "Verification across resolutions. "
-        "Constraints: Ma < 0.1 (incompressible), ω ∈ [0.5, 1.9] (stable), "
-        "Re_wall constant across resolutions."
+        "Verification across resolutions. Constraints: Ma < 0.1 (incompressible), ω ∈ [0.5, 1.9] (stable), Re_wall constant across resolutions."
     )
 
     resolutions = st.multiselect(
@@ -1634,16 +1568,11 @@ def main() -> None:
     st.markdown("**Grid parameters** (model-independent)")
     st.dataframe(pd.DataFrame(grid_rows).style.format(precision=4))
     st.caption(
-        "dt is model-dependent — each model defines its own dt so that "
-        "ν_lbm is the collision reference viscosity. See model-specific table below."
+        "dt is model-dependent — each model defines its own dt so that ν_lbm is the collision reference viscosity. See model-specific table below."
     )
 
     st.markdown("**Model-specific quantities**")
-    st.dataframe(
-        pd.DataFrame(all_rows).style.format(
-            {"A_lbm": "{:g}", "A_phys": "{:g}"}, precision=4
-        )
-    )
+    st.dataframe(pd.DataFrame(all_rows).style.format({"A_lbm": "{:g}", "A_phys": "{:g}"}, precision=4))
 
     st.markdown("**Consistency checks:**")
     ma_vals = [r["Ma"] for r in all_rows]
@@ -1657,9 +1586,7 @@ def main() -> None:
     c1, c2, c3 = st.columns(3)
     c1.metric(f"{ma_ok} Ma < 0.1", value=f"{max(ma_vals):.4f}")
     c2.metric(f"{omega_ok} ω ∈ [0.5, 1.9]", value=f"{omega_val:.3f}")
-    c3.metric(
-        f"{re_ok} Re_wall constant", value=f"{min(re_vals):.1f}–{max(re_vals):.1f}"
-    )
+    c3.metric(f"{re_ok} Re_wall constant", value=f"{min(re_vals):.1f}–{max(re_vals):.1f}")
 
     with st.expander("Reynolds number definitions"):
         st.markdown(

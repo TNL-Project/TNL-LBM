@@ -136,7 +136,7 @@ struct Lagrange3D
 
 	real computeMinDist();						   // computes min and max distance between neinghboring nodes
 	real computeMaxDistFromMinDist(real mindist);  // computes min and max distance between neighboring nodes
-	point_t integrateForce();	// computes the total force acting on the immersed body (in lattice units)
+	point_t integrateForce();					   // computes the total force acting on the immersed body (in lattice units)
 
 	// flag to enable matrix output to .mtx files
 	bool mtx_output = false;

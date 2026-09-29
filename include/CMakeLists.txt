@@ -1,6 +1,4 @@
-install( DIRECTORY lbm_common lbm2d lbm3d
-         TYPE INCLUDE
-         FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp" )
+install(DIRECTORY lbm_common lbm2d lbm3d TYPE INCLUDE FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp")
 
 # clangd support: compile_commands.json only lists translation units,
 # so clangd would infer a bogus compile command for every library header

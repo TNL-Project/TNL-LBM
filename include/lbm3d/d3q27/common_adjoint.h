@@ -206,5 +206,4 @@ struct D3Q27_COMMON_ADJOINT
 		KS.f[ppp] += EQ::eq_ppp(rho_out,KS.vx,KS.vy,KS.vz) - EQ::eq_ppp(KS.rho,KS.vx,KS.vy,KS.vz);
 #endif
 	}
-
 };

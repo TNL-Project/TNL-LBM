@@ -116,9 +116,7 @@ def _discover_multi_rank(suite_name: str) -> dict[int, list[str]]:
 
 def _discover_single_count(suite_name: str) -> int:
     """Count the non-multi-rank cases in a suite."""
-    return _count_cases(
-        [f"--test-suite={suite_name}", "--test-case-exclude=*multi-rank*"]
-    )
+    return _count_cases([f"--test-suite={suite_name}", "--test-case-exclude=*multi-rank*"])
 
 
 _binary_available, _binary_error = _binary_ok()
@@ -175,25 +173,20 @@ def test_cpp_units(
     _idx, (label, np_ranks, extra_args, expected) = batch
     if not _binary_available:
         pytest.fail(
-            f"cannot run {TEST_BINARY} — build the target first: "
-            f"cmake --build BUILD_DIR --target test_cpp_units\n{_binary_error}",
+            f"cannot run {TEST_BINARY} — build the target first: cmake --build BUILD_DIR --target test_cpp_units\n{_binary_error}",
             pytrace=False,
         )
     if expected <= 0:
         pytest.fail(f"no test cases found for batch {label!r}")
     # verify selection before running
     verify_cmd = [str(TEST_BINARY), "--count", "--no-colors", *extra_args]
-    proc = subprocess.run(
-        verify_cmd, capture_output=True, text=True, check=False, timeout=60.0
-    )
+    proc = subprocess.run(verify_cmd, capture_output=True, text=True, check=False, timeout=60.0)
     if proc.returncode != 0:
         pytest.fail(f"filter check failed for {label!r}: {proc.stderr}")
     m = re.search(r"passing the current filters:\s*(\d+)", proc.stdout)
     actual = int(m.group(1)) if m else -1
     if actual != expected:
-        pytest.fail(
-            f"filter selects {actual} cases, expected {expected}: {extra_args!r}"
-        )
+        pytest.fail(f"filter selects {actual} cases, expected {expected}: {extra_args!r}")
     run_sim(
         [str(TEST_BINARY), *extra_args],
         workdir=test_dir,

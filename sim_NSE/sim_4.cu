@@ -130,7 +130,7 @@ struct StateLocal : State<NSE>
 		const dreal rho_0 = this->rho_0;
 
 		nse.setInitialCondition(
-			[lat, L, V_0, rho_0] __cuda_callable__(typename NSE::template KernelStruct<dreal> & KS, idx gx, idx gy, idx gz) mutable
+			[lat, L, V_0, rho_0] __cuda_callable__(typename NSE::template KernelStruct<dreal>& KS, idx gx, idx gy, idx gz) mutable
 			{
 				// convert the global lattice indices to physical coordinates
 				const dreal x = lat.lbm2physX(gx);

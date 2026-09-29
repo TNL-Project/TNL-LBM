@@ -84,15 +84,8 @@ static double dirComp2(int i, int axis)
 using TRAITS3 = TRAITS;
 using KS3 = D3Q27_KernelStruct<typename TRAITS3::dreal>;
 using COLL3 = D3Q27_SRT<TRAITS3>;
-using CONFIG3 = LBM_CONFIG<
-	TRAITS3,
-	D3Q27_KernelStruct,
-	NSE_Data,
-	COLL3,
-	typename COLL3::EQ,
-	D3Q27_STREAMING<TRAITS3>,
-	D3Q27_BC_All,
-	D3Q27_MACRO_Default<TRAITS3>>;
+using CONFIG3 =
+	LBM_CONFIG<TRAITS3, D3Q27_KernelStruct, NSE_Data, COLL3, typename COLL3::EQ, D3Q27_STREAMING<TRAITS3>, D3Q27_BC_All, D3Q27_MACRO_Default<TRAITS3>>;
 using BC3 = typename CONFIG3::BC;
 
 // driver kernel: run the inflow moment body for one face on one KS

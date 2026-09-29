@@ -1,6 +1,4 @@
-set(TARGETS
-        sim_pseudomeasure
-)
+set(TARGETS sim_pseudomeasure)
 
 # sim_adjoint requires the A-B pull streaming pattern: the adjoint reversed gather is racy in a single DF array -- see AGENTS.md
 if(TNL_LBM_STREAMING_PATTERN STREQUAL "AB_PULL")

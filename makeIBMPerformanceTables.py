@@ -22,7 +22,9 @@ def run_sim(*, compute="gpu", dirac=1, method="modified", Re=100, hi=0, resoluti
     elif compute == "cpu":
         compute = 1
 
-    results_dir = f"results_{SIM_NAME}_CUM_{method}_dirac_{dirac}_res_{resolution}_Re_{Re}_nas_{hvals[hi]:.4f}_compute_{compute}"
+    results_dir = (
+        f"results_{SIM_NAME}_CUM_{method}_dirac_{dirac}_res_{resolution}_Re_{Re}_nas_{hvals[hi]:.4f}_compute_{compute}"
+    )
     log_file = Path(results_dir) / "log_ibm_rank000"
     if log_file.exists():
         log_file.unlink()
@@ -41,9 +43,7 @@ def run_sim(*, compute="gpu", dirac=1, method="modified", Re=100, hi=0, resoluti
         check=True,
     )
     if not log_file.exists():
-        raise Exception(
-            f"log file {log_file} does not exist after running the simulation"
-        )
+        raise Exception(f"log file {log_file} does not exist after running the simulation")
 
     return log_file
 
@@ -96,12 +96,7 @@ def run_simulations(compute, diracmin=1, diracmax=4):
 
 def build(variantHaCapacities, variantHa):
     subprocess.run(
-        [
-            "cmake -B build -DHA_CAPACITY_VARIANT="
-            + str(variantHaCapacities)
-            + " -DHA_VARIANT="
-            + str(variantHa)
-        ],
+        ["cmake -B build -DHA_CAPACITY_VARIANT=" + str(variantHaCapacities) + " -DHA_VARIANT=" + str(variantHa)],
         shell=True,
         check=True,
     )
@@ -153,30 +148,14 @@ def main():
     if args.build:
         build(args.variantHaCapacities, args.variantHa)
     # run simulations
-    constructTableElements, computeTableElements, variantString = run_simulations(
-        args.compute
-    )
+    constructTableElements, computeTableElements, variantString = run_simulations(args.compute)
     # clean files
     if args.clean:
         cleanFiles()
 
-    filename = (
-        args.output
-        + "_UNDEFINED_threads-"
-        + str(args.threads)
-        + "_"
-        + variantString
-        + ".txt"
-    )
+    filename = args.output + "_UNDEFINED_threads-" + str(args.threads) + "_" + variantString + ".txt"
     if args.compute == "cpu":
-        filename = (
-            args.output
-            + "_CPU_threads-"
-            + str(args.threads)
-            + "_"
-            + variantString
-            + ".txt"
-        )
+        filename = args.output + "_CPU_threads-" + str(args.threads) + "_" + variantString + ".txt"
     elif args.compute == "gpu":
         filename = args.output + "_GPU" + "_" + variantString + ".txt"
 
@@ -196,9 +175,7 @@ def main():
     ]
     constructTableElements = list(sorted(constructTableElements, key=lambda x: x[2]))
     print(
-        tabulate(
-            constructTableElements, tablefmt="github", headers=constructTableHeaders
-        ),
+        tabulate(constructTableElements, tablefmt="github", headers=constructTableHeaders),
         file=file,
     )
 

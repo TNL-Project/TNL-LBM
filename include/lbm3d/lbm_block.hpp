@@ -719,7 +719,7 @@ template <typename CONFIG>
 void LBM_BLOCK<CONFIG>::setEquilibrium(real rho, real vx, real vy, real vz)
 {
 	setInitialCondition(
-		[rho, vx, vy, vz] __cuda_callable__(typename CONFIG::template KernelStruct<dreal> & KS, idx gx, idx gy, idx gz) mutable
+		[rho, vx, vy, vz] __cuda_callable__(typename CONFIG::template KernelStruct<dreal>& KS, idx gx, idx gy, idx gz) mutable
 		{
 			(void) gx;
 			(void) gy;

@@ -73,15 +73,11 @@ class TestViscosityConversion:
         assert result == pytest.approx(expected, abs=float_tolerance(lattice))
 
     def test_lbmViscosity_uses_attribute(self, lattice: AnyLattice) -> None:
-        assert lattice.lbmViscosity() == pytest.approx(
-            lattice.phys2lbmViscosity(PHYS_NU), abs=float_tolerance(lattice)
-        )
+        assert lattice.lbmViscosity() == pytest.approx(lattice.phys2lbmViscosity(PHYS_NU), abs=float_tolerance(lattice))
 
     def test_roundtrip(self, lattice: AnyLattice) -> None:
         lbm_nu = lattice.phys2lbmViscosity(PHYS_NU)
-        assert lattice.lbm2physViscosity(lbm_nu) == pytest.approx(
-            PHYS_NU, abs=float_tolerance(lattice)
-        )
+        assert lattice.lbm2physViscosity(lbm_nu) == pytest.approx(PHYS_NU, abs=float_tolerance(lattice))
 
 
 class TestCoordinateConversion:
@@ -93,27 +89,15 @@ class TestCoordinateConversion:
 
     def test_phys2lbm_interpolation(self, lattice: AnyLattice) -> None:
         # phys2lbmX(x) = (x - physOrigin.x) / dl + 0.5  (lattice.h:89)
-        assert lattice.phys2lbmX(0.35) == pytest.approx(
-            4.0, abs=float_tolerance(lattice)
-        )
-        assert lattice.phys2lbmY(0.25) == pytest.approx(
-            3.0, abs=float_tolerance(lattice)
-        )
-        assert lattice.phys2lbmZ(0.05) == pytest.approx(
-            1.0, abs=float_tolerance(lattice)
-        )
+        assert lattice.phys2lbmX(0.35) == pytest.approx(4.0, abs=float_tolerance(lattice))
+        assert lattice.phys2lbmY(0.25) == pytest.approx(3.0, abs=float_tolerance(lattice))
+        assert lattice.phys2lbmZ(0.05) == pytest.approx(1.0, abs=float_tolerance(lattice))
 
     @pytest.mark.parametrize("index", [1, 7, 42])
     def test_roundtrip_at_lattice_points(self, lattice: AnyLattice, index: int) -> None:
-        assert lattice.phys2lbmX(lattice.lbm2physX(index)) == pytest.approx(
-            index, abs=float_tolerance(lattice)
-        )
-        assert lattice.phys2lbmY(lattice.lbm2physY(index)) == pytest.approx(
-            index, abs=float_tolerance(lattice)
-        )
-        assert lattice.phys2lbmZ(lattice.lbm2physZ(index)) == pytest.approx(
-            index, abs=float_tolerance(lattice)
-        )
+        assert lattice.phys2lbmX(lattice.lbm2physX(index)) == pytest.approx(index, abs=float_tolerance(lattice))
+        assert lattice.phys2lbmY(lattice.lbm2physY(index)) == pytest.approx(index, abs=float_tolerance(lattice))
+        assert lattice.phys2lbmZ(lattice.lbm2physZ(index)) == pytest.approx(index, abs=float_tolerance(lattice))
 
 
 class TestVelocityConversion:
@@ -131,9 +115,7 @@ class TestVelocityConversion:
 
     def test_roundtrip(self, lattice: AnyLattice) -> None:
         u = 0.02
-        assert lattice.phys2lbmVelocity(lattice.lbm2physVelocity(u)) == pytest.approx(
-            u, abs=float_tolerance(lattice)
-        )
+        assert lattice.phys2lbmVelocity(lattice.lbm2physVelocity(u)) == pytest.approx(u, abs=float_tolerance(lattice))
 
 
 class TestForceConversion:
@@ -151,6 +133,4 @@ class TestForceConversion:
 
     def test_roundtrip(self, lattice: AnyLattice) -> None:
         force = 0.001
-        assert lattice.phys2lbmForce(lattice.lbm2physForce(force)) == pytest.approx(
-            force, abs=float_tolerance(lattice)
-        )
+        assert lattice.phys2lbmForce(lattice.lbm2physForce(force)) == pytest.approx(force, abs=float_tolerance(lattice))

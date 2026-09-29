@@ -9,7 +9,7 @@ void export_LBM_Data(nb::module_& m, const char* name)
 {
 	using LBM_DATA = typename NSE::DATA;
 
-	auto block =	//
+	auto block =  //
 		nb::class_<LBM_DATA>(m, name)
 			.def_rw("even_iter", &LBM_DATA::even_iter)
 			.def_rw("indexer", &LBM_DATA::indexer)

@@ -55,9 +55,7 @@ def parse_figsize(spec: str) -> Tuple[float, float]:
         width_str, height_str = spec.lower().split("x")
         return float(width_str), float(height_str)
     except Exception as exc:
-        raise argparse.ArgumentTypeError(
-            f"Invalid figsize specification '{spec}'. Use WIDTHxHEIGHT, e.g. 8x6."
-        ) from exc
+        raise argparse.ArgumentTypeError(f"Invalid figsize specification '{spec}'. Use WIDTHxHEIGHT, e.g. 8x6.") from exc
 
 
 def configure_logging(level: str) -> None:

@@ -150,7 +150,6 @@ struct D3Q27_COMMON
 		KS.f[ppz] += EQ::eq_ppz(rho_out, KS.vx, KS.vy, KS.vz) - EQ::eq_ppz(KS.rho, KS.vx, KS.vy, KS.vz);
 		KS.f[ppp] += EQ::eq_ppp(rho_out, KS.vx, KS.vy, KS.vz) - EQ::eq_ppp(KS.rho, KS.vx, KS.vy, KS.vz);
 	}
-
 };
 
 // Legacy alias
