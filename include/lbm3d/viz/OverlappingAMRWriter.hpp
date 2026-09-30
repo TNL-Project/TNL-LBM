@@ -222,13 +222,19 @@ void OverlappingAMRWriter<TRAITS>::write(const std::string& filename, const LBM<
 	const double origin[3] = {static_cast<double>(phys_origin.x()), static_cast<double>(phys_origin.y()), static_cast<double>(phys_origin.z())};
 	write_attr_f64x3(root, "Origin", origin);
 
-	// scalar macroscopic quantities emitted per level (in this order)
+	// scalar macroscopic quantities emitted per level (in this order);
+	// velocities are exported in PHYSICAL units [m/s] (the reader-facing
+	// VTKHDF contract), rho stays dimensionless (lattice): the lattice
+	// velocity is physical * dt/dl and both dl and dt halve per level under
+	// the 2:1 acoustic per-level scaling, so the factor is level-invariant
 	const std::pair<std::uint8_t, const char*> variables[] = {
 		{MACRO::e_rho, "rho"},
 		{MACRO::e_vx, "vx"},
 		{MACRO::e_vy, "vy"},
 		{MACRO::e_vz, "vz"},
 	};
+	const double phys_vel_factor = static_cast<double>(lbm.lat.physDl / lbm.lat.physDt);
+	const double field_scale[4] = {1.0, phys_vel_factor, phys_vel_factor, phys_vel_factor};
 
 	for (const auto& [level, blocks] : levels) {
 		const std::string level_name = "Level" + std::to_string(level);
@@ -349,7 +355,7 @@ void OverlappingAMRWriter<TRAITS>::write(const std::string& filename, const LBM<
 		// thread-safe) and issue the same sequence of creates/writes with
 		// the same shapes and contents as the serial packing did
 		const int level_id = level;
-#pragma omp parallel for schedule(dynamic, 1) default(none) shared(tasks, var_buffers, map_buffer, ghost, variables, lbm, level_id)
+#pragma omp parallel for schedule(dynamic, 1) default(none) shared(tasks, var_buffers, map_buffer, ghost, variables, field_scale, lbm, level_id)
 		for (std::ptrdiff_t t = 0; t < static_cast<std::ptrdiff_t>(tasks.size()); t++) {
 			const PackTask& task = tasks[t];
 			const EmittedBlock& emitted = *task.target;
@@ -375,7 +381,8 @@ void OverlappingAMRWriter<TRAITS>::write(const std::string& filename, const LBM<
 					const idx gy = block.offset.y() - ovl.y() + ey;
 					const idx gz = block.offset.z() - ovl.z() + ez;
 					if (task.variant < 4) {
-						var_buffers[task.variant][out] = static_cast<double>(block.hmacro(variables[task.variant].first, gx, gy, gz));
+						var_buffers[task.variant][out] =
+							field_scale[task.variant] * static_cast<double>(block.hmacro(variables[task.variant].first, gx, gy, gz));
 					}
 					else if (task.variant == 4) {
 						map_buffer[out] = static_cast<std::int32_t>(block.hmap(gx, gy, gz));
