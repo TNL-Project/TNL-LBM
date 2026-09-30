@@ -211,6 +211,12 @@ struct State
 
 	// simulation control
 	virtual bool estimateMemoryDemands();  // called from State constructor
+	// device memory the per-block estimate does not cover (e.g. State_AMR's
+	// async-writer macro snapshot); consulted by estimateMemoryDemands
+	[[nodiscard]] virtual long long extraDeviceMemoryEstimate() const
+	{
+		return 0;
+	}
 	virtual void reset();
 	virtual void resetDFs();				  // called from State::reset -- sets the initial DFs on GPU
 	virtual void setupBoundaries() {}		  // called from State::reset

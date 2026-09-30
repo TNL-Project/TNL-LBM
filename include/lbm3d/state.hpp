@@ -1079,6 +1079,10 @@ bool State<NSE>::estimateMemoryDemands()
 	long long GPUavail = 0;
 	long long GPUtotal_hw = 0;
 	long long GPUtotal = NSE::DFMAX * memDFs + memMacro + memMap;
+	// device memory outside the per-block arrays (e.g. the AMR async writer's
+	// macro snapshot)
+	const long long memExtra = extraDeviceMemoryEstimate();
+	GPUtotal += memExtra;
 
 	const int gpu_id = TNL::Backend::getDevice();
 	const std::string gpu_name = TNL::Backend::getDeviceName(gpu_id);
@@ -1117,6 +1121,7 @@ bool State<NSE>::estimateMemoryDemands()
 	spdlog::info("GPU RAM for DFs:   {:d} MiB", NSE::DFMAX * memDFs / 1024 / 1024);
 	spdlog::info("GPU RAM for map:   {:d} MiB", memMap / 1024 / 1024);
 	spdlog::info("GPU RAM for macro: {:d} MiB", memMacro / 1024 / 1024);
+	spdlog::info("GPU RAM for extras: {:d} MiB", memExtra / 1024 / 1024);
 	spdlog::info(
 		"TOTAL GPU RAM {:d} MiB estimated needed, {:d} MiB available ({:6.4f}%), total GPU RAM: {:d} MiB",
 		GPUtotal / 1024 / 1024,

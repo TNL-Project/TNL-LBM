@@ -622,9 +622,31 @@ struct State_AMR : State<NSE>
 	// can drive it directly (test_amr_subcycling)
 	AMRConservationStats computeConservationStats();
 
+	// the async VTKHDF writer's per-block device-macro snapshot (see
+	// write3D_AMR): a full duplicate of the macro arrays, live while OUT3D is
+	// enabled and the synchronous write mode is off
+	[[nodiscard]] long long extraDeviceMemoryEstimate() const override
+	{
+		if (vtkhdf_sync_write || this->cnt[OUT3D].period <= 0)
+			return 0;
+		long long bytes = 0;
+		for (const auto& block : this->nse.blocks) {
+			const long long XYZ = block.local.x() * block.local.y() * block.local.z();
+			bytes += XYZ * sizeof(typename NSE::TRAITS::dreal) * NSE::MACRO::N;
+		}
+		return bytes;
+	}
+
 	// pending asynchronous VTKHDF write launched by write3D_AMR (the
 	// join/snapshot contract is documented there)
 	std::future<void> pendingAMRIO_;
+
+	// opt-in: write every VTKHDF frame through the synchronous path frame 0
+	// uses (no std::async writer, no device-macro snapshot). The snapshot is
+	// a full second copy of all blocks' dmacro arrays, which does not fit
+	// next to a whole-GPU-sized stack, and the overlap it buys is negligible
+	// at typical OUT3D cadences (seconds of write per hour of compute)
+	bool vtkhdf_sync_write = false;
 
 	// per-block device-macro snapshot swapped into `block.dmacro` for the
 	// lifetime of the async writer (see write3D_AMR); inactive (real array
@@ -1236,7 +1258,7 @@ void State_AMR<NSE>::write3D_AMR(real time, int cycle)
 	// 5-level resolution; the window is fragile to process-state shaping,
 	// not just concurrency), so the complete HDF5 call sequence here is
 	// itself load-bearing for the first Put
-	if (cycle == 0) {
+	if (cycle == 0 || vtkhdf_sync_write) {
 		OverlappingAMRWriter<TRAITS>::write(fname, this->nse, time);
 		return;
 	}
