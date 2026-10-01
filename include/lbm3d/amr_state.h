@@ -771,6 +771,25 @@ void State_AMR<NSE>::SimInit()
 	// masks empty the masked faces' C2F destinations)
 	buildFineWallMasks();
 
+	// BC-adjacent interface policy for the single-array patterns
+	// (DFMAX == 1): wall-shared faces stay COUPLED at every level that has a
+	// finer child -- the mask is retained only at the finest level. With the
+	// two subcycling levels of a middle level alternating the parity of their
+	// mask-suppressed band's slot content on one physical df array, the
+	// wall-guarded band at a BC-adjacent masked face accumulates a parity
+	// class defect (the DFMAX == 1 wall-band pump reported by the
+	// simAMR/smoke reproductions and pre-registered in
+	// docs/AMR-seam-checkerboard-investigation.md); keeping the face coupled
+	// re-authors the band each pair with the parent's own wall-column state,
+	// exactly like an open coupled face. Unmasked middle faces get their
+	// coarse-to-fine fills from the parent's wall row at the chained plane,
+	// and the deepest wall chain stays at the finest level where the storage
+	// overlap and the wall row refresh are defined for.
+	if constexpr (NSE::DFMAX == 1)
+		for (auto& block : this->nse.blocks)
+			if (block.level > 0 && block.level < this->nse.max_level)
+				fine_wall_masks[block.id] = 0;
+
 #ifdef F2C_LAGRAVA
 	// strategy coupling guard (the plan's sec. 5.4 v1 ruling): the
 	// F2C_LAGRAVA filter reads a 4-node window one fine cell deeper than
@@ -2118,13 +2137,38 @@ void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level)
 			const dreal tau_fine = static_cast<dreal>(3 * blockLbmViscosity(*fine) + 0.5);
 			const dreal tau_coarse = static_cast<dreal>(3 * blockLbmViscosity(*coarse) + 0.5);
 			// parity of the kernel launch that produced the current coarse
-			// data (AA-pattern state; ignored by the kernel for AB)
-			const bool coarse_even_iter = coarse->data.even_iter;
+			// data (AA-pattern state; ignored by the kernel for AB). For a
+			// nested coarse block (coarse_level >= 1) it is recomputed from the
+			// level's substep counter rather than read from the block: the
+			// cascade's dest-side updateKernelDataForLevel() already repointed
+			// the block's even_iter to the NEXT consuming substep (the
+			// mid-sync and the SimInit fill land here with the same producer
+			// parity semantics; the substep count is always >= 1 at those
+			// launches except at SimInit, where the count-1 tail deliberately
+			// selects the twisted orientation of the initial condition).
+			const bool coarse_even_iter = (coupling.coarse_level == 0)
+											? coarse->data.even_iter
+											: ((((this->nse.totalSubstepCount[coupling.coarse_level] - 1) % 2) + 2) % 2 == 1);
 			// parity of the NEXT consuming fine substep: the caller re-pointed
 			// the fine level's rotation to exactly that substep before this
 			// fill (the store side's phase argument, mirroring the F2C
 			// store's documented parity asymmetry)
 			const bool fine_even_iter = fine->data.even_iter;
+
+			// producer-frame presentation of the coarse block's df rotation
+			// (A-B patterns): same stomp as the parity flag above -- the
+			// cascade's dest-side rotation points df_cur at the next pair's
+			// input, but the fill must read the producing launch's df_out,
+			// so the kernel gets a copy re-rotated to the last completed
+			// substep (mirrors updateKernelDataForLevel's mapping at i')
+			auto coarse_SD = coarse->data;
+			if (coupling.coarse_level >= 1) {
+				const int ip = (((this->nse.totalSubstepCount[coupling.coarse_level] - 1) % NSE::DFMAX) + NSE::DFMAX) % NSE::DFMAX;
+				for (int k = 0; k < NSE::DFMAX; k++) {
+					const int knew = (k - ip) <= 0 ? (k - ip + NSE::DFMAX) % NSE::DFMAX : k - ip;
+					coarse_SD.dfs[k] = coarse->dfs[knew].getData();
+				}
+			}
 
 			// launch extent in the fine block's indexer coordinates, clipped
 			// FACE-AWARE to the fine block's overlap storage (the band
@@ -2178,7 +2222,7 @@ void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level)
 				cudaAMR_CoarseToFine<NSE>,
 				launch_config,
 				fine->data,
-				coarse->data,
+				coarse_SD,
 				begin,
 				end,
 				tau_fine,
