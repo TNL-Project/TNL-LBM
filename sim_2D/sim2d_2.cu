@@ -330,7 +330,7 @@ void sim(const std::string& adios_config, int RESOLUTION, bool use_forcing, doub
 	lat.physDt = PHYS_DT;
 	lat.physViscosity = PHYS_VISCOSITY;
 
-	const char* prec = (std::is_same_v<dreal, float>) ? "float" : "double";
+	const char* prec = std::is_same_v<dreal, float> ? "float" : "double";
 	const char* bc_variant = use_forcing ? "forcing" : "inflow";
 	const std::string state_id =
 		fmt::format("sim2d_2_{}_{}_{}_res{:02d}_np{:03d}", NSE::COLL::id, prec, bc_variant, RESOLUTION, TNL::MPI::GetSize(MPI_COMM_WORLD));

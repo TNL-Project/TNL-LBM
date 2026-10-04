@@ -395,8 +395,8 @@ void sim(const std::string& adios_config, int RES, bool use_forcing, Scaling sca
 	lat.physDt = PHYS_DT;
 	lat.physViscosity = PHYS_VISCOSITY;
 
-	const char* prec = (std::is_same_v<dreal, float>) ? "float" : "double";
-	const char* bc_variant = (use_forcing) ? "forcing" : "velocity";
+	const char* prec = std::is_same_v<dreal, float> ? "float" : "double";
+	const char* bc_variant = use_forcing ? "forcing" : "velocity";
 	const auto scaling_variant = magic_enum::enum_name(scaling);
 	const std::string state_id =
 		fmt::format("sim_2_{}_{}_{}_{}_res_{}_np_{}", NSE::COLL::id, prec, bc_variant, scaling_variant, RES, TNL::MPI::GetSize(MPI_COMM_WORLD));

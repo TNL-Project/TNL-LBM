@@ -216,7 +216,7 @@ struct StateLocal : State<NSE>
 		spdlog::info("F=[{:e}, {:e}, {:e}] C_D={:e} C_L={:e}", F.x(), F.y(), F.z(), C_D, C_L);
 
 		// empty files
-		const char* iotype = (firstrun) ? "wt" : "at";
+		const char* iotype = firstrun ? "wt" : "at";
 		firstrun = false;
 		// output
 		FILE* f;

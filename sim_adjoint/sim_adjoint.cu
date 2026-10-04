@@ -373,7 +373,7 @@ int simAdjoint(
 		block.data.loss_function = 0.0;
 
 		allocateCopyVelocityProfile<dreal, idx>(
-			&(block.data.vx_profile),
+			&block.data.vx_profile,
 			block.local.y(),
 			block.local.z(),
 			block.offset.y(),
@@ -383,7 +383,7 @@ int simAdjoint(
 			block.global.z()
 		);
 		allocateCopyVelocityProfile<dreal, idx>(
-			&(block.data.vy_profile),
+			&block.data.vy_profile,
 			block.local.y(),
 			block.local.z(),
 			block.offset.y(),
@@ -393,7 +393,7 @@ int simAdjoint(
 			block.global.z()
 		);
 		allocateCopyVelocityProfile<dreal, idx>(
-			&(block.data.vz_profile),
+			&block.data.vz_profile,
 			block.local.y(),
 			block.local.z(),
 			block.offset.y(),
@@ -403,7 +403,7 @@ int simAdjoint(
 			block.global.z()
 		);
 		allocateCopyVelocityProfile<dreal, idx>(
-			&(block.data.vx_profile_result),
+			&block.data.vx_profile_result,
 			block.local.y(),
 			block.local.z(),
 			block.offset.y(),
@@ -413,7 +413,7 @@ int simAdjoint(
 			block.global.z()
 		);
 		allocateCopyVelocityProfile<dreal, idx>(
-			&(block.data.vy_profile_result),
+			&block.data.vy_profile_result,
 			block.local.y(),
 			block.local.z(),
 			block.offset.y(),
@@ -423,7 +423,7 @@ int simAdjoint(
 			block.global.z()
 		);
 		allocateCopyVelocityProfile<dreal, idx>(
-			&(block.data.vz_profile_result),
+			&block.data.vz_profile_result,
 			block.local.y(),
 			block.local.z(),
 			block.offset.y(),
@@ -433,10 +433,10 @@ int simAdjoint(
 			block.global.z()
 		);
 		// init g*_profile with zeroes
-		allocateCopyGradientProfile<dreal, idx>(&(block.data.gx_profile), block.local.y(), block.local.z());
-		allocateCopyGradientProfile<dreal, idx>(&(block.data.gy_profile), block.local.y(), block.local.z());
-		allocateCopyGradientProfile<dreal, idx>(&(block.data.gz_profile), block.local.y(), block.local.z());
-		allocateCopyGradientProfile<bool, idx>(&(block.data.b_profile), block.local.y(), block.local.z());
+		allocateCopyGradientProfile<dreal, idx>(&block.data.gx_profile, block.local.y(), block.local.z());
+		allocateCopyGradientProfile<dreal, idx>(&block.data.gy_profile, block.local.y(), block.local.z());
+		allocateCopyGradientProfile<dreal, idx>(&block.data.gz_profile, block.local.y(), block.local.z());
+		allocateCopyGradientProfile<bool, idx>(&block.data.b_profile, block.local.y(), block.local.z());
 	}
 
 	if (print) {
@@ -505,16 +505,16 @@ int simAdjoint(
 	}
 
 	for (auto& block : state.nse.blocks) {
-		deallocateVelocityProfile<dreal>(&(block.data.vx_profile));
-		deallocateVelocityProfile<dreal>(&(block.data.vy_profile));
-		deallocateVelocityProfile<dreal>(&(block.data.vz_profile));
-		deallocateVelocityProfile<dreal>(&(block.data.vx_profile_result));
-		deallocateVelocityProfile<dreal>(&(block.data.vy_profile_result));
-		deallocateVelocityProfile<dreal>(&(block.data.vz_profile_result));
-		deallocateGradientProfile<dreal>(&(block.data.gx_profile));
-		deallocateGradientProfile<dreal>(&(block.data.gy_profile));
-		deallocateGradientProfile<dreal>(&(block.data.gz_profile));
-		deallocateGradientProfile<bool>(&(block.data.b_profile));
+		deallocateVelocityProfile<dreal>(&block.data.vx_profile);
+		deallocateVelocityProfile<dreal>(&block.data.vy_profile);
+		deallocateVelocityProfile<dreal>(&block.data.vz_profile);
+		deallocateVelocityProfile<dreal>(&block.data.vx_profile_result);
+		deallocateVelocityProfile<dreal>(&block.data.vy_profile_result);
+		deallocateVelocityProfile<dreal>(&block.data.vz_profile_result);
+		deallocateGradientProfile<dreal>(&block.data.gx_profile);
+		deallocateGradientProfile<dreal>(&block.data.gy_profile);
+		deallocateGradientProfile<dreal>(&block.data.gz_profile);
+		deallocateGradientProfile<bool>(&block.data.b_profile);
 	}
 
 	//! remove directories
@@ -571,7 +571,7 @@ sim(double* velocityProfileX,
 
 	for (auto& block : state.nse.blocks) {
 		allocateCopyVelocityProfile<dreal, idx>(
-			&(block.data.inflow_vx),
+			&block.data.inflow_vx,
 			block.local.y(),
 			block.local.z(),
 			block.offset.y(),
@@ -581,7 +581,7 @@ sim(double* velocityProfileX,
 			block.global.z()
 		);
 		allocateCopyVelocityProfile<dreal, idx>(
-			&(block.data.inflow_vy),
+			&block.data.inflow_vy,
 			block.local.y(),
 			block.local.z(),
 			block.offset.y(),
@@ -591,7 +591,7 @@ sim(double* velocityProfileX,
 			block.global.z()
 		);
 		allocateCopyVelocityProfile<dreal, idx>(
-			&(block.data.inflow_vz),
+			&block.data.inflow_vz,
 			block.local.y(),
 			block.local.z(),
 			block.offset.y(),
@@ -622,9 +622,9 @@ sim(double* velocityProfileX,
 	}
 
 	for (auto& block : state.nse.blocks) {
-		deallocateVelocityProfile<dreal>(&(block.data.inflow_vx));
-		deallocateVelocityProfile<dreal>(&(block.data.inflow_vy));
-		deallocateVelocityProfile<dreal>(&(block.data.inflow_vz));
+		deallocateVelocityProfile<dreal>(&block.data.inflow_vx);
+		deallocateVelocityProfile<dreal>(&block.data.inflow_vy);
+		deallocateVelocityProfile<dreal>(&block.data.inflow_vz);
 	}
 
 	//! remove directories

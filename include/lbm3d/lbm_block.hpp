@@ -1172,7 +1172,7 @@ void LBM_BLOCK<CONFIG>::start4DArraySynchronization(
 		view.bind(array.getData() + i * data.XYZ);
 		// determine sync direction - use D2Q9 array for Q=9, otherwise D3Q27/D3Q7 array
 		const TNL::Containers::SyncDirection* dirs = (CONFIG::Q == 9) ? df_sync_directions_d2q9 : df_sync_directions;
-		TNL::Containers::SyncDirection sync_direction = (is_df) ? dirs[i] : TNL::Containers::SyncDirection::All;
+		TNL::Containers::SyncDirection sync_direction = is_df ? dirs[i] : TNL::Containers::SyncDirection::All;
 		int buffer_offset = 0;
 		if constexpr (is_AA_v<typename CONFIG::STREAMING>) {
 			if (is_df) {

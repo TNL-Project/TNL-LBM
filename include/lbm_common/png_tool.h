@@ -24,7 +24,7 @@ struct PNGTool
 		int x = ia * (width - 1);
 
 		png_bytep row = row_pointers[y];
-		png_bytep px = &(row[x * 4]);
+		png_bytep px = &row[x * 4];
 
 		unsigned char r = px[0];
 		unsigned char g = px[1];
