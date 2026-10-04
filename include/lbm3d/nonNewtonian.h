@@ -6,7 +6,6 @@
 #include "defs.h"
 #include "kernels.h"
 #include "lbm_common/ciselnik.h"
-#include "lbm_data.h"
 
 // Extra kernels for the non-Newtonian fluid model
 

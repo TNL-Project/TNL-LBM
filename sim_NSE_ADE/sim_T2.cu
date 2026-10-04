@@ -1,9 +1,6 @@
 #include <argparse/argparse.hpp>
 
 #include "lbm3d/core.h"
-#include "lbm3d/d3q7/eq.h"
-#include "lbm3d/d3q7/col_srt.h"
-#include "lbm3d/d3q7/col_mrt.h"
 #include "lbm3d/d3q7/col_clbm.h"
 #include "lbm3d/d3q7/streaming.h"
 #include "lbm3d/d3q7/bc.h"

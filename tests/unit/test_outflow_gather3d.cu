@@ -19,14 +19,22 @@
  * covered for all faces including the symmetry-as-interior rule.
  */
 
-#include <cstdint>
 #include <limits>
 #include <string>
 #include <vector>
 
 #include <doctest/doctest.h>
 
-#include "lbm3d/core.h"
+#include "lbm3d/lbm_data.h"
+#include "lbm3d/d3q27/bc.h"
+#include "lbm3d/d3q27/col_srt.h"
+#include "lbm3d/d3q27/macro.h"
+
+#include "lbm3d/d3q27/streaming.h"
+#include "lbm3d/d3q27/streaming_AA.h"
+#include "lbm3d/d3q27/streaming_AB_PULL.h"
+#include "lbm3d/d3q27/streaming_AB_PUSH.h"
+
 #include "lbm3d/lbm_block.h"
 #include "lbm_common/rounding.h"
 

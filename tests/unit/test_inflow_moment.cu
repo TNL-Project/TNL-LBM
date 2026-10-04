@@ -29,7 +29,7 @@
 #include "lbm3d/d2q9/col_srt.h"
 #include "lbm3d/d2q9/macro.h"
 
-#include "lbm3d/core.h"	 // d3q27 umbrella
+#include "lbm3d/d3q27/streaming.h"
 #include "lbm3d/d3q27/bc.h"
 #include "lbm3d/d3q27/col_srt.h"
 #include "lbm3d/d3q27/macro.h"

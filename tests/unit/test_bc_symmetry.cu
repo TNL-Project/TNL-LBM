@@ -11,8 +11,6 @@
  * - two-axis symmetry (x and y simultaneously) → both axes mirrored
  */
 
-#include <cstdint>
-
 #include <doctest/doctest.h>
 
 #include "lbm3d/lbm_data.h"

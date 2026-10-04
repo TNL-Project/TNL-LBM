@@ -13,10 +13,10 @@ static inline bool fileExists(const char* fname)
 	return access(fname, F_OK) == 0;
 }
 
-#include <string.h>
+#include <cstring>
 #include <linux/limits.h>  // PATH_MAX
 #include <sys/stat.h>	   // mkdir(2)
-#include <errno.h>
+#include <cerrno>
 
 // adapted from http://stackoverflow.com/a/2336245/119527
 static inline int mkdir_p(const char* path, mode_t mode)
@@ -68,7 +68,7 @@ static inline int create_parent_directories(const char* fname)
 	return mkdir_p(dir, 0777);
 }
 
-#include <stdio.h>	// FILE, fopen, fclose
+#include <cstdio>  // FILE, fopen, fclose, renameat2
 
 // create parent directories and then the file
 static inline int create_file(const char* fname)
@@ -91,7 +91,6 @@ static inline int create_file(const char* fname)
 	return 0;
 }
 
-#include <stdio.h>	 // renameat2
 #include <fcntl.h>	 // open
 #include <unistd.h>	 // close
 #include <error.h>	 // errno
@@ -135,8 +134,6 @@ static inline int rename_exchange(const char* oldpath, const char* newpath)
 }
 
 #include <sys/file.h>  // flock
-#include <fcntl.h>	   // open
-#include <unistd.h>	   // close
 
 // Try to get a lock. Returns its file descriptor or -1 if failed.
 static inline int tryLockFile(const char* lockpath)

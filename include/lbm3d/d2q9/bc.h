@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lbm3d/defs.h"
+#include "lbm_common/ciselnik.h"
 #include "lbm_common/rounding.h"
 
 template <typename CONFIG>

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lbm3d/lagrange_3D.h"
+#include "lbm_common/ciselnik.h"
 
 template <typename LBM>
 std::pair<int, int> ibmSetupRectangle(

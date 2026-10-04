@@ -1,5 +1,7 @@
 #pragma once
 
+#include <TNL/Containers/Expressions/StaticExpressionTemplates.h>
+
 template <typename LBM>
 void lbmDrawCube(LBM& lbm, typename LBM::map_t wall_tag, typename LBM::point_t phys_center, typename LBM::real phys_radius)
 {
