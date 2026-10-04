@@ -56,6 +56,12 @@ Diagnostics:
       - modernize-avoid-c-arrays
       - modernize-use-trailing-return-type
       - modernize-raw-string-literal
+      # modernize-avoid-c-style-cast: new in clangd 23, C-style casts are the project's idiom
+      - modernize-avoid-c-style-cast
+      # nested ternaries are used frequently for lattice slot arithmetic and documented alternates
+      - readability-avoid-nested-conditional-operator
+      # #if 0/1 blocks are used frequently in this project
+      - readability-avoid-unconditional-preprocessor-if
     CheckOptions:
       readability-function-size.LineThreshold: 64
       readability-function-size.ParameterThreshold: 15
@@ -66,6 +72,8 @@ Diagnostics:
       performance-unnecessary-value-param.AllowedTypes: "std::shared_ptr;std::unique_ptr"
       cppcoreguidelines-pro-type-member-init.UseAssignment: true
 
+  # NOLINT comments are NOT honored by the unused-includes check
+  # (intended includes must be marked with "// IWYU pragma: keep")
   UnusedIncludes: Strict
   MissingIncludes: None  # TODO: switch to Strict?
 
@@ -75,6 +83,15 @@ Completion:
 Style:
   AngledHeaders:
     - "TNL/.*"
+
+---
+# silenced for library headers (settings remain strict in sources):
+# -Wunused-function fires for header utilities that only real TUs consume
+If:
+  PathMatch: include/.*
+CompileFlags:
+  Add:
+    - "-Wno-unused-function"
 
 ...
 # vim: ft=yaml
