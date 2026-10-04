@@ -39,7 +39,7 @@ struct StateLocal : State_NSE_ADE<NSE, ADE>
 		real iphysVelocity,
 		const std::string& adiosConfigPath = "adios2.xml"
 	)
-	: State_NSE_ADE<NSE, ADE>(id, communicator, lat_nse, lat_ade, adiosConfigPath)
+	: State_NSE_ADE<NSE, ADE>(id, communicator, std::move(lat_nse), std::move(lat_ade), adiosConfigPath)
 	{
 		//for (auto& block : nse.blocks)
 		//{

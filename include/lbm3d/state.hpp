@@ -91,7 +91,7 @@ void State<NSE>::ensureFidesJsonModel(const std::string& dimsVariable, const std
 	const std::string jsonPath =
 		! dataManager.getPluginDataModelPath().empty() ? dataManager.getPluginDataModelPath() : fmt::format("results_{}/lbm-fides.json", id);
 	if (nse.rank == 0) {
-		using json = nlohmann::json;
+		using nlohmann::json;
 
 		// Make sure parent directories exist
 		create_parent_directories(jsonPath.c_str());

@@ -9,25 +9,13 @@ CUDA_HOSTDEV bool isDDNonZero(int i, real r)
 {
 	switch (i) {
 		case 1:	 // VU: phi3
-			if (fabs(r) < (real) 1.0)
-				return true;
-			else
-				return false;
+			return fabs(r) < (real) 1.0;
 		case 2:	 // VU: phi2
-			if (fabs(r) < (real) 2.0)
-				return true;
-			else
-				return false;
+			return fabs(r) < (real) 2.0;
 		case 3:	 // VU: phi1
-			if (fabs(r) >= (real) 2.0)
-				return false;
-			else
-				return true;
+			return fabs(r) < (real) 2.0;
 		case 4:	 // VU: phi4
-			if (fabs(r) >= (real) 1.5)
-				return false;
-			else
-				return true;
+			return fabs(r) < (real) 1.5;
 	}
 	return false;
 }

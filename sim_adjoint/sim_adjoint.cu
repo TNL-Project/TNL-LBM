@@ -317,7 +317,7 @@ int simAdjoint(
 	double* velocityProfileX,
 	double* velocityProfileY,
 	double* velocityProfileZ,
-	double* lossFunction,
+	double* lossFunction,  // NOLINT(readability-non-const-parameter): only stored here, the pointee is mutated via state methods
 	double eps,
 	int RESOLUTION = 1,
 	bool print = false,

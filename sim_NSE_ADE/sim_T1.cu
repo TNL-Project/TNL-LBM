@@ -309,7 +309,7 @@ struct StateLocal : State_NSE_ADE<NSE, ADE>
 	StateLocal(
 		const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat_nse, lat_t lat_ade, const std::string& adiosConfigPath = "adios2.xml"
 	)
-	: State_NSE_ADE<NSE, ADE>(id, communicator, lat_nse, lat_ade, adiosConfigPath)
+	: State_NSE_ADE<NSE, ADE>(id, communicator, std::move(lat_nse), std::move(lat_ade), adiosConfigPath)
 	{}
 
 	void setupBoundaries() override
