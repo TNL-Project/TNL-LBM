@@ -54,7 +54,7 @@ check-typos:
     just _ensure-command typos
     typos {{ color_always }} --sort
 
-# Checks the code formatting using clang-format, gersemi, and ruff
+# Checks the code formatting using clang-format, gersemi, tombi, and ruff
 check-format:
     just --unstable --fmt --check
     just _ensure-command clang-format
@@ -68,10 +68,12 @@ check-format:
          -print0 | xargs -0 clang-format --dry-run -Werror --style file
     just _ensure-command gersemi
     gersemi {{ color }} --diff --check .
+    just _ensure-command tombi
+    tombi format --check --diff .
     just _ensure-command ruff
     ruff format --diff
 
-# Reformats supported files using clang-format, gersemi, and ruff
+# Reformats supported files using clang-format, gersemi, tombi, and ruff
 format:
     just --unstable --fmt
     just _ensure-command clang-format
@@ -85,6 +87,8 @@ format:
          -print0 | xargs -0 clang-format -i --style file
     just _ensure-command gersemi
     gersemi {{ color }} --in-place .
+    just _ensure-command tombi
+    tombi format .
     just _ensure-command ruff
     ruff format .
 
