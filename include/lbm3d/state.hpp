@@ -106,13 +106,15 @@ void State<NSE>::ensureFidesJsonModel(const std::string& dimsVariable, const std
 		const double dl = static_cast<double>(nse.lat.physDl);
 
 		model["coordinate_system"] = json{
-			{"array",
-			 json{
-				 {"array_type", "uniform_point_coordinates"},
-				 {"dimensions", json{{"source", "variable_dimensions"}, {"data_source", "source"}, {"variable", dimVar}}},
-				 {"origin", json{{"source", "array"}, {"values", json::array({origin.x(), origin.y(), origin.z()})}}},
-				 {"spacing", json{{"source", "array"}, {"values", json::array({dl, dl, dl})}}},
-			 }},
+			{
+				"array",
+				json{
+					{"array_type", "uniform_point_coordinates"},
+					{"dimensions", json{{"source", "variable_dimensions"}, {"data_source", "source"}, {"variable", dimVar}}},
+					{"origin", json{{"source", "array"}, {"values", json::array({origin.x(), origin.y(), origin.z()})}}},
+					{"spacing", json{{"source", "array"}, {"values", json::array({dl, dl, dl})}}},
+				},
+			},
 		};
 
 		model["cell_set"] = json{
@@ -401,13 +403,19 @@ void State<NSE>::predefine3D(const std::string& ioName, const BLOCK_NSE& block)
 	idx3d local_size = block.local + overlap;
 
 	const adios2::Dims shape{
-		static_cast<std::size_t>(block.global.z()), static_cast<std::size_t>(block.global.y()), static_cast<std::size_t>(block.global.x())
+		static_cast<std::size_t>(block.global.z()),
+		static_cast<std::size_t>(block.global.y()),
+		static_cast<std::size_t>(block.global.x()),
 	};
 	const adios2::Dims start{
-		static_cast<std::size_t>(block.offset.z()), static_cast<std::size_t>(block.offset.y()), static_cast<std::size_t>(block.offset.x())
+		static_cast<std::size_t>(block.offset.z()),
+		static_cast<std::size_t>(block.offset.y()),
+		static_cast<std::size_t>(block.offset.x()),
 	};
 	const adios2::Dims count{
-		static_cast<std::size_t>(local_size.z()), static_cast<std::size_t>(local_size.y()), static_cast<std::size_t>(local_size.x())
+		static_cast<std::size_t>(local_size.z()),
+		static_cast<std::size_t>(local_size.y()),
+		static_cast<std::size_t>(local_size.x()),
 	};
 
 	predefineOutputVariables(ioName, block, shape, start, count);
@@ -499,13 +507,19 @@ void State<NSE>::predefine3Dcut(const std::string& ioName, const BLOCK_NSE& bloc
 
 	// NOTE: ADIOS2 dims are in {Z, Y, X} order for ImageData writer
 	const adios2::Dims shape{
-		static_cast<std::size_t>(cut_global.z()), static_cast<std::size_t>(cut_global.y()), static_cast<std::size_t>(cut_global.x())
+		static_cast<std::size_t>(cut_global.z()),
+		static_cast<std::size_t>(cut_global.y()),
+		static_cast<std::size_t>(cut_global.x()),
 	};
 	const adios2::Dims start{
-		static_cast<std::size_t>(cut_offset.z()), static_cast<std::size_t>(cut_offset.y()), static_cast<std::size_t>(cut_offset.x())
+		static_cast<std::size_t>(cut_offset.z()),
+		static_cast<std::size_t>(cut_offset.y()),
+		static_cast<std::size_t>(cut_offset.x()),
 	};
 	const adios2::Dims count{
-		static_cast<std::size_t>(cut_local.z()), static_cast<std::size_t>(cut_local.y()), static_cast<std::size_t>(cut_local.x())
+		static_cast<std::size_t>(cut_local.z()),
+		static_cast<std::size_t>(cut_local.y()),
+		static_cast<std::size_t>(cut_local.x()),
 	};
 
 	predefineOutputVariables(ioName, block, shape, start, count);

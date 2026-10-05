@@ -35,7 +35,7 @@ struct D3Q27_BC_All
 		GEO_ADJOINT_FLUID_m,
 		GEO_ADJOINT_WALL,
 		GEO_ADJOINT_INFLOW_BB_LEFT,
-		GEO_ADJOINT_OUTFLOW_RIGHT
+		GEO_ADJOINT_OUTFLOW_RIGHT,
 	};
 
 	__cuda_callable__ static bool isSymmetric(map_t mapgi)

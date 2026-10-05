@@ -26,7 +26,7 @@ struct D2Q9_BC_All
 		GEO_OUTFLOW_RIGHT,
 		GEO_OUTFLOW_RIGHT_INTERP,
 		GEO_NOTHING,
-		GEO_SYMMETRY
+		GEO_SYMMETRY,
 	};
 
 	__cuda_callable__ static bool isSymmetric(map_t mapgi)

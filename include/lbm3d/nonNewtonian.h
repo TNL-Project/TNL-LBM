@@ -246,7 +246,7 @@ struct MacroNonNewtonianDefault : D3Q27_MACRO_Default<TRAITS>
 		e_S22,
 		e_S32,
 		e_S33,
-		N
+		N,
 	};
 
 	template <typename LBM_DATA, typename LBM_KS>

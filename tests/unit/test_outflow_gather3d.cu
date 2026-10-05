@@ -53,8 +53,10 @@ using bool3d = TRAITS::bool3d;
 // direction names in the D3Q27 enum order (must match defs.h); the
 // ground-truth components are parsed from these, independently of the
 // production tables
-static constexpr const char* dir27_names[27] = {"zzz", "pzz", "mzz", "zpz", "zmz", "zzp", "zzm", "ppz", "mmz", "pmz", "mpz", "pzp", "mzm", "pzm",
-												"mzp", "zpp", "zmm", "zpm", "zmp", "ppp", "mmm", "ppm", "mmp", "pmp", "mpm", "pmm", "mpp"};
+static constexpr const char* dir27_names[27] = {
+	"zzz", "pzz", "mzz", "zpz", "zmz", "zzp", "zzm", "ppz", "mmz", "pmz", "mpz", "pzp", "mzm", "pzm",
+	"mzp", "zpp", "zmm", "zpm", "zmp", "ppp", "mmm", "ppm", "mmp", "pmp", "mpm", "pmm", "mpp",
+};
 
 static int nameVal(char c)
 {

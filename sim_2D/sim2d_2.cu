@@ -148,7 +148,7 @@ struct StateLocal : State<NSE>
 			"lbm_analytical_vx",
 			"lbm_error_vx",
 			"analytical_vx",
-			"error_vx"
+			"error_vx",
 		};
 	}
 

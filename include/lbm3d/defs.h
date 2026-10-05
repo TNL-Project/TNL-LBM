@@ -352,7 +352,7 @@ struct bc_face
 		YP = 1 << 2,  // outward normal +y / ghost side at y+1
 		YM = 1 << 3,  // outward normal -y / ghost side at y-1
 		ZP = 1 << 4,  // outward normal +z / ghost side at z+1
-		ZM = 1 << 5	  // outward normal -z / ghost side at z-1
+		ZM = 1 << 5,  // outward normal -z / ghost side at z-1
 	};
 };
 

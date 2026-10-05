@@ -24,7 +24,7 @@ struct MacroLocal : D3Q27_MACRO_Base<TRAITS>
 		e_vy,
 		e_vz,
 		e_rho,
-		N
+		N,
 	};
 
 	template <typename LBM_DATA, typename LBM_KS>

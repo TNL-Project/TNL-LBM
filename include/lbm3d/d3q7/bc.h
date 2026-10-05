@@ -28,7 +28,7 @@ struct D3Q7_BC_All
 		GEO_OUTFLOW_RIGHT,
 		GEO_NOTHING,
 		GEO_OUTFLOW_PE,
-		GEO_SYMMETRY
+		GEO_SYMMETRY,
 	};
 
 	__cuda_callable__ static bool isFluid(map_t mapgi)

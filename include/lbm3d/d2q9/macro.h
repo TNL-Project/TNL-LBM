@@ -20,7 +20,7 @@ struct D2Q9_MACRO_Base
 		e_vz,
 		e_fx,
 		e_fy,
-		e_fz
+		e_fz,
 	};
 
 	// specifies if macroscopic quantities are computed in the kernel in each iteration
@@ -62,7 +62,7 @@ struct D2Q9_MACRO_Default : D2Q9_MACRO_Base<TRAITS>
 		e_rho,
 		e_vx,
 		e_vy,
-		N
+		N,
 	};
 
 	template <typename LBM_DATA, typename LBM_KS>
@@ -98,7 +98,7 @@ struct D2Q9_MACRO_Mean : D2Q9_MACRO_Base<TRAITS>
 		e_vm2_xx,
 		e_vm2_yy,
 		e_vm2_xy,
-		N
+		N,
 	};
 
 	// specifies if macroscopic quantities are computed in the kernel in each iteration

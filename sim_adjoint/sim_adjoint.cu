@@ -172,7 +172,7 @@ struct StateLocalAdjoint : State<NSE>
 			"lbm_density_m_fluctuation",
 			"lbm_velocity_m_x",
 			"lbm_velocity_m_y",
-			"lbm_velocity_m_z"
+			"lbm_velocity_m_z",
 		};
 	}
 

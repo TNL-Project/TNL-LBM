@@ -13,7 +13,7 @@ struct D3Q7_MACRO_Default
 	enum QuantityNames : std::uint8_t
 	{
 		e_phi,
-		N
+		N,
 	};
 
 	// specifies if macroscopic quantities are computed in the kernel in each iteration

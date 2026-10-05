@@ -134,7 +134,7 @@ struct StateLocal : State<NSE>
 			"analytical_vx",
 			"analytical_vy",
 			"error_vx",
-			"error_vy"
+			"error_vy",
 		};
 	}
 

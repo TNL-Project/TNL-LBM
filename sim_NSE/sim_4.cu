@@ -248,7 +248,7 @@ struct StateLocal : State<NSE>
 					const dreal vz = dmacro_view(MACRO::e_vz, x, y, z);
 					return rho * (vx * vx + vy * vy + vz * vz);
 				},
-				TNL::Plus{},
+				TNL::Plus{},  // NOLINT(readability-trailing-comma) false positive
 				real(0)
 			);
 		const real lbm_kinetic_energy = TNL::MPI::reduce(lbm_kinetic_energy_local, MPI_SUM, nse.communicator) / rho_0 / 2 / domain_volume;
@@ -272,7 +272,7 @@ struct StateLocal : State<NSE>
 						G.xx * G.xx + G.yy * G.yy + G.zz * G.zz + G.xy * G.xy + G.xz * G.xz + G.yz * G.yz + G.yx * G.yx + G.zx * G.zx + G.zy * G.zy;
 					return rho * G_norm_squared;
 				},
-				TNL::Plus{},
+				TNL::Plus{},  // NOLINT(readability-trailing-comma) false positive
 				real(0)
 			);
 		const real lbm_enstrophy = TNL::MPI::reduce(lbm_enstrophy_local, MPI_SUM, nse.communicator) / rho_0 / 2 / domain_volume;
