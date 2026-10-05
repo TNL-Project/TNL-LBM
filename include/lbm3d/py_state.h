@@ -67,8 +67,9 @@ struct PyState : public State<NSE>
 				nb_trampoline.base().attr(nb_ticket.key).template operator()<nb::rv_policy::reference_v>(writer, block, begin, end)
 			);
 		}
-		else
+		else {
 			return NBBase::outputData(writer, block, begin, end);
+		}
 	}
 
 	void probe1() override

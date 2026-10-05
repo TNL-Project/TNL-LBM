@@ -252,10 +252,12 @@ static void computeExpected(int face, bool interp, bool even, int x, int y, int 
 				int so[2];
 				so[axis] = co[axis] + cn;
 				so[1 - axis] = co[1 - axis];
-				if (cn == sgn)
+				if (cn == sgn) {
 					exp[i] = pat(i, sn[0], sn[1], z);
-				else if (cn == 0)
+				}
+				else if (cn == 0) {
 					exp[i] = pat(i, so[0], so[1], z);
+				}
 				else {
 					isBlend[i] = 1;
 					blendA[i] = pat(i, sn[0], sn[1], z);
@@ -267,8 +269,9 @@ static void computeExpected(int face, bool interp, bool even, int x, int y, int 
 					// outward- and perpendicular-moving populations take the cell's
 					// own postcoll; the inward-moving population blends the
 					// pre-anchor column with the anchor column
-					if (cn == sgn || cn == 0)
+					if (cn == sgn || cn == 0) {
 						exp[i] = pat(i, x, y, z);
+					}
 					else {
 						int sa[2];
 						sa[axis] = anchor + c[axis];

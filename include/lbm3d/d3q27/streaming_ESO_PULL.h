@@ -480,10 +480,12 @@ struct D3Q27_STREAMING_ESO_PULL
 				oy = ny;
 				oz = z + pz;
 			}
-			if (cn == out_sign)
+			if (cn == out_sign) {
 				KS.f[i] = TNL::Backend::ldg(SD.df(df_cur, slot, nx, ny, nz));
-			else if (cn == 0)
+			}
+			else if (cn == 0) {
 				KS.f[i] = TNL::Backend::ldg(SD.df(df_cur, slot, ox, oy, oz));
+			}
 			else {
 				// the outflowInterpBlend form (velocity neglected)
 				constexpr dreal SpeedOfSound = 0.5773502691896257;

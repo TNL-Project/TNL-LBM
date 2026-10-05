@@ -377,8 +377,9 @@ struct D3Q27_BC_All
 		{
 			STREAMING::streamingAdjoint(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 		}
-		else if (mapgi != GEO_OUTFLOW_RIGHT_INTERP)
+		else if (mapgi != GEO_OUTFLOW_RIGHT_INTERP) {
 			STREAMING::streaming(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+		}
 
 		// boundary conditions
 		switch (mapgi) {

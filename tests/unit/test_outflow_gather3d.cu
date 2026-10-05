@@ -246,10 +246,12 @@ static void computeExpected(int face, bool interp, bool even, int x, int y, int 
 			if constexpr (is_AB_PULL_v<STREAMING>) {
 				// outward population: anchor column; perpendicular: own column;
 				// inward: anchor-column postcoll blended with the own-column postcoll
-				if (cn == sgn)
+				if (cn == sgn) {
 					exp[i] = sitePat(i, anchor);
-				else if (cn == 0)
+				}
+				else if (cn == 0) {
 					exp[i] = sitePat(i, co[axis]);
+				}
 				else {
 					isBlend[i] = 1;
 					blendA[i] = sitePat(i, anchor);
@@ -258,10 +260,12 @@ static void computeExpected(int face, bool interp, bool even, int x, int y, int 
 			}
 			else if constexpr (is_AB_PUSH_v<STREAMING>) {
 				// post-stream layout: mapped anchor/own columns
-				if (cn == sgn)
+				if (cn == sgn) {
 					exp[i] = anchorPat(i, cn);
-				else if (cn == 0)
+				}
+				else if (cn == 0) {
 					exp[i] = ownPat(i, cn);
+				}
 				else {
 					isBlend[i] = 1;
 					blendA[i] = anchorPat(i, cn);
@@ -273,8 +277,9 @@ static void computeExpected(int face, bool interp, bool even, int x, int y, int 
 					// outward- and perpendicular-moving populations take the cell's
 					// own postcoll; the inward-moving population blends the
 					// pre-anchor column with the anchor column
-					if (cn == sgn || cn == 0)
+					if (cn == sgn || cn == 0) {
 						exp[i] = pat(i, x, y, z);
+					}
 					else {
 						isBlend[i] = 1;
 						blendA[i] = anchorPat(i, c[axis]);
@@ -285,10 +290,12 @@ static void computeExpected(int face, bool interp, bool even, int x, int y, int 
 					// twist layout: outward from the anchor column, perpendicular
 					// from the own column, inward blends the two
 					const int slot = opp27(i);
-					if (cn == sgn)
+					if (cn == sgn) {
 						exp[i] = sitePat(slot, anchor);
-					else if (cn == 0)
+					}
+					else if (cn == 0) {
 						exp[i] = sitePat(slot, co[axis]);
+					}
 					else {
 						isBlend[i] = 1;
 						blendA[i] = sitePat(slot, anchor);

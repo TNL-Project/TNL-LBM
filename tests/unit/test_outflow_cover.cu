@@ -542,10 +542,12 @@ TEST_CASE("boundary-65")
 		long v = 1;
 		for (int d = 0; d < 3; d++)
 			v *= b.end[d] - b.begin[d];
-		if (v == 1)
+		if (v == 1) {
 			ones++;
-		else if (v == 3)
+		}
+		else if (v == 3) {
 			threes++;
+		}
 		else {
 			dumpContext(block, ref, local);
 			FAIL("unexpected merged-box volume");

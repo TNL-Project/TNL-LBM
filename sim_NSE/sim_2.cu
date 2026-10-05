@@ -370,8 +370,9 @@ void sim(const std::string& adios_config, int RES, bool use_forcing, Scaling sca
 		LBM_X *= RES;
 	int LBM_Y = RES * block_size;
 	int LBM_Z = RES * block_size;
-	if (scaling == Scaling::weak_1d)
+	if (scaling == Scaling::weak_1d) {
 		LBM_X *= TNL::MPI::GetSize(MPI_COMM_WORLD);
+	}
 	else if (scaling == Scaling::weak_3d) {
 		// NOTE: scale volume by nproc, preserve the proportions of the domain
 		const real factor = std::cbrt(TNL::MPI::GetSize(MPI_COMM_WORLD));

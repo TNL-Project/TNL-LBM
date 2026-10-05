@@ -201,10 +201,12 @@ struct D2Q9_STREAMING_ESO_PULL
 			const idx ny = axis_x ? t : anchor + py;
 			const idx ox = axis_x ? x + px : t;
 			const idx oy = axis_x ? t : y + py;
-			if (cn == out_sign)
+			if (cn == out_sign) {
 				KS.f[i] = TNL::Backend::ldg(SD.df(df_cur, slot, nx, ny, z));
-			else if (cn == 0)
+			}
+			else if (cn == 0) {
 				KS.f[i] = TNL::Backend::ldg(SD.df(df_cur, slot, ox, oy, z));
+			}
 			else {
 				// the outflowInterpBlend form (velocity neglected)
 				constexpr dreal SpeedOfSound = 0.5773502691896257;
