@@ -263,7 +263,9 @@ struct D3Q27_STREAMING_AA
 			// against +c_i, so the normal coordinate is anchor + c_i[normal]
 			// and the tangential coordinates are the cell's own
 			for (int i = 0; i < 27; i++) {
-				idx sx, sy, sz;
+				idx sx;
+				idx sy;
+				idx sz;
 				if constexpr (axis == 0) {
 					sx = anchor + dir27_cx(i);
 					sy = y;
@@ -285,7 +287,9 @@ struct D3Q27_STREAMING_AA
 		else {
 			// twist layout: slot (opp(i), t) = postcoll_{n-1}(i, t)
 			for (int i = 0; i < 27; i++) {
-				idx sx, sy, sz;
+				idx sx;
+				idx sy;
+				idx sz;
 				if constexpr (axis == 0) {
 					sx = anchor;
 					sy = dir27_cy(i) > 0 ? ym : (dir27_cy(i) < 0 ? yp : y);
@@ -389,7 +393,12 @@ struct D3Q27_STREAMING_AA
 			for (int i = 0; i < 27; i++) {
 				const int cn = (axis == 0) ? dir27_cx(i) : (axis == 1) ? dir27_cy(i) : dir27_cz(i);	 // normal component of c_i
 				// site in the anchor column and site in the own column, tangential -c offsets
-				idx nx, ny, nz, ox, oy, oz;
+				idx nx;
+				idx ny;
+				idx nz;
+				idx ox;
+				idx oy;
+				idx oz;
 				if constexpr (axis == 0) {
 					nx = anchor;
 					ny = dir27_cy(i) > 0 ? ym : (dir27_cy(i) < 0 ? yp : y);

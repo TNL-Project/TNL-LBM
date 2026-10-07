@@ -1,9 +1,6 @@
 #include <argparse/argparse.hpp>
 
 #include "lbm3d/core.h"
-#include "lbm3d/d3q7/eq.h"
-#include "lbm3d/d3q7/col_srt.h"
-#include "lbm3d/d3q7/col_mrt.h"
 #include "lbm3d/d3q7/col_clbm.h"
 #include "lbm3d/d3q7/streaming.h"
 #include "lbm3d/d3q7/bc.h"
@@ -42,7 +39,7 @@ struct StateLocal : State_NSE_ADE<NSE, ADE>
 		real iphysVelocity,
 		const std::string& adiosConfigPath = "adios2.xml"
 	)
-	: State_NSE_ADE<NSE, ADE>(id, communicator, lat_nse, lat_ade, adiosConfigPath)
+	: State_NSE_ADE<NSE, ADE>(id, communicator, std::move(lat_nse), std::move(lat_ade), adiosConfigPath)
 	{
 		//for (auto& block : nse.blocks)
 		//{
@@ -118,7 +115,7 @@ struct StateLocal : State_NSE_ADE<NSE, ADE>
 #endif
 				// TODO: phys -> lbm conversion for concentration?
 				typename ADE::template KernelStruct<dreal> KS;
-				KS.phi = (x < center_x) ? phi_left : phi_right;  // KS.vx = KS.vy = KS.vz = 0 by default
+				KS.phi = (x < center_x) ? phi_left : phi_right;	 // KS.vx = KS.vy = KS.vz = 0 by default
 				ADE::COLL::setEquilibrium(KS);
 				for (int i = 0; i < ADE::Q; i++)
 					local_df(i, x, y, z) = KS.f[i];

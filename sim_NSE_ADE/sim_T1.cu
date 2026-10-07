@@ -1,9 +1,6 @@
 #include <argparse/argparse.hpp>
 
 #include "lbm3d/core.h"
-#include "lbm3d/d3q7/eq.h"
-#include "lbm3d/d3q7/col_srt.h"
-#include "lbm3d/d3q7/col_mrt.h"
 #include "lbm3d/d3q7/col_clbm.h"
 #include "lbm3d/d3q7/streaming.h"
 #include "lbm3d/d3q7/bc.h"
@@ -312,7 +309,7 @@ struct StateLocal : State_NSE_ADE<NSE, ADE>
 	StateLocal(
 		const std::string& id, const TNL::MPI::Comm& communicator, lat_t lat_nse, lat_t lat_ade, const std::string& adiosConfigPath = "adios2.xml"
 	)
-	: State_NSE_ADE<NSE, ADE>(id, communicator, lat_nse, lat_ade, adiosConfigPath)
+	: State_NSE_ADE<NSE, ADE>(id, communicator, std::move(lat_nse), std::move(lat_ade), adiosConfigPath)
 	{}
 
 	void setupBoundaries() override

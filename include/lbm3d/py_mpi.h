@@ -15,7 +15,7 @@
 
 namespace nb = nanobind;
 
-inline MPI_Comm py2mpi(nb::object obj)
+inline MPI_Comm py2mpi(const nb::object& obj)
 {
 #ifdef HAVE_MPI
 	// Lazy-import mpi4py to define the PyMPIComm_Get function

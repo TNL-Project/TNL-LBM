@@ -6,7 +6,6 @@
 #include "lbm3d/lbm_data.h"
 
 #include "lbm3d/d2q9/bc.h"
-#include "lbm3d/d2q9/col_srt.h"
 #include "lbm3d/d2q9/col_clbm.h"
 #include "lbm3d/d2q9/macro.h"
 
@@ -135,7 +134,7 @@ struct StateLocal : State<NSE>
 			"analytical_vx",
 			"analytical_vy",
 			"error_vx",
-			"error_vy"
+			"error_vy",
 		};
 	}
 

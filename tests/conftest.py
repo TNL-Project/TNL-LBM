@@ -65,13 +65,8 @@ def pytest_terminal_summary(
 
     def _format(cmd: list[str]) -> str:
         # Strip the mpirun prefix; rank count is shown in the ranks column.
-        args = (
-            cmd[3:] if len(cmd) >= 3 and cmd[0] == "mpirun" and cmd[1] == "-np" else cmd
-        )
-        parts = [
-            pathlib.Path(a).name if "/" in a and not a.startswith("-") else a
-            for a in args
-        ]
+        args = cmd[3:] if len(cmd) >= 3 and cmd[0] == "mpirun" and cmd[1] == "-np" else cmd
+        parts = [pathlib.Path(a).name if "/" in a and not a.startswith("-") else a for a in args]
         return " ".join(parts)
 
     def _status(run: SimRun) -> str:

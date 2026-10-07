@@ -172,7 +172,7 @@ struct StateLocalAdjoint : State<NSE>
 			"lbm_density_m_fluctuation",
 			"lbm_velocity_m_x",
 			"lbm_velocity_m_y",
-			"lbm_velocity_m_z"
+			"lbm_velocity_m_z",
 		};
 	}
 
@@ -317,7 +317,7 @@ int simAdjoint(
 	double* velocityProfileX,
 	double* velocityProfileY,
 	double* velocityProfileZ,
-	double* lossFunction,
+	double* lossFunction,  // NOLINT(readability-non-const-parameter): only stored here, the pointee is mutated via state methods
 	double eps,
 	int RESOLUTION = 1,
 	bool print = false,
@@ -373,7 +373,7 @@ int simAdjoint(
 		block.data.loss_function = 0.0;
 
 		allocateCopyVelocityProfile<dreal, idx>(
-			&(block.data.vx_profile),
+			&block.data.vx_profile,
 			block.local.y(),
 			block.local.z(),
 			block.offset.y(),
@@ -383,7 +383,7 @@ int simAdjoint(
 			block.global.z()
 		);
 		allocateCopyVelocityProfile<dreal, idx>(
-			&(block.data.vy_profile),
+			&block.data.vy_profile,
 			block.local.y(),
 			block.local.z(),
 			block.offset.y(),
@@ -393,7 +393,7 @@ int simAdjoint(
 			block.global.z()
 		);
 		allocateCopyVelocityProfile<dreal, idx>(
-			&(block.data.vz_profile),
+			&block.data.vz_profile,
 			block.local.y(),
 			block.local.z(),
 			block.offset.y(),
@@ -403,7 +403,7 @@ int simAdjoint(
 			block.global.z()
 		);
 		allocateCopyVelocityProfile<dreal, idx>(
-			&(block.data.vx_profile_result),
+			&block.data.vx_profile_result,
 			block.local.y(),
 			block.local.z(),
 			block.offset.y(),
@@ -413,7 +413,7 @@ int simAdjoint(
 			block.global.z()
 		);
 		allocateCopyVelocityProfile<dreal, idx>(
-			&(block.data.vy_profile_result),
+			&block.data.vy_profile_result,
 			block.local.y(),
 			block.local.z(),
 			block.offset.y(),
@@ -423,7 +423,7 @@ int simAdjoint(
 			block.global.z()
 		);
 		allocateCopyVelocityProfile<dreal, idx>(
-			&(block.data.vz_profile_result),
+			&block.data.vz_profile_result,
 			block.local.y(),
 			block.local.z(),
 			block.offset.y(),
@@ -433,10 +433,10 @@ int simAdjoint(
 			block.global.z()
 		);
 		// init g*_profile with zeroes
-		allocateCopyGradientProfile<dreal, idx>(&(block.data.gx_profile), block.local.y(), block.local.z());
-		allocateCopyGradientProfile<dreal, idx>(&(block.data.gy_profile), block.local.y(), block.local.z());
-		allocateCopyGradientProfile<dreal, idx>(&(block.data.gz_profile), block.local.y(), block.local.z());
-		allocateCopyGradientProfile<bool, idx>(&(block.data.b_profile), block.local.y(), block.local.z());
+		allocateCopyGradientProfile<dreal, idx>(&block.data.gx_profile, block.local.y(), block.local.z());
+		allocateCopyGradientProfile<dreal, idx>(&block.data.gy_profile, block.local.y(), block.local.z());
+		allocateCopyGradientProfile<dreal, idx>(&block.data.gz_profile, block.local.y(), block.local.z());
+		allocateCopyGradientProfile<bool, idx>(&block.data.b_profile, block.local.y(), block.local.z());
 	}
 
 	if (print) {
@@ -505,16 +505,16 @@ int simAdjoint(
 	}
 
 	for (auto& block : state.nse.blocks) {
-		deallocateVelocityProfile<dreal>(&(block.data.vx_profile));
-		deallocateVelocityProfile<dreal>(&(block.data.vy_profile));
-		deallocateVelocityProfile<dreal>(&(block.data.vz_profile));
-		deallocateVelocityProfile<dreal>(&(block.data.vx_profile_result));
-		deallocateVelocityProfile<dreal>(&(block.data.vy_profile_result));
-		deallocateVelocityProfile<dreal>(&(block.data.vz_profile_result));
-		deallocateGradientProfile<dreal>(&(block.data.gx_profile));
-		deallocateGradientProfile<dreal>(&(block.data.gy_profile));
-		deallocateGradientProfile<dreal>(&(block.data.gz_profile));
-		deallocateGradientProfile<bool>(&(block.data.b_profile));
+		deallocateVelocityProfile<dreal>(&block.data.vx_profile);
+		deallocateVelocityProfile<dreal>(&block.data.vy_profile);
+		deallocateVelocityProfile<dreal>(&block.data.vz_profile);
+		deallocateVelocityProfile<dreal>(&block.data.vx_profile_result);
+		deallocateVelocityProfile<dreal>(&block.data.vy_profile_result);
+		deallocateVelocityProfile<dreal>(&block.data.vz_profile_result);
+		deallocateGradientProfile<dreal>(&block.data.gx_profile);
+		deallocateGradientProfile<dreal>(&block.data.gy_profile);
+		deallocateGradientProfile<dreal>(&block.data.gz_profile);
+		deallocateGradientProfile<bool>(&block.data.b_profile);
 	}
 
 	//! remove directories
@@ -571,7 +571,7 @@ sim(double* velocityProfileX,
 
 	for (auto& block : state.nse.blocks) {
 		allocateCopyVelocityProfile<dreal, idx>(
-			&(block.data.inflow_vx),
+			&block.data.inflow_vx,
 			block.local.y(),
 			block.local.z(),
 			block.offset.y(),
@@ -581,7 +581,7 @@ sim(double* velocityProfileX,
 			block.global.z()
 		);
 		allocateCopyVelocityProfile<dreal, idx>(
-			&(block.data.inflow_vy),
+			&block.data.inflow_vy,
 			block.local.y(),
 			block.local.z(),
 			block.offset.y(),
@@ -591,7 +591,7 @@ sim(double* velocityProfileX,
 			block.global.z()
 		);
 		allocateCopyVelocityProfile<dreal, idx>(
-			&(block.data.inflow_vz),
+			&block.data.inflow_vz,
 			block.local.y(),
 			block.local.z(),
 			block.offset.y(),
@@ -622,9 +622,9 @@ sim(double* velocityProfileX,
 	}
 
 	for (auto& block : state.nse.blocks) {
-		deallocateVelocityProfile<dreal>(&(block.data.inflow_vx));
-		deallocateVelocityProfile<dreal>(&(block.data.inflow_vy));
-		deallocateVelocityProfile<dreal>(&(block.data.inflow_vz));
+		deallocateVelocityProfile<dreal>(&block.data.inflow_vx);
+		deallocateVelocityProfile<dreal>(&block.data.inflow_vy);
+		deallocateVelocityProfile<dreal>(&block.data.inflow_vz);
 	}
 
 	//! remove directories
@@ -694,17 +694,13 @@ void saveLossFunctionToFile(const std::string& dirname, int adjointIteration, do
 	const std::string fname = fmt::format("{}/lossFunction.txt", dirname);
 	if (adjointIteration == 1) {
 		std::ofstream lossFunctionFile(fname);
-		std::ostringstream s;
-		s << std::setprecision(10) << lossFunction;
-		lossFunctionFile << s.str() << "\n";
+		lossFunctionFile << fmt::format("{:.10g}\n", lossFunction);
 		lossFunctionFile.close();
 		return;
 	}
 	std::ofstream lossFunctionFile;
 	lossFunctionFile.open(fname, std::ofstream::app);
-	std::ostringstream s;
-	s << std::setprecision(10) << lossFunction;
-	lossFunctionFile << s.str() << "\n";
+	lossFunctionFile << fmt::format("{:.10g}\n", lossFunction);
 	lossFunctionFile.close();
 }
 
@@ -764,7 +760,7 @@ void adjointFullSim(int resolution, std::size_t epochs, double eps, double hide,
 	std::unique_ptr<double[]> guessZ = initGuess(VelocityProfile::zero, Y, Z);
 
 	double step = eps;
-	for (std::size_t i = (std::size_t) 1; i <= epochs; i++) {
+	for (auto i = static_cast<std::size_t>(1); i <= epochs; i++) {
 		//! remove directories
 		std::string dirname = fmt::format("results_sim_adjoint_res{:02d}_np{:03d}", resolution, TNL::MPI::GetSize(MPI_COMM_WORLD));
 		std::filesystem::remove_all(dirname.c_str());
@@ -772,7 +768,7 @@ void adjointFullSim(int resolution, std::size_t epochs, double eps, double hide,
 		std::filesystem::remove_all(dirname.c_str());
 
 		const bool print = (i == epochs);
-		if (adjointEpoch(resolution, hide, guessX.get(), guessY.get(), guessZ.get(), (int) i, step, print, adios_config) != 0) {
+		if (adjointEpoch(resolution, hide, guessX.get(), guessY.get(), guessZ.get(), static_cast<int>(i), step, print, adios_config) != 0) {
 			step /= 2.0;
 			spdlog::warn("Loss function increased instead of decreased - halving step size = {}", step);
 			if (step < MIN_STEP_SIZE) {

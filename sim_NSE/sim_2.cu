@@ -178,7 +178,7 @@ struct StateLocal : State<NSE>
 			"lbm_analytical_vx",
 			"lbm_error_vx",
 			"analytical_vx",
-			"error_vx"
+			"error_vx",
 		};
 	}
 
@@ -370,8 +370,9 @@ void sim(const std::string& adios_config, int RES, bool use_forcing, Scaling sca
 		LBM_X *= RES;
 	int LBM_Y = RES * block_size;
 	int LBM_Z = RES * block_size;
-	if (scaling == Scaling::weak_1d)
+	if (scaling == Scaling::weak_1d) {
 		LBM_X *= TNL::MPI::GetSize(MPI_COMM_WORLD);
+	}
 	else if (scaling == Scaling::weak_3d) {
 		// NOTE: scale volume by nproc, preserve the proportions of the domain
 		const real factor = std::cbrt(TNL::MPI::GetSize(MPI_COMM_WORLD));
@@ -395,8 +396,8 @@ void sim(const std::string& adios_config, int RES, bool use_forcing, Scaling sca
 	lat.physDt = PHYS_DT;
 	lat.physViscosity = PHYS_VISCOSITY;
 
-	const char* prec = (std::is_same_v<dreal, float>) ? "float" : "double";
-	const char* bc_variant = (use_forcing) ? "forcing" : "velocity";
+	const char* prec = std::is_same_v<dreal, float> ? "float" : "double";
+	const char* bc_variant = use_forcing ? "forcing" : "velocity";
 	const auto scaling_variant = magic_enum::enum_name(scaling);
 	const std::string state_id =
 		fmt::format("sim_2_{}_{}_{}_{}_res_{}_np_{}", NSE::COLL::id, prec, bc_variant, scaling_variant, RES, TNL::MPI::GetSize(MPI_COMM_WORLD));

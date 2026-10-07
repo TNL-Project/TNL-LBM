@@ -2,7 +2,7 @@
 
 #include <unistd.h>	 // access
 
-static bool fileExists(const char* fname)
+static inline bool fileExists(const char* fname)
 {
 	//FILE *fp = fopen(fname, "r");
 	//if (!fp) return false;
@@ -13,13 +13,13 @@ static bool fileExists(const char* fname)
 	return access(fname, F_OK) == 0;
 }
 
-#include <string.h>
+#include <cstring>
 #include <linux/limits.h>  // PATH_MAX
 #include <sys/stat.h>	   // mkdir(2)
-#include <errno.h>
+#include <cerrno>
 
 // adapted from http://stackoverflow.com/a/2336245/119527
-static int mkdir_p(const char* path, mode_t mode)
+static inline int mkdir_p(const char* path, mode_t mode)
 {
 	const size_t len = strlen(path);
 	char _path[PATH_MAX];
@@ -35,7 +35,7 @@ static int mkdir_p(const char* path, mode_t mode)
 	strcpy(_path, path);
 
 	// iterate the string
-	for (p = _path + 1; *p; p++) {
+	for (p = _path + 1; *p != '\0'; p++) {
 		if (*p == '/') {
 			// temporarily truncate
 			*p = '\0';
@@ -60,7 +60,7 @@ static int mkdir_p(const char* path, mode_t mode)
 #include <libgen.h>	 // dirname, basename
 
 // create parent directories of a file path
-static int create_parent_directories(const char* fname)
+static inline int create_parent_directories(const char* fname)
 {
 	char buffer[PATH_MAX];
 	strcpy(buffer, fname);
@@ -68,10 +68,10 @@ static int create_parent_directories(const char* fname)
 	return mkdir_p(dir, 0777);
 }
 
-#include <stdio.h>	// FILE, fopen, fclose
+#include <cstdio>  // FILE, fopen, fclose, renameat2
 
 // create parent directories and then the file
-static int create_file(const char* fname)
+static inline int create_file(const char* fname)
 {
 	// return early if the file already exists
 	if (fileExists(fname))
@@ -82,7 +82,7 @@ static int create_file(const char* fname)
 
 	// create the file
 	FILE* fp = fopen(fname, "wb");
-	if (fp == NULL) {
+	if (fp == nullptr) {
 		fprintf(stderr, "error: failed to create file %s: %s\n", fname, strerror(errno));
 		return -1;
 	}
@@ -91,13 +91,12 @@ static int create_file(const char* fname)
 	return 0;
 }
 
-#include <stdio.h>	 // renameat2
 #include <fcntl.h>	 // open
 #include <unistd.h>	 // close
 #include <error.h>	 // errno
 
 // swap two filenames on the same filesystem https://lwn.net/Articles/569134/
-static int rename_exchange(const char* oldpath, const char* newpath)
+static inline int rename_exchange(const char* oldpath, const char* newpath)
 {
 	// renameat2 is available since glibc 2.28
 	// We need to emulate a workaround for Helios ;-(
@@ -135,11 +134,9 @@ static int rename_exchange(const char* oldpath, const char* newpath)
 }
 
 #include <sys/file.h>  // flock
-#include <fcntl.h>	   // open
-#include <unistd.h>	   // close
 
 // Try to get a lock. Returns its file descriptor or -1 if failed.
-static int tryLockFile(const char* lockpath)
+static inline int tryLockFile(const char* lockpath)
 {
 	// temporarily set umask to 0 to ensure that the file is created with
 	// write permissions for the owner
@@ -157,7 +154,7 @@ static int tryLockFile(const char* lockpath)
 }
 
 // Release the lock obtained with `tryLockFile(lockName)`.
-static void releaseLock(int fd)
+static inline void releaseLock(int fd)
 {
 	if (fd < 0)
 		return;

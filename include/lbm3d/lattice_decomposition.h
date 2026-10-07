@@ -95,7 +95,10 @@ std::vector<TNL::Containers::Block<3, Index>> decomposeBlockOptimalWithPermutati
 	// set axes-weights for the objective function used in the optimization
 	const std::array<Index, 3>& axes_weights = {64, 8, 1};
 	using FunctionType = std::function<Index(const std::vector<TNL::Containers::Block<3, Index>>&)>;
-	const FunctionType objective = std::bind(TNL::Containers::getInterfaceArea<Index>, std::placeholders::_1, axes_weights);
+	const FunctionType objective = [axes_weights](auto&& PH1)
+	{
+		return TNL::Containers::getInterfaceArea<Index>(std::forward<decltype(PH1)>(PH1), axes_weights);
+	};
 
 	// decompose the permuted global block
 	const std::vector<TNL::Containers::Block<3, Index>> permuted_result =
@@ -182,10 +185,10 @@ std::map<TNL::Containers::SyncDirection, int> findNeighbors(
 				// non-periodic dims are owned by the boundary conditions.)
 				// Registering the own rank would corrupt the boundary/interior compute partition in lbm_block
 				// and post self-sends in the distributed synchronizers.
-				if (int(i) == rank)
+				if (static_cast<int>(i) == rank)
 					neighbors[direction] = -1;
 				else
-					neighbors[direction] = int(i);
+					neighbors[direction] = static_cast<int>(i);
 				return;
 			}
 		}
@@ -275,7 +278,7 @@ std::map<TNL::Containers::SyncDirection, int> findNeighbors(
 				find(direction, getBlockVertex(reference, direction), opposite(direction));
 				break;
 			default:
-				throw std::logic_error("unhandled direction: " + std::to_string(static_cast<std::uint8_t>(direction)));
+				throw std::logic_error(fmt::format("unhandled direction: {}", static_cast<int>(direction)));
 		}
 	}
 
@@ -307,7 +310,9 @@ LBM_BLOCK<CONFIG> decomposeLattice_D3Q27(
 	// global extent.
 	std::array<idx, 3> forced = {0, 0, 0};
 	if (const char* spec = std::getenv("TNL_LBM_FORCE_DECOMPOSITION")) {
-		int nx, ny, nz;
+		int nx;
+		int ny;
+		int nz;
 		if (std::sscanf(spec, "%d,%d,%d", &nx, &ny, &nz) != 3)
 			throw std::runtime_error(fmt::format("TNL_LBM_FORCE_DECOMPOSITION: cannot parse '{}'", spec));
 		if (idx(nx) * ny * nz != idx(nproc))

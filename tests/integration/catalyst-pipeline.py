@@ -56,9 +56,7 @@ def SetupVisPipeline(producer: Any, view: Any) -> dict[str, Any]:
 
     calculator1 = Calculator(registrationName="VelocityMagnitude", Input=producer)
     calculator1.ResultArrayName = "velocity_magnitude"
-    calculator1.Function = (
-        "sqrt(velocity_x*velocity_x + velocity_y*velocity_y + velocity_z*velocity_z)"
-    )
+    calculator1.Function = "sqrt(velocity_x*velocity_x + velocity_y*velocity_y + velocity_z*velocity_z)"
 
     calculator2 = Calculator(registrationName="VelocityVector", Input=calculator1)
     calculator2.ResultArrayName = "Velocity"

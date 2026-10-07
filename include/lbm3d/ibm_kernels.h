@@ -1,6 +1,6 @@
 #pragma once
 
-#include "defs.h"
+#include "defs.h"  // IWYU pragma: keep (provides KernelStruct and idx types used by the kernels)
 #include "lagrange_3D.h"
 #include "dirac.h"
 

@@ -5,7 +5,6 @@
 #include "lbm3d/lbm_data.h"
 
 #include "lbm3d/d2q9/bc.h"
-#include "lbm3d/d2q9/col_srt.h"
 #include "lbm3d/d2q9/col_clbm.h"
 #include "lbm3d/d2q9/macro.h"
 
@@ -71,7 +70,6 @@ struct StateLocal : State<NSE>
 
 		// 3 identical hill-like bumps on the bottom wall, in the left half of the domain
 		// Each bump is a half-sine shape: h(x) = bump_height * sin(pi * (x - x0) / bump_width)
-		const real phys_dl = nse.lat.physDl;
 		const idx Y = nse.lat.global.y();
 		const int bump_height = std::max(2, (int) (Y / 8));
 		const int bump_width = std::max(4, (int) (Y / 4));

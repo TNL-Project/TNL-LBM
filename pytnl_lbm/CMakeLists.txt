@@ -1,6 +1,4 @@
-set(sources
-    pytnl_lbm.cpp
-)
+set(sources pytnl_lbm.cpp)
 
 foreach(source_file IN LISTS sources)
     if(TNL_LBM_BUILD_HIP)
@@ -11,7 +9,9 @@ foreach(source_file IN LISTS sources)
 endforeach(source_file)
 
 # Create the module
-nanobind_add_module(pytnl_lbm ${sources})
+# (NB_SUPPRESS_WARNINGS marks the nanobind and CPython include directories as SYSTEM,
+# keeping their headers out of our compiler warnings and clang-tidy diagnostics)
+nanobind_add_module(pytnl_lbm NB_SUPPRESS_WARNINGS ${sources})
 
 # Add TNL-LBM and PyTNL
 target_link_libraries(pytnl_lbm PUBLIC TNL::TNL_LBM PyTNL::PyTNL)
@@ -44,12 +44,9 @@ set(pytnl_lbm_stub "${CMAKE_CURRENT_BINARY_DIR}/pytnl_lbm.pyi")
 add_custom_command(
     OUTPUT "${pytnl_lbm_stub}"
     COMMAND
-        ${CMAKE_COMMAND} -E env PYTHONPATH=$<TARGET_FILE_DIR:pytnl_lbm>${pytnl_stub_pythonpath}
-        OMPI_MCA_accelerator=null ${Python_EXECUTABLE} ${NB_STUBGEN}
-        -q -r -m pytnl_lbm
-        -i $<TARGET_FILE_DIR:pytnl_lbm> -i $<TARGET_FILE_DIR:pytnl_lbm>/..
-        ${pytnl_stub_inputs}
-        -O ${CMAKE_CURRENT_BINARY_DIR}
+        ${CMAKE_COMMAND} -E env PYTHONPATH=$<TARGET_FILE_DIR:pytnl_lbm>${pytnl_stub_pythonpath} OMPI_MCA_accelerator=null
+        ${Python_EXECUTABLE} ${NB_STUBGEN} -q -r -m pytnl_lbm -i $<TARGET_FILE_DIR:pytnl_lbm> -i $<TARGET_FILE_DIR:pytnl_lbm>/..
+        ${pytnl_stub_inputs} -O ${CMAKE_CURRENT_BINARY_DIR}
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
     DEPENDS pytnl_lbm "${NB_STUBGEN}"
 )
@@ -68,4 +65,26 @@ if(MPI_FOUND AND TNL_LBM_USE_MPI)
         OUTPUT_VARIABLE mpi4py_ROOT
     )
     target_include_directories(pytnl_lbm SYSTEM PRIVATE ${mpi4py_ROOT}/include)
+endif()
+
+# clangd support: same trick as the main include/CMakeLists.txt
+# Emit real compile_commands.json entries for the py_* wrapper headers,
+# which need the nanobind and CPython include paths that are not part of the TNL_LBM interface.
+if(CMAKE_EXPORT_COMPILE_COMMANDS)
+    file(GLOB tnl_lbm_clangd_py_headers CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/include/lbm3d/py_*.h")
+    add_library(tnl_lbm_clangd_py_headers OBJECT EXCLUDE_FROM_ALL ${tnl_lbm_clangd_py_headers})
+    foreach(header_file IN LISTS tnl_lbm_clangd_py_headers)
+        if(TNL_LBM_BUILD_CUDA)
+            set_source_files_properties(${header_file} PROPERTIES LANGUAGE CUDA)
+        elseif(TNL_LBM_BUILD_HIP)
+            set_source_files_properties(${header_file} PROPERTIES LANGUAGE HIP)
+        else()
+            set_source_files_properties(${header_file} PROPERTIES LANGUAGE CXX)
+        endif()
+    endforeach()
+    target_link_libraries(tnl_lbm_clangd_py_headers PRIVATE TNL::TNL_LBM PyTNL::PyTNL Python::Module)
+    target_include_directories(tnl_lbm_clangd_py_headers SYSTEM PRIVATE ${NB_DIR}/include)
+    if(MPI_FOUND AND TNL_LBM_USE_MPI)
+        target_include_directories(tnl_lbm_clangd_py_headers SYSTEM PRIVATE ${mpi4py_ROOT}/include)
+    endif()
 endif()

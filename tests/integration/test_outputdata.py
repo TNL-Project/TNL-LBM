@@ -33,9 +33,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 SIMULATION = BUILD_DIR / "tests" / "integration" / "test_outputdata"
-ADIOS_CONFIG_INLINE = (
-    PROJECT_ROOT / "tests" / "integration" / "adios2-inline-plugin.xml"
-)
+ADIOS_CONFIG_INLINE = PROJECT_ROOT / "tests" / "integration" / "adios2-inline-plugin.xml"
 PIPELINE_SCRIPT = PROJECT_ROOT / "tests" / "integration" / "catalyst-pipeline.py"
 
 SIM_TIMEOUT = 900.0
@@ -89,9 +87,7 @@ class AdiosVariable(Protocol):
 class AdiosEngine(Protocol):
     def begin_step(self) -> object: ...
     def end_step(self) -> None: ...
-    def get(
-        self, variable: AdiosVariable, content: np.ndarray | None = ...
-    ) -> None: ...
+    def get(self, variable: AdiosVariable, content: np.ndarray | None = ...) -> None: ...
     def close(self) -> None: ...
 
 
@@ -136,13 +132,9 @@ def wait_simulation(proc: subprocess.Popen[bytes]) -> None:
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.wait()
-        pytest.fail(
-            f"test_outputdata timed out after {SIM_TIMEOUT:.0f}s", pytrace=False
-        )
+        pytest.fail(f"test_outputdata timed out after {SIM_TIMEOUT:.0f}s", pytrace=False)
     if returncode != 0:
-        pytest.fail(
-            f"test_outputdata failed with exit code {returncode}", pytrace=False
-        )
+        pytest.fail(f"test_outputdata failed with exit code {returncode}", pytrace=False)
 
 
 def find_results_directory(workdir: pathlib.Path) -> pathlib.Path:
@@ -154,9 +146,7 @@ def find_results_directory(workdir: pathlib.Path) -> pathlib.Path:
     return candidates[0]
 
 
-def wait_for_results_directory(
-    workdir: pathlib.Path, timeout_sec: float = SST_DIR_TIMEOUT
-) -> pathlib.Path:
+def wait_for_results_directory(workdir: pathlib.Path, timeout_sec: float = SST_DIR_TIMEOUT) -> pathlib.Path:
     """Wait for the results directory to appear (needed for SST)."""
     deadline = time.monotonic() + timeout_sec
     while time.monotonic() < deadline:
@@ -168,39 +158,25 @@ def wait_for_results_directory(
     raise AssertionError("unreachable")
 
 
-def check_variable_shape(
-    name: str, var: AdiosVariable | None, expected_kind: str, bp_path: pathlib.Path
-) -> None:
+def check_variable_shape(name: str, var: AdiosVariable | None, expected_kind: str, bp_path: pathlib.Path) -> None:
     """Assert variable metadata (3D block vs 2D cut) matches the output kind."""
     assert var is not None, f"variable {name} not found in {bp_path}"
     shape = list(var.shape())
-    assert len(shape) == 3, (
-        f"{name} in {bp_path} has {len(shape)} dimensions, expected 3"
-    )
-    assert all(dim > 0 for dim in shape), (
-        f"{name} in {bp_path} has non-positive shape: {shape}"
-    )
+    assert len(shape) == 3, f"{name} in {bp_path} has {len(shape)} dimensions, expected 3"
+    assert all(dim > 0 for dim in shape), f"{name} in {bp_path} has non-positive shape: {shape}"
 
     unit_dims = sum(1 for dim in shape if dim == 1)
     if expected_kind == "3D":
         assert unit_dims == 0, f"{name} in {bp_path} is not a full 3D array: {shape}"
     else:
-        assert unit_dims == 1, (
-            f"{name} in {bp_path} is not a 2D cut (one unit axis): {shape}"
-        )
+        assert unit_dims == 1, f"{name} in {bp_path} is not a 2D cut (one unit axis): {shape}"
 
 
-def check_value_range(
-    name: str, data_min: float, data_max: float, bp_path: pathlib.Path
-) -> None:
+def check_value_range(name: str, data_min: float, data_max: float, bp_path: pathlib.Path) -> None:
     """Assert min/max values are finite and inside the expected bounds."""
-    assert np.isfinite(data_min) and np.isfinite(data_max), (
-        f"{name} in {bp_path} contains NaN or Inf"
-    )
+    assert np.isfinite(data_min) and np.isfinite(data_max), f"{name} in {bp_path} contains NaN or Inf"
     lo, hi = VALUE_BOUNDS[name]
-    assert lo <= data_min and data_max <= hi, (
-        f"{name} in {bp_path}: [{data_min:.6g}, {data_max:.6g}] not in [{lo}, {hi}]"
-    )
+    assert lo <= data_min and data_max <= hi, f"{name} in {bp_path}: [{data_min:.6g}, {data_max:.6g}] not in [{lo}, {hi}]"
 
 
 def check_bp5_file(bp_path: pathlib.Path, expected_kind: str) -> None:
@@ -216,9 +192,7 @@ def check_bp5_file(bp_path: pathlib.Path, expected_kind: str) -> None:
             var = reader.inquire_variable(name)
             check_variable_shape(name, var, expected_kind, bp_path)
             data = reader.read(var, step_selection=[0, 1])
-            assert data is not None and data.size > 0, (
-                f"{name} in {bp_path} has no data"
-            )
+            assert data is not None and data.size > 0, f"{name} in {bp_path} has no data"
             check_value_range(name, float(data.min()), float(data.max()), bp_path)
 
 
@@ -234,9 +208,7 @@ def read_sst_step(
     """Read all expected variables from the current step of an SST engine."""
     for name in EXPECTED_VARIABLES:
         var = io.inquire_variable(name)
-        assert var is not None, (
-            f"variable {name} not found in {stream_path} step {step_count}"
-        )
+        assert var is not None, f"variable {name} not found in {stream_path} step {step_count}"
         if step_count == 1:
             check_variable_shape(name, var, expected_kind, stream_path)
 
@@ -319,9 +291,7 @@ def pump_sst_streams(
     return step_counts
 
 
-def consume_sst_streams(
-    streams: Sequence[StreamSpec], adios_config: pathlib.Path
-) -> None:
+def consume_sst_streams(streams: Sequence[StreamSpec], adios_config: pathlib.Path) -> None:
     """Consume multiple SST streams in parallel to avoid writer/reader deadlocks."""
     _adios, engines, ios = open_sst_engines(streams, adios_config)
     value_mins: list[dict[str, float]] = [{} for _ in streams]
@@ -334,16 +304,12 @@ def consume_sst_streams(
 
     for idx, (stream_path, _) in enumerate(streams):
         for name in EXPECTED_VARIABLES:
-            check_value_range(
-                name, value_mins[idx][name], value_maxs[idx][name], stream_path
-            )
+            check_value_range(name, value_mins[idx][name], value_maxs[idx][name], stream_path)
 
 
 def test_bp5_output(test_dir: pathlib.Path) -> None:
     """BP5 file-based output: all outputs written at once, validated post-run."""
-    proc = launch_simulation(
-        ADIOS_CONFIG, output_kind="all", resolution=1, workdir=test_dir
-    )
+    proc = launch_simulation(ADIOS_CONFIG, output_kind="all", resolution=1, workdir=test_dir)
     try:
         wait_simulation(proc)
     finally:
@@ -359,9 +325,7 @@ def test_bp5_output(test_dir: pathlib.Path) -> None:
 @pytest.mark.parametrize("output_kind", ["3d", "3dcut", "2d"])
 def test_sst_output(test_dir: pathlib.Path, output_kind: str) -> None:
     """SST streaming output: streams consumed while the simulation runs."""
-    proc = launch_simulation(
-        ADIOS_CONFIG_SST, output_kind=output_kind, resolution=1, workdir=test_dir
-    )
+    proc = launch_simulation(ADIOS_CONFIG_SST, output_kind=output_kind, resolution=1, workdir=test_dir)
     try:
         results_dir = wait_for_results_directory(test_dir)
         streams = [(results_dir / name, kind) for name, kind in OUTPUTS[output_kind]]

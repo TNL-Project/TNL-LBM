@@ -67,8 +67,9 @@ struct PyState : public State<NSE>
 				nb_trampoline.base().attr(nb_ticket.key).template operator()<nb::rv_policy::reference_v>(writer, block, begin, end)
 			);
 		}
-		else
+		else {
 			return NBBase::outputData(writer, block, begin, end);
+		}
 	}
 
 	void probe1() override
@@ -163,8 +164,6 @@ void export_State(nb::module_& m, const char* name)
 	using State = ::State<NSE>;
 	using PyState = ::PyState<NSE>;
 	using idx = typename State::idx;
-	using real = typename State::real;
-	using point_t = typename State::point_t;
 	using lat_t = typename State::lat_t;
 
 	auto state =  //

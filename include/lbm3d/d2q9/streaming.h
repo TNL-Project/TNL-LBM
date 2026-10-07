@@ -3,12 +3,12 @@
 // all streaming patterns are always available; the alias selects the
 // legacy name for leaf code (the TNL_LBM_STREAMING_PATTERN_* macros are
 // consulted only in the three streaming.h umbrellas)
-#include "streaming_AA.h"
-#include "streaming_AB_PULL.h"
-#include "streaming_AB_PUSH.h"
-#include "streaming_ESO_PULL.h"
-#include "streaming_ESO_PUSH.h"
-#include "streaming_ESO_TWIST.h"
+#include "streaming_AA.h"		  // IWYU pragma: keep
+#include "streaming_AB_PULL.h"	  // IWYU pragma: keep
+#include "streaming_AB_PUSH.h"	  // IWYU pragma: keep
+#include "streaming_ESO_PULL.h"	  // IWYU pragma: keep
+#include "streaming_ESO_PUSH.h"	  // IWYU pragma: keep
+#include "streaming_ESO_TWIST.h"  // IWYU pragma: keep
 
 #if defined(TNL_LBM_STREAMING_PATTERN_AA)
 template <typename TRAITS>

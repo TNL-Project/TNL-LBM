@@ -148,19 +148,21 @@ struct StateLocal : State<NSE>
 
 	[[nodiscard]] std::vector<std::string> getOutputDataNames() const override
 	{
-		return {"lbm_density",	  "lbm_density_fluctuation",
-				"lbm_velocity_x", "lbm_velocity_y",
-				"lbm_velocity_z", "lbm_force_x",
-				"lbm_force_y",	  "lbm_force_z",
-				"lbm_S11",		  "lbm_S12",
-				"lbm_S13",		  "lbm_S22",
-				"lbm_S32",		  "lbm_S33",
-				"velocity_x",	  "velocity_y",
-				"velocity_z",	  "lbm_analytical_ux",
-				"lbm_error_ux",	  "lbm_error_uy",
-				"lbm_error_uz",	  "analytical_ux",
-				"error_ux",		  "error_uy",
-				"error_uz"};
+		return {
+			"lbm_density",	  "lbm_density_fluctuation",
+			"lbm_velocity_x", "lbm_velocity_y",
+			"lbm_velocity_z", "lbm_force_x",
+			"lbm_force_y",	  "lbm_force_z",
+			"lbm_S11",		  "lbm_S12",
+			"lbm_S13",		  "lbm_S22",
+			"lbm_S32",		  "lbm_S33",
+			"velocity_x",	  "velocity_y",
+			"velocity_z",	  "lbm_analytical_ux",
+			"lbm_error_ux",	  "lbm_error_uy",
+			"lbm_error_uz",	  "analytical_ux",
+			"error_ux",		  "error_uy",
+			"error_uz",
+		};
 	}
 
 	void outputData(UniformDataWriter<TRAITS>& writer, const BLOCK& block, const idx3d& begin, const idx3d& end) override

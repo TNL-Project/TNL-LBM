@@ -1,6 +1,6 @@
 #pragma once
 
-#include <cmath>
+#include <cmath>  // IWYU pragma: keep (provides std::fma behind the rounding helpers)
 
 #include <TNL/Backend/Macros.h>
 

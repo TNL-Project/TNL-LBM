@@ -30,7 +30,7 @@ if not os.path.exists(reference_path):
         f.write(r.content)
 
 
-def get_data(label, path):
+def get_data(label: str, path: str) -> tuple[np.ndarray, np.ndarray | None, np.ndarray, np.ndarray | None]:
     # Read data from file
     data = np.loadtxt(path, comments="#", skiprows=1)
 
@@ -50,17 +50,11 @@ def get_data(label, path):
     epsilon = np.zeros_like(kinetic_energy)
     for i in range(len(kinetic_energy)):
         if i == 0:
-            epsilon[i] = -(kinetic_energy[i + 1] - kinetic_energy[i]) / (
-                time_col[i + 1] - time_col[i]
-            )
+            epsilon[i] = -(kinetic_energy[i + 1] - kinetic_energy[i]) / (time_col[i + 1] - time_col[i])
         elif i == len(kinetic_energy) - 1:
-            epsilon[i] = -(kinetic_energy[i] - kinetic_energy[i - 1]) / (
-                time_col[i] - time_col[i - 1]
-            )
+            epsilon[i] = -(kinetic_energy[i] - kinetic_energy[i - 1]) / (time_col[i] - time_col[i - 1])
         elif i == 1 or i == len(kinetic_energy) - 2:
-            epsilon[i] = -(kinetic_energy[i + 1] - kinetic_energy[i - 1]) / (
-                time_col[i + 1] - time_col[i - 1]
-            )
+            epsilon[i] = -(kinetic_energy[i + 1] - kinetic_energy[i - 1]) / (time_col[i + 1] - time_col[i - 1])
         else:
             h = time_col[i + 1] - time_col[i]
             epsilon[i] = (
@@ -76,9 +70,9 @@ def get_data(label, path):
     return time_col, kinetic_energy, epsilon, enstrophy_dissipation
 
 
-def plot(input_paths, output_path):
+def plot(input_paths: dict[str, str], output_path: str) -> None:
     # Create subplots
-    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 10))
+    _fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 10))
 
     for label, path in input_paths.items():
         if not os.path.exists(path):
@@ -104,17 +98,13 @@ def plot(input_paths, output_path):
 
     ax2.set_xlabel("Time")
     ax2.set_ylabel("Dissipation rate")
-    ax2.set_title(
-        "Temporal evolution of the dissipation rate (measured by kinetic energy $E_K$)"
-    )
+    ax2.set_title("Temporal evolution of the dissipation rate (measured by kinetic energy $E_K$)")
     ax2.legend()
     ax2.grid(True, alpha=0.3)
 
     ax3.set_xlabel("Time")
     ax3.set_ylabel("Dissipation rate")
-    ax3.set_title(
-        "Temporal evolution of the dissipation rate (measured by enstrophy $\\mathcal{E}$)"
-    )
+    ax3.set_title("Temporal evolution of the dissipation rate (measured by enstrophy $\\mathcal{E}$)")
     ax3.legend()
     ax3.grid(True, alpha=0.3)
 

@@ -572,7 +572,7 @@ void LBM_BLOCK<CONFIG>::setInitialCondition(IC&& ic)
 			TNL::Algorithms::parallelFor<DeviceType>(
 				begin,
 				end,
-				[local_df, h, t, overlap_x, overlap_y, overlap_z, nx, ny, nz, A, B] __cuda_callable__(idx3d yzx) mutable
+				[local_df, h, t, overlap_x, overlap_y, overlap_z, nx, ny, A, B] __cuda_callable__(idx3d yzx) mutable
 				{
 					const auto& [y, z, x] = yzx;
 					const idx f = ((z + overlap_z) * ny + (y + overlap_y)) * nx + (x + overlap_x);
@@ -593,7 +593,6 @@ void LBM_BLOCK<CONFIG>::setInitialCondition(IC&& ic)
 				 overlap_z,
 				 nx,
 				 ny,
-				 nz,
 				 lx,
 				 ly,
 				 lz,
@@ -720,11 +719,12 @@ template <typename CONFIG>
 void LBM_BLOCK<CONFIG>::setEquilibrium(real rho, real vx, real vy, real vz)
 {
 	setInitialCondition(
-		[rho, vx, vy, vz] __cuda_callable__(typename CONFIG::template KernelStruct<dreal> & KS, idx gx, idx gy, idx gz) mutable
+		[rho, vx, vy, vz] __cuda_callable__(typename CONFIG::template KernelStruct<dreal>& KS, idx gx, idx gy, idx gz) mutable
 		{
 			(void) gx;
 			(void) gy;
 			(void) gz;
+			(void) vz;	// consumed only for CONFIG::D == 3
 			if constexpr (CONFIG::Q == 7)
 				KS.phi = rho;
 			else
@@ -907,7 +907,7 @@ void LBM_BLOCK<CONFIG>::validateFaceDetectedBC()
 			}
 		);
 
-		TNL::Backend::streamSynchronize(0);
+		TNL::Backend::streamSynchronize(nullptr);
 		TNL::Containers::Array<TNL::Atomic<int, DeviceType>, TNL::Devices::Host> hfailure(dfailure);
 		if (hfailure[0] > 0)
 			throw std::runtime_error(
@@ -1172,7 +1172,7 @@ void LBM_BLOCK<CONFIG>::start4DArraySynchronization(
 		view.bind(array.getData() + i * data.XYZ);
 		// determine sync direction - use D2Q9 array for Q=9, otherwise D3Q27/D3Q7 array
 		const TNL::Containers::SyncDirection* dirs = (CONFIG::Q == 9) ? df_sync_directions_d2q9 : df_sync_directions;
-		TNL::Containers::SyncDirection sync_direction = (is_df) ? dirs[i] : TNL::Containers::SyncDirection::All;
+		TNL::Containers::SyncDirection sync_direction = is_df ? dirs[i] : TNL::Containers::SyncDirection::All;
 		int buffer_offset = 0;
 		if constexpr (is_AA_v<typename CONFIG::STREAMING>) {
 			if (is_df) {

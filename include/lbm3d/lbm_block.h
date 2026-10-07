@@ -1,6 +1,6 @@
 #pragma once
 
-#include "defs.h"
+#include "defs.h"  // IWYU pragma: keep (provides the kernel configuration types)
 #include "lattice.h"
 #include <vector>
 

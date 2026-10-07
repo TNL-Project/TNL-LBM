@@ -38,7 +38,7 @@ public:
 	template <typename DataSource>
 	void write(const std::string& varName, const DataSource& src, idx3d begin, idx3d end);
 
-	virtual ~UniformDataWriter();
+	~UniformDataWriter() override;
 };
 
 #include "UniformDataWriter.hpp"

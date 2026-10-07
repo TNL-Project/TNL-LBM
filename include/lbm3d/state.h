@@ -67,7 +67,7 @@ enum Actions : std::uint8_t
 	PROBE2,
 	PROBE3,
 	SAVESTATE,
-	MAX_COUNTER
+	MAX_COUNTER,
 };
 
 template <typename NSE>

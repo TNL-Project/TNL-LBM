@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lbm3d/defs.h"
+#include "lbm_common/ciselnik.h"
 #include "lbm_common/rounding.h"
 
 template <typename CONFIG>
@@ -14,7 +15,8 @@ struct D2Q9_BC_All
 	using idx = typename CONFIG::TRAITS::idx;
 	using dreal = typename CONFIG::TRAITS::dreal;
 
-	enum GEO : map_t
+	enum GEO : map_t  // NOLINT(performance-enum-size) base width must match the map_t storage type
+
 	{
 		GEO_FLUID,	// compulsory
 		GEO_WALL,	// compulsory
@@ -24,7 +26,7 @@ struct D2Q9_BC_All
 		GEO_OUTFLOW_RIGHT,
 		GEO_OUTFLOW_RIGHT_INTERP,
 		GEO_NOTHING,
-		GEO_SYMMETRY
+		GEO_SYMMETRY,
 	};
 
 	__cuda_callable__ static bool isSymmetric(map_t mapgi)

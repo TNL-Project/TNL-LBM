@@ -19,7 +19,6 @@
  * covered for all faces including the symmetry-as-interior rule.
  */
 
-#include <cstdint>
 #include <limits>
 #include <string>
 #include <vector>
@@ -37,16 +36,15 @@
 
 using TRAITS = Traits<double>;	// dreal = double: exact comparisons against the double ground truth
 using COLL = D2Q9_SRT<TRAITS>;
-using CONFIG =
-	LBM_CONFIG<TRAITS, D2Q9_KernelStruct, NSE_Data, COLL, typename COLL::EQ, D2Q9_STREAMING<TRAITS>, D2Q9_BC_All, D2Q9_MACRO_Default<TRAITS>>;
+using CONFIG = LBM_CONFIG<TRAITS, D2Q9_KernelStruct, NSE_Data, COLL, COLL::EQ, D2Q9_STREAMING<TRAITS>, D2Q9_BC_All, D2Q9_MACRO_Default<TRAITS>>;
 using STREAM_AB_PULL = D2Q9_STREAMING_AB_PULL<TRAITS>;
 using STREAM_AB_PUSH = D2Q9_STREAMING_AB_PUSH<TRAITS>;
 using STREAM_AA = D2Q9_STREAMING_AA<TRAITS>;
-using BC = typename CONFIG::BC;
-using KS = D2Q9_KernelStruct<typename TRAITS::dreal>;
-using idx = typename TRAITS::idx;
-using idx3d = typename TRAITS::idx3d;
-using bool3d = typename TRAITS::bool3d;
+using BC = CONFIG::BC;
+using KS = D2Q9_KernelStruct<TRAITS::dreal>;
+using idx = TRAITS::idx;
+using idx3d = TRAITS::idx3d;
+using bool3d = TRAITS::bool3d;
 
 // direction names in dir9 enum order (must match defs.h); the ground-truth
 // components are parsed from these, independently of the production tables
@@ -105,8 +103,8 @@ template <typename STREAMING>
 __global__ void gatherKernel(GatherMock sd, KS* out, int face, bool interp, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx z)
 {
 	KS ks;
-	for (int i = 0; i < 9; i++)
-		ks.f[i] = std::numeric_limits<double>::quiet_NaN();
+	for (double& f : ks.f)
+		f = std::numeric_limits<double>::quiet_NaN();
 	if (interp)
 		STREAMING::streamingOutflowInterp(sd, ks, face, xm, x, xp, ym, y, yp, z);
 	else
@@ -130,7 +128,7 @@ static void resolveBlends(double* exp, const double* blendA, const double* blend
 	std::vector<double> in;
 	std::vector<int> slots;
 	for (int i = 0; i < n; i++)
-		if (isBlend[i]) {
+		if (isBlend[i] != 0) {
 			in.push_back(blendA[i]);
 			in.push_back(blendB[i]);
 			slots.push_back(i);
@@ -143,7 +141,7 @@ static void resolveBlends(double* exp, const double* blendA, const double* blend
 	TNL::Containers::Array<double, TNL::Devices::Cuda> devIn;
 	devIn = hostIn;
 	TNL::Containers::Array<double, TNL::Devices::Cuda> devOut(slots.size());
-	blendKernel2d<<<1, 9>>>(devIn.getData(), devOut.getData(), (int) slots.size());
+	blendKernel2d<<<1, 9>>>(devIn.getData(), devOut.getData(), static_cast<int>(slots.size()));
 	TNL::Backend::deviceSynchronize();
 	std::vector<double> res(slots.size());
 	TNL::Backend::memcpy(res.data(), devOut.getData(), res.size() * sizeof(double), TNL::Backend::MemcpyDeviceToHost);
@@ -154,12 +152,12 @@ static void resolveBlends(double* exp, const double* blendA, const double* blend
 template <typename STREAMING>
 static void runGather(int face, bool interp, bool even, int x, int y, int z, KS& out)
 {
-	std::vector<double> host((size_t) 9 * MS * MS * MS);
+	std::vector<double> host(static_cast<size_t>(9) * MS * MS * MS);
 	for (int s = 0; s < 9; s++)
 		for (int xx = 0; xx < MS; xx++)
 			for (int yy = 0; yy < MS; yy++)
 				for (int zz = 0; zz < MS; zz++)
-					host[((size_t) s * MS + xx) * MS * MS + yy * MS + zz] = pat(s, xx, yy, zz);
+					host[(static_cast<size_t>(s) * MS + xx) * MS * MS + yy * MS + zz] = pat(s, xx, yy, zz);
 
 	TNL::Containers::Array<double, TNL::Devices::Host> hostArr(host.size());
 	for (size_t i = 0; i < host.size(); i++)
@@ -254,10 +252,12 @@ static void computeExpected(int face, bool interp, bool even, int x, int y, int 
 				int so[2];
 				so[axis] = co[axis] + cn;
 				so[1 - axis] = co[1 - axis];
-				if (cn == sgn)
+				if (cn == sgn) {
 					exp[i] = pat(i, sn[0], sn[1], z);
-				else if (cn == 0)
+				}
+				else if (cn == 0) {
 					exp[i] = pat(i, so[0], so[1], z);
+				}
 				else {
 					isBlend[i] = 1;
 					blendA[i] = pat(i, sn[0], sn[1], z);
@@ -269,8 +269,9 @@ static void computeExpected(int face, bool interp, bool even, int x, int y, int 
 					// outward- and perpendicular-moving populations take the cell's
 					// own postcoll; the inward-moving population blends the
 					// pre-anchor column with the anchor column
-					if (cn == sgn || cn == 0)
+					if (cn == sgn || cn == 0) {
 						exp[i] = pat(i, x, y, z);
+					}
 					else {
 						int sa[2];
 						sa[axis] = anchor + c[axis];
@@ -321,7 +322,9 @@ TEST_SUITE_BEGIN("outflowgather2d");
 template <typename STREAMING>
 static void checkGatherFaces(bool interp)
 {
-	const int x = 8, y = 9, z = 3;
+	const int x = 8;
+	const int y = 9;
+	const int z = 3;
 	const int faces[4] = {bc_face::XP, bc_face::XM, bc_face::YP, bc_face::YM};
 	for (int face : faces) {
 		INFO("face=", face);
@@ -330,7 +333,8 @@ static void checkGatherFaces(bool interp)
 			KS ks;
 			runGather<STREAMING>(face, interp, even, x, y, z, ks);
 			double exp[9];
-			double blendA[9] = {}, blendB[9] = {};
+			double blendA[9] = {};
+			double blendB[9] = {};
 			char isBlend[9] = {};
 			computeExpected<STREAMING>(face, interp, even, x, y, z, exp, blendA, blendB, isBlend);
 			resolveBlends(exp, blendA, blendB, isBlend, 9);
@@ -374,7 +378,9 @@ TEST_CASE("detect-faces")
 	block.data.XYZ = block.data.indexer.getStorageSize();
 	block.data.dmap = block.hmap.getData();
 
-	const int x = 8, y = 9, z = 0;
+	const int x = 8;
+	const int y = 9;
+	const int z = 0;
 	struct Case
 	{
 		int face;

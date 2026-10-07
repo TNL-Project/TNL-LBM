@@ -239,18 +239,22 @@ struct D3Q27_CUM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal Dxu = -omega1 * n1o2 * rho_inv * (no2 * C_200 - C_020 - C_002) - omega2 * n1o2 * rho_inv * (C_200 + C_020 + C_002 - k_000);
 		const dreal Dyv = Dxu + n3o2 * omega1 * rho_inv * (C_200 - C_020);
 		const dreal Dzw = Dxu + n3o2 * omega1 * rho_inv * (C_200 - C_002);
+	#ifdef USE_GEIER_CUM_2017
 		// plus their combination: Eq 30 - 32
 		const dreal DxvDyu = -no3 * omega1 * rho_inv * C_110;
 		const dreal DxwDzu = -no3 * omega1 * rho_inv * C_101;
 		const dreal DywDzv = -no3 * omega1 * rho_inv * C_011;
+	#endif
 #else
 		const dreal Dxu = 0;
 		const dreal Dyv = 0;
 		const dreal Dzw = 0;
+	#ifdef USE_GEIER_CUM_2017
 		// plus their combination: Eq 30 - 32
 		const dreal DxvDyu = 0;
 		const dreal DxwDzu = 0;
 		const dreal DywDzv = 0;
+	#endif
 #endif
 		// Eqs 33-35
 		const dreal Eq33RHS = (no1 - omega1) * (C_200 - C_020) - no3 * rho * (no1 - omega1 * n1o2) * (vx_sqr * Dxu - vy_sqr * Dyv);

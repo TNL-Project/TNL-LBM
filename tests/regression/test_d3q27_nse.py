@@ -98,9 +98,7 @@ def nse_results(workspace: pathlib.Path) -> dict[str, SimRun]:
     return outputs
 
 
-def last_step_data(
-    results_dir: pathlib.Path, bp_name: str, var_names: list[str]
-) -> FieldData:
+def last_step_data(results_dir: pathlib.Path, bp_name: str, var_names: list[str]) -> FieldData:
     return read_last_step(results_dir / bp_name, var_names)
 
 
@@ -131,9 +129,7 @@ class TestSim1:
         max_diff = float(np.max(np.abs(vx_inner - vx_inner[:, ::-1, :])))
         peak = float(np.max(np.abs(vx)))
         rel = max_diff / peak * 100
-        assert max_diff < 1e-6, (
-            f"max|vx(y)-vx(Y-1-y)|={max_diff:.2e} ({rel:.4f}% of peak)"
-        )
+        assert max_diff < 1e-6, f"max|vx(y)-vx(Y-1-y)|={max_diff:.2e} ({rel:.4f}% of peak)"
 
     def test_symmetry_z(self, data: FieldData) -> None:
         vx = data["velocity_x"]
@@ -142,9 +138,7 @@ class TestSim1:
         max_diff = float(np.max(np.abs(vx_inner - vx_inner[::-1, :, :])))
         peak = float(np.max(np.abs(vx)))
         rel = max_diff / peak * 100
-        assert max_diff < 1e-6, (
-            f"max|vx(z)-vx(Z-1-z)|={max_diff:.2e} ({rel:.4f}% of peak)"
-        )
+        assert max_diff < 1e-6, f"max|vx(z)-vx(Z-1-z)|={max_diff:.2e} ({rel:.4f}% of peak)"
 
     def test_inflow_uniform(self, data: FieldData) -> None:
         vx, wall = data["velocity_x"], data["wall"]
@@ -152,9 +146,7 @@ class TestSim1:
         assert inflow_mask.any(), "no inflow cells found at x=1"
         inflow_vx = vx[:, :, 1][inflow_mask]
         spread = float(np.max(inflow_vx) - np.min(inflow_vx))
-        assert spread < 1e-6, (
-            f"inflow vx spread={spread:.2e} (vx={float(np.mean(inflow_vx)):.6f})"
-        )
+        assert spread < 1e-6, f"inflow vx spread={spread:.2e} (vx={float(np.mean(inflow_vx)):.6f})"
 
     def test_wall_no_slip(self, data: FieldData) -> None:
         solid_mask = (data["wall"] == GEO_WALL) | (data["wall"] == GEO_NOTHING)
@@ -174,14 +166,10 @@ class TestSim2:
     error stagnates; the test asserts the final errors stay within tolerance.
     """
 
-    ERROR_RE = re.compile(
-        r"(l[12])error_phys_v=\[([-\d.e+]+),([-\d.e+]+),([-\d.e+]+)\]"
-    )
+    ERROR_RE = re.compile(r"(l[12])error_phys_v=\[([-\d.e+]+),([-\d.e+]+),([-\d.e+]+)\]")
 
     @pytest.fixture(scope="class")
-    def errors(
-        self, nse_results: dict[str, SimRun]
-    ) -> dict[str, tuple[float, float, float]]:
+    def errors(self, nse_results: dict[str, SimRun]) -> dict[str, tuple[float, float, float]]:
         matches = self.ERROR_RE.findall(nse_results["sim_2"].stdout)
         assert matches, "no l1/l2 error lines found in sim_2 output"
         out: dict[str, tuple[float, float, float]] = {}
@@ -212,9 +200,7 @@ class TestSim2Forcing(TestSim2):
     """
 
     @pytest.fixture(scope="class")
-    def errors(
-        self, nse_results: dict[str, SimRun]
-    ) -> dict[str, tuple[float, float, float]]:
+    def errors(self, nse_results: dict[str, SimRun]) -> dict[str, tuple[float, float, float]]:
         matches = self.ERROR_RE.findall(nse_results["sim_2_forcing"].stdout)
         assert matches, "no l1/l2 error lines found in sim_2 --use-forcing output"
         out: dict[str, tuple[float, float, float]] = {}
@@ -229,9 +215,7 @@ class TestSim2Forcing(TestSim2):
         assert errors["l1"][0] < 1e-4, f"l1 error vx={errors['l1'][0]:.2e} (tol=1e-4)"
 
     def test_l2_vx(self, errors: dict[str, tuple[float, float, float]]) -> None:
-        assert errors["l2"][0] < 1.5e-3, (
-            f"l2 error vx={errors['l2'][0]:.2e} (tol=1.5e-3)"
-        )
+        assert errors["l2"][0] < 1.5e-3, f"l2 error vx={errors['l2'][0]:.2e} (tol=1.5e-3)"
 
 
 class TestSim3:
@@ -251,10 +235,7 @@ class TestSim3:
     @pytest.fixture(scope="class")
     def cuts(self, nse_results: dict[str, SimRun]) -> dict[str, FieldData]:
         directory = nse_results["sim_3"].directory
-        return {
-            axis: last_step_data(directory, f"output_2D_cut_{axis}.bp", self.CUT_VARS)
-            for axis in "XYZ"
-        }
+        return {axis: last_step_data(directory, f"output_2D_cut_{axis}.bp", self.CUT_VARS) for axis in "XYZ"}
 
     def test_finiteness(self, cuts: dict[str, FieldData]) -> None:
         for data in cuts.values():
@@ -301,16 +282,14 @@ class TestSim3:
             assert inflow_col[0] == GEO_NOTHING
             assert inflow_col[-1] == GEO_NOTHING
             assert np.all(inflow_col[1:-1] == GEO_INFLOW_MOMENT), (
-                f"cut_{axis}: inflow edges overwritten by symmetry "
-                f"(tags: {np.unique(inflow_col[1:-1])})"
+                f"cut_{axis}: inflow edges overwritten by symmetry (tags: {np.unique(inflow_col[1:-1])})"
             )
         for axis, get_col in self.OUTFLOW_COL.items():
             outflow_col = get_col(cuts[axis]["wall"])
             assert outflow_col[0] == GEO_NOTHING
             assert outflow_col[-1] == GEO_NOTHING
             assert np.all(outflow_col[1:-1] == GEO_OUTFLOW_RIGHT_INTERP), (
-                f"cut_{axis}: outflow edges overwritten by symmetry "
-                f"(tags: {np.unique(outflow_col[1:-1])})"
+                f"cut_{axis}: outflow edges overwritten by symmetry (tags: {np.unique(outflow_col[1:-1])})"
             )
 
     def test_inflow_edges_uniform(self, cuts: dict[str, FieldData]) -> None:
@@ -332,9 +311,7 @@ class TestSim3:
         upstream = float(np.mean(row[2:5]))
         wake = float(np.mean(row[12:20]))
         ratio = wake / upstream
-        assert 0.3 < ratio < 0.5, (
-            f"wake/up={ratio:.3f} (up={upstream:.3e}, wake={wake:.3e})"
-        )
+        assert 0.3 < ratio < 0.5, f"wake/up={ratio:.3f} (up={upstream:.3e}, wake={wake:.3e})"
 
 
 class TestSim4:
@@ -347,14 +324,10 @@ class TestSim4:
 
     @pytest.fixture(scope="class")
     def probe(self, nse_results: dict[str, SimRun]) -> np.ndarray:
-        probe_files = sorted(
-            nse_results["sim_4"].directory.glob("probe1/kinetic_energy_rank000.txt")
-        )
+        probe_files = sorted(nse_results["sim_4"].directory.glob("probe1/kinetic_energy_rank000.txt"))
         assert probe_files, "no kinetic-energy probe file found"
         data = np.loadtxt(probe_files[0], skiprows=1)
-        assert data.ndim == 2 and data.shape[1] == 5, (
-            f"unexpected probe data shape: {data.shape}"
-        )
+        assert data.ndim == 2 and data.shape[1] == 5, f"unexpected probe data shape: {data.shape}"
         assert len(data) >= 500, f"probe series too short: {len(data)} rows"
         return data
 
@@ -367,17 +340,13 @@ class TestSim4:
         assert_all_finite(data)
 
     def test_output_mass_conservation(self, nse_results: dict[str, SimRun]) -> None:
-        data = last_step_data(
-            nse_results["sim_4"].directory, "output_3D.bp", ["lbm_density"]
-        )
+        data = last_step_data(nse_results["sim_4"].directory, "output_3D.bp", ["lbm_density"])
         assert_mass_conserved(data["lbm_density"], tolerance=2e-4)
 
     def test_probe_columns_finite(self, probe: np.ndarray) -> None:
         names = ["iter", "time", "kinetic_energy", "enstrophy", "enstrophy_dissipation"]
         for i, name in enumerate(names):
-            assert np.all(np.isfinite(probe[:, i])), (
-                f"probe column {name} has non-finite values"
-            )
+            assert np.all(np.isfinite(probe[:, i])), f"probe column {name} has non-finite values"
 
     def test_kinetic_energy_decays(self, probe: np.ndarray) -> None:
         ke = probe[:, 2]
@@ -390,6 +359,4 @@ class TestSim4:
         dissipation = probe[:, 4]
         assert np.all(enstrophy >= 0), "enstrophy must be non-negative"
         assert np.all(dissipation >= 0), "enstrophy dissipation must be non-negative"
-        assert float(np.mean(dissipation)) > 0, (
-            "mean dissipation should be positive (energy decay)"
-        )
+        assert float(np.mean(dissipation)) > 0, "mean dissipation should be positive (energy decay)"

@@ -156,13 +156,13 @@ void Lagrange3D<LBM>::allocateMatricesCPU()
 	}
 
 	// Zero-initialize x1, x2, x3
-	for (int k = 0; k < 3; k++)
-		ws_tnl_hx[k].setValue(0);
+	for (auto& k : ws_tnl_hx)
+		k.setValue(0);
 #ifdef USE_CUDA
-	for (int k = 0; k < 3; k++)
-		ws_tnl_dx[k].setValue(0);
-	for (int k = 0; k < 3; k++)
-		ws_tnl_hxz[k].setValue(0);
+	for (auto& k : ws_tnl_dx)
+		k.setValue(0);
+	for (auto& k : ws_tnl_hxz)
+		k.setValue(0);
 #endif
 }
 
@@ -356,8 +356,8 @@ void Lagrange3D<LBM>::constructMatricesCPU()
 		loopTimer.reset();
 		loopTimer.start();
 		const char* method_id = (methodVariant == IbmMethod::modified) ? "modified" : "original";
-		const std::string output_M = fmt::format("ibm_CPU_matrix-M_method-{}_dirac-{}.mtx", method_id, (int) diracDeltaTypeEL);
-		const std::string output_A = fmt::format("ibm_CPU_matrix-A_method-{}_dirac-{}.mtx", method_id, (int) diracDeltaTypeEL);
+		const std::string output_M = fmt::format("ibm_CPU_matrix-M_method-{}_dirac-{}.mtx", method_id, diracDeltaTypeEL);
+		const std::string output_A = fmt::format("ibm_CPU_matrix-A_method-{}_dirac-{}.mtx", method_id, diracDeltaTypeEL);
 		TNL::Matrices::MatrixWriter<hEllpack>::writeMtx(output_M, ws_tnl_hM);
 		TNL::Matrices::MatrixWriter<hEllpack>::writeMtx(output_A, *ws_tnl_hA);
 		loopTimer.stop();
@@ -409,8 +409,8 @@ void Lagrange3D<LBM>::allocateMatricesGPU()
 	}
 
 	// Zero-initialize x1, x2, x3
-	for (int k = 0; k < 3; k++)
-		ws_tnl_dx[k].setValue(0);
+	for (auto& k : ws_tnl_dx)
+		k.setValue(0);
 #endif
 }
 
@@ -527,8 +527,8 @@ void Lagrange3D<LBM>::constructMatricesGPU()
 		loopTimer.reset();
 		loopTimer.start();
 		const char* method_id = (methodVariant == IbmMethod::modified) ? "modified" : "original";
-		const std::string output_M = fmt::format("ibm_GPU_matrix-M_method-{}_dirac-{}.mtx", method_id, (int) diracDeltaTypeEL);
-		const std::string output_A = fmt::format("ibm_GPU_matrix-A_method-{}_dirac-{}.mtx", method_id, (int) diracDeltaTypeEL);
+		const std::string output_M = fmt::format("ibm_GPU_matrix-M_method-{}_dirac-{}.mtx", method_id, diracDeltaTypeEL);
+		const std::string output_A = fmt::format("ibm_GPU_matrix-A_method-{}_dirac-{}.mtx", method_id, diracDeltaTypeEL);
 		TNL::Matrices::MatrixWriter<dEllpack>::writeMtx(output_M, ws_tnl_dM);
 		TNL::Matrices::MatrixWriter<dEllpack>::writeMtx(output_A, *ws_tnl_dA);
 		loopTimer.stop();
@@ -646,7 +646,7 @@ void Lagrange3D<LBM>::computeForces(real time)
 					const auto LL_velocity_lat = dLL_velocity_lat.getConstView();
 					auto kernel = [=] CUDA_HOSTDEV(idx i) mutable
 					{
-						const point_t v = LL_velocity_lat[i];
+						const point_t& v = LL_velocity_lat[i];
 						dbx[i] += v.x();
 						dby[i] += v.y();
 						dbz[i] += v.z();
@@ -698,7 +698,7 @@ void Lagrange3D<LBM>::computeForces(real time)
 					const auto LL_velocity_lat = dLL_velocity_lat.getConstView();
 					auto kernel = [=] CUDA_HOSTDEV(idx i) mutable
 					{
-						const point_t v = LL_velocity_lat[i];
+						const point_t& v = LL_velocity_lat[i];
 						dbx[i] += v.x();
 						dby[i] += v.y();
 						dbz[i] += v.z();
@@ -757,7 +757,7 @@ void Lagrange3D<LBM>::computeForces(real time)
 					const auto LL_velocity_lat = dLL_velocity_lat.getConstView();
 					auto kernel = [=] CUDA_HOSTDEV(idx i) mutable
 					{
-						const point_t v = LL_velocity_lat[i];
+						const point_t& v = LL_velocity_lat[i];
 						dbx[i] += v.x();
 						dby[i] += v.y();
 						dbz[i] += v.z();
@@ -813,7 +813,7 @@ void Lagrange3D<LBM>::computeForces(real time)
 					const auto LL_velocity_lat = hLL_velocity_lat.getConstView();
 					auto kernel = [=] CUDA_HOSTDEV(idx i) mutable
 					{
-						const point_t v = LL_velocity_lat[i];
+						const point_t& v = LL_velocity_lat[i];
 						hbx[i] += v.x();
 						hby[i] += v.y();
 						hbz[i] += v.z();

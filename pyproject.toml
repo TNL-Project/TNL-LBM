@@ -1,48 +1,3 @@
-# Configuration for ruff
-# https://docs.astral.sh/ruff/settings/
-[tool.ruff]
-target-version = "py312"
-builtins = ["_"]
-
-[tool.ruff.lint]
-select = [
-    "ANN",   # flake8-annotations
-    "ASYNC", # flake8-async
-    "C90",   # mccabe
-    "DTZ",   # flake8-datetimez
-    "E",     # pycodestyle errors
-    "EXE",   # flake8-executable
-    "F",     # Pyflakes
-    "FA",    # flake8-future-annotations
-    "FLY",   # flynt
-    "G",     # flake8-logging-format
-    "I",     # isort
-    "ICN",   # flake8-import-conventions
-    "ISC",   # flake8-implicit-str-concat
-    "LOG",   # flake8-logging
-    "PIE",   # flake8-pie
-    "PLC",   # Pylint conventions
-    "PLE",   # Pylint errors
-    "PLW",   # Pylint warnings
-    "RSE",   # flake8-raise
-    "RUF",   # Ruff-specific rules
-    "SLOT",  # flake8-slot
-    "T10",   # flake8-debugger
-    "UP",    # pyupgrade
-    "W",     # pycodestyle warnings
-    "YTT",   # flake8-2020
-]
-
-[tool.ruff.lint.per-file-ignores]
-"streamlit_app.py" = [
-    "ANN",   # Streamlit callbacks/closures are untyped by nature
-    "C901",  # main() is a monolithic Streamlit UI function
-    "E731",  # lambdas used as callbacks/factories
-    "RUF001", # Greek letters in UI labels are intentional
-    "RUF002", # Greek letters in docstrings are intentional
-    "RUF003", # Greek letters in comments are intentional
-]
-
 # Configuration for mypy / basedmypy
 # https://kotlinisland.github.io/basedmypy/config_file.html
 # https://kotlinisland.github.io/basedmypy/config_file.html#example-pyproject-toml
@@ -55,14 +10,85 @@ mypy_path = ["build/pytnl_lbm"]
 # https://github.com/microsoft/pyright/blob/main/docs/configuration.md
 [tool.pyright]
 pythonVersion = "3.12"
-exclude = ["build", ".venv", "results_*"]
-extraPaths = ["build/pytnl_lbm"]
+exclude = [
+  "build*",  # includes parallel build trees (build-aa, build-eso_*, ...)
+  ".venv",
+  ".gitlab-ci-local",
+  "results_*",
+  "docs",  # standalone tooling scripts, not part of the codebase
+]
+extraPaths = [
+  "build/pytnl_lbm",
+  # the pytnl package built by FetchContent in the pytnl_lbm step
+  # (same path sim_1.py appends to sys.path at runtime)
+  "build/_deps/pytnl-build/src",
+]
 
 # Configuration for pytest (native TOML, requires pytest 9)
 # https://docs.pytest.org/en/stable/reference/customize.html
 # https://docs.pytest.org/en/stable/reference/reference.html#configuration-options
 [tool.pytest]
-minversion = "9.0"
 addopts = ["--strict-markers"]
 log_level = "INFO"
+minversion = "9.0"
 tmp_path_retention_policy = "failed"
+
+# Configuration for ruff
+# https://docs.astral.sh/ruff/settings/
+[tool.ruff]
+target-version = "py312"
+builtins = ["_"]
+line-length = 128
+
+[tool.ruff.lint]
+select = [
+  "ANN",  # flake8-annotations
+  "ASYNC",  # flake8-async
+  "C90",  # mccabe
+  "DTZ",  # flake8-datetimez
+  "E",  # pycodestyle errors
+  "EXE",  # flake8-executable
+  "F",  # Pyflakes
+  "FA",  # flake8-future-annotations
+  "FLY",  # flynt
+  "G",  # flake8-logging-format
+  "I",  # isort
+  "ICN",  # flake8-import-conventions
+  "ISC",  # flake8-implicit-str-concat
+  "LOG",  # flake8-logging
+  "PIE",  # flake8-pie
+  "PLC",  # Pylint conventions
+  "PLE",  # Pylint errors
+  "PLW",  # Pylint warnings
+  "RSE",  # flake8-raise
+  "RUF",  # Ruff-specific rules
+  "SLOT",  # flake8-slot
+  "T10",  # flake8-debugger
+  "UP",  # pyupgrade
+  "W",  # pycodestyle warnings
+  "YTT",  # flake8-2020
+]
+
+[tool.ruff.lint.per-file-ignores]
+"streamlit_app.py" = [
+  "ANN",  # Streamlit callbacks/closures are untyped by nature
+  "C901",  # main() is a monolithic Streamlit UI function
+  "E731",  # lambdas used as callbacks/factories
+  "RUF001",  # Greek letters in UI labels are intentional
+  "RUF002",  # Greek letters in docstrings are intentional
+  "RUF003",  # Greek letters in comments are intentional
+]
+"catalyst/plugin/lbm-pipeline.py" = [
+  "ANN",  # ParaView proxies are duck-typed by nature
+  "F403",  # `from paraview.simple import *` is the idiomatic Catalyst pattern
+  "F405",  # names come from the paraview.simple star import
+  "PLW0603",  # Catalyst pipeline state is kept in module globals
+]
+"catalyst/tnl_lbm_common.py" = [
+  "PLC0415",  # mpi4py is imported lazily because it is an optional dependency
+]
+"catalyst/tnl_lbm_export_frames.py" = [
+  "C901",  # _consume_stream_once orchestrates the whole export loop
+  "ICN001",  # the matplotlib import needs no alias as it is used only for backend selection
+  "PLC0415",  # matplotlib is imported lazily because it is an optional dependency
+]

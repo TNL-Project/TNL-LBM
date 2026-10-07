@@ -10,7 +10,7 @@
 
 #include <TNL/MPI/Comm.h>
 
-static spdlog::sink_ptr init_file_sink(const std::string& name, const std::string& id, const TNL::MPI::Comm& communicator)
+static inline spdlog::sink_ptr init_file_sink(const std::string& name, const std::string& id, const TNL::MPI::Comm& communicator)
 {
 	const int rank = TNL::MPI::GetRank(communicator);
 
@@ -27,7 +27,7 @@ static spdlog::sink_ptr init_file_sink(const std::string& name, const std::strin
 	return file_sink;
 }
 
-static void init_file_logger(const std::string& name, const std::string& id, const TNL::MPI::Comm& communicator)
+static inline void init_file_logger(const std::string& name, const std::string& id, const TNL::MPI::Comm& communicator)
 {
 	auto file_sink = init_file_sink(name, id, communicator);
 	auto logger = std::make_shared<spdlog::logger>(name, file_sink);
@@ -37,7 +37,7 @@ static void init_file_logger(const std::string& name, const std::string& id, con
 	spdlog::register_logger(logger);
 }
 
-static void init_logging(const std::string& id, const TNL::MPI::Comm& communicator)
+static inline void init_logging(const std::string& id, const TNL::MPI::Comm& communicator)
 {
 	// initialize the file sink
 	auto file_sink = init_file_sink("main", id, communicator);
@@ -63,7 +63,7 @@ static void init_logging(const std::string& id, const TNL::MPI::Comm& communicat
 	init_file_logger("profile", id, communicator);
 }
 
-static void deinit_logging()
+static inline void deinit_logging()
 {
 	// create new default logger (same as spdlog itself) before destroying the current one
 	auto color_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();

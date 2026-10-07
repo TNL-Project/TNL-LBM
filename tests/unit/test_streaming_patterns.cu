@@ -18,9 +18,24 @@
 #include <TNL/Devices/Cuda.h>
 
 #include "lbm3d/defs.h"
-#include "lbm3d/d2q9/streaming.h"
-#include "lbm3d/d3q27/streaming.h"
-#include "lbm3d/d3q7/streaming.h"
+#include "lbm3d/d2q9/streaming_AA.h"
+#include "lbm3d/d2q9/streaming_AB_PULL.h"
+#include "lbm3d/d2q9/streaming_AB_PUSH.h"
+#include "lbm3d/d2q9/streaming_ESO_PULL.h"
+#include "lbm3d/d2q9/streaming_ESO_PUSH.h"
+#include "lbm3d/d2q9/streaming_ESO_TWIST.h"
+#include "lbm3d/d3q27/streaming_AA.h"
+#include "lbm3d/d3q27/streaming_AB_PULL.h"
+#include "lbm3d/d3q27/streaming_AB_PUSH.h"
+#include "lbm3d/d3q27/streaming_ESO_PULL.h"
+#include "lbm3d/d3q27/streaming_ESO_PUSH.h"
+#include "lbm3d/d3q27/streaming_ESO_TWIST.h"
+#include "lbm3d/d3q7/streaming_AA.h"
+#include "lbm3d/d3q7/streaming_AB_PULL.h"
+#include "lbm3d/d3q7/streaming_AB_PUSH.h"
+#include "lbm3d/d3q7/streaming_ESO_PULL.h"
+#include "lbm3d/d3q7/streaming_ESO_PUSH.h"
+#include "lbm3d/d3q7/streaming_ESO_TWIST.h"
 
 // mock coordinate space per dimension (as in the outflow-gather tests)
 static constexpr int MS = 32;
@@ -104,7 +119,8 @@ struct StreamMock
 
 	__cuda_callable__ double& df(int type, int slot, int x, int y, int z) const
 	{
-		const size_t idx = ((size_t) type * DIRS::Q + slot) * MS * MS * MS + ((size_t) clampMS(x) * MS + clampMS(y)) * MS + clampMS(z);
+		const size_t idx =
+			(static_cast<size_t>(type) * DIRS::Q + slot) * MS * MS * MS + (static_cast<size_t>(clampMS(x)) * MS + clampMS(y)) * MS + clampMS(z);
 		return mem[idx];
 	}
 };
@@ -180,7 +196,7 @@ static void runRoundTrip(int x, int y, int z, typename DIRS::ks_t& ks1, typename
 						// pre-stream layout: slot (i, s) holds pat(i, s)
 						v = pat(slot, xx, yy, zz);
 					}
-					host[((size_t) slot) * MS * MS * MS + ((size_t) xx * MS + yy) * MS + zz] = v;
+					host[(static_cast<size_t>(slot)) * MS * MS * MS + (static_cast<size_t>(xx) * MS + yy) * MS + zz] = v;
 				}
 
 	TNL::Containers::Array<double, TNL::Devices::Host> hostArr(host.size());

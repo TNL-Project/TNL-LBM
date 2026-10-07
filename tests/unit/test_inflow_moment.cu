@@ -29,7 +29,7 @@
 #include "lbm3d/d2q9/col_srt.h"
 #include "lbm3d/d2q9/macro.h"
 
-#include "lbm3d/core.h"	 // d3q27 umbrella
+#include "lbm3d/d3q27/streaming.h"
 #include "lbm3d/d3q27/bc.h"
 #include "lbm3d/d3q27/col_srt.h"
 #include "lbm3d/d3q27/macro.h"
@@ -82,18 +82,11 @@ static double dirComp2(int i, int axis)
 
 // D3Q27
 using TRAITS3 = TRAITS;
-using KS3 = D3Q27_KernelStruct<typename TRAITS3::dreal>;
+using KS3 = D3Q27_KernelStruct<TRAITS3::dreal>;
 using COLL3 = D3Q27_SRT<TRAITS3>;
-using CONFIG3 = LBM_CONFIG<
-	TRAITS3,
-	D3Q27_KernelStruct,
-	NSE_Data,
-	COLL3,
-	typename COLL3::EQ,
-	D3Q27_STREAMING<TRAITS3>,
-	D3Q27_BC_All,
-	D3Q27_MACRO_Default<TRAITS3>>;
-using BC3 = typename CONFIG3::BC;
+using CONFIG3 =
+	LBM_CONFIG<TRAITS3, D3Q27_KernelStruct, NSE_Data, COLL3, COLL3::EQ, D3Q27_STREAMING<TRAITS3>, D3Q27_BC_All, D3Q27_MACRO_Default<TRAITS3>>;
+using BC3 = CONFIG3::BC;
 
 // driver kernel: run the inflow moment body for one face on one KS
 __global__ void runInflowMoment3D(int face, KS3 in, KS3* out)
@@ -119,7 +112,6 @@ static void checkFace3D(const FaceSpec& fs, const double vel[3])
 	KS3 out;
 	TNL::Backend::memcpy(&out, devOut.getData(), sizeof(KS3), TNL::Backend::MemcpyDeviceToHost);
 
-	const double vn = axisComp(vel, fs.axis);
 	const double vt1 = axisComp(vel, fs.t1);
 	const double vt2 = axisComp(vel, fs.t2);
 
@@ -130,11 +122,14 @@ static void checkFace3D(const FaceSpec& fs, const double vel[3])
 
 		// (i) untouched layers are left bit-exact: every slot with cn != -sign
 		for (int i = 0; i < 27; i++)
-			if (int(dirComp3(i, fs.axis)) != -fs.sign)
+			if (static_cast<int>(dirComp3(i, fs.axis)) != -fs.sign)
 				CHECK_MESSAGE(out.f[i] == in.f[i], "slot ", i, " of face ", fs.face, " must stay untouched");
 
 		// (ii) mass
-		double mass = 0, mx = 0, my = 0, mz = 0;
+		double mass = 0;
+		double mx = 0;
+		double my = 0;
+		double mz = 0;
 		for (int i = 0; i < 27; i++) {
 			mass += out.f[i];
 			mx += dir27_cx(i) * out.f[i];
@@ -148,9 +143,15 @@ static void checkFace3D(const FaceSpec& fs, const double vel[3])
 		CHECK(mz == doctest::Approx(rho * vel[2]).scale(tol));
 
 		// (iv) tangential second-order stresses and shear
-		double s11 = 0, s22 = 0, s12 = 0, q112 = 0, q122 = 0, m22 = 0;
+		double s11 = 0;
+		double s22 = 0;
+		double s12 = 0;
+		double q112 = 0;
+		double q122 = 0;
+		double m22 = 0;
 		for (int i = 0; i < 27; i++) {
-			const double c1 = dirComp3(i, fs.t1), c2 = dirComp3(i, fs.t2);
+			const double c1 = dirComp3(i, fs.t1);
+			const double c2 = dirComp3(i, fs.t2);
 			s11 += c1 * c1 * out.f[i];
 			s22 += c2 * c2 * out.f[i];
 			s12 += c1 * c2 * out.f[i];
@@ -169,7 +170,7 @@ static void checkFace3D(const FaceSpec& fs, const double vel[3])
 		// (vi) the written layer is exactly the in-domain-moving family cn == -sign
 		int written = 0;
 		for (int i = 0; i < 27; i++)
-			if (int(dirComp3(i, fs.axis)) == -fs.sign) {
+			if (static_cast<int>(dirComp3(i, fs.axis)) == -fs.sign) {
 				written++;
 				CHECK_MESSAGE(out.f[i] != in.f[i], "face ", fs.face, " slot ", i, " should be rewritten");
 			}
@@ -204,11 +205,10 @@ TEST_CASE("faces-constraints")
 TEST_SUITE_END();
 
 // D2Q9
-using KS2 = D2Q9_KernelStruct<typename TRAITS::dreal>;
+using KS2 = D2Q9_KernelStruct<TRAITS::dreal>;
 using COLL2 = D2Q9_SRT<TRAITS, D2Q9_EQ<TRAITS>>;
-using CONFIG2 =
-	LBM_CONFIG<TRAITS, D2Q9_KernelStruct, NSE_Data, COLL2, typename COLL2::EQ, D2Q9_STREAMING<TRAITS>, D2Q9_BC_All, D2Q9_MACRO_Default<TRAITS>>;
-using BC2 = typename CONFIG2::BC;
+using CONFIG2 = LBM_CONFIG<TRAITS, D2Q9_KernelStruct, NSE_Data, COLL2, COLL2::EQ, D2Q9_STREAMING<TRAITS>, D2Q9_BC_All, D2Q9_MACRO_Default<TRAITS>>;
+using BC2 = CONFIG2::BC;
 
 __global__ void runInflowMoment2D(int face, KS2 in, KS2* out)
 {
@@ -252,10 +252,13 @@ static void checkFace2D(const FaceSpec& fs, const double vel[2])
 		const double tol = 1e-10 * rho;
 
 		for (int i = 0; i < 9; i++)
-			if (int(dirComp2(i, fs.axis)) != -fs.sign)
+			if (static_cast<int>(dirComp2(i, fs.axis)) != -fs.sign)
 				CHECK_MESSAGE(out.f[i] == in.f[i], "slot ", i, " of face ", fs.face, " must stay untouched");
 
-		double mass = 0, mx = 0, my = 0, stt = 0;
+		double mass = 0;
+		double mx = 0;
+		double my = 0;
+		double stt = 0;
 		for (int i = 0; i < 9; i++) {
 			mass += out.f[i];
 			mx += dir9_cx(i) * out.f[i];
@@ -270,7 +273,7 @@ static void checkFace2D(const FaceSpec& fs, const double vel[2])
 
 		int written = 0;
 		for (int i = 0; i < 9; i++)
-			if (int(dirComp2(i, fs.axis)) == -fs.sign) {
+			if (static_cast<int>(dirComp2(i, fs.axis)) == -fs.sign) {
 				written++;
 				CHECK_MESSAGE(out.f[i] != in.f[i], "face ", fs.face, " slot ", i, " should be rewritten");
 			}

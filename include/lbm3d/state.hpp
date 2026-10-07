@@ -91,7 +91,7 @@ void State<NSE>::ensureFidesJsonModel(const std::string& dimsVariable, const std
 	const std::string jsonPath =
 		! dataManager.getPluginDataModelPath().empty() ? dataManager.getPluginDataModelPath() : fmt::format("results_{}/lbm-fides.json", id);
 	if (nse.rank == 0) {
-		using json = nlohmann::json;
+		using nlohmann::json;
 
 		// Make sure parent directories exist
 		create_parent_directories(jsonPath.c_str());
@@ -106,13 +106,15 @@ void State<NSE>::ensureFidesJsonModel(const std::string& dimsVariable, const std
 		const double dl = static_cast<double>(nse.lat.physDl);
 
 		model["coordinate_system"] = json{
-			{"array",
-			 json{
-				 {"array_type", "uniform_point_coordinates"},
-				 {"dimensions", json{{"source", "variable_dimensions"}, {"data_source", "source"}, {"variable", dimVar}}},
-				 {"origin", json{{"source", "array"}, {"values", json::array({origin.x(), origin.y(), origin.z()})}}},
-				 {"spacing", json{{"source", "array"}, {"values", json::array({dl, dl, dl})}}},
-			 }},
+			{
+				"array",
+				json{
+					{"array_type", "uniform_point_coordinates"},
+					{"dimensions", json{{"source", "variable_dimensions"}, {"data_source", "source"}, {"variable", dimVar}}},
+					{"origin", json{{"source", "array"}, {"values", json::array({origin.x(), origin.y(), origin.z()})}}},
+					{"spacing", json{{"source", "array"}, {"values", json::array({dl, dl, dl})}}},
+				},
+			},
 		};
 
 		model["cell_set"] = json{
@@ -137,9 +139,9 @@ void State<NSE>::ensureFidesJsonModel(const std::string& dimsVariable, const std
 
 		std::ofstream out(jsonPath);
 		if (! out) {
-			throw std::runtime_error("Failed to open Fides JSON file for writing: " + jsonPath);
+			throw std::runtime_error(fmt::format("Failed to open Fides JSON file for writing: {}", jsonPath));
 		}
-		out << std::setw(2) << root << std::endl;
+		out << std::setw(2) << root << "\n";
 	}
 
 	TNL::MPI::Barrier();
@@ -238,16 +240,18 @@ void State<NSE>::writePoints(const char* name, real time, int cycle, const typen
 	if (! dataManager.isVariableDefined<real>("TIME", fname)) {
 		// Define all variables before opening an engine
 		// TODO: make it distributed
-		adios2::Dims shape3{static_cast<std::size_t>(hLL_lat.getSize()), std::size_t(3)};
+		adios2::Dims shape3{static_cast<std::size_t>(hLL_lat.getSize()), static_cast<std::size_t>(3)};
 		adios2::Dims start3{static_cast<std::size_t>(0), static_cast<std::size_t>(0)};
 		adios2::Dims count3{static_cast<std::size_t>(hLL_lat.getSize()), static_cast<std::size_t>(3)};
+		// NOLINTNEXTLINE(readability-suspicious-call-argument) heuristic flags the (name, ioName) pair though the order is correct
 		dataManager.template defineData<float>(coordinates_variable, shape3, start3, count3, fname);
 
-		adios2::Dims shape{static_cast<std::size_t>(hLL_lat.getSize()), std::size_t(1)};
+		adios2::Dims shape{static_cast<std::size_t>(hLL_lat.getSize()), static_cast<std::size_t>(1)};
 		adios2::Dims start{static_cast<std::size_t>(0), static_cast<std::size_t>(0)};
 		adios2::Dims count{static_cast<std::size_t>(hLL_lat.getSize()), static_cast<std::size_t>(1)};
 		dataManager.template defineData<idx>(connectivity_variable, shape, start, count, fname);
 
+		// NOLINTNEXTLINE(readability-suspicious-call-argument) heuristic flags the (name, ioName) pair though the order is correct
 		dataManager.template defineData<std::uint32_t>(cell_types_variable, fname);
 		dataManager.template defineData<idx>("number_of_points", fname);
 		dataManager.template defineData<real>("TIME", fname);
@@ -399,13 +403,19 @@ void State<NSE>::predefine3D(const std::string& ioName, const BLOCK_NSE& block)
 	idx3d local_size = block.local + overlap;
 
 	const adios2::Dims shape{
-		static_cast<std::size_t>(block.global.z()), static_cast<std::size_t>(block.global.y()), static_cast<std::size_t>(block.global.x())
+		static_cast<std::size_t>(block.global.z()),
+		static_cast<std::size_t>(block.global.y()),
+		static_cast<std::size_t>(block.global.x()),
 	};
 	const adios2::Dims start{
-		static_cast<std::size_t>(block.offset.z()), static_cast<std::size_t>(block.offset.y()), static_cast<std::size_t>(block.offset.x())
+		static_cast<std::size_t>(block.offset.z()),
+		static_cast<std::size_t>(block.offset.y()),
+		static_cast<std::size_t>(block.offset.x()),
 	};
 	const adios2::Dims count{
-		static_cast<std::size_t>(local_size.z()), static_cast<std::size_t>(local_size.y()), static_cast<std::size_t>(local_size.x())
+		static_cast<std::size_t>(local_size.z()),
+		static_cast<std::size_t>(local_size.y()),
+		static_cast<std::size_t>(local_size.x()),
 	};
 
 	predefineOutputVariables(ioName, block, shape, start, count);
@@ -497,13 +507,19 @@ void State<NSE>::predefine3Dcut(const std::string& ioName, const BLOCK_NSE& bloc
 
 	// NOTE: ADIOS2 dims are in {Z, Y, X} order for ImageData writer
 	const adios2::Dims shape{
-		static_cast<std::size_t>(cut_global.z()), static_cast<std::size_t>(cut_global.y()), static_cast<std::size_t>(cut_global.x())
+		static_cast<std::size_t>(cut_global.z()),
+		static_cast<std::size_t>(cut_global.y()),
+		static_cast<std::size_t>(cut_global.x()),
 	};
 	const adios2::Dims start{
-		static_cast<std::size_t>(cut_offset.z()), static_cast<std::size_t>(cut_offset.y()), static_cast<std::size_t>(cut_offset.x())
+		static_cast<std::size_t>(cut_offset.z()),
+		static_cast<std::size_t>(cut_offset.y()),
+		static_cast<std::size_t>(cut_offset.x()),
 	};
 	const adios2::Dims count{
-		static_cast<std::size_t>(cut_local.z()), static_cast<std::size_t>(cut_local.y()), static_cast<std::size_t>(cut_local.x())
+		static_cast<std::size_t>(cut_local.z()),
+		static_cast<std::size_t>(cut_local.y()),
+		static_cast<std::size_t>(cut_local.x()),
 	};
 
 	predefineOutputVariables(ioName, block, shape, start, count);
@@ -975,7 +991,7 @@ void State<NSE>::saveState()
 		}
 		// update the modification timestamp on the checkpoint directory
 		// (it would be weird to keep the old timestamp of a moved directory)
-		status = utimensat(AT_FDCWD, dst_path.c_str(), NULL, 0);
+		status = utimensat(AT_FDCWD, dst_path.c_str(), nullptr, 0);
 		if (status != 0) {
 			spdlog::error("touch(\"{}\") failed: {}", dst_path, strerror(errno));
 		}
@@ -1275,7 +1291,7 @@ void State<NSE>::SimUpdate()
 #endif
 		}
 		// synchronize the null-stream after all grids
-		TNL::Backend::streamSynchronize(0);
+		TNL::Backend::streamSynchronize(nullptr);
 
 		ibm.computeForces(nse.physTime());
 	}
@@ -1318,7 +1334,7 @@ void State<NSE>::SimUpdate()
 					);
 				}
 			}
-			TNL::Backend::streamSynchronize(0);
+			TNL::Backend::streamSynchronize(nullptr);
 		}
 		for (auto& block : nse.blocks) {
 			const auto direction = TNL::Containers::SyncDirection::None;
@@ -1330,7 +1346,7 @@ void State<NSE>::SimUpdate()
 			);
 		}
 		// synchronize the null-stream after all grids
-		TNL::Backend::streamSynchronize(0);
+		TNL::Backend::streamSynchronize(nullptr);
 		// copying of overlaps is not necessary for nproc == 1 (nproc is checked in streaming as well)
 		timer_compute.stop();
 	#ifdef HAVE_MPI

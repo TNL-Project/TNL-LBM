@@ -5,7 +5,6 @@
 #include "lbm3d/lbm_data.h"
 
 #include "lbm3d/d2q9/bc.h"
-#include "lbm3d/d2q9/col_srt.h"
 #include "lbm3d/d2q9/col_clbm.h"
 #include "lbm3d/d2q9/macro.h"
 
@@ -149,7 +148,7 @@ struct StateLocal : State<NSE>
 			"lbm_analytical_vx",
 			"lbm_error_vx",
 			"analytical_vx",
-			"error_vx"
+			"error_vx",
 		};
 	}
 
@@ -331,7 +330,7 @@ void sim(const std::string& adios_config, int RESOLUTION, bool use_forcing, doub
 	lat.physDt = PHYS_DT;
 	lat.physViscosity = PHYS_VISCOSITY;
 
-	const char* prec = (std::is_same_v<dreal, float>) ? "float" : "double";
+	const char* prec = std::is_same_v<dreal, float> ? "float" : "double";
 	const char* bc_variant = use_forcing ? "forcing" : "inflow";
 	const std::string state_id =
 		fmt::format("sim2d_2_{}_{}_{}_res{:02d}_np{:03d}", NSE::COLL::id, prec, bc_variant, RESOLUTION, TNL::MPI::GetSize(MPI_COMM_WORLD));

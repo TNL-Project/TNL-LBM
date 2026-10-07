@@ -152,7 +152,9 @@ struct D3Q27_STREAMING_AB_PUSH
 						   : (FACE & (bc_face::YP | bc_face::YM)) ? 1
 																  : 2;	// normal axis: 0 = x, 1 = y, 2 = z
 		for (int i = 0; i < 27; i++) {
-			idx sx = x, sy = y, sz = z;
+			idx sx = x;
+			idx sy = y;
+			idx sz = z;
 			if constexpr (axis == 0)
 				sx = anchor + dir27_cx(i);
 			else if constexpr (axis == 1)
@@ -217,7 +219,12 @@ struct D3Q27_STREAMING_AB_PUSH
 		for (int i = 0; i < 27; i++) {
 			const int cn = (axis == 0) ? dir27_cx(i) : (axis == 1) ? dir27_cy(i) : dir27_cz(i);	 // normal component of c_i
 			// mapped anchor-column slot and own-column slot
-			idx nx = x, ny = y, nz = z, ox = x, oy = y, oz = z;
+			idx nx = x;
+			idx ny = y;
+			idx nz = z;
+			idx ox = x;
+			idx oy = y;
+			idx oz = z;
 			if constexpr (axis == 0) {
 				nx = anchor + cn;
 				ox = x + cn;

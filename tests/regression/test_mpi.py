@@ -209,9 +209,7 @@ class TestChannelMPI:
         max_diff = float(np.max(np.abs(vx_inner - vx_inner[:, ::-1, :])))
         peak = float(np.max(np.abs(vx)))
         rel = max_diff / peak * 100
-        assert max_diff < 1e-6, (
-            f"max|vx(y)-vx(Y-1-y)|={max_diff:.2e} ({rel:.4f}% of peak)"
-        )
+        assert max_diff < 1e-6, f"max|vx(y)-vx(Y-1-y)|={max_diff:.2e} ({rel:.4f}% of peak)"
 
     def test_symmetry_z(self, data: FieldData) -> None:
         vx = data["velocity_x"]
@@ -220,9 +218,7 @@ class TestChannelMPI:
         max_diff = float(np.max(np.abs(vx_inner - vx_inner[::-1, :, :])))
         peak = float(np.max(np.abs(vx)))
         rel = max_diff / peak * 100
-        assert max_diff < 1e-6, (
-            f"max|vx(z)-vx(Z-1-z)|={max_diff:.2e} ({rel:.4f}% of peak)"
-        )
+        assert max_diff < 1e-6, f"max|vx(z)-vx(Z-1-z)|={max_diff:.2e} ({rel:.4f}% of peak)"
 
     def test_inflow_uniform(self, data: FieldData) -> None:
         vx, wall = data["velocity_x"], data["wall"]
@@ -230,9 +226,7 @@ class TestChannelMPI:
         assert inflow_mask.any(), "no inflow cells found at x=1"
         inflow_vx = vx[:, :, 1][inflow_mask]
         spread = float(np.max(inflow_vx) - np.min(inflow_vx))
-        assert spread < 1e-6, (
-            f"inflow vx spread={spread:.2e} (vx={float(np.mean(inflow_vx)):.6f})"
-        )
+        assert spread < 1e-6, f"inflow vx spread={spread:.2e} (vx={float(np.mean(inflow_vx)):.6f})"
 
     def test_wall_no_slip(self, data: FieldData) -> None:
         solid_mask = (data["wall"] == GEO3D_WALL) | (data["wall"] == GEO3D_NOTHING)
@@ -302,9 +296,7 @@ class TestDuctForcingMPI(_TestSim2Forcing):
     """
 
     @pytest.fixture(scope="class")
-    def errors(
-        self, channel_forcing_stdout: str
-    ) -> dict[str, tuple[float, float, float]]:
+    def errors(self, channel_forcing_stdout: str) -> dict[str, tuple[float, float, float]]:
         matches = self.ERROR_RE.findall(channel_forcing_stdout)
         assert matches, "no l1/l2 error lines found in sim_2 --use-forcing output"
         out: dict[str, tuple[float, float, float]] = {}

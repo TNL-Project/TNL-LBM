@@ -172,8 +172,7 @@ class TestIbmFlow:
             assert inflow_col[0] == GEO_NOTHING
             assert inflow_col[-1] == GEO_NOTHING
             assert np.all(inflow_col[1:-1] == GEO_INFLOW_MOMENT), (
-                f"{plane}: inflow edges overwritten by symmetry "
-                f"(tags: {np.unique(inflow_col[1:-1])})"
+                f"{plane}: inflow edges overwritten by symmetry (tags: {np.unique(inflow_col[1:-1])})"
             )
         for plane, get_col in {
             "cut_y": (lambda w: w[:, 0, -2]),
@@ -183,8 +182,7 @@ class TestIbmFlow:
             assert outflow_col[0] == GEO_NOTHING
             assert outflow_col[-1] == GEO_NOTHING
             assert np.all(outflow_col[1:-1] == GEO_OUTFLOW_RIGHT_INTERP), (
-                f"{plane}: outflow edges overwritten by symmetry "
-                f"(tags: {np.unique(outflow_col[1:-1])})"
+                f"{plane}: outflow edges overwritten by symmetry (tags: {np.unique(outflow_col[1:-1])})"
             )
 
     def test_wake_deficit(self, ibm_flow: IbmFlowResult) -> None:
@@ -199,20 +197,14 @@ class TestIbmFlow:
         wake = float(np.mean(row[12:20]))
         ratio = wake / upstream
         assert upstream > 0.05, f"upstream vx={upstream:.3e} too small"
-        assert min_behind < -1e-3, (
-            f"no recirculation behind the sphere (min vx={min_behind:.3e})"
-        )
-        assert -0.7 < ratio < 0.5, (
-            f"wake/up={ratio:.3f} (up={upstream:.3e}, wake={wake:.3e})"
-        )
+        assert min_behind < -1e-3, f"no recirculation behind the sphere (min vx={min_behind:.3e})"
+        assert -0.7 < ratio < 0.5, f"wake/up={ratio:.3f} (up={upstream:.3e}, wake={wake:.3e})"
 
     def test_sphere_drag(self, ibm_flow: IbmFlowResult) -> None:
         drags = re.findall(r"C_D=\s*([-\d.e+]+)", ibm_flow["stdout"])
         assert drags, "no C_D values found in sim_IBM2 output"
         drag = float(np.mean([float(d) for d in drags[-10:]]))
-        assert DRAG_LOW < drag < DRAG_HIGH, (
-            f"C_D={drag:.4f} outside [{DRAG_LOW}, {DRAG_HIGH}]"
-        )
+        assert DRAG_LOW < drag < DRAG_HIGH, f"C_D={drag:.4f} outside [{DRAG_LOW}, {DRAG_HIGH}]"
 
 
 def parse_mtx(
@@ -287,29 +279,17 @@ class TestIbmMatrices:
 
     def test_dims(self, pair: tuple[str, SparseMatrix, SparseMatrix]) -> None:
         _, generated, baseline = pair
-        assert generated[0] == baseline[0], (
-            f"dims: gen={generated[0]} != base={baseline[0]}"
-        )
+        assert generated[0] == baseline[0], f"dims: gen={generated[0]} != base={baseline[0]}"
 
-    def test_sparsity_pattern(
-        self, pair: tuple[str, SparseMatrix, SparseMatrix]
-    ) -> None:
+    def test_sparsity_pattern(self, pair: tuple[str, SparseMatrix, SparseMatrix]) -> None:
         _, (_, gen_rows, gen_cols, _), (_, base_rows, base_cols, _) = pair
         assert gen_rows.shape == base_rows.shape, "nnz differs"
-        assert np.array_equal(gen_rows, base_rows), (
-            f"row indices differ in {np.sum(gen_rows != base_rows)} entries"
-        )
-        assert np.array_equal(gen_cols, base_cols), (
-            f"col indices differ in {np.sum(gen_cols != base_cols)} entries"
-        )
+        assert np.array_equal(gen_rows, base_rows), f"row indices differ in {np.sum(gen_rows != base_rows)} entries"
+        assert np.array_equal(gen_cols, base_cols), f"col indices differ in {np.sum(gen_cols != base_cols)} entries"
 
     def test_values(self, pair: tuple[str, SparseMatrix, SparseMatrix]) -> None:
         _, (_, gen_rows, _, gen_vals), (_, base_rows, _, base_vals) = pair
-        if not (
-            gen_rows.shape == base_rows.shape and np.array_equal(gen_rows, base_rows)
-        ):
+        if not (gen_rows.shape == base_rows.shape and np.array_equal(gen_rows, base_rows)):
             pytest.fail("sparsity pattern differs, value comparison not meaningful")
         max_diff = float(np.max(np.abs(gen_vals - base_vals))) if gen_vals.size else 0.0
-        assert max_diff < VALUE_TOLERANCE, (
-            f"max|diff|={max_diff:.2e} (tol={VALUE_TOLERANCE:.0e})"
-        )
+        assert max_diff < VALUE_TOLERANCE, f"max|diff|={max_diff:.2e} (tol={VALUE_TOLERANCE:.0e})"

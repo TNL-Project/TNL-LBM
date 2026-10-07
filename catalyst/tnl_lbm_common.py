@@ -2,17 +2,21 @@ from __future__ import annotations
 
 import argparse
 import logging
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from adios2 import Stream
 
 
 @dataclass
 class MPIContext:
     """Lightweight MPI wrapper that works with and without mpi4py."""
 
-    comm: Optional[object]
+    comm: object | None
     rank: int
     size: int
 
@@ -41,23 +45,21 @@ def setup_mpi(disable_mpi: bool) -> MPIContext:
 
 @dataclass
 class PlaneSelection:
-    start: List[int]
-    count: List[int]
-    fullshape: Tuple[int, int]
+    start: list[int]
+    count: list[int]
+    fullshape: tuple[int, int]
     index: int
 
 
 PLANE_TO_AXIS = {"xy": 0, "xz": 1, "yz": 2}
 
 
-def parse_figsize(spec: str) -> Tuple[float, float]:
+def parse_figsize(spec: str) -> tuple[float, float]:
     try:
         width_str, height_str = spec.lower().split("x")
         return float(width_str), float(height_str)
     except Exception as exc:
-        raise argparse.ArgumentTypeError(
-            f"Invalid figsize specification '{spec}'. Use WIDTHxHEIGHT, e.g. 8x6."
-        ) from exc
+        raise argparse.ArgumentTypeError(f"Invalid figsize specification '{spec}'. Use WIDTHxHEIGHT, e.g. 8x6.") from exc
 
 
 def configure_logging(level: str) -> None:
@@ -67,7 +69,7 @@ def configure_logging(level: str) -> None:
     logging.basicConfig(level=numeric_level, format="%(asctime)s | %(levelname)s | %(message)s")
 
 
-def expand_planes(choice: str) -> List[str]:
+def expand_planes(choice: str) -> list[str]:
     return ["xy", "xz", "yz"] if choice == "all" else [choice]
 
 
@@ -86,20 +88,23 @@ def interpret_index(value: str, max_index: int) -> int:
     try:
         if token.endswith("%"):
             frac = float(token[:-1]) / 100.0
-            return int(round(frac * max_index))
+            return round(frac * max_index)
         parsed = float(token)
         if 0.0 <= parsed <= 1.0 and not token.isdigit():
-            return int(round(parsed * max_index))
-        return int(round(parsed))
+            return round(parsed * max_index)
+        return round(parsed)
     except ValueError as exc:
         raise ValueError(f"Cannot interpret plane index token '{value}'.") from exc
 
 
-def parse_plane_overrides(entries: Sequence[str], logger: logging.Logger) -> Dict[str, str]:
-    overrides: Dict[str, str] = {}
+def parse_plane_overrides(entries: Sequence[str], logger: logging.Logger) -> dict[str, str]:
+    overrides: dict[str, str] = {}
     for item in entries:
         if "=" not in item:
-            logger.warning("Ignoring malformed plane override '%s' (expected format plane=index).", item)
+            logger.warning(
+                "Ignoring malformed plane override '%s' (expected format plane=index).",
+                item,
+            )
             continue
         plane, value = item.split("=", 1)
         plane = plane.strip().lower()
@@ -110,7 +115,7 @@ def parse_plane_overrides(entries: Sequence[str], logger: logging.Logger) -> Dic
     return overrides
 
 
-def compute_plane_selection(plane: str, index: int, shape: Tuple[int, int, int]) -> PlaneSelection:
+def compute_plane_selection(plane: str, index: int, shape: tuple[int, int, int]) -> PlaneSelection:
     nz, ny, nx = shape
     if plane == "xy":
         start = [clamp(index, 0, nz - 1), 0, 0]
@@ -137,13 +142,15 @@ def reshape_plane(array: np.ndarray, count: Sequence[int]) -> np.ndarray:
     return squeezed
 
 
-def read_scalar(fr_step, var_name: str, selection: PlaneSelection) -> np.ndarray:
+def read_scalar(fr_step: Stream, var_name: str, selection: PlaneSelection) -> np.ndarray:
     data = fr_step.read(var_name, selection.start, selection.count)
+    if data is None:
+        raise RuntimeError(f"Variable '{var_name}' could not be read.")
     return reshape_plane(data, selection.count)
 
 
 def read_velocity(
-    fr_step,
+    fr_step: Stream,
     base_name: str,
     component: str,
     selection: PlaneSelection,
@@ -166,9 +173,9 @@ def read_velocity(
 
 
 __all__ = [
+    "PLANE_TO_AXIS",
     "MPIContext",
     "PlaneSelection",
-    "PLANE_TO_AXIS",
     "clamp",
     "compute_plane_selection",
     "configure_logging",

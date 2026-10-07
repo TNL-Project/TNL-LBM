@@ -21,7 +21,7 @@ struct D3Q27_MACRO_Base
 		e_vz,
 		e_fx,
 		e_fy,
-		e_fz
+		e_fz,
 	};
 
 	// specifies if macroscopic quantities are computed in the kernel in each iteration
@@ -64,7 +64,7 @@ struct D3Q27_MACRO_Default : D3Q27_MACRO_Base<TRAITS>
 		e_vx,
 		e_vy,
 		e_vz,
-		N
+		N,
 	};
 
 	template <typename LBM_DATA, typename LBM_KS>
@@ -107,7 +107,7 @@ struct D3Q27_MACRO_Mean : D3Q27_MACRO_Base<TRAITS>
 		e_vm2_xy,
 		e_vm2_xz,
 		e_vm2_yz,
-		N
+		N,
 	};
 
 	// specifies if macroscopic quantities are computed in the kernel in each iteration
@@ -216,7 +216,7 @@ struct D3Q27_MACRO_Adjoint : D3Q27_MACRO_Base<TRAITS>
 		e_vx_m,
 		e_vy_m,
 		e_vz_m,
-		N
+		N,
 		// NOTE: if anything more is added, the loadPrimaryAndMeasuredMacro function must be generalized!!!
 		//gx, gy, gz,
 	};

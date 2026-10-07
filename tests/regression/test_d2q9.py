@@ -93,9 +93,7 @@ class TestSim2d1:
 
     @pytest.fixture(scope="class")
     def data(self, d2q9_results: dict[str, pathlib.Path]) -> FieldData:
-        return read_2d_fields(
-            d2q9_results["sim2d_1"], ["lbm_density", "velocity_x", "velocity_y", "wall"]
-        )
+        return read_2d_fields(d2q9_results["sim2d_1"], ["lbm_density", "velocity_x", "velocity_y", "wall"])
 
     def test_finiteness(self, data: FieldData) -> None:
         assert_all_finite(data)
@@ -112,9 +110,7 @@ class TestSim2d1:
         max_diff = float(np.max(np.abs(vx_inner - vx_inner[::-1, :])))
         peak = float(np.max(np.abs(vx)))
         rel = max_diff / peak * 100
-        assert max_diff < 1e-6, (
-            f"max|vx(y)-vx(Y-1-y)|={max_diff:.2e} ({rel:.4f}% of peak)"
-        )
+        assert max_diff < 1e-6, f"max|vx(y)-vx(Y-1-y)|={max_diff:.2e} ({rel:.4f}% of peak)"
 
     def test_inflow_uniform(self, data: FieldData) -> None:
         vx, wall = data["velocity_x"], data["wall"]
@@ -122,9 +118,7 @@ class TestSim2d1:
         assert inflow_mask.any(), "no inflow cells found at x=1"
         inflow_vx = vx[inflow_mask, 1]
         spread = float(np.max(inflow_vx) - np.min(inflow_vx))
-        assert spread < 1e-6, (
-            f"inflow vx spread={spread:.2e} (vx={float(np.mean(inflow_vx)):.6f})"
-        )
+        assert spread < 1e-6, f"inflow vx spread={spread:.2e} (vx={float(np.mean(inflow_vx)):.6f})"
 
     def test_wall_no_slip(self, data: FieldData) -> None:
         max_v = wall_velocity_max(data["velocity_x"], data["velocity_y"], data["wall"])
@@ -199,13 +193,8 @@ class TestSim2dHills:
         y_fluid = y_sym - 1
         # Compare vx magnitudes in the interior (skip inflow/outflow columns).
         x_start, x_end = (15 * nx) // 100, (85 * nx) // 100
-        ratio = float(
-            np.max(np.abs(vx[y_sym, x_start:x_end]))
-            / max(np.max(np.abs(vx[y_fluid, x_start:x_end])), 1e-30)
-        )
-        assert ratio < 1.05, (
-            f"|vx_max(SYM_TOP)|/|vx_max(fluid)|={ratio:.6f} (tol < 1.05)"
-        )
+        ratio = float(np.max(np.abs(vx[y_sym, x_start:x_end])) / max(np.max(np.abs(vx[y_fluid, x_start:x_end])), 1e-30))
+        assert ratio < 1.05, f"|vx_max(SYM_TOP)|/|vx_max(fluid)|={ratio:.6f} (tol < 1.05)"
 
     def test_sym_top_continuity(self, data: FieldData) -> None:
         vx, wall = data["velocity_x"], data["wall"]
@@ -214,15 +203,11 @@ class TestSim2dHills:
         # inflow/outflow ends and would dominate the maximum there.
         nx = vx.shape[1]
         x_start, x_end = (15 * nx) // 100, (85 * nx) // 100
-        row_diff = float(
-            np.max(np.abs(vx[y_sym, x_start:x_end] - vx[y_sym - 1, x_start:x_end]))
-        )
+        row_diff = float(np.max(np.abs(vx[y_sym, x_start:x_end] - vx[y_sym - 1, x_start:x_end])))
         peak = float(np.max(np.abs(vx)))
         assert peak > 0
         rel = row_diff / peak * 100
-        assert row_diff / peak < 0.02, (
-            f"max|vx(SYM_TOP)-vx(fluid)|={row_diff:.2e} ({rel:.2f}% of peak)"
-        )
+        assert row_diff / peak < 0.02, f"max|vx(SYM_TOP)-vx(fluid)|={row_diff:.2e} ({rel:.2f}% of peak)"
 
     def test_inflow_uniform(self, data: FieldData) -> None:
         vx, wall = data["velocity_x"], data["wall"]
@@ -230,9 +215,7 @@ class TestSim2dHills:
         assert inflow_mask.any(), "no inflow cells found at x=1"
         inflow_vx = vx[inflow_mask, 1]
         spread = float(np.max(inflow_vx) - np.min(inflow_vx))
-        assert spread < 1e-6, (
-            f"inflow vx spread={spread:.2e} (vx={float(np.mean(inflow_vx)):.6f})"
-        )
+        assert spread < 1e-6, f"inflow vx spread={spread:.2e} (vx={float(np.mean(inflow_vx)):.6f})"
 
     def test_wall_no_slip(self, data: FieldData) -> None:
         max_v = wall_velocity_max(data["velocity_x"], data["velocity_y"], data["wall"])
@@ -249,8 +232,7 @@ class TestSim2dHills:
         assert inflow_col[0] == GEO_NOTHING
         assert inflow_col[1] == GEO_WALL, "bottom wall must win at the inflow corner"
         assert np.all(inflow_col[2 : ny - 1] == GEO_INFLOW_MOMENT), (
-            "inflow must cover the full face including the top row "
-            f"(tags: {np.unique(inflow_col[2 : ny - 1])})"
+            f"inflow must cover the full face including the top row (tags: {np.unique(inflow_col[2 : ny - 1])})"
         )
         assert inflow_col[ny - 1] == GEO_NOTHING
 
@@ -258,8 +240,7 @@ class TestSim2dHills:
         assert outflow_col[0] == GEO_NOTHING
         assert outflow_col[1] == GEO_WALL, "bottom wall must win at the outflow corner"
         assert np.all(outflow_col[2 : ny - 1] == GEO_OUTFLOW_RIGHT_INTERP), (
-            "outflow must cover the full face including the top row "
-            f"(tags: {np.unique(outflow_col[2 : ny - 1])})"
+            f"outflow must cover the full face including the top row (tags: {np.unique(outflow_col[2 : ny - 1])})"
         )
         assert outflow_col[ny - 1] == GEO_NOTHING
 
@@ -351,9 +332,7 @@ class TestSim2dTaylorGreen:
         assert max_err < 1e-5, f"max|error_v|={max_err:.2e} (tol=1e-5)"
 
     def test_analytical_error_lbm(self, data: FieldData) -> None:
-        max_err = max(
-            float(np.max(data["lbm_error_vx"])), float(np.max(data["lbm_error_vy"]))
-        )
+        max_err = max(float(np.max(data["lbm_error_vx"])), float(np.max(data["lbm_error_vy"])))
         assert max_err < 1e-4, f"max|lbm_error_v|={max_err:.2e} (tol=1e-4)"
 
     def test_velocity_symmetry(self, data: FieldData) -> None:
@@ -367,6 +346,4 @@ class TestSim2dTaylorGreen:
             float(np.max(np.abs(vy + vy[:, ::-1]))),
         )
         signal = max(float(np.max(np.abs(vx))), float(np.max(np.abs(vy))))
-        assert max_sym < 0.1, (
-            f"max|sym_violation|={max_sym:.2e} (signal peak={signal:.2e})"
-        )
+        assert max_sym < 0.1, f"max|sym_violation|={max_sym:.2e} (signal peak={signal:.2e})"

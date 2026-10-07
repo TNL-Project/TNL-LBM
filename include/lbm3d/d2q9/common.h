@@ -72,5 +72,4 @@ struct D2Q9_COMMON
 		KS.f[dir9::pz] += EQ::eq_pz(rho_out, KS.vx, KS.vy) - EQ::eq_pz(KS.rho, KS.vx, KS.vy);
 		KS.f[dir9::pp] += EQ::eq_pp(rho_out, KS.vx, KS.vy) - EQ::eq_pp(KS.rho, KS.vx, KS.vy);
 	}
-
 };

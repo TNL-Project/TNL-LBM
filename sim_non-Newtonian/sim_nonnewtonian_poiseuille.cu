@@ -9,7 +9,6 @@
 #include <argparse/argparse.hpp>
 #include <algorithm>
 #include <cmath>
-#include <limits>
 #include <utility>
 #include <vector>
 
@@ -95,15 +94,15 @@ struct CY_Constitutive
 	// where u = |W'| is the lattice shear rate, matching the kernel's gamma_lbm.
 	// nu_0 is the zero-shear lattice viscosity (also the collision reference),
 	// nu_inf is the infinite-shear lattice viscosity.
-	double nu(double u) const
+	[[nodiscard]] double nu(double u) const
 	{
 		return nu_inf + (nu_0 - nu_inf) * std::pow(1.0 + std::pow(lambda * u, a), (n - 1.0) / a);
 	}
-	double flux(double u) const
+	[[nodiscard]] double flux(double u) const
 	{
 		return nu(u) * u;
 	}
-	double pot(double u) const
+	[[nodiscard]] double pot(double u) const
 	{
 		return simpson_integral(
 			[&](double t)
@@ -128,17 +127,17 @@ struct Casson_Constitutive
 	//        = integral_0^u (k0^2 + 2*k0*k1*sqrt(t) + k1^2*t) dt
 	//        = k0^2*u + (4/3)*k0*k1*u^(3/2) + (1/2)*k1^2*u^2
 
-	double nu(double u) const
+	[[nodiscard]] double nu(double u) const
 	{
 		if (u <= 0.0)
 			return std::numeric_limits<double>::infinity();
 		return (k0 + k1 * std::sqrt(u)) * (k0 + k1 * std::sqrt(u)) / u;
 	}
-	double flux(double u) const
+	[[nodiscard]] double flux(double u) const
 	{
 		return (k0 + k1 * std::sqrt(u)) * (k0 + k1 * std::sqrt(u));
 	}
-	double pot(double u) const
+	[[nodiscard]] double pot(double u) const
 	{
 		double su = std::sqrt(u);
 		return k0 * k0 * u + (4.0 / 3.0) * k0 * k1 * u * su + 0.5 * k1 * k1 * u * u;
@@ -319,19 +318,21 @@ struct StateLocal : State<NSE>
 
 	[[nodiscard]] std::vector<std::string> getOutputDataNames() const override
 	{
-		return {"lbm_density",	  "lbm_density_fluctuation",
-				"lbm_velocity_x", "lbm_velocity_y",
-				"lbm_velocity_z", "lbm_force_x",
-				"lbm_force_y",	  "lbm_force_z",
-				"lbm_S11",		  "lbm_S12",
-				"lbm_S13",		  "lbm_S22",
-				"lbm_S32",		  "lbm_S33",
-				"velocity_x",	  "velocity_y",
-				"velocity_z",	  "lbm_analytical_vx",
-				"lbm_error_vx",	  "lbm_error_vy",
-				"lbm_error_vz",	  "analytical_vx",
-				"error_vx",		  "error_vy",
-				"error_vz"};
+		return {
+			"lbm_density",	  "lbm_density_fluctuation",
+			"lbm_velocity_x", "lbm_velocity_y",
+			"lbm_velocity_z", "lbm_force_x",
+			"lbm_force_y",	  "lbm_force_z",
+			"lbm_S11",		  "lbm_S12",
+			"lbm_S13",		  "lbm_S22",
+			"lbm_S32",		  "lbm_S33",
+			"velocity_x",	  "velocity_y",
+			"velocity_z",	  "lbm_analytical_vx",
+			"lbm_error_vx",	  "lbm_error_vy",
+			"lbm_error_vz",	  "analytical_vx",
+			"error_vx",		  "error_vy",
+			"error_vz",
+		};
 	}
 
 	void outputData(UniformDataWriter<TRAITS>& writer, const BLOCK& block, const idx3d& begin, const idx3d& end) override

@@ -14,7 +14,8 @@ struct D3Q7_BC_All
 	using idx = typename CONFIG::TRAITS::idx;
 	using dreal = typename CONFIG::TRAITS::dreal;
 
-	enum GEO : map_t
+	enum GEO : map_t  // NOLINT(performance-enum-size) base width must match the map_t storage type
+
 	{
 		GEO_FLUID,	// compulsory
 		GEO_WALL,	// compulsory
@@ -27,7 +28,7 @@ struct D3Q7_BC_All
 		GEO_OUTFLOW_RIGHT,
 		GEO_NOTHING,
 		GEO_OUTFLOW_PE,
-		GEO_SYMMETRY
+		GEO_SYMMETRY,
 	};
 
 	__cuda_callable__ static bool isFluid(map_t mapgi)
@@ -128,8 +129,8 @@ struct D3Q7_BC_All
 			case GEO_TRANSFER_SF:
 				{
 					dreal tmp[7];
-					for (int q = 0; q < 7; q++)
-						tmp[q] = 0;
+					for (auto& q : tmp)
+						q = 0;
 					for (int q = 0; q < 7; q++) {
 						tmp[pzz] += SD.df(df_cur, q, xp, y, z);
 						tmp[mzz] += SD.df(df_cur, q, xm, y, z);

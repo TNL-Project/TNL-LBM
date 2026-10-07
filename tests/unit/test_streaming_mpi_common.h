@@ -623,7 +623,7 @@ static void checkSnapshotBitwiseMatch(const char* tag, const std::vector<double>
 	for (std::size_t i = 0; i < candidate.size(); i++)
 		if (candidate[i] != reference[i]) {
 			ndiff++;
-			maxdiff = std::max(maxdiff, (double) std::abs(candidate[i] - reference[i]));
+			maxdiff = std::max(maxdiff, std::abs(candidate[i] - reference[i]));
 		}
 	INFO("differing cells: ", ndiff, " of ", candidate.size(), " (max|diff| = ", maxdiff, ")");
 	CHECK(ndiff == 0);
@@ -842,8 +842,9 @@ static std::vector<double> runChannel(const std::string& id, const ChannelSetup&
 			block.data.inflow_vz = inflow_vz;
 	}
 	nse.setInitialCondition(
-		[V_0, inflow_vy, inflow_vz] __cuda_callable__(typename NSE::template KernelStruct<dreal> & KS, idx, idx, idx) mutable
+		[V_0, inflow_vy, inflow_vz] __cuda_callable__(typename NSE::template KernelStruct<dreal>& KS, idx, idx, idx) mutable
 		{
+			(void) inflow_vz;  // consumed only for NSE::D == 3
 			KS.rho = 1;
 			KS.vx = V_0;
 			KS.vy = inflow_vy;
@@ -938,7 +939,7 @@ inline const char* frame0VariableName(int m)
 // config, like State's adios does; write the minimal BP5 config in the
 // current working directory on rank 0 (all ranks must see it before the
 // ADIOS object is constructed)
-static void writeFrame0AdiosConfig(const std::string& config_path = "adios2-unitmpi.xml")
+static inline void writeFrame0AdiosConfig(const std::string& config_path = "adios2-unitmpi.xml")
 {
 	bool is_rank0 = true;
 #ifdef HAVE_MPI
@@ -965,7 +966,6 @@ static void writeFrame0AdiosConfig(const std::string& config_path = "adios2-unit
 template <typename NSE>
 static std::vector<double> frame0RoundTrip(LBM<NSE>& nse, const std::string& ioName, const std::vector<double>& memory)
 {
-	using idx = typename NSE::TRAITS::idx;
 	using dreal = typename NSE::TRAITS::dreal;
 	static_assert(std::is_same_v<dreal, double>);
 	const auto& block = nse.blocks.front();

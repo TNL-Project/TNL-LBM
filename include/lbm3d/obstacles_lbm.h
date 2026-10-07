@@ -1,5 +1,7 @@
 #pragma once
 
+#include <TNL/Containers/Expressions/StaticExpressionTemplates.h>
+
 template <typename LBM>
 void lbmDrawCube(LBM& lbm, typename LBM::map_t wall_tag, typename LBM::point_t phys_center, typename LBM::real phys_radius)
 {
@@ -60,28 +62,28 @@ void lbmDrawBoundingBox(LBM& lbm, typename LBM::map_t wall_tag, typename LBM::po
 	typename LBM::point_t lbm_point1 = lbm.lat.phys2lbmPoint(phys_point1);
 	typename LBM::point_t lbm_point2 = lbm.lat.phys2lbmPoint(phys_point2);
 	if (lbm_point1.x() < lbm_point2.x()) {
-		lbm_point1.x() += 0.5f;
-		lbm_point2.x() -= 0.5f;
+		lbm_point1.x() += 0.5F;
+		lbm_point2.x() -= 0.5F;
 	}
 	else {
-		lbm_point1.x() -= 0.5f;
-		lbm_point2.x() += 0.5f;
+		lbm_point1.x() -= 0.5F;
+		lbm_point2.x() += 0.5F;
 	}
 	if (lbm_point1.y() < lbm_point2.y()) {
-		lbm_point1.y() += 0.5f;
-		lbm_point2.y() -= 0.5f;
+		lbm_point1.y() += 0.5F;
+		lbm_point2.y() -= 0.5F;
 	}
 	else {
-		lbm_point1.y() -= 0.5f;
-		lbm_point2.y() += 0.5f;
+		lbm_point1.y() -= 0.5F;
+		lbm_point2.y() += 0.5F;
 	}
 	if (lbm_point1.z() < lbm_point2.z()) {
-		lbm_point1.z() += 0.5f;
-		lbm_point2.z() -= 0.5f;
+		lbm_point1.z() += 0.5F;
+		lbm_point2.z() -= 0.5F;
 	}
 	else {
-		lbm_point1.z() -= 0.5f;
-		lbm_point2.z() += 0.5f;
+		lbm_point1.z() -= 0.5F;
+		lbm_point2.z() += 0.5F;
 	}
 
 	for (typename LBM::idx py = 0; py <= std::round(std::abs(lbm_point1.y() - lbm_point2.y())); py++)

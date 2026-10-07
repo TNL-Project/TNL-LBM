@@ -237,8 +237,9 @@ struct ADE_Data : LBM_Data<TRAITS, DFS_COUNT>
 
 	CUDA_HOSTDEV dreal diffusionCoefficient(idx x, idx y, idx z)
 	{
-		if (diffusion_coefficient_ptr == nullptr)
+		if (diffusion_coefficient_ptr == nullptr) {
 			return this->lbmViscosity;
+		}
 		else {
 			const idx index = this->indexer.getStorageIndex(x, y, z);
 			return diffusion_coefficient_ptr[index];

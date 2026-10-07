@@ -205,10 +205,12 @@ struct D2Q9_STREAMING_ESO_PUSH
 			const idx ny = axis_x ? t : anchor + py;
 			const idx ox = axis_x ? x + px : t;
 			const idx oy = axis_x ? t : y + py;
-			if (cn == out_sign)
+			if (cn == out_sign) {
 				KS.f[i] = TNL::Backend::ldg(SD.df(df_cur, slot, nx, ny, z));
-			else if (cn == 0)
+			}
+			else if (cn == 0) {
 				KS.f[i] = TNL::Backend::ldg(SD.df(df_cur, slot, ox, oy, z));
+			}
 			else {
 				// the outflowInterpBlend form (velocity neglected)
 				constexpr dreal SpeedOfSound = 0.5773502691896257;
@@ -261,7 +263,7 @@ struct D2Q9_STREAMING_ESO_PUSH
 	__cuda_callable__ static constexpr int dfSyncOffset(int dir, int axis, bool even_iter)
 	{
 		(void) axis;
-		return even_iter ? int(is_pair_head(dir)) : int(! is_pair_head(dir));
+		return even_iter ? static_cast<int>(is_pair_head(dir)) : static_cast<int>(! is_pair_head(dir));
 	}
 };
 

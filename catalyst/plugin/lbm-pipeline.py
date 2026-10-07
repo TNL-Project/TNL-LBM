@@ -1,10 +1,30 @@
-import os
-from paraview.simple import *
-from paraview import print_info
-from paraview import catalyst
+from typing import TYPE_CHECKING, Any
+
+from paraview import catalyst, print_info
+from paraview.simple import *  # pyright: ignore[reportWildcardImportFromLibrary]
+
+if TYPE_CHECKING:
+    # paraview.simple ships no type stubs and generates its API dynamically at
+    # import time, so the functions used below must be declared for checking
+    def CreateView(view_xml_name: str) -> Any: ...
+    def GetActiveCamera() -> Any: ...
+    def SetActiveView(view: Any) -> None: ...
+    def CreateLayout(name: str | None = None) -> Any: ...
+    def Show(proxy: Any = None, view: Any = None, representationType: str | None = None, **params: Any) -> Any: ...
+    def Hide(proxy: Any = None, view: Any = None) -> None: ...
+    def Render(view: Any = None) -> None: ...
+    def GetColorTransferFunction(arrayname: str, **params: Any) -> Any: ...
+    def GetScalarBar(ctf: Any, view: Any = None) -> Any: ...
+    def TrivialProducer(**params: Any) -> Any: ...
+    def Calculator(**params: Any) -> Any: ...
+    def Slice(**params: Any) -> Any: ...
+    def Contour(**params: Any) -> Any: ...
+    def Threshold(**params: Any) -> Any: ...
+
 
 # Catalyst options
 options = catalyst.Options()
+assert options is not None
 options.GlobalTrigger = "TimeStep"
 options.EnableCatalystLive = 1
 options.CatalystLiveTrigger = "TimeStep"
@@ -35,7 +55,7 @@ def SetupCatalystProducer():
 
 
 def SetupVisPipeline(producer, view):
-    producerDisplay = Show(producer, view, 'GeometryRepresentation')
+    Show(producer, view, "GeometryRepresentation")
     view.ResetCamera()
 
     # Velocity magnitude & vector
@@ -51,30 +71,31 @@ def SetupVisPipeline(producer, view):
     velocityMagLUT = GetColorTransferFunction("velocity_magnitude")
     velocityMagLUT.AutomaticRescaleRangeMode = "Clamp and update every timestep"
     velocityMagLUT.RescaleOnVisibilityChange = 1
-    velocityMagLUT.ApplyPreset('Rainbow Desaturated', True)
-    
+    velocityMagLUT.ApplyPreset("Rainbow Desaturated", True)
+
     densityLUT = GetColorTransferFunction("lbm_density")
     densityLUT.AutomaticRescaleRangeMode = "Clamp and update every timestep"
     densityLUT.RescaleOnVisibilityChange = 1
-    densityLUT.ApplyPreset('Cool to Warm', True)
+    densityLUT.ApplyPreset("Cool to Warm", True)
 
     # Slice coloured by velocity magnitude
     slice1 = Slice(registrationName="Slice1", Input=calculator2)
     slice1.SliceType = "Plane"
     slice1.SliceOffsetValues = [0.0]
-    slice1.SliceType.Normal = [0.0, 0.0, 1.0]
+    sliceType: Any = slice1.SliceType
+    sliceType.Normal = [0.0, 0.0, 1.0]
 
     slice1Display = Show(slice1, view, "GeometryRepresentation")
     slice1Display.Representation = "Surface"
     slice1Display.ColorArrayName = ["POINTS", "velocity_magnitude"]
     slice1Display.LookupTable = velocityMagLUT
-    
+
     # Create contours for density
     contour1 = Contour(registrationName="DensityContour", Input=producer)
     contour1.ContourBy = ["POINTS", "lbm_density"]
     contour1.Isosurfaces = [1.0]
     contour1.PointMergeMethod = "Uniform Binning"
-    
+
     contour1Display = Show(contour1, view, "GeometryRepresentation")
     contour1Display.Representation = "Surface"
     contour1Display.ColorArrayName = ["POINTS", "lbm_density"]
@@ -86,7 +107,7 @@ def SetupVisPipeline(producer, view):
     threshold1.Scalars = ["POINTS", "wall"]
     threshold1.LowerThreshold = 0.5
     threshold1.UpperThreshold = 10.0
-    
+
     threshold1Display = Show(threshold1, view, "GeometryRepresentation")
     threshold1Display.Representation = "Surface"
     threshold1Display.ColorArrayName = [None, ""]
@@ -95,7 +116,7 @@ def SetupVisPipeline(producer, view):
     threshold1Display.Opacity = 0.3
 
     Hide(producer, view)
-    
+
     # Color bar
     velocityMagColorBar = GetScalarBar(velocityMagLUT, view)
     velocityMagColorBar.Title = "Velocity Magnitude"
@@ -121,7 +142,9 @@ def _set_slice_origin_to_center(source, slice_filter):
     except Exception:
         pass
 
+
 pipeline_filters = None
+
 
 def catalyst_execute(info):
     global pipeline_filters

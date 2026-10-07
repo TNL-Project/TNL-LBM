@@ -6,7 +6,6 @@
 #include "defs.h"
 #include "kernels.h"
 #include "lbm_common/ciselnik.h"
-#include "lbm_data.h"
 
 // Extra kernels for the non-Newtonian fluid model
 
@@ -48,7 +47,12 @@ CUDA_HOSTDEV void LBMKernelStress(
 	// copy quantities (loads lbmViscosity, fx, fy, fz)
 	NSE::MACRO::copyQuantities(SD, KS, x, y, z);
 
-	idx xp, xm, yp, ym, zp, zm;
+	idx xp;
+	idx xm;
+	idx yp;
+	idx ym;
+	idx zp;
+	idx zm;
 	kernelInitIndices<NSE>(SD, distributed, x, y, z, xp, xm, yp, ym, zp, zm);
 
 	if (NSE::BC::isFluid(gi_map)) {
@@ -194,7 +198,7 @@ void computeNonNewtonianKernels(STATE& state)
 	}
 
 	// synchronize the null-stream after all grids
-	TNL::Backend::streamSynchronize(0);
+	TNL::Backend::streamSynchronize(nullptr);
 	TNL_CHECK_CUDA_DEVICE;
 }
 
@@ -242,7 +246,7 @@ struct MacroNonNewtonianDefault : D3Q27_MACRO_Default<TRAITS>
 		e_S22,
 		e_S32,
 		e_S33,
-		N
+		N,
 	};
 
 	template <typename LBM_DATA, typename LBM_KS>
@@ -303,7 +307,12 @@ struct MacroNonNewtonianDefault : D3Q27_MACRO_Default<TRAITS>
 		map_t gi_map_zp = SD.map(x, y, zp);
 		map_t gi_map_zm = SD.map(x, y, zm);
 
-		LBM_KS KSxp, KSxm, KSyp, KSym, KSzp, KSzm;
+		LBM_KS KSxp;
+		LBM_KS KSxm;
+		LBM_KS KSyp;
+		LBM_KS KSym;
+		LBM_KS KSzp;
+		LBM_KS KSzm;
 
 		getStressFromMacro(SD, KSxp, xp, y, z);
 		getStressFromMacro(SD, KSxm, xm, y, z);

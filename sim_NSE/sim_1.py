@@ -1,8 +1,12 @@
+# pyright: reportAttributeAccessIssue=false
+# The Lattice.global_ attribute is missing in the generated .pyi stub:
+# nanobind stubgen cannot express its C++ dependent member type.
 import argparse
 import sys
 from pathlib import Path
 
 import numpy as np
+import pytnl
 from mpi4py import MPI
 
 PROJECT_DIR = Path(__file__).parent.parent
@@ -15,9 +19,12 @@ from pytnl_lbm import (  # noqa: E402
     OUT3D,
     OUT3DCUT,
     PRINT,
+    Lattice_3_double_long,
+    LBM_BLOCK_SP_D3Q27_CUM_ConstInflow,
     UniformDataWriter,
     execute,
     getMacroView,
+    macro_view_SP_D3Q27_CUM_ConstInflow,
 )
 from pytnl_lbm import State_SP_D3Q27_CUM_ConstInflow as State  # noqa: E402
 
@@ -28,7 +35,7 @@ class StateLocal(State):
         self,
         id: str,
         communicator: MPI.Intracomm,
-        lat: State.lat_t,
+        lat: Lattice_3_double_long,
         adiosConfigPath: str = "adios2.xml",
     ) -> None:
         super().__init__(id, communicator, lat, adiosConfigPath)
@@ -78,22 +85,22 @@ class StateLocal(State):
     def outputData(
         self,
         writer: UniformDataWriter,
-        block: State.BLOCK_NSE,
-        begin: State.idx3d,
-        end: State.idx3d,
+        block: LBM_BLOCK_SP_D3Q27_CUM_ConstInflow,
+        begin: pytnl._containers.StaticVector_3_int,
+        end: pytnl._containers.StaticVector_3_int,
     ) -> None:
-        if hasattr(block.hmacro, "getLocalView"):
-            # DistributedNDArray: cannot use NumPy's array directly because it
-            # does not work with overlaps. Note that UniformDataWriter may write
-            # data from overlaps to hide visual gaps between blocks in ParaView.
-            def get_macro_view(macro: int) -> np.ndarray:
-                return getMacroView(block.hmacro, int(macro))
-        else:
-            # Non-distributed computing: use NumPy's array directly
-            hmacro_np = np.from_dlpack(block.hmacro)
+        # DistributedNDArray: cannot use NumPy's array directly because it
+        # does not work with overlaps. Note that UniformDataWriter may write
+        # data from overlaps to hide visual gaps between blocks in ParaView.
+        use_distributed_view = hasattr(block.hmacro, "getLocalView")
+        # Non-distributed computing: use NumPy's array directly
+        hmacro_np = None if use_distributed_view else np.from_dlpack(block.hmacro)  # pyright: ignore[reportArgumentType,reportAssignmentType]
 
-            def get_macro_view(macro: int) -> np.ndarray:
-                return hmacro_np[macro, :, :, :]
+        def get_macro_view(macro: int) -> np.ndarray | macro_view_SP_D3Q27_CUM_ConstInflow:
+            if use_distributed_view:
+                return getMacroView(block.hmacro, int(macro))
+            assert hmacro_np is not None
+            return hmacro_np[macro, :, :, :]
 
         writer.write("lbm_density", get_macro_view(self.nse.MACRO.e_rho), begin, end)
         writer.write("velocity_x", get_macro_view(self.nse.MACRO.e_vx), begin, end)
@@ -159,9 +166,7 @@ def sim(adiosConfigPath: str = "adios2.xml", RESOLUTION: int = 2) -> None:
 
 # Define the main function
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Simple incompressible Navier-Stokes simulation example."
-    )
+    parser = argparse.ArgumentParser(description="Simple incompressible Navier-Stokes simulation example.")
     parser.add_argument(
         "--adios-config",
         type=str,

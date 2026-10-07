@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Export ADIOS2 slices to PNG frames.
 
@@ -14,23 +13,35 @@ import argparse
 import logging
 import sys
 import time
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Dict, Mapping, Optional, Sequence, Tuple
+from types import ModuleType
 
 import numpy as np
 
-try: 
-    from adios2 import Adios, Stream
-except ImportError as exc:
-    sys.stderr.write(
-        "Error: failed to import the 'adios2'\n"
-    )
+try:
+    from adios2 import IO, Adios, Stream
+except ImportError:
+    sys.stderr.write("Error: failed to import the 'adios2'\n")
     raise
 
-from tnl_lbm_common import *
+from tnl_lbm_common import (
+    PLANE_TO_AXIS,
+    MPIContext,
+    clamp,
+    compute_plane_selection,
+    configure_logging,
+    expand_planes,
+    interpret_index,
+    parse_figsize,
+    parse_plane_overrides,
+    read_scalar,
+    read_velocity,
+    setup_mpi,
+)
 
 
-def load_matplotlib() -> Tuple[object, object]:
+def load_matplotlib() -> tuple[ModuleType, ModuleType]:
     import matplotlib
 
     matplotlib.use("Agg", force=True)
@@ -41,7 +52,7 @@ def load_matplotlib() -> Tuple[object, object]:
     return plt, gridspec
 
 
-def io_in_config_file(io_handle) -> bool:
+def io_in_config_file(io_handle: object) -> bool:
     method = getattr(io_handle, "in_config_file", None)
     if callable(method):
         return bool(method())
@@ -51,7 +62,7 @@ def io_in_config_file(io_handle) -> bool:
     return True
 
 
-def io_set_engine(io_handle, engine: str) -> None:
+def io_set_engine(io_handle: object, engine: str) -> None:
     setter = getattr(io_handle, "set_engine", None)
     if callable(setter):
         setter(engine)
@@ -65,16 +76,39 @@ def io_set_engine(io_handle, engine: str) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--instream", "-i", required=True, help="Input stream or BP file to read (e.g. results_.../output_3D).")
-    parser.add_argument("--config", "-c", default="adios2.xml", help="Path to ADIOS2 configuration file (default: %(default)s).")
-    parser.add_argument("--io-name", default="Output", help="Name of the IO object in the config (default: %(default)s).")
+    parser.add_argument(
+        "--instream",
+        "-i",
+        required=True,
+        help="Input stream or BP file to read (e.g. results_.../output_3D).",
+    )
+    parser.add_argument(
+        "--config",
+        "-c",
+        default="adios2.xml",
+        help="Path to ADIOS2 configuration file (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--io-name",
+        default="Output",
+        help="Name of the IO object in the config (default: %(default)s).",
+    )
     parser.add_argument(
         "--outdir",
         default=None,
         help="Directory to store generated images (default: a 'frames' directory next to --instream).",
     )
-    parser.add_argument("--prefix", default="frame", help="Filename prefix for saved images (default: %(default)s).")
-    parser.add_argument("--plane", choices=["xy", "xz", "yz", "all"], default="xy", help="Plane(s) to export (default: %(default)s).")
+    parser.add_argument(
+        "--prefix",
+        default="frame",
+        help="Filename prefix for saved images (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--plane",
+        choices=["xy", "xz", "yz", "all"],
+        default="xy",
+        help="Plane(s) to export (default: %(default)s).",
+    )
     parser.add_argument(
         "--plane-index",
         action="append",
@@ -94,11 +128,34 @@ def parse_args() -> argparse.Namespace:
         default="magnitude",
         help="Component for vector variables (default: %(default)s).",
     )
-    parser.add_argument("--colormap", default="coolwarm", help="Matplotlib colour-map (default: %(default)s).")
-    parser.add_argument("--figsize", default="10x4", help="Figure size in inches as WIDTHxHEIGHT (default: %(default)s).")
-    parser.add_argument("--dpi", type=int, default=120, help="Output DPI for PNG files (default: %(default)s).")
-    parser.add_argument("--vmin", type=float, default=-0.02, help="Lower colour scale bound (default: %(default)s).")
-    parser.add_argument("--vmax", type=float, default=0.09, help="Upper colour scale bound (default: %(default)s).")
+    parser.add_argument(
+        "--colormap",
+        default="coolwarm",
+        help="Matplotlib colour-map (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--figsize",
+        default="10x4",
+        help="Figure size in inches as WIDTHxHEIGHT (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--dpi",
+        type=int,
+        default=120,
+        help="Output DPI for PNG files (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--vmin",
+        type=float,
+        default=-0.02,
+        help="Lower colour scale bound (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--vmax",
+        type=float,
+        default=0.09,
+        help="Upper colour scale bound (default: %(default)s).",
+    )
     parser.add_argument(
         "--autoscale-colour",
         "--autoscale-color",
@@ -106,8 +163,18 @@ def parse_args() -> argparse.Namespace:
         dest="autoscale_colour",
         help="Override --vmin/--vmax and let Matplotlib pick colour limits per frame.",
     )
-    parser.add_argument("--max-frames", type=int, default=None, help="Limit the total number of exported steps (optional).")
-    parser.add_argument("--nompi", "-nompi", action="store_true", help="Force serial ADIOS initialisation.")
+    parser.add_argument(
+        "--max-frames",
+        type=int,
+        default=None,
+        help="Limit the total number of exported steps (optional).",
+    )
+    parser.add_argument(
+        "--nompi",
+        "-nompi",
+        action="store_true",
+        help="Force serial ADIOS initialisation.",
+    )
     parser.add_argument("--log-level", default="INFO", help="Logging verbosity (default: %(default)s).")
     parser.add_argument(
         "--no-retry",
@@ -127,22 +194,22 @@ def ensure_outdir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
 
 
-def resolve_outdir(instream: str, outdir: Optional[str]) -> Path:
+def resolve_outdir(instream: str, outdir: str | None) -> Path:
     if outdir is not None:
         return Path(outdir)
     return Path(instream).parent / "frames"
 
 
 def export_frame(
-    plt,
-    gridspec,
+    plt: ModuleType,
+    gridspec: ModuleType,
     args: argparse.Namespace,
     plane: str,
     data: np.ndarray,
     selection_index: int,
     step: int,
-    component_label: Optional[str],
-    figsize: Tuple[float, float],
+    component_label: str | None,
+    figsize: tuple[float, float],
     outdir: Path,
     logger: logging.Logger,
 ) -> None:
@@ -178,18 +245,18 @@ def export_frame(
 
 
 def _consume_stream_once(
-    io,
+    io: IO,
     args: argparse.Namespace,
     planes: Sequence[str],
     overrides: Mapping[str, str],
-    mpi,
-    plt,
-    gridspec,
-    figsize: Tuple[float, float],
+    mpi: MPIContext,
+    plt: ModuleType,
+    gridspec: ModuleType,
+    figsize: tuple[float, float],
     outdir: Path,
     logger: logging.Logger,
-    state: Dict[str, Optional[Tuple[int, int, int]]],
-    remaining_frames: Optional[int],
+    state: dict[str, tuple[int, int, int] | None],
+    remaining_frames: int | None,
 ) -> int:
     reader = None
     frames_written = 0
@@ -199,7 +266,12 @@ def _consume_stream_once(
             vars_info = fr_step.available_variables()
             var_present = args.varname in vars_info
             velocity_present = any(
-                comp in vars_info for comp in (f"{args.varname}_x", f"{args.varname}_y", f"{args.varname}_z")
+                comp in vars_info
+                for comp in (
+                    f"{args.varname}_x",
+                    f"{args.varname}_y",
+                    f"{args.varname}_z",
+                )
             )
             if not var_present and not velocity_present:
                 raise KeyError(f"Variable '{args.varname}' not available in the stream.")
@@ -217,7 +289,7 @@ def _consume_stream_once(
                 if mpi.rank == 0:
                     logger.info("Global lattice size (z, y, x): %s", global_shape)
 
-            plane_indices: Dict[str, int] = {}
+            plane_indices: dict[str, int] = {}
             for plane in planes:
                 axis = PLANE_TO_AXIS[plane]
                 max_index = global_shape[axis] - 1
@@ -291,7 +363,11 @@ def main() -> None:
     adios = Adios(args.config, mpi.comm) if mpi.comm is not None else Adios(args.config)
     io = adios.declare_io(args.io_name)
     if not io_in_config_file(io):  # pragma: no cover - depends on config
-        logger.warning("IO '%s' not present in %s; falling back to BP5 engine.", args.io_name, args.config)
+        logger.warning(
+            "IO '%s' not present in %s; falling back to BP5 engine.",
+            args.io_name,
+            args.config,
+        )
         io_set_engine(io, "BP5")
 
     planes = expand_planes(args.plane)
@@ -299,7 +375,7 @@ def main() -> None:
 
     should_retry = not args.no_retry
     remaining_frames = args.max_frames
-    state: Dict[str, Optional[Tuple[int, int, int]]] = {"global_shape": None}
+    state: dict[str, tuple[int, int, int] | None] = {"global_shape": None}
 
     try:
         while True:
@@ -331,7 +407,10 @@ def main() -> None:
                 logger.debug("No frames read; waiting %.1fs before retrying.", args.retry_delay)
                 state["global_shape"] = None
             else:
-                logger.info("Stream ended after %d frame(s); waiting for new data (Ctrl+C to exit).", frames)
+                logger.info(
+                    "Stream ended after %d frame(s); waiting for new data (Ctrl+C to exit).",
+                    frames,
+                )
 
             time.sleep(max(args.retry_delay, 0.1))
     except KeyboardInterrupt:  # pragma: no cover

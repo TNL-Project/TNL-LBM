@@ -164,7 +164,7 @@ int sim(int resolution, double vy_amplitude, VelocityProfile vy_profile, const s
 
 	for (auto& block : state.nse.blocks) {
 		allocateCopyVelocityProfile<dreal, idx>(
-			&(block.data.inflow_vx),
+			&block.data.inflow_vx,
 			block.local.y(),
 			block.local.z(),
 			block.offset.y(),
@@ -174,7 +174,7 @@ int sim(int resolution, double vy_amplitude, VelocityProfile vy_profile, const s
 			block.global.z()
 		);
 		allocateCopyVelocityProfile<dreal, idx>(
-			&(block.data.inflow_vy),
+			&block.data.inflow_vy,
 			block.local.y(),
 			block.local.z(),
 			block.offset.y(),
@@ -184,7 +184,7 @@ int sim(int resolution, double vy_amplitude, VelocityProfile vy_profile, const s
 			block.global.z()
 		);
 		allocateCopyVelocityProfile<dreal, idx>(
-			&(block.data.inflow_vz),
+			&block.data.inflow_vz,
 			block.local.y(),
 			block.local.z(),
 			block.offset.y(),
@@ -204,9 +204,9 @@ int sim(int resolution, double vy_amplitude, VelocityProfile vy_profile, const s
 	}
 
 	for (auto& block : state.nse.blocks) {
-		deallocateVelocityProfile<dreal>(&(block.data.inflow_vx));
-		deallocateVelocityProfile<dreal>(&(block.data.inflow_vy));
-		deallocateVelocityProfile<dreal>(&(block.data.inflow_vz));
+		deallocateVelocityProfile<dreal>(&block.data.inflow_vx);
+		deallocateVelocityProfile<dreal>(&block.data.inflow_vy);
+		deallocateVelocityProfile<dreal>(&block.data.inflow_vz);
 	}
 
 	std::string dirname = fmt::format("{}/adjoint_data_res{:02d}/goal", DIRECTORY, resolution);

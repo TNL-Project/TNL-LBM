@@ -1,20 +1,16 @@
+# common setup for jobs that configure or build the project
+# (the block is a single string so it can be reused via the *project-setup anchor)
+.project-setup: &project-setup
+  # make sure that $PATH and other essential variables are set correctly
+  - source /etc/profile
+  # extra dependencies for python bindings
+  - pacman -Suy --needed --noconfirm python-mpi4py
+
 default:
   interruptible: true
   image: "registry.gitlab.com/tnl-project/container-images/archlinux-tnl-cuda:latest"
   before_script:
-    # make sure that $PATH and other essential variables are set correctly
-    - source /etc/profile
-    # 1. fall back to arch 7.5 when the builder has no GPU to avoid building for all GPU architectures
-    # 2. cmake can't detect the native architecture when using clang
-    - if ! nvidia-smi --list-gpus > /dev/null; then
-            CUDA_ARCH=75;
-      elif [[ ${CUDACXX} == "clang++" ]]; then
-            CUDA_ARCH=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n 1 | tr -d '.');
-      else
-            CUDA_ARCH=native;
-      fi
-    # extra dependencies for python bindings
-    - pacman -Suy --needed --noconfirm python-mpi4py
+    - *project-setup
 
 variables:
   # TNL-LBM has high memory-per-core requirements, so use max 8 parallel build jobs
@@ -38,6 +34,56 @@ typos:
   script:
     - typos --color always --sort
 
+check format:
+  stage: lint
+  image: "quay.io/archlinux/archlinux:base"
+  before_script:
+    - pacman -Syu --needed --noconfirm just ruff clang python-gersemi tombi
+  script:
+    - just check-format
+  variables:
+    FORCE_COLOR: 1
+
+ruff check:
+  stage: lint
+  image: "quay.io/archlinux/archlinux:base"
+  before_script:
+    - pacman -Syu --needed --noconfirm ruff
+  script:
+    - ruff check --exit-zero
+    - ruff check --output-format=gitlab > code-quality-report.json
+  variables:
+    FORCE_COLOR: 1
+  artifacts:
+    reports:
+      codequality: $CI_PROJECT_DIR/code-quality-report.json
+
+pyright check:
+  stage: lint
+  before_script:
+    - *project-setup
+    # runtime dependencies of scripts and tests that pyright must resolve
+    - pacman -Suy --needed --noconfirm just pyright
+      python-cuda-bindings
+      python-httpx python-plotly python-streamlit python-tabulate
+    # see comment about --overwrite for paraview in build_CUDA
+    - pacman -Suy --needed --noconfirm --overwrite 'usr/lib/libGLX_indirect.so*' paraview
+  script:
+    # the pytnl_lbm stubs in build/pytnl_lbm and the pytnl package built by
+    # FetchContent in build/_deps/pytnl-build/src are needed for pyright to
+    # resolve the bindings
+    - just configure
+    - just build pytnl_lbm
+    - just check-typing
+
+clangd-tidy:
+  stage: lint
+  before_script:
+    - *project-setup
+    - pacman -Suy --needed --noconfirm just clang clangd-tidy
+  script:
+    - just check-clangd-tidy
+
 build_CUDA:
   stage: build
   tags:
@@ -55,7 +101,6 @@ build_CUDA:
     - pacman -Suy --needed --noconfirm --overwrite 'usr/lib/libGLX_indirect.so*' paraview python-pytest python-cuda-bindings
     - cmake -B build -S . -G Ninja
             -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-            -DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCH}
             -DTNL_LBM_STREAMING_PATTERN=${TNL_LBM_STREAMING_PATTERN}
     - cmake --build build
     # pytest test suite
@@ -86,7 +131,6 @@ build_without_MPI:
   script:
     - cmake -B build -S . -G Ninja
             -DCMAKE_BUILD_TYPE=Debug
-            -DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCH}
             -DTNL_LBM_USE_MPI=OFF
     - cmake --build build
 
@@ -98,5 +142,4 @@ build_subproject:
     - cd tests/subproject
     - cmake -B build -S . -G Ninja
             -DCMAKE_BUILD_TYPE=Debug
-            -DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCH}
     - cmake --build build

@@ -1,24 +1,33 @@
 cmake_minimum_required(VERSION 3.28)
 
-# Set default CUDA architecture
-if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-    set(CMAKE_CUDA_ARCHITECTURES "native")
-endif()
-
 project(TNL-LBM LANGUAGES CXX)
 
 # Declare all CMake options for the project
-option(TNL_LBM_EXPORT_INTERFACE_TARGETS "Instruct CMake to generate rules to export the interface target" ${PROJECT_IS_TOP_LEVEL})
+option(
+    TNL_LBM_EXPORT_INTERFACE_TARGETS
+    "Instruct CMake to generate rules to export the interface target"
+    ${PROJECT_IS_TOP_LEVEL}
+)
 option(TNL_LBM_USE_CUDA "Build with CUDA support" ON)
 option(TNL_LBM_USE_HIP "Build with HIP support" ON)
 option(TNL_LBM_USE_MPI "Build with MPI support, if available" ON)
 option(TNL_LBM_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 option(TNL_LBM_BUILD_PYTHON "Build Python bindings" ON)
 # Streaming pattern selection (used by the legacy D{Q}_STREAMING aliases)
-set(TNL_LBM_STREAMING_PATTERN "AB_PULL" CACHE STRING "Streaming pattern: AA, AB_PULL, AB_PUSH, ESO_PULL, ESO_PUSH, or ESO_TWIST")
-set_property(CACHE TNL_LBM_STREAMING_PATTERN PROPERTY STRINGS AA AB_PULL AB_PUSH ESO_PULL ESO_PUSH ESO_TWIST)
+set(TNL_LBM_STREAMING_PATTERN
+    "AB_PULL"
+    CACHE STRING
+    "Streaming pattern: AA, AB_PULL, AB_PUSH, ESO_PULL, ESO_PUSH, or ESO_TWIST"
+)
+set_property(
+    CACHE TNL_LBM_STREAMING_PATTERN
+    PROPERTY STRINGS AA AB_PULL AB_PUSH ESO_PULL ESO_PUSH ESO_TWIST
+)
 if(NOT TNL_LBM_STREAMING_PATTERN MATCHES "^(AA|AB_PULL|AB_PUSH|ESO_PULL|ESO_PUSH|ESO_TWIST)$")
-    message(FATAL_ERROR "Invalid TNL_LBM_STREAMING_PATTERN='${TNL_LBM_STREAMING_PATTERN}' (expected AA, AB_PULL, AB_PUSH, ESO_PULL, ESO_PUSH, or ESO_TWIST)")
+    message(
+        FATAL_ERROR
+        "Invalid TNL_LBM_STREAMING_PATTERN='${TNL_LBM_STREAMING_PATTERN}' (expected AA, AB_PULL, AB_PUSH, ESO_PULL, ESO_PUSH, or ESO_TWIST)"
+    )
 endif()
 
 # Require C++17, and disable compiler-specific extensions (if possible).
@@ -41,14 +50,18 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 endif()
 
 # Warn about redundant semicolons
-if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR
-   CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR
-   CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang" OR
-   CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
-    set( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra-semi" )
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR
-       CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang" OR
-       CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
+if(
+    CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
+    OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
+    OR CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang"
+    OR CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM"
+)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra-semi")
+    if(
+        CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
+        OR CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang"
+        OR CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM"
+    )
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra-semi-stmt")
     endif()
 endif()
@@ -57,8 +70,46 @@ if(TNL_LBM_USE_CUDA)
     include(CheckLanguage)
     check_language(CUDA)
     if(CMAKE_CUDA_COMPILER)
+        # Remember whether a specific CUDA architecture was requested, because
+        # enable_language(CUDA) itself initializes CMAKE_CUDA_ARCHITECTURES (to
+        # a compatibility default) when it is undefined
+        if(DEFINED CMAKE_CUDA_ARCHITECTURES)
+            set(_user_cuda_architectures TRUE)
+        endif()
+
         enable_language(CUDA)
         set(TNL_LBM_BUILD_CUDA TRUE)
+
+        # Select one default GPU architecture to avoid building for all GPU architectures
+        if(NOT _user_cuda_architectures)
+            if(CMAKE_CUDA_COMPILER_ID STREQUAL "NVIDIA")
+                set(CMAKE_CUDA_ARCHITECTURES "native")
+            else()
+                # CMake's native GPU arch detection works with Clang only for compilation: CMake's
+                # own device-link step for Clang and CUDA_SEPARABLE_COMPILATION composes the nvlink
+                # command itself from the unresolved CMAKE_CUDA_ARCHITECTURES value, passing it
+                # literally as -arch=sm_native, which nvlink does not accept
+                execute_process(
+                    COMMAND "nvidia-smi" "--query-gpu=compute_cap" "--format=csv,noheader"
+                    RESULT_VARIABLE _status
+                    OUTPUT_VARIABLE _stdout
+                    ERROR_VARIABLE _stderr
+                    OUTPUT_STRIP_TRAILING_WHITESPACE
+                    ERROR_STRIP_TRAILING_WHITESPACE
+                )
+                if(${_status} EQUAL 0)
+                    string(REPLACE "." "" _stdout ${_stdout})
+                    string(REGEX REPLACE "[ \t\r\n]+" ";" CMAKE_CUDA_ARCHITECTURES ${_stdout})
+                    list(REMOVE_DUPLICATES CMAKE_CUDA_ARCHITECTURES)
+                else()
+                    message(WARNING "Failed to detect native GPU architecture using nvidia-smi: ${_stderr}")
+                endif()
+            endif()
+            # Update the compatibility default that enable_language(CUDA) put in the cache
+            set(CMAKE_CUDA_ARCHITECTURES "${CMAKE_CUDA_ARCHITECTURES}" CACHE STRING "CUDA architectures" FORCE)
+            message("-- Selected CMAKE_CUDA_ARCHITECTURES = ${CMAKE_CUDA_ARCHITECTURES}")
+        endif()
+        unset(_user_cuda_architectures)
 
         # Require C++17, and disable compiler-specific extensions (if possible).
         set(CMAKE_CUDA_STANDARD 17)
@@ -73,7 +124,9 @@ if(TNL_LBM_USE_CUDA)
 
         # Enforce (more or less) warning-free builds
         if(TNL_LBM_WARNINGS_AS_ERRORS)
-            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wno-error=deprecated -Wno-error=deprecated-declarations -Wno-error=uninitialized")
+            set(CMAKE_CXX_FLAGS
+                "${CMAKE_CXX_FLAGS} -Werror -Wno-error=deprecated -Wno-error=deprecated-declarations -Wno-error=uninitialized"
+            )
         endif()
 
         if(CMAKE_CUDA_COMPILER_ID STREQUAL "NVIDIA")
@@ -81,7 +134,9 @@ if(TNL_LBM_USE_CUDA)
             if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
                 # Enforce (more or less) warning-free builds for host code
                 if(TNL_LBM_WARNINGS_AS_ERRORS)
-                    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler -Werror -Xcompiler -Wno-error=deprecated -Xcompiler -Wno-error=deprecated-declarations")
+                    set(CMAKE_CUDA_FLAGS
+                        "${CMAKE_CUDA_FLAGS} -Xcompiler -Werror -Xcompiler -Wno-error=deprecated -Xcompiler -Wno-error=deprecated-declarations"
+                    )
                 endif()
             endif()
             # Force colorized output for nvcc's host compiler (assuming it is GCC...)
@@ -91,7 +146,9 @@ if(TNL_LBM_USE_CUDA)
         if(CMAKE_CUDA_COMPILER_ID STREQUAL "Clang")
             # Enforce (more or less) warning-free builds
             if(TNL_LBM_WARNINGS_AS_ERRORS)
-                set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Werror -Wno-error=deprecated -Wno-error=deprecated-declarations -Wno-error=unknown-cuda-version")
+                set(CMAKE_CUDA_FLAGS
+                    "${CMAKE_CUDA_FLAGS} -Werror -Wno-error=deprecated -Wno-error=deprecated-declarations -Wno-error=unknown-cuda-version"
+                )
             endif()
             # workaround for Clang 15
             # https://github.com/llvm/llvm-project/issues/58491
@@ -147,19 +204,17 @@ if(TNL_LBM_EXPORT_INTERFACE_TARGETS)
     # Export the interface targets
     install(TARGETS TNL_LBM EXPORT "${PROJECT_NAME}Targets")
     # Install a CMake file for the interface target
-    install(
-        EXPORT "${PROJECT_NAME}Targets"
-        NAMESPACE TNL::
-        DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}"
-    )
+    install(EXPORT "${PROJECT_NAME}Targets" NAMESPACE TNL:: DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}")
     # Install the Config.cmake file
     include(CMakePackageConfigHelpers)
     configure_package_config_file(
-        Config.cmake.in "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
+        Config.cmake.in
+        "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
         INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}"
     )
-    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
-            DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}"
+    install(
+        FILES "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
+        DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}"
     )
 endif()
 
@@ -170,99 +225,54 @@ else()
     set(TNL_LBM_SYSTEM SYSTEM)
 endif()
 target_include_directories(
-    TNL_LBM ${TNL_LBM_SYSTEM} INTERFACE
-    $<BUILD_INTERFACE:${TNL_LBM_INCLUDE_DIRS}>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    TNL_LBM
+    ${TNL_LBM_SYSTEM}
+    INTERFACE $<BUILD_INTERFACE:${TNL_LBM_INCLUDE_DIRS}> $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
 # Find or fetch dependencies
 include(FetchContent)
-FetchContent_Declare(fmt
-    GIT_REPOSITORY https://github.com/fmtlib/fmt.git
-    GIT_TAG 12.2.0
-    SYSTEM
-    FIND_PACKAGE_ARGS
-)
-set(FMT_INSTALL ON)  # needed for adding to the interface target
+FetchContent_Declare(fmt GIT_REPOSITORY https://github.com/fmtlib/fmt.git GIT_TAG 12.2.0 SYSTEM FIND_PACKAGE_ARGS)
+set(FMT_INSTALL ON) # needed for adding to the interface target
 FetchContent_MakeAvailable(fmt)
 
-FetchContent_Declare(spdlog
-    GIT_REPOSITORY https://github.com/gabime/spdlog.git
-    GIT_TAG v1.17.0
-    SYSTEM
-    FIND_PACKAGE_ARGS
-)
-set(SPDLOG_INSTALL ON)  # needed for adding to the interface target
+FetchContent_Declare(spdlog GIT_REPOSITORY https://github.com/gabime/spdlog.git GIT_TAG v1.17.0 SYSTEM FIND_PACKAGE_ARGS)
+set(SPDLOG_INSTALL ON) # needed for adding to the interface target
 set(SPDLOG_FMT_EXTERNAL ON)
 FetchContent_MakeAvailable(spdlog)
 
-FetchContent_Declare(nlohmann_json
-    GIT_REPOSITORY https://github.com/nlohmann/json.git
-    GIT_TAG v3.12.0
-    SYSTEM
-    FIND_PACKAGE_ARGS
-)
-set(JSON_Install ON)  # needed for adding to the interface target
+FetchContent_Declare(nlohmann_json GIT_REPOSITORY https://github.com/nlohmann/json.git GIT_TAG v3.12.0 SYSTEM FIND_PACKAGE_ARGS)
+set(JSON_Install ON) # needed for adding to the interface target
 set(JSON_SystemInclude ON)
 FetchContent_MakeAvailable(nlohmann_json)
 
-FetchContent_Declare(argparse
-    GIT_REPOSITORY https://github.com/p-ranav/argparse.git
-    GIT_TAG v3.2
-    SYSTEM
-    FIND_PACKAGE_ARGS
-)
+FetchContent_Declare(argparse GIT_REPOSITORY https://github.com/p-ranav/argparse.git GIT_TAG v3.2 SYSTEM FIND_PACKAGE_ARGS)
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
-set(ARGPARSE_INSTALL ON)  # needed for adding to the interface target
+set(ARGPARSE_INSTALL ON) # needed for adding to the interface target
 FetchContent_MakeAvailable(argparse)
 
-FetchContent_Declare(magic_enum
-    GIT_REPOSITORY https://github.com/Neargye/magic_enum
-    GIT_TAG v0.9.8
-    SYSTEM
-    FIND_PACKAGE_ARGS
-)
-set(MAGIC_ENUM_OPT_INSTALL ON)  # needed for adding to the interface target
+FetchContent_Declare(magic_enum GIT_REPOSITORY https://github.com/Neargye/magic_enum GIT_TAG v0.9.8 SYSTEM FIND_PACKAGE_ARGS)
+set(MAGIC_ENUM_OPT_INSTALL ON) # needed for adding to the interface target
 FetchContent_MakeAvailable(magic_enum)
 
-FetchContent_Declare(TNL
-    GIT_REPOSITORY https://gitlab.com/tnl-project/tnl.git
-    GIT_TAG 0.4.3
-    SYSTEM
-    EXCLUDE_FROM_ALL
-)
-set(TNL_EXPORT_INTERFACE_TARGETS ON)  # needed for adding to the interface target
+FetchContent_Declare(TNL GIT_REPOSITORY https://gitlab.com/tnl-project/tnl.git GIT_TAG 0.4.3 SYSTEM EXCLUDE_FROM_ALL)
+set(TNL_EXPORT_INTERFACE_TARGETS ON) # needed for adding to the interface target
 FetchContent_MakeAvailable(TNL)
 
 if(TNL_LBM_BUILD_PYTHON AND NOT TNL_LBM_BUILD_HIP)
     # this must be called before find_package(nanobind)
     find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
 
-    FetchContent_Declare(nanobind
-        GIT_REPOSITORY https://github.com/wjakob/nanobind.git
-        GIT_TAG v3.1.0
-        SYSTEM
-        FIND_PACKAGE_ARGS
-    )
+    FetchContent_Declare(nanobind GIT_REPOSITORY https://github.com/wjakob/nanobind.git GIT_TAG v3.1.0 SYSTEM FIND_PACKAGE_ARGS)
     FetchContent_MakeAvailable(nanobind)
 
-    FetchContent_Declare(PyTNL
-        GIT_REPOSITORY https://gitlab.com/tnl-project/pytnl.git
-        GIT_TAG 0.0.13
-        SYSTEM
-        FIND_PACKAGE_ARGS
-    )
-    set(PyTNL_EXPORT_INTERFACE_TARGETS ON)  # needed for adding to the interface target
+    FetchContent_Declare(PyTNL GIT_REPOSITORY https://gitlab.com/tnl-project/pytnl.git GIT_TAG 0.0.13 SYSTEM FIND_PACKAGE_ARGS)
+    set(PyTNL_EXPORT_INTERFACE_TARGETS ON) # needed for adding to the interface target
     FetchContent_MakeAvailable(PyTNL)
 endif()
 
 # doctest is a test-only dependency
-FetchContent_Declare(doctest
-    GIT_REPOSITORY https://github.com/doctest/doctest.git
-    GIT_TAG v2.5.3
-    SYSTEM
-    FIND_PACKAGE_ARGS
-)
+FetchContent_Declare(doctest GIT_REPOSITORY https://github.com/doctest/doctest.git GIT_TAG v2.5.3 SYSTEM FIND_PACKAGE_ARGS)
 FetchContent_MakeAvailable(doctest)
 
 find_package(PNG REQUIRED)
@@ -271,14 +281,9 @@ find_package(MPI COMPONENTS CXX)
 find_package(ADIOS2 REQUIRED)
 
 # Add dependencies to the interface target
-target_link_libraries(TNL_LBM INTERFACE
-    TNL::TNL
-    PNG::PNG
-    fmt::fmt
-    spdlog::spdlog
-    nlohmann_json::nlohmann_json
-    argparse::argparse
-    magic_enum::magic_enum
+target_link_libraries(
+    TNL_LBM
+    INTERFACE TNL::TNL PNG::PNG fmt::fmt spdlog::spdlog nlohmann_json::nlohmann_json argparse::argparse magic_enum::magic_enum
 )
 if(OPENMP_FOUND)
     target_compile_definitions(TNL_LBM INTERFACE "-DHAVE_OPENMP")

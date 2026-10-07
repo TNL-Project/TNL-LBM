@@ -5,33 +5,33 @@
 #include <TNL/MPI/Utils.h>
 
 // default
-#include "lbm_data.h"  // LBM_Data is a general template (for any Q)
-#include "d3q27/macro.h"
-#include "d3q27/bc.h"
+#include "lbm_data.h"	  // IWYU pragma: keep
+#include "d3q27/macro.h"  // IWYU pragma: keep
+#include "d3q27/bc.h"	  // IWYU pragma: keep
 
-#include "d3q27/eq.h"
-#include "d3q27/eq_inv_cum.h"
-#include "d3q27/eq_well.h"
-#include "d3q27/eq_inv_cum_well.h"
-#include "d3q27/eq_entropic.h"
+#include "d3q27/eq.h"				// IWYU pragma: keep
+#include "d3q27/eq_inv_cum.h"		// IWYU pragma: keep
+#include "d3q27/eq_well.h"			// IWYU pragma: keep
+#include "d3q27/eq_inv_cum_well.h"	// IWYU pragma: keep
+#include "d3q27/eq_entropic.h"		// IWYU pragma: keep
 
-#include "d3q27/eq_adjoint.h"
+#include "d3q27/eq_adjoint.h"  // IWYU pragma: keep
 
-#include "d3q27/streaming.h"
+#include "d3q27/streaming.h"  // IWYU pragma: keep
 
-#include "d3q27/col_cum.h"
-#include "d3q27/col_bgk.h"
-#include "d3q27/col_clbm.h"
-#include "d3q27/col_mrt.h"
-#include "d3q27/col_srt.h"
-#include "d3q27/col_kbc_n.h"
-#include "d3q27/col_kbc_c.h"
-#include "d3q27/col_srt_modif_force.h"
+#include "d3q27/col_cum.h"				// IWYU pragma: keep
+#include "d3q27/col_bgk.h"				// IWYU pragma: keep
+#include "d3q27/col_clbm.h"				// IWYU pragma: keep
+#include "d3q27/col_mrt.h"				// IWYU pragma: keep
+#include "d3q27/col_srt.h"				// IWYU pragma: keep
+#include "d3q27/col_kbc_n.h"			// IWYU pragma: keep
+#include "d3q27/col_kbc_c.h"			// IWYU pragma: keep
+#include "d3q27/col_srt_modif_force.h"	// IWYU pragma: keep
 
-#include "d3q27/col_srt_well.h"
-#include "d3q27/col_clbm_well.h"
-#include "d3q27/col_cum_well.h"
-#include "d3q27/col_bgk_well.h"
+#include "d3q27/col_srt_well.h"	  // IWYU pragma: keep
+#include "d3q27/col_clbm_well.h"  // IWYU pragma: keep
+#include "d3q27/col_cum_well.h"	  // IWYU pragma: keep
+#include "d3q27/col_bgk_well.h"	  // IWYU pragma: keep
 
 #include "d3q27/col_srt_adjoint.h"
 

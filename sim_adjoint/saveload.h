@@ -62,8 +62,8 @@ void loadPrimaryAndMeasuredMacro(State& state, const std::string& fname_primary,
 		sizes.template setSize<1>(hmacro.template getSize<1>());
 		sizes.template setSize<2>(hmacro.template getSize<2>());
 		sizes.template setSize<3>(hmacro.template getSize<3>());
-		auto strides = hmacro.getStrides();
-		auto overlaps = hmacro.getOverlaps();
+		const auto& strides = hmacro.getStrides();
+		const auto& overlaps = hmacro.getOverlaps();
 		typename local_array4d_view::IndexerType indexer(sizes, strides, overlaps);
 
 		array4d_view macro_view;
@@ -89,8 +89,8 @@ void loadPrimaryAndMeasuredMacro(State& state, const std::string& fname_primary,
 		sizes.template setSize<1>(hmacro.template getSize<1>());
 		sizes.template setSize<2>(hmacro.template getSize<2>());
 		sizes.template setSize<3>(hmacro.template getSize<3>());
-		auto strides = hmacro.getStrides();
-		auto overlaps = hmacro.getOverlaps();
+		const auto& strides = hmacro.getStrides();
+		const auto& overlaps = hmacro.getOverlaps();
 		typename local_array4d_view::IndexerType indexer(sizes, strides, overlaps);
 
 		array4d_view macro_view;

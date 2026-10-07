@@ -15,7 +15,8 @@ struct D3Q27_BC_All
 	using idx = typename CONFIG::TRAITS::idx;
 	using dreal = typename CONFIG::TRAITS::dreal;
 
-	enum GEO : map_t
+	enum GEO : map_t  // NOLINT(performance-enum-size) base width must match the map_t storage type
+
 	{
 		GEO_FLUID,	// compulsory
 		GEO_WALL,	// compulsory
@@ -34,7 +35,7 @@ struct D3Q27_BC_All
 		GEO_ADJOINT_FLUID_m,
 		GEO_ADJOINT_WALL,
 		GEO_ADJOINT_INFLOW_BB_LEFT,
-		GEO_ADJOINT_OUTFLOW_RIGHT
+		GEO_ADJOINT_OUTFLOW_RIGHT,
 	};
 
 	__cuda_callable__ static bool isSymmetric(map_t mapgi)
@@ -376,8 +377,9 @@ struct D3Q27_BC_All
 		{
 			STREAMING::streamingAdjoint(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
 		}
-		else if (mapgi != GEO_OUTFLOW_RIGHT_INTERP)
+		else if (mapgi != GEO_OUTFLOW_RIGHT_INTERP) {
 			STREAMING::streaming(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
+		}
 
 		// boundary conditions
 		switch (mapgi) {
