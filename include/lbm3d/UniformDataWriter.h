@@ -31,6 +31,16 @@ public:
 
 	UniformDataWriter(idx3d global, idx3d local, idx3d offset, point_t physOrigin, real physDl, DataManager& dataManager, std::string ioName);
 
+	// Returns the global extent of this writer's output domain.
+	// Used by lbm3d::synchronizeOutputBuffer() (see output_buffer_sync.h) to determine
+	// whether all ranks along a dimension participate in this output (safe for MPI
+	// communication) or only a subset (e.g., 2D plane cuts, 3D bounding-box cuts, for
+	// which the exchange must be skipped).
+	const idx3d& getGlobal() const
+	{
+		return global;
+	}
+
 	template <typename T>
 	void write(std::string varName, T val);
 
