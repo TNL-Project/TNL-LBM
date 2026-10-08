@@ -1,6 +1,7 @@
 #include <argparse/argparse.hpp>
 
 #include "lbm3d/core.h"
+#include "lbm3d/q_criterion.h"
 
 template <typename NSE>
 struct StateLocal : State<NSE>
@@ -42,7 +43,7 @@ struct StateLocal : State<NSE>
 
 	[[nodiscard]] std::vector<std::string> getOutputDataNames() const override
 	{
-		return {"lbm_density", "lbm_density_fluctuation", "velocity_x", "velocity_y", "velocity_z"};
+		return {"lbm_density", "lbm_density_fluctuation", "velocity_x", "velocity_y", "velocity_z", "Q"};
 	}
 
 	void outputData(UniformDataWriter<TRAITS>& writer, const BLOCK& block, const idx3d& begin, const idx3d& end) override
@@ -84,6 +85,11 @@ struct StateLocal : State<NSE>
 			begin,
 			end
 		);
+
+		// Q-criterion cannot be evaluated in the subdomain overlap cells, so it is
+		// computed on local sites only and the overlaps are exchanged with the
+		// neighboring ranks before writing.
+		lbm3d::writeQCriterion(writer, block, nse, begin, end);
 	}
 
 	void updateKernelVelocities() override

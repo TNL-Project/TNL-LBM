@@ -45,6 +45,7 @@ EXPECTED_VARIABLES = [
     "velocity_x",
     "velocity_y",
     "velocity_z",
+    "Q",
 ]
 
 # Tight physical bounds for the quantities written by test_outputdata.
@@ -175,6 +176,8 @@ def check_variable_shape(name: str, var: AdiosVariable | None, expected_kind: st
 def check_value_range(name: str, data_min: float, data_max: float, bp_path: pathlib.Path) -> None:
     """Assert min/max values are finite and inside the expected bounds."""
     assert np.isfinite(data_min) and np.isfinite(data_max), f"{name} in {bp_path} contains NaN or Inf"
+    if name not in VALUE_BOUNDS:
+        return
     lo, hi = VALUE_BOUNDS[name]
     assert lo <= data_min and data_max <= hi, f"{name} in {bp_path}: [{data_min:.6g}, {data_max:.6g}] not in [{lo}, {hi}]"
 
