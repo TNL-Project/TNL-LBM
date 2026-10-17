@@ -14,6 +14,7 @@ import pytnl_lbm
 EXPECTED_EXPORTS = [
     "execute",
     "getMacroView",
+    "getLocalMacroView",
     "UniformDataWriter",
     "Actions",
     "counter_float",
@@ -30,6 +31,7 @@ EXPECTED_EXPORTS = [
     "dmacro_array_SP_D3Q27_CUM_ConstInflow",
     "dist_hmacro_array_SP_D3Q27_CUM_ConstInflow",
     "dist_dmacro_array_SP_D3Q27_CUM_ConstInflow",
+    "macro_view_SP_D3Q27_CUM_ConstInflow",
     "hmacro_view_SP_D3Q27_CUM_ConstInflow",
     "dmacro_view_SP_D3Q27_CUM_ConstInflow",
     "macro_indexer_SP_D3Q27_CUM_ConstInflow",
@@ -57,6 +59,7 @@ def test_export_present(name: str) -> None:
 def test_execute_and_macro_view_callable() -> None:
     assert callable(pytnl_lbm.execute)
     assert callable(pytnl_lbm.getMacroView)
+    assert callable(pytnl_lbm.getLocalMacroView)
 
 
 @pytest.mark.parametrize(("name", "expected_value"), ACTION_VALUES.items())

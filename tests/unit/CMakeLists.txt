@@ -11,6 +11,7 @@ set(unit_test_sources
     test_streaming_mpi.cu
     test_streaming_mpi_bc2d.cu
     test_streaming_mpi_bc3d.cu
+    test_output_buffer_sync.cu
     doctest_main.cu
 )
 

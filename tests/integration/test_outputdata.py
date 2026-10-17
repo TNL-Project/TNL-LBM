@@ -27,6 +27,7 @@ from tests.lbmtest import (
     ADIOS_CONFIG_SST,
     BUILD_DIR,
     PROJECT_ROOT,
+    run_sim,
 )
 
 if TYPE_CHECKING:
@@ -45,6 +46,7 @@ EXPECTED_VARIABLES = [
     "velocity_x",
     "velocity_y",
     "velocity_z",
+    "Q",
 ]
 
 # Tight physical bounds for the quantities written by test_outputdata.
@@ -175,6 +177,8 @@ def check_variable_shape(name: str, var: AdiosVariable | None, expected_kind: st
 def check_value_range(name: str, data_min: float, data_max: float, bp_path: pathlib.Path) -> None:
     """Assert min/max values are finite and inside the expected bounds."""
     assert np.isfinite(data_min) and np.isfinite(data_max), f"{name} in {bp_path} contains NaN or Inf"
+    if name not in VALUE_BOUNDS:
+        return
     lo, hi = VALUE_BOUNDS[name]
     assert lo <= data_min and data_max <= hi, f"{name} in {bp_path}: [{data_min:.6g}, {data_max:.6g}] not in [{lo}, {hi}]"
 
@@ -316,6 +320,26 @@ def test_bp5_output(test_dir: pathlib.Path) -> None:
         if proc.poll() is None:
             proc.terminate()
             proc.wait()
+
+    results_dir = find_results_directory(test_dir)
+    for output_name, kind in OUTPUTS["all"]:
+        check_bp5_file(results_dir / f"{output_name}.bp", kind)
+
+
+def test_bp5_output_multi_rank(test_dir: pathlib.Path) -> None:
+    """BP5 output at np=2: exercises the distributed writer paths.
+
+    In particular writeQCriterion's overlap derivation for the 3D box cut
+    (origin inside a subdomain, continuing past the rank boundary): a
+    mismatched Isend/Irecv exchange there previously aborted with
+    MPI_ERR_TRUNCATE, which the single-rank runs above cannot catch.
+    """
+    run_sim(
+        [SIMULATION, "--adios-config", ADIOS_CONFIG, "--output-kind", "all", "--resolution", "1"],
+        workdir=test_dir,
+        np_ranks=2,
+        timeout=SIM_TIMEOUT,
+    )
 
     results_dir = find_results_directory(test_dir)
     for output_name, kind in OUTPUTS["all"]:

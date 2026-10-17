@@ -69,5 +69,7 @@ NB_MODULE(pytnl_lbm, m)
 		SP_D3Q27_CUM_ConstInflow::TRAITS::hmacro_array_t(), 0
 	));
 	export_DistributedNDArray<special_macro_view_t>(m, "macro_view_SP_D3Q27_CUM_ConstInflow");
+
+	m.def("getLocalMacroView", getLocalMacroView<hmacro_array_t>);
 #endif
 }

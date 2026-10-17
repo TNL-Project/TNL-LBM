@@ -253,6 +253,47 @@ auto getMacroView(const Array& array, std::uint8_t id)
 #endif
 }
 
+// helper function for getting a strictly-local 4D view (without overlaps) of a
+// distributed macroscopic array, suitable for export to Python via DLPack --
+// the plain local view returned by getLocalView() carries the overlaps in its
+// indexer, so its data anchor points at the leading-overlap (ghost) cells
+// rather than the first owned element
+template <typename Array>
+typename Array::LocalViewType getLocalMacroView(Array& array)
+{
+	using view_t = typename Array::LocalViewType;
+	using idx_t = typename view_t::IndexType;
+	using holder_t = typename view_t::SizesHolderType;
+	using overlaps_t = typename view_t::OverlapsType;
+
+	auto lv = array.getLocalView();
+
+	// sizes are strictly local (overlaps excluded), strides are the real
+	// storage strides (including the overlap padding between the owned rows),
+	// the overlap of the new view is zero
+	holder_t sizes;
+	holder_t strides;
+	overlaps_t overlaps;
+	sizes.template setSize<0>(lv.template getSize<0>());
+	sizes.template setSize<1>(lv.template getSize<1>());
+	sizes.template setSize<2>(lv.template getSize<2>());
+	sizes.template setSize<3>(lv.template getSize<3>());
+	strides.template setSize<0>(lv.template getStride<0>());
+	strides.template setSize<1>(lv.template getStride<1>());
+	strides.template setSize<2>(lv.template getStride<2>());
+	strides.template setSize<3>(lv.template getStride<3>());
+	overlaps.template setSize<0>(0);
+	overlaps.template setSize<1>(0);
+	overlaps.template setSize<2>(0);
+	overlaps.template setSize<3>(0);
+
+	// shift the data anchor from the ghost cells to the first owned element
+	const idx_t offset = lv.getStorageIndex(0, 0, 0, 0);
+	typename view_t::ValueType* begin = lv.getData() + offset;
+
+	return view_t(begin, sizes, strides, overlaps);
+}
+
 // KernelStruct - D2Q9
 template <typename REAL>
 struct D2Q9_KernelStruct
