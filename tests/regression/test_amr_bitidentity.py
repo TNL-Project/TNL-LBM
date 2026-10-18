@@ -330,12 +330,13 @@ def _compare_keys(artifacts: dict[str, str], prefix: str) -> None:
 
 
 # sim_AMR_channel at --resolution 1 runs the R=1 inflow-adjacent geometry
-# whose C2F wall-guard path is a DOCUMENTED known defect under the
-# single-array streaming patterns (results_drag_crisis/aa_seed_report.md §6:
-# constant-density seed on the L0 inflow plane at cycle 3, chaotic by cycle
-# 8), so its artifacts and pinned metrics cannot verify against the AB-tree
-# manifest in a single-pattern AA tree until the defect is repaired;
-# strict=True makes a future repair fail loudly and force re-enabling.
+# whose BC-adjacent frozen-plane classes are a DOCUMENTED PARTITION (closed
+# 2026-09-29 as the SP-5 partition verdict, results_drag_crisis/sp5/sp5_closure.md):
+# cross-pattern bitwise identity there is structurally unattainable without
+# regressing the pinned AB reference, so its artifacts and pinned metrics
+# cannot verify against the AB-tree manifest in a single-pattern AA tree;
+# strict=True is retained as the documented-deferred surface — it fails
+# loudly if the partition boundary ever moves and forces re-review.
 # sim_AMR's TGV stays verifying: its cross-tree production is proven
 # bitwise-exact on the mL1 class (seed report §2)
 def _sim_params() -> list:

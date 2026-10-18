@@ -254,6 +254,7 @@ if(MPI_FOUND AND TNL_LBM_USE_MPI)
         )
     endif()
 endif()
+
 # cross-pattern NESTED bitwise lock of the AMR machinery (the SP-4 surface
 # of the out-of-scope survey: nested links, max_level >= 2): ONE binary per
 # tree, same co-instantiation structure as test_amr_bitwise_lock above --
@@ -290,6 +291,7 @@ if(MPI_FOUND AND TNL_LBM_USE_MPI)
         )
     endif()
 endif()
+
 # cross-pattern UNIFORM bitwise lock of the AMR machinery (the SP-6 surface
 # of the out-of-scope survey: the max_level == 0 base-driver fallback of
 # State_AMR under the single-array patterns): ONE binary per tree, same
@@ -324,6 +326,42 @@ if(MPI_FOUND AND TNL_LBM_USE_MPI)
             test_amr_uniform_lock_eso_twist.cu
             test_amr_uniform_lock_eso_pull.cu
             test_amr_uniform_lock_eso_push.cu
+            PROPERTIES LANGUAGE HIP
+        )
+    endif()
+endif()
+
+# cross-pattern channel-geometry lock of the AMR machinery (the SP-5 surface
+# of the out-of-scope survey: R = 1 inflow-adjacent + wall-attached
+# developing-channel scenario): ONE binary per tree, same co-instantiation
+# structure as test_amr_bitwise_lock above. Driven by
+# tests/unit/test_amr_channel_lock.py
+if(MPI_FOUND AND TNL_LBM_USE_MPI)
+    add_executable(
+        test_amr_channel_lock
+        doctest_main_amr.cu
+        test_amr_channel_lock.cu
+        test_amr_channel_lock_ab.cu
+        test_amr_channel_lock_aa.cu
+        test_amr_channel_lock_eso_twist.cu
+        test_amr_channel_lock_eso_pull.cu
+        test_amr_channel_lock_eso_push.cu
+    )
+    target_link_libraries(test_amr_channel_lock PUBLIC TNL::TNL_LBM PRIVATE doctest::doctest)
+    set_target_properties(test_amr_channel_lock PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+
+    # force language to HIP (the runner TU must be marked too: a HIP-only
+    # tree would otherwise drop it from the object list and link without
+    # main)
+    if(TNL_LBM_BUILD_HIP)
+        set_source_files_properties(
+            doctest_main_amr.cu
+            test_amr_channel_lock.cu
+            test_amr_channel_lock_ab.cu
+            test_amr_channel_lock_aa.cu
+            test_amr_channel_lock_eso_twist.cu
+            test_amr_channel_lock_eso_pull.cu
+            test_amr_channel_lock_eso_push.cu
             PROPERTIES LANGUAGE HIP
         )
     endif()
