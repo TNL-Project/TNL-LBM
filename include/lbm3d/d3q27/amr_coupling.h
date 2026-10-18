@@ -150,7 +150,7 @@
  *   GEO_AMR_INTERFACE cells only -- asserted statically by
  *   checkCouplingMapPattern at SimInit -- so a covered window is an
  *   invalid registration, not a runtime case, and the pre-pass could never
- *   fire; `C2F_CARVE`/`C2F_NO_CARVE` warn at configure and gate no code.
+ *   fire; `C2F_CARVE`/`C2F_NO_CARVE` themselves were fully retired 2026-09-22 and gate no code anywhere in the tree.
  *   The define `C2F_COMPACT_MOMENT` itself is a no-op kept as an explicit
  *   selector for readability of old configurations; it remains the default
  *   under USE_GEIER_CUM_2017 as well (user ruling 2026-09-03: the

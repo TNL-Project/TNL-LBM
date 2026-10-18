@@ -373,8 +373,9 @@ nesting addendum §11).
   compact-moment (σ = 1/2; `TNL_LBM_C2F_STRATEGY=C2F_LAGRANGE` opts back to the
   3rd-order Lagrange). The carve pre-pass was hard-removed on 2026-08-23 —
   the ch7 band map-pattern assertion rejects covered windows at SimInit, so
-  the pre-pass could never fire; `C2F_CARVE`/`C2F_NO_CARVE` warn at configure
-  and gate no code. F2C default
+  the pre-pass could never fire; the `C2F_CARVE`/`C2F_NO_CARVE` knob aliases
+  were fully retired 2026-09-22 (configure warnings removed) and gate no
+  code anywhere in the tree. F2C default
   is the §7.2 σ = 2 compact-moment transfer (the F2C_SCHONHERR strategy,
   default since commit 15, UNTAGGED since 2026-09-27: the define was
   retired, the default build passes no F2C define, and the former
