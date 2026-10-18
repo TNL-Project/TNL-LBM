@@ -167,6 +167,57 @@ __global__ void cudaAMRConservationReduce(
 	if (threadIdx.x < 5)
 		partials[5 * blockIdx.x + threadIdx.x] = tree[threadIdx.x][0];
 }
+
+// SP-4 v2 (2026-09-29) nested-cycle-end-cascade source stash: a raw
+// slot-wise copy between a block's full stored DF box ([-overlap,
+// local+overlap) per axis -- a strict superset of every cell any C2F
+// source read can address) and a staging buffer, no arithmetic of any
+// kind. The nested cycle-end cascade fill converts the same post-substep-A
+// source vintage as this cycle's LAST nested mid-sync fill (byte-identical
+// destination rows on the two-array reference), but the in-place patterns
+// cannot re-read that vintage at cycle end: substep B's twist overwrote
+// the single array. The fix swaps the stashed vintage into the source
+// blocks and lets the UNMODIFIED C2F kernel re-run on it (same kernel,
+// same bytes, same derived parity -> bitwise the reference's cascade
+// product), so the kernel itself answers every store/skip/clamp question
+// of the destination walk. Arms: STASH (df -> buf) runs right after the
+// mid-sync fill is drained; at the cascade the swap first saves the live
+// content (df -> live buf) and then installs the stash (buf -> df); the
+// restore (live buf -> df) puts the live content back after the fill
+// launches. Instantiated for the single-array patterns only
+// (State_AMR::stashC2FSource / swapC2FSource / restoreC2FSource are
+// reached only there).
+template <typename NSE, bool RESTORE>
+__global__ void cudaAMR_DFBoxCopy(
+	typename NSE::DATA block_SD,
+	typename NSE::TRAITS::idx3d begin,
+	typename NSE::TRAITS::idx3d end,
+	typename NSE::TRAITS::dreal* buf,
+	typename NSE::TRAITS::idx buf_offset
+)
+{
+	using TRAITS = typename NSE::TRAITS;
+	using idx = typename TRAITS::idx;
+
+	static_assert(NSE::DFMAX == 1, "the SP-4 source-stash box copy exists only for the single-array patterns");
+
+	const idx nx = end.x() - begin.x();
+	const idx ny = end.y() - begin.y();
+	const idx nz = end.z() - begin.z();
+	const idx cells = nx * ny * nz;
+	for (idx flat = threadIdx.x + blockIdx.x * blockDim.x; flat < cells; flat += gridDim.x * blockDim.x) {
+		const idx x = begin.x() + flat % nx;
+		const idx y = begin.y() + (flat / nx) % ny;
+		const idx z = begin.z() + flat / (nx * ny);
+		for (int q = 0; q < NSE::Q; q++) {
+			const idx slot = buf_offset + static_cast<idx>(q) * cells + flat;
+			if constexpr (RESTORE)
+				block_SD.df(df_cur, q, x, y, z) = buf[slot];
+			else
+				buf[slot] = block_SD.df(df_cur, q, x, y, z);
+		}
+	}
+}
 }  // namespace amr_detail
 
 /**
@@ -235,7 +286,18 @@ __global__ void cudaAMRConservationReduce(
  *    always even at a pair boundary, so the frame is parity-identical to
  *    the historical positional substep 0. The other frame needs no fill:
  *    substep 2 consumes substep 1's updated inner ghost rows from it, and
- *    its outer row is unreachable (substep 2 is interior-only).
+ *    its outer row is unreachable (substep 2 is interior-only). Under the
+ *    single-array patterns (A-A, esoteric in-place), the cycle-end
+ *    cascade's NESTED arms (fine levels M >= 2) additionally swap a
+ *    mid-sync-stashed snapshot of the source level's full stored DF box
+ *    into the source blocks before this fill and restore the live content
+ *    after it (SP-4, 2026-09-29): the post-substep-A family the fill must
+ *    convert is dead by cycle end (the source level's own substep-B twist
+ *    overwrote the one array), so no parity argument can re-read it; the
+ *    stash is captured at \ref advancePair's mid-sync drain, the same
+ *    schedule instant that authors the vintage the two-array reference
+ *    reads from its other array (\ref stashC2FSource /
+ *    \ref swapC2FSource / \ref restoreC2FSource).
  *
  * The relative order of step 4 (F2C) against step 5 (C2F) is
  * irrelevant: their touched sets are disjoint (F2C writes coarse skin
@@ -259,10 +321,19 @@ __global__ void cudaAMRConservationReduce(
  * - `tau = 3 * nu_lb + 0.5` per level; `nu_lb_f = 2 * nu_lb_c` with 2:1
  *   refinement, so `tau_fine != tau_coarse` and both are computed from the
  *   per-level `lbmViscosity()` of the SOURCE blocks of each transfer.
- * - The read-side parity argument is the CURRENT `data.even_iter` of the
- *   source block (the parity of the kernel launch that produced the data).
- *   For `cudaAMR_FineToCoarse` the write-side `coarse_even_iter` is the
- *   parity of the NEXT consuming coarse substep.
+ * - The read-side parity argument names the kernel launch that produced
+ *   the source data; under the single-array patterns it is DERIVED for
+ *   nested sources rather than re-read from the possibly re-armed
+ *   `data.even_iter` flag (SP-4, 2026-09-29): level 0 keeps the
+ *   historical flag read (never re-armed by the per-level setter), while
+ *   a nested source's cycle-time fill reads the post-substep-A
+ *   parity-FALSE family by counter derivation
+ *   (`totalSubstepCount[level] == 0` selects the parity-TRUE SimInit
+ *   layout only for the SimInit initial fill). For
+ *   `cudaAMR_FineToCoarse` the write-side `coarse_even_iter` is the
+ *   parity of the NEXT consuming coarse substep (derived from the same
+ *   cumulative counter at nested parents; the level-0 arm reproduces the
+ *   global clock's historical `(iterations % 2) == 1`).
  * - Kernel extents are passed in the target block's indexer coordinates
  *   and both blocks' `offset` values are passed to the kernels, which map
  *   between the two indexer frames in the global coordinates of each level
@@ -354,6 +425,22 @@ struct State_AMR : State<NSE>
 	// all inter-level couplings of the simulation (empty when max_level == 0
 	// or when no GEO_AMR_INTERFACE cells were found in SimInit)
 	std::vector<InterLevelCoupling> couplings;
+
+	// SP-4 v2 (2026-09-29) nested-cycle-end-cascade source-stash state of
+	// the single-array patterns (never populated under A-B):
+	// c2f_source_stash_ holds one full stored DF box copy per (source
+	// level, source block id) of the fill-era vintage, snapshotted right
+	// after each mid-sync C2F fill is drained (the nested cycle-end
+	// cascade fill converts this same vintage on the two-array reference,
+	// but the in-place patterns' substep-B twist destroys it before the
+	// cascade can re-read it -- see cudaAMR_DFBoxCopy), and
+	// c2f_source_live_ holds the same box's live content parked during the
+	// cascade swap so it can be restored after the fill launches. The
+	// phase flag distinguishes the cycle-end cascade's
+	// launchCoarseToFineTransfers calls from the SimInit/mid-sync ones.
+	bool c2f_replay_phase_ = false;
+	std::map<std::pair<int, int>, TNL::Containers::Array<dreal, TNL::Devices::Cuda, idx>> c2f_source_stash_;
+	std::map<std::pair<int, int>, TNL::Containers::Array<dreal, TNL::Devices::Cuda, idx>> c2f_source_live_;
 
 	// pass-through constructor: State_AMR adds no physical state of its own
 	template <typename... ARGS>
@@ -454,6 +541,25 @@ struct State_AMR : State<NSE>
 	// max_level == L means the inner blocks are unreachable and the emission
 	// is exactly the historical two-substep sequence at that level
 	void advancePair(int level, bool compute_macro, bool sync_macro);
+
+	// SP-4 v2 (2026-09-29) nested-cycle-end-cascade source stash
+	// (single-array patterns only, \ref c2f_source_stash_): stashC2FSource
+	// snapshots each nested source block's full stored DF box right after
+	// a mid-sync fill is drained; swapC2FSource parks the live content in
+	// \ref c2f_source_live_ and installs the stashed vintage at the
+	// cycle-end cascade's launch point (the nested fill's source family is
+	// dead there under the in-place patterns -- see cudaAMR_DFBoxCopy),
+	// restoreC2FSource puts the live content back after the fill launches.
+	// c2fSourceBlocks walks the coupling list and returns each distinct
+	// source block once; driveC2FSourceCopy is the shared launcher of the
+	// three arms. The flag \ref c2f_replay_phase_ marks the cascade's
+	// calls inside launchCoarseToFineTransfers
+	std::vector<BLOCK_NSE*> c2fSourceBlocks(int fine_level);
+	template <bool RESTORE>
+	void driveC2FSourceCopy(int fine_level, std::map<std::pair<int, int>, TNL::Containers::Array<dreal, TNL::Devices::Cuda, idx>>& buffers);
+	void stashC2FSource(int fine_level);
+	void swapC2FSource(int fine_level);
+	void restoreC2FSource(int fine_level);
 
 	// build \ref couplings from the `GEO_AMR_INTERFACE` markings (called by
 	// SimInit AFTER `markAMRInterface` ran); see the implementation for the
@@ -2050,6 +2156,110 @@ typename State_AMR<NSE>::BLOCK_NSE* State_AMR<NSE>::findBlockById(int level, int
 	return nullptr;
 }
 
+// SP-4 v2 (2026-09-29): the distinct source (coarse) blocks of one fine
+// level's couplings, sorted by block id (ids are unique across all
+// levels). A block with several patches at the same fine level appears
+// once: the box-copy arms each cover the block's whole stored extent, so
+// a second copy would be redundant for the stash and WRONG for the swap
+// (it would fold the already-installed stash into the live buffer)
+template <typename NSE>
+std::vector<typename State_AMR<NSE>::BLOCK_NSE*> State_AMR<NSE>::c2fSourceBlocks(int fine_level)
+{
+	std::map<int, BLOCK_NSE*> unique_blocks;
+	for (InterLevelCoupling& coupling : couplings) {
+		if (coupling.fine_level != fine_level)
+			continue;
+		for (std::size_t i = 0; i < coupling.patches.size(); i++) {
+			BLOCK_NSE* coarse = findBlockById(coupling.coarse_level, coupling.coarse_block_ids[i]);
+			if (coarse != nullptr)
+				unique_blocks[coarse->id] = coarse;
+		}
+	}
+	std::vector<BLOCK_NSE*> blocks;
+	blocks.reserve(unique_blocks.size());
+	for (const auto& entry : unique_blocks)
+		blocks.push_back(entry.second);
+	return blocks;
+}
+
+// SP-4 v2 (2026-09-29): shared driver of the three source-stash arms --
+// runs one cudaAMR_DFBoxCopy per distinct source block between the block's
+// full stored DF box ([-ov, local+ov) per axis, the whole extent the C2F
+// kernel may address through the source SD) and its per-block buffer in
+// `buffers` (q-major layout). RESTORE == false captures df -> buffer and
+// sizes the buffer; RESTORE == true writes buffer -> df. The capture arm
+// always precedes the matching copy-back in the chronology (mid-sync
+// stash before cascade install; the swap's live parking before the
+// post-launch restore), and every arm is enqueued on stream_c2f so the
+// copies are stream-ordered against the fill kernels they bracket.
+// Single-array patterns only.
+template <typename NSE>
+template <bool RESTORE>
+void
+State_AMR<NSE>::driveC2FSourceCopy(int fine_level, std::map<std::pair<int, int>, TNL::Containers::Array<dreal, TNL::Devices::Cuda, idx>>& buffers)
+{
+	ensureTransferStreams();
+
+	for (BLOCK_NSE* coarse : c2fSourceBlocks(fine_level)) {
+		const idx3d ov{coarse->df_overlap_X(), coarse->df_overlap_Y(), coarse->df_overlap_Z()};
+		const idx3d begin{-ov.x(), -ov.y(), -ov.z()};
+		const idx3d end{coarse->local.x() + ov.x(), coarse->local.y() + ov.y(), coarse->local.z() + ov.z()};
+		const idx3d size{end.x() - begin.x(), end.y() - begin.y(), end.z() - begin.z()};
+		const idx cells = size.x() * size.y() * size.z();
+		if (cells <= 0)
+			continue;
+		auto& buf = buffers[{coarse->level, coarse->id}];
+		if constexpr (! RESTORE)
+			buf.setSize(NSE::Q * cells);
+		else if (buf.getSize() != NSE::Q * cells) {
+			// the capture arm must precede its copy-back (the mid-sync
+			// stash before the cascade install, the swap's live parking
+			// before the post-launch restore); a size mismatch means
+			// that chronology broke, and launching the copy on the
+			// un(der)sized buffer would read or write out of bounds on
+			// the device
+			const std::string message = fmt::format(
+				"State_AMR::driveC2FSourceCopy: stale source buffer for block {} on level {} ({} entries, expected {})",
+				coarse->id,
+				coarse->level,
+				buf.getSize(),
+				NSE::Q * cells
+			);
+			spdlog::critical("{}", message);
+			throw std::runtime_error(message);
+		}
+
+		TNL::Backend::LaunchConfiguration launch_config;
+		const unsigned threads = static_cast<unsigned>(std::min<idx>(cells, 128));
+		launch_config.blockSize = dim3(threads, 1, 1);
+		launch_config.gridSize = dim3(static_cast<unsigned>((cells + threads - 1) / threads), 1, 1);
+		launch_config.stream = stream_c2f;
+		TNL::Backend::launchKernelAsync(amr_detail::cudaAMR_DFBoxCopy<NSE, RESTORE>, launch_config, coarse->data, begin, end, buf.getData(), 0);
+	}
+}
+
+template <typename NSE>
+void State_AMR<NSE>::stashC2FSource(int fine_level)
+{
+	driveC2FSourceCopy<false>(fine_level, c2f_source_stash_);
+}
+
+template <typename NSE>
+void State_AMR<NSE>::swapC2FSource(int fine_level)
+{
+	// park the live content FIRST: both arms run as whole walks (never
+	// interleaved per block) and are stream-ordered on stream_c2f, so the
+	// parked buffer holds the pre-swap content byte-for-byte
+	driveC2FSourceCopy<false>(fine_level, c2f_source_live_);
+	driveC2FSourceCopy<true>(fine_level, c2f_source_stash_);
+}
+
+template <typename NSE>
+void State_AMR<NSE>::restoreC2FSource(int fine_level)
+{
+	driveC2FSourceCopy<true>(fine_level, c2f_source_live_);
+}
+
 /**
  * \brief Coarse-to-fine ghost-layer fill for one level (step 5 of the
  * Schönherr simulated-band cycle - and the identical initial fill of
@@ -2079,6 +2289,24 @@ void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level)
 {
 	using SyncDirection = TNL::Containers::SyncDirection;
 
+	if constexpr (is_AA_v<typename NSE::STREAMING> || is_esoteric_in_place_v<typename NSE::STREAMING>) {
+		// SP-4 v2 (2026-09-29): the nested cycle-end cascade of the
+		// in-place patterns cannot re-read its source level -- the
+		// post-substep-A frame the nested fill converts (the reference's
+		// df_out of the fill's call-site rotation, census-locked at
+		// rotation 0 by Test 19) was overwritten by the source's own
+		// substep-B twist, so ANY parity read at cycle end is off-vintage.
+		// Swap that frame's vintage -- stashed at this cycle's mid-sync
+		// while it was still live (see advancePair) -- into the source
+		// blocks' arrays and let the plain fill below re-run on it (same
+		// kernel, same input bytes -> bitwise the reference's cascade
+		// product); the live content is restored after the launches below.
+		// SimInit and the mid-sync fills still read the live array
+		// (c2f_replay_phase_ is false there)
+		if (fine_level >= 2 && c2f_replay_phase_)
+			swapC2FSource(fine_level);
+	}
+
 	ensureTransferStreams();
 
 	for (InterLevelCoupling& coupling : couplings) {
@@ -2096,8 +2324,46 @@ void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level)
 			const dreal tau_fine = static_cast<dreal>(3 * blockLbmViscosity(*fine) + 0.5);
 			const dreal tau_coarse = static_cast<dreal>(3 * blockLbmViscosity(*coarse) + 0.5);
 			// parity of the kernel launch that produced the current coarse
-			// data (AA-pattern state; ignored by the kernel for AB)
-			const bool coarse_even_iter = coarse->data.even_iter;
+			// data (single-array pattern state; ignored by the kernel for
+			// A-B, which reads the rotation-selected df_out instead)
+			const bool coarse_even_iter = [&]
+			{
+				if constexpr (is_AA_v<typename NSE::STREAMING> || is_esoteric_in_place_v<typename NSE::STREAMING>) {
+					// DERIVED from the source block's own cumulative
+					// counter, never read back from data.even_iter (SP-4
+					// fix, 2026-09-29): every cycle-time fill -- the
+					// mid-sync fill inside advancePair and the
+					// level-ascending cycle-end cascade alike -- reads the
+					// source level's post-substep-A production family
+					// (parity-FALSE; substep A always runs at an even
+					// substep index; the A-B reference reads the same
+					// vintage: its postCollisionSlot at the fill's call-site
+					// rotation names the array the pair's substep A wrote,
+					// see the T19 transfer census of
+					// tests/unit/test_amr_coupling.cu). Only the SimInit
+					// initial fill reads the parity-TRUE family, the
+					// initial condition's virtual-iteration layout
+					// (authored at even_iter == true, see
+					// LBM_BLOCK::setInitialCondition). The block's
+					// data.even_iter flag names the NEXT consuming substep
+					// instead whenever a level-ascending re-arm
+					// (updateKernelDataForLevel(L, ...) in the SimInit
+					// initial-fill loop and in the cycle-end cascade)
+					// prepared the SOURCE level as a destination before
+					// this fill reads it -- at SimInit that is exactly the
+					// wrong family; at the cycle-time fills the re-armed
+					// flag coincidentally matches post-A by the same
+					// arithmetic, so the flag reads right there. Level 0
+					// is never re-armed by the per-level setter (its flag
+					// always holds the global clock's production parity),
+					// so keep its historical read of the flag everywhere.
+					if (coarse->level == 0)
+						return coarse->data.even_iter;
+					return this->nse.totalSubstepCount[coarse->level] == 0;
+				}
+				else
+					return coarse->data.even_iter;
+			}();
 			// parity of the NEXT consuming fine substep: the caller re-pointed
 			// the fine level's rotation to exactly that substep before this
 			// fill (the store side's phase argument, mirroring the F2C
@@ -2167,6 +2433,15 @@ void State_AMR<NSE>::launchCoarseToFineTransfers(int fine_level)
 				coarse->offset
 			);
 		}
+	}
+	if constexpr (is_AA_v<typename NSE::STREAMING> || is_esoteric_in_place_v<typename NSE::STREAMING>) {
+		// SP-4 v2 (2026-09-29): cascade-call epilogue of the swap-in above
+		// -- put the source blocks' live content back. The copies land on
+		// stream_c2f behind the fill launches, so the fills consumed the
+		// stashed vintage before the live content returns; the caller's
+		// synchronizeTransfers() drains them together with the fills
+		if (fine_level >= 2 && c2f_replay_phase_)
+			restoreC2FSource(fine_level);
 	}
 	// NO trailing sync: the C2F kernels run concurrently with the F2C
 	// direction on their own streams (disjoint cell sets); the phase's
@@ -2366,12 +2641,39 @@ void State_AMR<NSE>::advancePair(int level, bool compute_macro, bool sync_macro)
 		// CONCURRENTLY on their per-direction streams (disjoint cell sets)
 		// and are drained together below -- the phase's single sync point
 		launchFineToCoarseTransfersInterior(level + 1);
+		if constexpr (is_AA_v<typename NSE::STREAMING> || is_esoteric_in_place_v<typename NSE::STREAMING>) {
+			// SP-4 (2026-09-29): under the in-place patterns the F2C skin
+			// deposit and the C2F source read share ONE array (the A-B
+			// deposit lands in the other frame), so the nested mid-sync's
+			// post-collision fills must see the settled deposit: drain the
+			// f2c stream before the c2f launch (visible only where the two
+			// kernels' slot families cross at the shared interface cells)
+			TNL::Backend::streamSynchronize(stream_f2c);
+		}
 		this->nse.updateKernelDataForLevel(level + 1, this->nse.totalSubstepCount[level + 1]);
 		launchCoarseToFineTransfers(level + 1);
 		// substep B reads the skin the F2C just wrote (its ring streams
 		// from it) and the finer pair #2 reads the ghost rows the C2F
 		// filled -- both must be complete
 		synchronizeTransfers();
+		if constexpr (is_AA_v<typename NSE::STREAMING> || is_esoteric_in_place_v<typename NSE::STREAMING>) {
+			// SP-4 v2 (2026-09-29): snapshot the SOURCE vintage the
+			// just-drained mid-sync fill consumed, while it is still live
+			// in this level's array (the nested cycle-end cascade fill
+			// converts this same post-substep-A family, but this level's
+			// own substep B below overwrites it in the single array -- the
+			// cascade swaps the stash back in instead of re-reading; see
+			// launchCoarseToFineTransfers). The LAST mid-sync fill of the
+			// cycle (this pair, pair #1 or #2 alike) is the cascade's
+			// vintage, so a per-cycle overwrite is exactly right
+			stashC2FSource(level + 1);
+			// the capture sits on stream_c2f while this level's own
+			// substep B below launches on the block stream -- with the
+			// per-thread default stream (no legacy cross-stream ordering)
+			// the twist may overwrite cells the capture has not copied
+			// yet; drain the capture before the host enqueues substep B
+			TNL::Backend::streamSynchronize(stream_c2f);
+		}
 	}
 
 	// substep B: interior-only launch (on a face masked in fine_wall_masks
@@ -2532,10 +2834,24 @@ void State_AMR<NSE>::SimUpdate()
 	// at a cycle boundary, so the parity/rotation matches the historical
 	// positional-0 preparation bit-for-bit (updateKernelDataForLevel is an
 	// absolute setter on substep mod 2 / mod DFMAX). The cascade overlaps
-	// the F2C above on its own stream (disjoint cell sets)
+	// the F2C above on its own stream (disjoint cell sets). Under the
+	// single-array patterns the nested arms (M >= 2) swap the stashed
+	// source vintage into the source blocks and re-run the plain fill on
+	// it (SP-4 v2 source stash; the flag marks their
+	// launchCoarseToFineTransfers calls as cascade calls)
+	if constexpr (is_AA_v<typename NSE::STREAMING> || is_esoteric_in_place_v<typename NSE::STREAMING>) {
+		// SP-4 (2026-09-29): same in-place slot-sharing discipline as the
+		// mid-sync inside advancePair -- the cascade's in-place fills must
+		// see the settled end-sync skin deposit, not race it
+		TNL::Backend::streamSynchronize(stream_f2c);
+	}
 	for (int M = 1; M <= this->nse.max_level; M++) {
 		this->nse.updateKernelDataForLevel(M, this->nse.totalSubstepCount[M]);
+		if constexpr (is_AA_v<typename NSE::STREAMING> || is_esoteric_in_place_v<typename NSE::STREAMING>)
+			c2f_replay_phase_ = true;
 		launchCoarseToFineTransfers(M);
+		if constexpr (is_AA_v<typename NSE::STREAMING> || is_esoteric_in_place_v<typename NSE::STREAMING>)
+			c2f_replay_phase_ = false;
 	}
 
 	// the cycle-end transfer phase's single sync point: the end-sync F2C(1)
