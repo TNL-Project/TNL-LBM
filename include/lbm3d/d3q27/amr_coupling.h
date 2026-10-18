@@ -87,13 +87,19 @@
  * checkCouplingMapPattern statically rejects those degenerate cases at
  * SimInit. The same end-tag rule guards the fine-to-coarse filter windows
  * (inert on the all-GEO_FLUID fine blocks of v1). Streaming-pattern
- * caveat: unlike an interior face, the shifted wall-window reads a frozen
- * row that is never rewritten by the coarse kernel, so the read-vs-write
- * orientation conventions can diverge there -- under the A-A pattern this is
- * exactly the frozen-cell read mismatch catalogued as Defect-1 in
- * docs/AMR-for-LBM-implementation.md (the wall refinement lane, like all
- * frozen-cell coupling reads, is A-B-pattern-only until Defect-1 is
- * fixed).
+ * note: unlike an interior face, the shifted wall-window reads a frozen
+ * row that is never rewritten by the coarse kernel, so under the
+ * single-array patterns (A-A and the esoteric in-place family) the
+ * kernel's parity-phase schedule never refreshes the frozen slots to the
+ * live read convention -- read_coarse_df therefore resolves a
+ * GEO_NOTHING source through the parity-INVERTED postCollisionSlot
+ * discipline (the address family the coupling's own F2C store occupies
+ * per the pre/post slot identity), closing the frozen-cell read mismatch
+ * formerly catalogued as Defect-1 / SP-1. Live window cells keep
+ * tracking the just-run kernel's parity; a read address owned by a live
+ * neighbor is kernel-aliased and delivers that cell's current content,
+ * the only data the shared frame holds there. In-situ gate:
+ * tests/unit/test_amr_wall_lane.cu.
  *
  * Explosion strategies (Eitel-Amor et al. 2025, Fluids 10(2):31): instead
  * of interpolating from neighboring coarse cells, each fine ghost cell
@@ -196,7 +202,11 @@
  *   it is the post-stream natural state. Caveat: the post-stream state is NOT
  *   the post-collision value at the site -- it is the working state the next
  *   coarse substep will collide with, which is the physics-correct input for
- *   mirroring the coarse level onto the fine ghosts.
+ *   mirroring the coarse level onto the fine ghosts. Frozen (`GEO_NOTHING`)
+ *   sources are excepted: never written by the kernel, they are read
+ *   through the parity-INVERTED discipline (the address family the
+ *   coupling's own F2C store occupies; see `read_coarse_df` and the
+ *   wall-guard section above).
  *
  * Writes: fine ghost DFs go to `fine_SD.df(df_cur, ...)` for both patterns
  * (the caller sets the fine level's DF rotation for the upcoming substep
@@ -1432,6 +1442,22 @@ __global__ void cudaAMR_CoarseToFine(
 		// ignore the parity argument (pull reads own-site df_out, push the
 		// downwind scatter target); AA resolves twisted/natural per the
 		// producing phase (even_iter given by the caller)
+		if constexpr (is_AA_v<typename CONFIG::STREAMING> || is_esoteric_in_place_v<typename CONFIG::STREAMING>) {
+			// frozen cells (GEO_NOTHING: the covered footprint depth and the
+			// Sec. 7.3 shifted wall-window skin row) are never collided or
+			// self-written by the coarse kernel -- after initialization the
+			// only write they receive is the coupling's own F2C store, which
+			// authors the NEXT consuming substep's pre-collision layout. By
+			// the slot identity preCollisionSlot(q, t, W) ==
+			// postCollisionSlot(q, x, !W) that store occupies the
+			// !coarse_even_iter post-collision address family, disjoint from
+			// the kernel's own parity-resolved writes -- so the frozen read
+			// must use the inverted parity to see the latest coupling store
+			// (Defect-1 / SP-1 fix; live cells keep tracking the kernel's
+			// own latest phase)
+			if (coarse_SD.map(cx, cy, cz) == BC::GEO_NOTHING)
+				return CONFIG::STREAMING::postCollisionSlot(coarse_SD, q, cx, cy, cz, ! coarse_even_iter);
+		}
 		return CONFIG::STREAMING::postCollisionSlot(coarse_SD, q, cx, cy, cz, coarse_even_iter);
 	};
 
