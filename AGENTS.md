@@ -52,7 +52,7 @@ with optional Python bindings via nanobind and distributed execution through CUD
 | Python binding surface | `pytnl_lbm/pytnl_lbm.cpp` | Exports one concrete `SP_D3Q27_CUM_ConstInflow` instantiation |
 | 3D example simulations | `sim_NSE/*.cu`, `sim_NSE_ADE/*.cu`, `sim_adjoint/*.cu` | Each `int main()` is a standalone CMake executable |
 | 2D example simulations | `sim_2D/*.cu` | sim2d_1 (channel+hole), sim2d_2 (Poiseuille), sim2d_Taylor_Green, sim2d_hills |
-| Unit-test doctest binaries | `tests/unit/*.cu` | doctest cases (runner `doctest_main.cu`): `test_cpp_units` carries `test_outflowcover.cu`, `test_decomposition.cu` and the AMR Schönherr registration/exactness suites; the AMR gate suites live in the per-pattern `test_amr_units_{ab,aa,eso_twist,eso_pull,eso_push}` (suites `amr_coupling`/`amr_subcycling`/`amr_vtkhdf_writer`/`amr_nesting`), the per-define exactness drivers in `test_amr_f2c_schonherr_{ab,aa,eso_twist,eso_pull,eso_push}`, and the cross-pattern bitwise lock in `test_amr_bitwise_lock` |
+| Unit-test doctest binaries | `tests/unit/*.cu` | doctest cases (runner `doctest_main.cu`): `test_cpp_units` carries `test_outflowcover.cu`, `test_decomposition.cu` and the AMR Schönherr registration/exactness suites; the AMR gate suites live in the per-pattern `test_amr_units_{ab,aa,eso_twist,eso_pull,eso_push}` (suites `amr_coupling`/`amr_subcycling`/`amr_vtkhdf_writer`/`amr_nesting`), the per-define exactness drivers in `test_amr_f2c_schonherr_{ab,aa,eso_twist,eso_pull,eso_push}`, and the cross-pattern bitwise locks in `test_amr_bitwise_lock` (mL1), `test_amr_nested_lock` (mL2, the SP-4 surface — closed 2026-09-29) and `test_amr_uniform_lock` (mL0, the SP-6 surface — closed 2026-09-30) |
 | Regression tests | `tests/regression/` | pytest suites: IBM matrices vs `baseline_ibm_matrices/` + IBM flow-field checks, D3Q27 NSE (sim_1..sim_4 + forcing variants) checks, D2Q9 verification checks + forcing variant, MPI multi-rank checks (test_mpi.py) |
 | Output-data pipeline test | `tests/integration/` | pytest suite driving `test_outputdata` (BP5, SST, Catalyst inline/plugin engines) |
 | External consumption test | `tests/subproject/` | Verifies TNL-LBM works via CMake `FetchContent` |
@@ -181,7 +181,7 @@ PYTHONPATH=build/pytnl_lbm python -c "import pytnl_lbm"
 
 # AMR gate (fully pytest-native; needs a CUDA GPU; ParaView arms skip without pvpython):
 cmake --build build
-pytest tests/unit/test_amr_units.py tests/unit/test_amr_f2c_schonherr.py tests/unit/test_amr_bitwise_lock.py tests/integration/test_amr_paraview.py
+pytest tests/unit/test_amr_units.py tests/unit/test_amr_f2c_schonherr.py tests/unit/test_amr_bitwise_lock.py tests/unit/test_amr_wall_lane.py tests/unit/test_amr_uniform_lock.py tests/unit/test_amr_channel_lock.py tests/unit/test_amr_nested_lock.py tests/integration/test_amr_paraview.py
 # 2-level AMR example simulations (Taylor-Green; --convective-times 20 for the long decision-table run)
 ./build/sim_AMR/sim_AMR --resolution 1
 ./build/sim_AMR/sim_AMR_channel --resolution 1
@@ -386,7 +386,7 @@ nesting addendum §11).
   under F2C_LAGRAVA at SimInit (the R4 pedestal depth 3 covers only the
   Schönherr own-8 window).
 - **AMR gate** (fully pytest-native; the shell launchers were retired):
-  `pytest tests/unit/test_amr_units.py tests/unit/test_amr_f2c_schonherr.py tests/unit/test_amr_bitwise_lock.py tests/integration/test_amr_paraview.py`
+  `pytest tests/unit/test_amr_units.py tests/unit/test_amr_f2c_schonherr.py tests/unit/test_amr_bitwise_lock.py tests/unit/test_amr_wall_lane.py tests/unit/test_amr_uniform_lock.py tests/unit/test_amr_channel_lock.py tests/unit/test_amr_nested_lock.py tests/integration/test_amr_paraview.py`
   runs the AMR targets — the 4 gate TEST_SUITEs
   (`amr_coupling`/`amr_subcycling`/`amr_vtkhdf_writer`/`amr_nesting`) ×
   {ab,aa,eso_twist,eso_pull,eso_push} of the consolidated per-pattern
@@ -396,9 +396,27 @@ nesting addendum §11).
   exactness drivers + the cross-pattern bitwise lock binary
   `test_amr_bitwise_lock` (mL1 two-level scenario, per-cycle bitwise
   equality of map+macro against the A-B pull reference for aa and all three
-  esoteric patterns — locked after empirical verification; the nested ≥2-link
-  defect, the R=1 inflow-adjacent wall-guard path and mL0-under-AA are
-  documented known defects, results_drag_crisis/aa_seed_report.md §4/§6/§7)
+  esoteric patterns — locked after empirical verification) + the NESted
+  sibling `test_amr_nested_lock` (mL2 three-level scenario: the SP-4 nested
+  ≥2-link defect is CLOSED 2026-09-29 — the nested cycle-end cascade's C2F
+  fill authors its band from a mid-sync-stashed snapshot of the source
+  level's post-substep-A DF box, re-running the unmodified fill kernel on
+  the stashed vintage; locked bitwise on all five patterns in both trees —
+  evidence results_drag_crisis/sp4/sp4_closure.md) + the UNIFORM sibling
+  `test_amr_uniform_lock` (mL0 single-block scenario, the sim_AMR_ball
+  channel geometry at `max_level == 0`: the SP-6 mL0-under-AA abort is
+  CLOSED 2026-09-30 — the seed was sim-side, not schedular: the ball sim's
+  `stampBallOnFineBlocks` level filter admitted the level-0 block and
+  stamped one stray frame-adjacent `GEO_WALL` through its zero-initialized
+  `lat_local`; guarded by the `max_level == 0` skip; locked bitwise on all
+  five patterns in both trees with a `GEO_NOTHING` frame-cleanliness
+  anatomy assertion — evidence results_drag_crisis/sp6/sp6_closure.md); the
+  R=1 inflow-adjacent wall-guard path (SP-5) is closed as a DOCUMENTED
+  PARTITION VERDICT (2026-09-29: structurally unattainable without
+  regressing the pinned AB reference; permanently gated by the
+  `test_amr_channel_lock` classification contract —
+  `tests/unit/test_amr_channel_lock.py`, green on both trees — evidence
+  results_drag_crisis/sp5/sp5_closure.md))
   + the 2 ParaView e2e arms (skipped when pvpython is absent).
   Bit-identity evidence harness:
   `tests/regression/test_amr_bitidentity.py` — verify mode compares every
@@ -407,7 +425,8 @@ nesting addendum §11).
   a trusted pre-change tree; its mock-suite artifacts drive the consolidated
   binaries per-suite; in single-pattern AA trees the `*_ab` mock artifacts
   skip and the `sim_AMR_channel` sim arms xfail(strict) — the R=1
-  inflow-adjacent wall-guard known defect).
+  inflow-adjacent wall-guard path, closed as the SP-5 partition verdict;
+  the xfails are retained as the documented-deferred surface).
   pytest sides: `tests/unit/test_cpp_units.py` (AMR doctest suites),
   `tests/unit/test_amr_f2c_schonherr.py`.
 - **Measured verdict (recorded, not repaired)**: the conversion was an

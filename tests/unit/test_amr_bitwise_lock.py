@@ -19,10 +19,17 @@ harness (``results_drag_crisis/aa_seed_report.md`` §2: bit-exact for 18
 cycles through front-crossing cascade fills and per-cycle F2C feedback; §8
 item 2 recommends exactly this in-binary harness), and the esoteric
 patterns are locked after empirical bitwise verification on this host. The
-KNOWN DEFECTS — nested ≥2-level links (mid-sync C2F vintage authoring,
-report §4), the R = 1 inflow-adjacent C2F wall-guard path (§6), and mL0
-under A-A (§7) — are NOT locked; the binary carries a skipped documentation
-arm naming them with the report pointer.
+nested ≥2-level link surface (mid-sync C2F vintage authoring, report §4)
+is CLOSED as of 2026-09-29 and permanently locked by the sibling nested
+lock ``test_amr_nested_lock`` (its own pytest module); the mL0 uniform
+fallback (report §7) is CLOSED as of 2026-09-30 (the seed was sim-side:
+sim_AMR_ball's fine-stamp admitted the level-0 block at ``max_level == 0``
+and tagged one stray frame-adjacent ``GEO_WALL`` through its
+zero-initialized ``lat_local``) and permanently locked by the sibling
+uniform lock ``test_amr_uniform_lock`` (its own pytest module); only the
+R = 1 inflow-adjacent C2F wall-guard path (§6) remains a documented
+known-defect/deferred family NOT locked by this binary — the binary
+carries a skipped documentation arm naming it with the report pointer.
 
 A missing binary is a hard failure with a build hint, never a silent skip:
 the binary is built unconditionally in every MPI-configured tree (and in

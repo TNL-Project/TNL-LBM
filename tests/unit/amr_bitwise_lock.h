@@ -31,16 +31,28 @@
 //   against the same reference after being verified bitwise-exact on this
 //   host empirically (RTX 5080, native arch).
 //
-// KNOWN DEFECTS — deliberately NOT locked (see the skipped documentation
-// case in test_amr_bitwise_lock.cu):
+// Remaining surfaces NOT covered by this lock (see the skipped
+// documentation case in test_amr_bitwise_lock.cu):
 //
-// - nested links (max_level >= 2) diverge at the mid-sync C2F fill inside
-//   advancePair under the single-array patterns (wrong frame/parity vintage
-//   authoring — aa_seed_report.md §4, stage (iv));
+// - nested links (max_level >= 2): CLOSED 2026-09-29 (SP-4) — the nested
+//   cycle-end cascade's C2F fill authors its band from a mid-sync-stashed
+//   snapshot of the source level's post-substep-A DF box instead of
+//   re-reading the dead single-array frame (the seed report's "wrong
+//   frame/parity vintage authoring", aa_seed_report.md §4 stage (iv),
+//   repaired); permanently locked by the sibling nested lock
+//   test_amr_nested_lock, bitwise on all five patterns in both trees;
 // - the R = 1 inflow-adjacent C2F wall-guard path (a second, independent
 //   seed; §6) — this harness is fully periodic and never exercises a
 //   GEO_INFLOW_MOMENT-adjacent link;
-// - mL0 (uniform max_level == 0) crashes under A-A at SimInit (§7).
+// - the mL0 uniform fallback (max_level == 0): CLOSED 2026-09-30 (SP-6) —
+//   the seed was sim-side, not schedular (sim_AMR_ball's
+//   stampBallOnFineBlocks level filter admitted the level-0 block at
+//   max_level == 0 and stamped one stray GEO_WALL at the (0,0,0) frame
+//   through its zero-initialized lat_local; guarded by the max_level == 0
+//   skip); the repaired uniform path is permanently locked by the sibling
+//   uniform lock test_amr_uniform_lock (the sim_AMR_ball channel geometry
+//   at max_level == 0, frame-cleanliness anatomy assertion included),
+//   bitwise on all five patterns in both trees.
 //
 // This header is pattern-independent: the comparator TU includes only it
 // (no kernel instantiation), while the five runner TUs include
