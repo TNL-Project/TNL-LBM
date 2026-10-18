@@ -176,6 +176,31 @@ foreach(pattern IN ITEMS ${AMR_TEST_PATTERNS})
 endforeach()
 endif()
 
+# standalone wall-refinement-lane doctest driver: the frozen-cell C2F read
+# gate (SP-1 / Defect-1 of the out-of-scope survey) gets its own per-pattern
+# binaries rather than a TEST_SUITE inside the consolidated gate binaries --
+# the bit-identity manifest pins the consolidated binaries' complete doctest
+# stdout (including the test-case-total summary line) byte-for-byte, and a
+# co-resident suite would shift those totals and break the byte-frozen
+# digests. Driven by tests/unit/test_amr_wall_lane.py
+if(MPI_FOUND AND TNL_LBM_USE_MPI)
+foreach(pattern IN ITEMS ${AMR_TEST_PATTERNS})
+    amr_pattern_define(${pattern} pattern_options)
+    set(target "test_amr_wall_lane_${pattern}")
+    add_executable(${target} doctest_main_amr.cu test_amr_wall_lane.cu)
+    target_compile_options(${target} PRIVATE ${pattern_options})
+    target_link_libraries(${target} PUBLIC TNL::TNL_LBM PRIVATE doctest::doctest)
+    set_target_properties(${target} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+
+    # force language to HIP (the runner TU must be marked too: a HIP-only
+    # tree would otherwise drop it from the object list and link without
+    # main)
+    if(TNL_LBM_BUILD_HIP)
+        set_source_files_properties(doctest_main_amr.cu test_amr_wall_lane.cu PROPERTIES LANGUAGE HIP)
+    endif()
+endforeach()
+endif()
+
 # an AA-configured tree does not build the AB-pinned targets above: drop their
 # stale outputs left over from a previous A-B configure, so that test drivers
 # locating the binaries by path (e.g. tests/unit/test_amr_units.py) cannot
@@ -185,6 +210,7 @@ if(TNL_LBM_STREAMING_PATTERN STREQUAL "AA")
     file(REMOVE
         ${CMAKE_BINARY_DIR}/tests/test_amr_units_ab
         ${CMAKE_BINARY_DIR}/tests/test_amr_f2c_schonherr_ab
+        ${CMAKE_BINARY_DIR}/tests/test_amr_wall_lane_ab
     )
 endif()
 

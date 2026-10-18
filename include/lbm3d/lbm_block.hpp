@@ -1393,6 +1393,14 @@ void LBM_BLOCK<CONFIG>::allocateHostData()
 	hmap.allocate();
 #endif
 
+	// deterministic initial map: fully fluid unless setupBoundaries stamps
+	// otherwise; allocation memory is NOT a valid map state (reads before a
+	// SimInit-time setup, e.g. the main()-level markAMRInterface of the fully
+	// periodic AMR sims, would otherwise observe invocation-dependent garbage
+	// and report varying frozen-cell counts, breaking the byte-frozen
+	// bitidentity stdout pins)
+	hmap.setValue(CONFIG::BC::GEO_FLUID);
+
 	hmacro.setSizes(CONFIG::MACRO::N, global.x(), global.y(), global.z());
 #ifdef HAVE_MPI
 	if (local.x() != global.x())
