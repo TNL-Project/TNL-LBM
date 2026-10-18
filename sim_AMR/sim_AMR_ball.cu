@@ -772,8 +772,20 @@ struct StateLocal_AMR_Ball : State_AMR<NSE>
 	// block offset); the block's hmap is global-indexed, so the stamp hits
 	// offset + local, clipped to the interior -- the ball sits deep inside
 	// the footprint by construction and must never touch the ghost band.
+	// The uniform fallback (max_level == 0) has no fine blocks at all, and
+	// the level-link filter below would then admit the LEVEL-0 block --
+	// whose lat_local is zero-initialized (the decomposeLattice constructor
+	// of lbm_block.hpp leaves it default-constructed; only createAMRBlocks'
+	// per-level path initializes it) -- and stamp a spurious wall cell from
+	// the division-by-zero physDl arithmetic (the SP-6 seed: a lone stray
+	// GEO_WALL tagged at the (0,0,0) frame, which the single-array
+	// patterns' unclamped ghost-layer streaming reads out of storage).
+	// Level 0's ball is lbmDrawSphere's job (setupBoundaries), so the skip
+	// is behavior-neutral on every valid refined configuration.
 	void stampBallOnFineBlocks()
 	{
+		if (nse.max_level == 0)
+			return;
 		for (auto& block : nse.blocks) {
 			if (block.level != nse.max_level)
 				continue;
