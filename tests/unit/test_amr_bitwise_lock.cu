@@ -127,21 +127,40 @@ TEST_CASE("mL1 two-level state: per-cycle bitwise lock of aa/eso_twist/eso_pull/
 
 // DOCUMENTATION ARM — never executed (decorated skip). The cross-pattern
 // bitwise lock deliberately covers ONLY the mL1 surface (see
-// amr_bitwise_lock.h); the following surfaces are KNOWN DEFECTS of the
-// single-array schedule with direct production evidence in
-// results_drag_crisis/aa_seed_report.md and must NOT be locked until the
-// underlying parity/vintage defect is repaired:
+// amr_bitwise_lock.h); the following surfaces are documented known-defect
+// or deferred families of the single-array schedule with direct production
+// evidence in results_drag_crisis/aa_seed_report.md:
 //
-//  1. nested links (max_level >= 2): the mid-sync C2F fill launched inside
-//     advancePair diverges under A-A (and, by the same schedule family, the
-//     esoteric in-place patterns) — wrong frame/parity vintage authoring at
-//     the nested-schedule fill (seed report §4 stage (iv), §8 item 1);
-//  2. the R = 1 inflow-adjacent C2F wall-guard path: a second, independent
-//     seed — constant-density offset on the L0 GEO_INFLOW_MOMENT plane plus
-//     1-2 ulp band seeds (seed report §6);
-//  3. mL0 under A-A: uniform max_level == 0 aborts at SimInit
-//     ('-overlap <= i' NDArray bounds + CUDA ERROR 719; seed report §7).
-TEST_CASE("cross-pattern AMR known defects (nested >= 2 links, R=1 inflow-adjacent wall guard, mL0 under A-A) — NOT locked, see results_drag_crisis/aa_seed_report.md" * doctest::skip(true))
+//  the R = 1 inflow-adjacent C2F wall-guard path: constant-density
+//  offset on the L0 GEO_INFLOW_MOMENT plane plus 1-2 ulp band seeds
+//  (seed report §6) — SP-5 closed 2026-09-29 as a DOCUMENTED PARTITION
+//  VERDICT (structurally unattainable without regressing the pinned AB
+//  reference), permanently gated by the test_amr_channel_lock
+//  classification contract, NOT by this lock.
+//
+// The nested (max_level >= 2) surface is CLOSED (SP-4, 2026-09-29): the
+// nested cycle-end cascade's C2F fill authors its band from a mid-sync
+// stashed snapshot of the source level's post-substep-A DF box (re-running
+// the unmodified fill kernel on the stashed vintage instead of re-reading
+// the dead single-array frame — State_AMR::stashC2FSource /
+// swapC2FSource / restoreC2FSource in amr_state.h), and is permanently
+// LOCKED by the sibling nested lock binary test_amr_nested_lock (see
+// tests/unit/test_amr_nested_lock.py) — bitwise on all five patterns in
+// both trees.
+//
+// The mL0 uniform surface is CLOSED (SP-6, 2026-09-30): the seed was
+// sim-side, not schedular — sim_AMR_ball's stampBallOnFineBlocks level
+// filter admitted the level-0 block at max_level == 0 and stamped one
+// stray GEO_WALL at the (0,0,0) frame through its zero-initialized
+// lat_local, which A-B's clamped neighbor indexing silently tolerated and
+// the single-array patterns' unclamped ghost-layer gather read out of
+// storage ('-overlap <= i' NDArray bounds + CUDA ERROR 719; seed report
+// §7). The sim-side guard (max_level == 0 skips the fine stamp) repairs
+// it, and the repaired uniform fallback is permanently LOCKED by the
+// sibling uniform lock binary test_amr_uniform_lock (see
+// tests/unit/test_amr_uniform_lock.py): bitwise on all five patterns in
+// both trees, with a GEO_NOTHING frame-cleanliness anatomy assertion.
+TEST_CASE("cross-pattern AMR known defects (R=1 inflow-adjacent wall guard) — NOT locked by this binary, see results_drag_crisis/aa_seed_report.md" * doctest::skip(true))
 {}
 
 TEST_SUITE_END();
