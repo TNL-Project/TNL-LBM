@@ -47,10 +47,9 @@
  * passes and the shared per-buffer sequencing stream apply. The A-A
  * multi-dimensional cases are separate test cases on purpose: A-A was the
  * last pattern to fail bitwise identity under multi-dimensional
- * decompositions (see AGENTS.md, "Known limitations"), and with
- * the include/lbm3d/ fix these rows assert the correct behavior
- * unconditionally - their isolation keeps a regression attributable to A-A
- * alone.
+ * decompositions, and with the include/lbm3d/ fix these rows assert the
+ * correct behavior unconditionally - their isolation keeps a regression
+ * attributable to A-A alone.
  *
  * The BC-dispatch cases (compiled in the separate per-model translation
  * units test_streaming_mpi_bc2d.cu / test_streaming_mpi_bc3d.cu) run the

@@ -794,8 +794,8 @@ static std::vector<double> runChannel(const std::string& id, const ChannelSetup&
 		block.data.lbmViscosity = lat.lbmViscosity();
 
 	// stamp order: inflow/outflow first, walls next (they win the shared
-	// edges/corners), the GEO_NOTHING ghost frame always last (see AGENTS.md,
-	// the setBoundary* call-order anti-pattern)
+	// edges/corners), the GEO_NOTHING ghost frame always last (the setBoundary*
+	// call-order anti-pattern)
 	nse.resetMap(BC::GEO_FLUID);
 	nse.setBoundaryX(1, BC::GEO_INFLOW_MOMENT);
 	nse.setBoundaryX(s.X - 2, s.interp_outflow ? BC::GEO_OUTFLOW_RIGHT_INTERP : BC::GEO_OUTFLOW_RIGHT);
