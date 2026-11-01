@@ -87,19 +87,19 @@ struct D3Q7_BC_All
 			case GEO_WALL:
 				COLL::computeDensityAndVelocity(KS);
 				// collision step: bounce-back
-				TNL::swap(KS.f[mzz], KS.f[pzz]);
-				TNL::swap(KS.f[zmz], KS.f[zpz]);
-				TNL::swap(KS.f[zzm], KS.f[zzp]);
+				TNL::swap(KS.f[dir27::mzz], KS.f[dir27::pzz]);
+				TNL::swap(KS.f[dir27::zmz], KS.f[dir27::zpz]);
+				TNL::swap(KS.f[dir27::zzm], KS.f[dir27::zzp]);
 				break;
 			case GEO_WALL_BODY:
 				COLL::computeDensityAndVelocity(KS);
 				// collision step: bounce-back
-				TNL::swap(KS.f[mzz], KS.f[pzz]);
-				TNL::swap(KS.f[zmz], KS.f[zpz]);
-				TNL::swap(KS.f[zzm], KS.f[zzp]);
+				TNL::swap(KS.f[dir27::mzz], KS.f[dir27::pzz]);
+				TNL::swap(KS.f[dir27::zmz], KS.f[dir27::zpz]);
+				TNL::swap(KS.f[dir27::zzm], KS.f[dir27::zzp]);
 				// anti-bounce-back (recovers zero gradient across the wall boundary, see Kruger section 8.5.2.1)
 				for (int q = 0; q < 7; q++) {
-					if (q == zzz)
+					if (q == dir27::zzz)
 						KS.f[q] = -KS.f[q] + 2 * n1o4 * KS.phi;
 					else
 						KS.f[q] = -KS.f[q] + 2 * n1o8 * KS.phi;
@@ -111,17 +111,17 @@ struct D3Q7_BC_All
 				// Each cardinal direction going through a GEO_NOTHING ghost side
 				// is filled from its mirror partner (no diagonals in D3Q7).
 				if (SD.map(xm, y, z) == GEO_NOTHING)
-					KS.f[pzz] = KS.f[mzz];
+					KS.f[dir27::pzz] = KS.f[dir27::mzz];
 				if (SD.map(xp, y, z) == GEO_NOTHING)
-					KS.f[mzz] = KS.f[pzz];
+					KS.f[dir27::mzz] = KS.f[dir27::pzz];
 				if (SD.map(x, ym, z) == GEO_NOTHING)
-					KS.f[zpz] = KS.f[zmz];
+					KS.f[dir27::zpz] = KS.f[dir27::zmz];
 				if (SD.map(x, yp, z) == GEO_NOTHING)
-					KS.f[zmz] = KS.f[zpz];
+					KS.f[dir27::zmz] = KS.f[dir27::zpz];
 				if (SD.map(x, y, zm) == GEO_NOTHING)
-					KS.f[zzp] = KS.f[zzm];
+					KS.f[dir27::zzp] = KS.f[dir27::zzm];
 				if (SD.map(x, y, zp) == GEO_NOTHING)
-					KS.f[zzm] = KS.f[zzp];
+					KS.f[dir27::zzm] = KS.f[dir27::zzp];
 				COLL::computeDensityAndVelocity(KS);
 				break;
 
@@ -132,44 +132,44 @@ struct D3Q7_BC_All
 					for (auto& q : tmp)
 						q = 0;
 					for (int q = 0; q < 7; q++) {
-						tmp[pzz] += SD.df(df_cur, q, xp, y, z);
-						tmp[mzz] += SD.df(df_cur, q, xm, y, z);
-						tmp[zpz] += SD.df(df_cur, q, x, yp, z);
-						tmp[zmz] += SD.df(df_cur, q, x, ym, z);
-						tmp[zzp] += SD.df(df_cur, q, x, y, zp);
-						tmp[zzm] += SD.df(df_cur, q, x, y, zm);
+						tmp[dir27::pzz] += SD.df(df_cur, q, xp, y, z);
+						tmp[dir27::mzz] += SD.df(df_cur, q, xm, y, z);
+						tmp[dir27::zpz] += SD.df(df_cur, q, x, yp, z);
+						tmp[dir27::zmz] += SD.df(df_cur, q, x, ym, z);
+						tmp[dir27::zzp] += SD.df(df_cur, q, x, y, zp);
+						tmp[dir27::zzm] += SD.df(df_cur, q, x, y, zm);
 					}
 
-					if (SD.phiTransferDirection(pzz, x, y, z))
-						KS.f[mzz] = SD.df(df_cur, pzz, x, y, z) + SD.phiTransferCoefficient * (tmp[pzz] - SD.macro(0, x, y, z));
-					if (SD.phiTransferDirection(zpz, x, y, z))
-						KS.f[zmz] = SD.df(df_cur, zpz, x, y, z) + SD.phiTransferCoefficient * (tmp[zpz] - SD.macro(0, x, y, z));
-					if (SD.phiTransferDirection(zzp, x, y, z))
-						KS.f[zzm] = SD.df(df_cur, zzp, x, y, z) + SD.phiTransferCoefficient * (tmp[zzp] - SD.macro(0, x, y, z));
-					if (SD.phiTransferDirection(mzz, x, y, z))
-						KS.f[pzz] = SD.df(df_cur, mzz, x, y, z) + SD.phiTransferCoefficient * (tmp[mzz] - SD.macro(0, x, y, z));
-					if (SD.phiTransferDirection(zmz, x, y, z))
-						KS.f[zpz] = SD.df(df_cur, zmz, x, y, z) + SD.phiTransferCoefficient * (tmp[zmz] - SD.macro(0, x, y, z));
-					if (SD.phiTransferDirection(zzm, x, y, z))
-						KS.f[zzp] = SD.df(df_cur, zzm, x, y, z) + SD.phiTransferCoefficient * (tmp[zzm] - SD.macro(0, x, y, z));
+					if (SD.phiTransferDirection(dir27::pzz, x, y, z))
+						KS.f[dir27::mzz] = SD.df(df_cur, dir27::pzz, x, y, z) + SD.phiTransferCoefficient * (tmp[dir27::pzz] - SD.macro(0, x, y, z));
+					if (SD.phiTransferDirection(dir27::zpz, x, y, z))
+						KS.f[dir27::zmz] = SD.df(df_cur, dir27::zpz, x, y, z) + SD.phiTransferCoefficient * (tmp[dir27::zpz] - SD.macro(0, x, y, z));
+					if (SD.phiTransferDirection(dir27::zzp, x, y, z))
+						KS.f[dir27::zzm] = SD.df(df_cur, dir27::zzp, x, y, z) + SD.phiTransferCoefficient * (tmp[dir27::zzp] - SD.macro(0, x, y, z));
+					if (SD.phiTransferDirection(dir27::mzz, x, y, z))
+						KS.f[dir27::pzz] = SD.df(df_cur, dir27::mzz, x, y, z) + SD.phiTransferCoefficient * (tmp[dir27::mzz] - SD.macro(0, x, y, z));
+					if (SD.phiTransferDirection(dir27::zmz, x, y, z))
+						KS.f[dir27::zpz] = SD.df(df_cur, dir27::zmz, x, y, z) + SD.phiTransferCoefficient * (tmp[dir27::zmz] - SD.macro(0, x, y, z));
+					if (SD.phiTransferDirection(dir27::zzm, x, y, z))
+						KS.f[dir27::zzp] = SD.df(df_cur, dir27::zzm, x, y, z) + SD.phiTransferCoefficient * (tmp[dir27::zzm] - SD.macro(0, x, y, z));
 					COLL::computeDensityAndVelocity(KS);
 					break;
 				}
 
 			case GEO_TRANSFER_SW:
 				{
-					if (SD.phiTransferDirection(pzz, x, y, z))
-						KS.f[mzz] = SD.df(df_cur, pzz, x, y, z);
-					if (SD.phiTransferDirection(zpz, x, y, z))
-						KS.f[zmz] = SD.df(df_cur, zpz, x, y, z);
-					if (SD.phiTransferDirection(zzp, x, y, z))
-						KS.f[zzm] = SD.df(df_cur, zzp, x, y, z);
-					if (SD.phiTransferDirection(mzz, x, y, z))
-						KS.f[pzz] = SD.df(df_cur, mzz, x, y, z);
-					if (SD.phiTransferDirection(zmz, x, y, z))
-						KS.f[zpz] = SD.df(df_cur, zmz, x, y, z);
-					if (SD.phiTransferDirection(zzm, x, y, z))
-						KS.f[zzp] = SD.df(df_cur, zzm, x, y, z);
+					if (SD.phiTransferDirection(dir27::pzz, x, y, z))
+						KS.f[dir27::mzz] = SD.df(df_cur, dir27::pzz, x, y, z);
+					if (SD.phiTransferDirection(dir27::zpz, x, y, z))
+						KS.f[dir27::zmz] = SD.df(df_cur, dir27::zpz, x, y, z);
+					if (SD.phiTransferDirection(dir27::zzp, x, y, z))
+						KS.f[dir27::zzm] = SD.df(df_cur, dir27::zzp, x, y, z);
+					if (SD.phiTransferDirection(dir27::mzz, x, y, z))
+						KS.f[dir27::pzz] = SD.df(df_cur, dir27::mzz, x, y, z);
+					if (SD.phiTransferDirection(dir27::zmz, x, y, z))
+						KS.f[dir27::zpz] = SD.df(df_cur, dir27::zmz, x, y, z);
+					if (SD.phiTransferDirection(dir27::zzm, x, y, z))
+						KS.f[dir27::zzp] = SD.df(df_cur, dir27::zzm, x, y, z);
 					COLL::computeDensityAndVelocity(KS);
 					break;
 				}

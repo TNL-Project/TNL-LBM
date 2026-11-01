@@ -173,31 +173,31 @@ struct NSE_Data_Adjoint : NSE_Data<TRAITS, DFS_COUNT>
 		else {
 			// clang-format off
 			/*
-			gx_profile[this->Y() * z + y] = - KS.f[pzz] * no2 * n2o27  * KS.rho * no3
-											- KS.f[ppz] * no2 * n1o54  * KS.rho * no3
-											- KS.f[pmz] * no2 * n1o54  * KS.rho * no3
-											- KS.f[pzp] * no2 * n1o54  * KS.rho * no3
-											- KS.f[pzm] * no2 * n1o54  * KS.rho * no3
-											- KS.f[ppp] * no2 * n1o216 * KS.rho * no3
-											- KS.f[ppm] * no2 * n1o216 * KS.rho * no3
-											- KS.f[pmp] * no2 * n1o216 * KS.rho * no3
-											- KS.f[pmm] * no2 * n1o216 * KS.rho * no3;
+			gx_profile[this->Y() * z + y] = - KS.f[dir27::pzz] * no2 * n2o27  * KS.rho * no3
+											- KS.f[dir27::ppz] * no2 * n1o54  * KS.rho * no3
+											- KS.f[dir27::pmz] * no2 * n1o54  * KS.rho * no3
+											- KS.f[dir27::pzp] * no2 * n1o54  * KS.rho * no3
+											- KS.f[dir27::pzm] * no2 * n1o54  * KS.rho * no3
+											- KS.f[dir27::ppp] * no2 * n1o216 * KS.rho * no3
+											- KS.f[dir27::ppm] * no2 * n1o216 * KS.rho * no3
+											- KS.f[dir27::pmp] * no2 * n1o216 * KS.rho * no3
+											- KS.f[dir27::pmm] * no2 * n1o216 * KS.rho * no3;
 			vx_profile_result[this->Y() * z + y] += eps * gx_profile[this->Y() * z + y];
 			*/
-			gy_profile[this->Y() * z + y] = - KS.f[ppz] * no2 * n1o54 * KS.rho * no3
-											+ KS.f[pmz] * no2 * n1o54 * KS.rho * no3
-											- KS.f[ppp] * no2 * n1o216 * KS.rho * no3
-											- KS.f[ppm] * no2 * n1o216 * KS.rho * no3
-											+ KS.f[pmp] * no2 * n1o216 * KS.rho * no3
-											+ KS.f[pmm] * no2 * n1o216 * KS.rho * no3;
+			gy_profile[this->Y() * z + y] = - KS.f[dir27::ppz] * no2 * n1o54 * KS.rho * no3
+											+ KS.f[dir27::pmz] * no2 * n1o54 * KS.rho * no3
+											- KS.f[dir27::ppp] * no2 * n1o216 * KS.rho * no3
+											- KS.f[dir27::ppm] * no2 * n1o216 * KS.rho * no3
+											+ KS.f[dir27::pmp] * no2 * n1o216 * KS.rho * no3
+											+ KS.f[dir27::pmm] * no2 * n1o216 * KS.rho * no3;
 			vy_profile_result[this->Y() * z + y] += eps * gy_profile[this->Y() * z + y];
 			/*
-			gz_profile[this->Y() * z + y] = - KS.f[pzp] * no2 * n1o54  * KS.rho * no3
-											+ KS.f[pzm] * no2 * n1o54  * KS.rho * no3
-											- KS.f[ppp] * no2 * n1o216 * KS.rho * no3
-											+ KS.f[ppm] * no2 * n1o216 * KS.rho * no3
-											- KS.f[pmp] * no2 * n1o216 * KS.rho * no3
-											+ KS.f[pmm] * no2 * n1o216 * KS.rho * no3;
+			gz_profile[this->Y() * z + y] = - KS.f[dir27::pzp] * no2 * n1o54  * KS.rho * no3
+											+ KS.f[dir27::pzm] * no2 * n1o54  * KS.rho * no3
+											- KS.f[dir27::ppp] * no2 * n1o216 * KS.rho * no3
+											+ KS.f[dir27::ppm] * no2 * n1o216 * KS.rho * no3
+											- KS.f[dir27::pmp] * no2 * n1o216 * KS.rho * no3
+											+ KS.f[dir27::pmm] * no2 * n1o216 * KS.rho * no3;
 			vz_profile_result[this->Y() * z + y] += eps * gz_profile[this->Y() * z + y];
 			*/
 			b_profile[this->Y() * z + y] = false;

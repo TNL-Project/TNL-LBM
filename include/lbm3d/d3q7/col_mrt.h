@@ -26,12 +26,12 @@ struct D3Q7_MRT : D3Q7_COMMON<TRAITS, LBM_EQ>
 
 		// m := mu_neq = mu_eq - mu = mu_eq - M * f
 		// (note that m_000 = 0)
-		dreal m_100 = KS.phi * KS.vx + KS.f[mzz] - KS.f[pzz];
-		dreal m_010 = KS.phi * KS.vy + KS.f[zmz] - KS.f[zpz];
-		dreal m_001 = KS.phi * KS.vz + KS.f[zzm] - KS.f[zzp];
-		dreal m_200 = KS.phi * (KS.vx * KS.vx + Cs2) - KS.f[mzz] - KS.f[pzz];
-		dreal m_020 = KS.phi * (KS.vy * KS.vy + Cs2) - KS.f[zmz] - KS.f[zpz];
-		dreal m_002 = KS.phi * (KS.vz * KS.vz + Cs2) - KS.f[zzm] - KS.f[zzp];
+		dreal m_100 = KS.phi * KS.vx + KS.f[dir27::mzz] - KS.f[dir27::pzz];
+		dreal m_010 = KS.phi * KS.vy + KS.f[dir27::zmz] - KS.f[dir27::zpz];
+		dreal m_001 = KS.phi * KS.vz + KS.f[dir27::zzm] - KS.f[dir27::zzp];
+		dreal m_200 = KS.phi * (KS.vx * KS.vx + Cs2) - KS.f[dir27::mzz] - KS.f[dir27::pzz];
+		dreal m_020 = KS.phi * (KS.vy * KS.vy + Cs2) - KS.f[dir27::zmz] - KS.f[dir27::zpz];
+		dreal m_002 = KS.phi * (KS.vz * KS.vz + Cs2) - KS.f[dir27::zzm] - KS.f[dir27::zzp];
 		// collision: m := mu_star = S * mu_neq
 		m_100 *= omega2;
 		m_010 *= omega3;
@@ -40,12 +40,12 @@ struct D3Q7_MRT : D3Q7_COMMON<TRAITS, LBM_EQ>
 		m_020 *= omega6;
 		m_002 *= omega7;
 		// mu -> DF backtransform: f_new = f_old + M^{-1} * mu_star
-		KS.f[zzz] += -m_200 - m_020 - m_002;
-		KS.f[pzz] += n1o2 * (m_200 + m_100);
-		KS.f[zpz] += n1o2 * (m_020 + m_010);
-		KS.f[zzp] += n1o2 * (m_002 + m_001);
-		KS.f[mzz] += n1o2 * (m_200 - m_100);
-		KS.f[zmz] += n1o2 * (m_020 - m_010);
-		KS.f[zzm] += n1o2 * (m_002 - m_001);
+		KS.f[dir27::zzz] += -m_200 - m_020 - m_002;
+		KS.f[dir27::pzz] += n1o2 * (m_200 + m_100);
+		KS.f[dir27::zpz] += n1o2 * (m_020 + m_010);
+		KS.f[dir27::zzp] += n1o2 * (m_002 + m_001);
+		KS.f[dir27::mzz] += n1o2 * (m_200 - m_100);
+		KS.f[dir27::zmz] += n1o2 * (m_020 - m_010);
+		KS.f[dir27::zzm] += n1o2 * (m_002 - m_001);
 	}
 };

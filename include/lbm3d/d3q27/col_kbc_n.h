@@ -262,12 +262,15 @@ struct D3Q27_KBC_N1 : D3Q27_COMMON<TRAITS, LBM_EQ>
 	__cuda_callable__ static void collision(LBM_KS& KS)
 	{
 #ifdef USE_GALILEAN_CORRECTION
-		const dreal m_200 = KS.f[mmm] + KS.f[mmp] + KS.f[mmz] + KS.f[mpm] + KS.f[mpp] + KS.f[mpz] + KS.f[mzm] + KS.f[mzp] + KS.f[mzz] + KS.f[pmm]
-						  + KS.f[pmp] + KS.f[pmz] + KS.f[ppm] + KS.f[ppp] + KS.f[ppz] + KS.f[pzm] + KS.f[pzp] + KS.f[pzz];
-		const dreal m_020 = KS.f[mmm] + KS.f[mmp] + KS.f[mmz] + KS.f[mpm] + KS.f[mpp] + KS.f[mpz] + KS.f[zmm] + KS.f[zmp] + KS.f[zmz] + KS.f[zpm]
-						  + KS.f[zpp] + KS.f[zpz] + KS.f[pmm] + KS.f[pmp] + KS.f[pmz] + KS.f[ppm] + KS.f[ppp] + KS.f[ppz];
-		const dreal m_002 = KS.f[mmm] + KS.f[mmp] + KS.f[mzm] + KS.f[mzp] + KS.f[mpm] + KS.f[mpp] + KS.f[zmm] + KS.f[zmp] + KS.f[zzm] + KS.f[zzp]
-						  + KS.f[zpm] + KS.f[zpp] + KS.f[pmm] + KS.f[pmp] + KS.f[pzm] + KS.f[pzp] + KS.f[ppm] + KS.f[ppp];
+		const dreal m_200 = KS.f[dir27::mmm] + KS.f[dir27::mmp] + KS.f[dir27::mmz] + KS.f[dir27::mpm] + KS.f[dir27::mpp] + KS.f[dir27::mpz]
+						  + KS.f[dir27::mzm] + KS.f[dir27::mzp] + KS.f[dir27::mzz] + KS.f[dir27::pmm] + KS.f[dir27::pmp] + KS.f[dir27::pmz]
+						  + KS.f[dir27::ppm] + KS.f[dir27::ppp] + KS.f[dir27::ppz] + KS.f[dir27::pzm] + KS.f[dir27::pzp] + KS.f[dir27::pzz];
+		const dreal m_020 = KS.f[dir27::mmm] + KS.f[dir27::mmp] + KS.f[dir27::mmz] + KS.f[dir27::mpm] + KS.f[dir27::mpp] + KS.f[dir27::mpz]
+						  + KS.f[dir27::zmm] + KS.f[dir27::zmp] + KS.f[dir27::zmz] + KS.f[dir27::zpm] + KS.f[dir27::zpp] + KS.f[dir27::zpz]
+						  + KS.f[dir27::pmm] + KS.f[dir27::pmp] + KS.f[dir27::pmz] + KS.f[dir27::ppm] + KS.f[dir27::ppp] + KS.f[dir27::ppz];
+		const dreal m_002 = KS.f[dir27::mmm] + KS.f[dir27::mmp] + KS.f[dir27::mzm] + KS.f[dir27::mzp] + KS.f[dir27::mpm] + KS.f[dir27::mpp]
+						  + KS.f[dir27::zmm] + KS.f[dir27::zmp] + KS.f[dir27::zzm] + KS.f[dir27::zzp] + KS.f[dir27::zpm] + KS.f[dir27::zpp]
+						  + KS.f[dir27::pmm] + KS.f[dir27::pmp] + KS.f[dir27::pzm] + KS.f[dir27::pzp] + KS.f[dir27::ppm] + KS.f[dir27::ppp];
 
 		const dreal Dxu = -omega1 * n1o2 * (no3 * m_200 / KS.rho - no1 - no3 * KS.vx * KS.vx);
 		const dreal Dyv = -omega1 * n1o2 * (no3 * m_020 / KS.rho - no1 - no3 * KS.vy * KS.vy);
@@ -358,33 +361,37 @@ struct D3Q27_KBC_N1 : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal ifeq_ppp = no1 / ffeq_ppp;
 
 		//raw moments used in tensors
-		const dreal M200 = KS.f[mmm] + KS.f[mmp] + KS.f[mmz] + KS.f[mpm] + KS.f[mpp] + KS.f[mpz] + KS.f[mzm] + KS.f[mzp] + KS.f[mzz] + KS.f[pmm]
-						 + KS.f[pmp] + KS.f[pmz] + KS.f[ppm] + KS.f[ppp] + KS.f[ppz] + KS.f[pzm] + KS.f[pzp] + KS.f[pzz];
-		const dreal M020 = KS.f[mmm] + KS.f[mmp] + KS.f[mmz] + KS.f[mpm] + KS.f[mpp] + KS.f[mpz] + KS.f[zmm] + KS.f[zmp] + KS.f[zmz] + KS.f[zpm]
-						 + KS.f[zpp] + KS.f[zpz] + KS.f[pmm] + KS.f[pmp] + KS.f[pmz] + KS.f[ppm] + KS.f[ppp] + KS.f[ppz];
-		const dreal M002 = KS.f[mmm] + KS.f[mmp] + KS.f[mzm] + KS.f[mzp] + KS.f[mpm] + KS.f[mpp] + KS.f[zmm] + KS.f[zmp] + KS.f[zzm] + KS.f[zzp]
-						 + KS.f[zpm] + KS.f[zpp] + KS.f[pmm] + KS.f[pmp] + KS.f[pzm] + KS.f[pzp] + KS.f[ppm] + KS.f[ppp];
+		const dreal M200 = KS.f[dir27::mmm] + KS.f[dir27::mmp] + KS.f[dir27::mmz] + KS.f[dir27::mpm] + KS.f[dir27::mpp] + KS.f[dir27::mpz]
+						 + KS.f[dir27::mzm] + KS.f[dir27::mzp] + KS.f[dir27::mzz] + KS.f[dir27::pmm] + KS.f[dir27::pmp] + KS.f[dir27::pmz]
+						 + KS.f[dir27::ppm] + KS.f[dir27::ppp] + KS.f[dir27::ppz] + KS.f[dir27::pzm] + KS.f[dir27::pzp] + KS.f[dir27::pzz];
+		const dreal M020 = KS.f[dir27::mmm] + KS.f[dir27::mmp] + KS.f[dir27::mmz] + KS.f[dir27::mpm] + KS.f[dir27::mpp] + KS.f[dir27::mpz]
+						 + KS.f[dir27::zmm] + KS.f[dir27::zmp] + KS.f[dir27::zmz] + KS.f[dir27::zpm] + KS.f[dir27::zpp] + KS.f[dir27::zpz]
+						 + KS.f[dir27::pmm] + KS.f[dir27::pmp] + KS.f[dir27::pmz] + KS.f[dir27::ppm] + KS.f[dir27::ppp] + KS.f[dir27::ppz];
+		const dreal M002 = KS.f[dir27::mmm] + KS.f[dir27::mmp] + KS.f[dir27::mzm] + KS.f[dir27::mzp] + KS.f[dir27::mpm] + KS.f[dir27::mpp]
+						 + KS.f[dir27::zmm] + KS.f[dir27::zmp] + KS.f[dir27::zzm] + KS.f[dir27::zzp] + KS.f[dir27::zpm] + KS.f[dir27::zpp]
+						 + KS.f[dir27::pmm] + KS.f[dir27::pmp] + KS.f[dir27::pzm] + KS.f[dir27::pzp] + KS.f[dir27::ppm] + KS.f[dir27::ppp];
 
-		const dreal M110 = KS.f[mmm] + KS.f[mmz] + KS.f[mmp] - KS.f[mpm] - KS.f[mpz] - KS.f[mpp] - KS.f[pmm] - KS.f[pmz] - KS.f[pmp] + KS.f[ppm]
-						 + KS.f[ppz] + KS.f[ppp];
-		const dreal M101 = KS.f[mmm] - KS.f[mmp] + KS.f[mzm] - KS.f[mzp] + KS.f[mpm] - KS.f[mpp] - KS.f[pmm] + KS.f[pmp] - KS.f[pzm] + KS.f[pzp]
-						 - KS.f[ppm] + KS.f[ppp];
-		const dreal M011 = KS.f[mmm] - KS.f[mmp] - KS.f[mpm] + KS.f[mpp] + KS.f[zmm] - KS.f[zmp] - KS.f[zpm] + KS.f[zpp] + KS.f[pmm] - KS.f[pmp]
-						 - KS.f[ppm] + KS.f[ppp];
-		const dreal M111 = KS.f[ppp] + KS.f[mmp] + KS.f[mpm] - KS.f[mpp] + KS.f[pmm] - KS.f[pmp] - KS.f[ppm] - KS.f[mmm];
+		const dreal M110 = KS.f[dir27::mmm] + KS.f[dir27::mmz] + KS.f[dir27::mmp] - KS.f[dir27::mpm] - KS.f[dir27::mpz] - KS.f[dir27::mpp]
+						 - KS.f[dir27::pmm] - KS.f[dir27::pmz] - KS.f[dir27::pmp] + KS.f[dir27::ppm] + KS.f[dir27::ppz] + KS.f[dir27::ppp];
+		const dreal M101 = KS.f[dir27::mmm] - KS.f[dir27::mmp] + KS.f[dir27::mzm] - KS.f[dir27::mzp] + KS.f[dir27::mpm] - KS.f[dir27::mpp]
+						 - KS.f[dir27::pmm] + KS.f[dir27::pmp] - KS.f[dir27::pzm] + KS.f[dir27::pzp] - KS.f[dir27::ppm] + KS.f[dir27::ppp];
+		const dreal M011 = KS.f[dir27::mmm] - KS.f[dir27::mmp] - KS.f[dir27::mpm] + KS.f[dir27::mpp] + KS.f[dir27::zmm] - KS.f[dir27::zmp]
+						 - KS.f[dir27::zpm] + KS.f[dir27::zpp] + KS.f[dir27::pmm] - KS.f[dir27::pmp] - KS.f[dir27::ppm] + KS.f[dir27::ppp];
+		const dreal M111 = KS.f[dir27::ppp] + KS.f[dir27::mmp] + KS.f[dir27::mpm] - KS.f[dir27::mpp] + KS.f[dir27::pmm] - KS.f[dir27::pmp]
+						 - KS.f[dir27::ppm] - KS.f[dir27::mmm];
 
-		const dreal M201 = KS.f[ppp] + KS.f[mmp] - KS.f[mzm] + KS.f[mzp] - KS.f[mpm] + KS.f[mpp] - KS.f[pmm] + KS.f[pmp] - KS.f[pzm] + KS.f[pzp]
-						 - KS.f[ppm] - KS.f[mmm];
-		const dreal M102 = KS.f[ppp] - KS.f[mmp] - KS.f[mzm] - KS.f[mzp] - KS.f[mpm] - KS.f[mpp] + KS.f[pmm] + KS.f[pmp] + KS.f[pzm] + KS.f[pzp]
-						 + KS.f[ppm] - KS.f[mmm];
-		const dreal M210 = KS.f[ppp] - KS.f[mmz] - KS.f[mmp] + KS.f[mpm] + KS.f[mpz] + KS.f[mpp] - KS.f[pmm] - KS.f[pmz] - KS.f[pmp] + KS.f[ppm]
-						 + KS.f[ppz] - KS.f[mmm];
-		const dreal M120 = KS.f[ppp] - KS.f[mmz] - KS.f[mmp] - KS.f[mpm] - KS.f[mpz] - KS.f[mpp] + KS.f[pmm] + KS.f[pmz] + KS.f[pmp] + KS.f[ppm]
-						 + KS.f[ppz] - KS.f[mmm];
-		const dreal M021 = KS.f[ppp] + KS.f[mmp] - KS.f[mpm] + KS.f[mpp] - KS.f[zmm] + KS.f[zmp] - KS.f[zpm] + KS.f[zpp] - KS.f[pmm] + KS.f[pmp]
-						 - KS.f[ppm] - KS.f[mmm];
-		const dreal M012 = KS.f[ppp] - KS.f[mmp] + KS.f[mpm] + KS.f[mpp] - KS.f[zmm] - KS.f[zmp] + KS.f[zpm] + KS.f[zpp] - KS.f[pmm] - KS.f[pmp]
-						 + KS.f[ppm] - KS.f[mmm];
+		const dreal M201 = KS.f[dir27::ppp] + KS.f[dir27::mmp] - KS.f[dir27::mzm] + KS.f[dir27::mzp] - KS.f[dir27::mpm] + KS.f[dir27::mpp]
+						 - KS.f[dir27::pmm] + KS.f[dir27::pmp] - KS.f[dir27::pzm] + KS.f[dir27::pzp] - KS.f[dir27::ppm] - KS.f[dir27::mmm];
+		const dreal M102 = KS.f[dir27::ppp] - KS.f[dir27::mmp] - KS.f[dir27::mzm] - KS.f[dir27::mzp] - KS.f[dir27::mpm] - KS.f[dir27::mpp]
+						 + KS.f[dir27::pmm] + KS.f[dir27::pmp] + KS.f[dir27::pzm] + KS.f[dir27::pzp] + KS.f[dir27::ppm] - KS.f[dir27::mmm];
+		const dreal M210 = KS.f[dir27::ppp] - KS.f[dir27::mmz] - KS.f[dir27::mmp] + KS.f[dir27::mpm] + KS.f[dir27::mpz] + KS.f[dir27::mpp]
+						 - KS.f[dir27::pmm] - KS.f[dir27::pmz] - KS.f[dir27::pmp] + KS.f[dir27::ppm] + KS.f[dir27::ppz] - KS.f[dir27::mmm];
+		const dreal M120 = KS.f[dir27::ppp] - KS.f[dir27::mmz] - KS.f[dir27::mmp] - KS.f[dir27::mpm] - KS.f[dir27::mpz] - KS.f[dir27::mpp]
+						 + KS.f[dir27::pmm] + KS.f[dir27::pmz] + KS.f[dir27::pmp] + KS.f[dir27::ppm] + KS.f[dir27::ppz] - KS.f[dir27::mmm];
+		const dreal M021 = KS.f[dir27::ppp] + KS.f[dir27::mmp] - KS.f[dir27::mpm] + KS.f[dir27::mpp] - KS.f[dir27::zmm] + KS.f[dir27::zmp]
+						 - KS.f[dir27::zpm] + KS.f[dir27::zpp] - KS.f[dir27::pmm] + KS.f[dir27::pmp] - KS.f[dir27::ppm] - KS.f[dir27::mmm];
+		const dreal M012 = KS.f[dir27::ppp] - KS.f[dir27::mmp] + KS.f[dir27::mpm] + KS.f[dir27::mpp] - KS.f[dir27::zmm] - KS.f[dir27::zmp]
+						 + KS.f[dir27::zpm] + KS.f[dir27::zpp] - KS.f[dir27::pmm] - KS.f[dir27::pmp] + KS.f[dir27::ppm] - KS.f[dir27::mmm];
 
 		// delta of shear part: delta s_i = s_i - s_i^eq; s = D
 		const dreal Dsmmm = Dmmm - eDmmm;
@@ -416,33 +423,33 @@ struct D3Q27_KBC_N1 : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal Dsppp = Dppp - eDppp;
 
 		// delta of high order part: delta h_i = h_i - h_i^eq = f_i - f_i^eq - delta s_i
-		const dreal Dhmmm = KS.f[mmm] - ffeq_mmm - Dsmmm;
-		const dreal Dhmmz = KS.f[mmz] - ffeq_mmz - Dsmmz;
-		const dreal Dhmmp = KS.f[mmp] - ffeq_mmp - Dsmmp;
-		const dreal Dhmzm = KS.f[mzm] - ffeq_mzm - Dsmzm;
-		const dreal Dhmzz = KS.f[mzz] - ffeq_mzz - Dsmzz;
-		const dreal Dhmzp = KS.f[mzp] - ffeq_mzp - Dsmzp;
-		const dreal Dhmpm = KS.f[mpm] - ffeq_mpm - Dsmpm;
-		const dreal Dhmpz = KS.f[mpz] - ffeq_mpz - Dsmpz;
-		const dreal Dhmpp = KS.f[mpp] - ffeq_mpp - Dsmpp;
-		const dreal Dhzmm = KS.f[zmm] - ffeq_zmm - Dszmm;
-		const dreal Dhzmz = KS.f[zmz] - ffeq_zmz - Dszmz;
-		const dreal Dhzmp = KS.f[zmp] - ffeq_zmp - Dszmp;
-		const dreal Dhzzm = KS.f[zzm] - ffeq_zzm - Dszzm;
-		const dreal Dhzzz = KS.f[zzz] - ffeq_zzz - Dszzz;
-		const dreal Dhzzp = KS.f[zzp] - ffeq_zzp - Dszzp;
-		const dreal Dhzpm = KS.f[zpm] - ffeq_zpm - Dszpm;
-		const dreal Dhzpz = KS.f[zpz] - ffeq_zpz - Dszpz;
-		const dreal Dhzpp = KS.f[zpp] - ffeq_zpp - Dszpp;
-		const dreal Dhpmm = KS.f[pmm] - ffeq_pmm - Dspmm;
-		const dreal Dhpmz = KS.f[pmz] - ffeq_pmz - Dspmz;
-		const dreal Dhpmp = KS.f[pmp] - ffeq_pmp - Dspmp;
-		const dreal Dhpzm = KS.f[pzm] - ffeq_pzm - Dspzm;
-		const dreal Dhpzz = KS.f[pzz] - ffeq_pzz - Dspzz;
-		const dreal Dhpzp = KS.f[pzp] - ffeq_pzp - Dspzp;
-		const dreal Dhppm = KS.f[ppm] - ffeq_ppm - Dsppm;
-		const dreal Dhppz = KS.f[ppz] - ffeq_ppz - Dsppz;
-		const dreal Dhppp = KS.f[ppp] - ffeq_ppp - Dsppp;
+		const dreal Dhmmm = KS.f[dir27::mmm] - ffeq_mmm - Dsmmm;
+		const dreal Dhmmz = KS.f[dir27::mmz] - ffeq_mmz - Dsmmz;
+		const dreal Dhmmp = KS.f[dir27::mmp] - ffeq_mmp - Dsmmp;
+		const dreal Dhmzm = KS.f[dir27::mzm] - ffeq_mzm - Dsmzm;
+		const dreal Dhmzz = KS.f[dir27::mzz] - ffeq_mzz - Dsmzz;
+		const dreal Dhmzp = KS.f[dir27::mzp] - ffeq_mzp - Dsmzp;
+		const dreal Dhmpm = KS.f[dir27::mpm] - ffeq_mpm - Dsmpm;
+		const dreal Dhmpz = KS.f[dir27::mpz] - ffeq_mpz - Dsmpz;
+		const dreal Dhmpp = KS.f[dir27::mpp] - ffeq_mpp - Dsmpp;
+		const dreal Dhzmm = KS.f[dir27::zmm] - ffeq_zmm - Dszmm;
+		const dreal Dhzmz = KS.f[dir27::zmz] - ffeq_zmz - Dszmz;
+		const dreal Dhzmp = KS.f[dir27::zmp] - ffeq_zmp - Dszmp;
+		const dreal Dhzzm = KS.f[dir27::zzm] - ffeq_zzm - Dszzm;
+		const dreal Dhzzz = KS.f[dir27::zzz] - ffeq_zzz - Dszzz;
+		const dreal Dhzzp = KS.f[dir27::zzp] - ffeq_zzp - Dszzp;
+		const dreal Dhzpm = KS.f[dir27::zpm] - ffeq_zpm - Dszpm;
+		const dreal Dhzpz = KS.f[dir27::zpz] - ffeq_zpz - Dszpz;
+		const dreal Dhzpp = KS.f[dir27::zpp] - ffeq_zpp - Dszpp;
+		const dreal Dhpmm = KS.f[dir27::pmm] - ffeq_pmm - Dspmm;
+		const dreal Dhpmz = KS.f[dir27::pmz] - ffeq_pmz - Dspmz;
+		const dreal Dhpmp = KS.f[dir27::pmp] - ffeq_pmp - Dspmp;
+		const dreal Dhpzm = KS.f[dir27::pzm] - ffeq_pzm - Dspzm;
+		const dreal Dhpzz = KS.f[dir27::pzz] - ffeq_pzz - Dspzz;
+		const dreal Dhpzp = KS.f[dir27::pzp] - ffeq_pzp - Dspzp;
+		const dreal Dhppm = KS.f[dir27::ppm] - ffeq_ppm - Dsppm;
+		const dreal Dhppz = KS.f[dir27::ppz] - ffeq_ppz - Dsppz;
+		const dreal Dhppp = KS.f[dir27::ppp] - ffeq_ppp - Dsppp;
 
 		const dreal beta = _beta;
 		const dreal gamma = _gamma;
@@ -476,33 +483,33 @@ struct D3Q27_KBC_N1 : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal Szpp = (no3 * (-KS.vx * KS.fx + (-KS.vy + no1) * KS.fy + (-KS.vz + no1) * KS.fz)) / KS.rho;
 		const dreal Sppp = (no3 * ((-KS.vx + no1) * KS.fx + (-KS.vy + no1) * KS.fy + (-KS.vz + no1) * KS.fz)) / KS.rho;
 
-		KS.f[mmm] -= beta * (no2 * Dsmmm + gamma * Dhmmm) - (no1 - beta) * Smmm * ffeq_mmm;
-		KS.f[mmz] -= beta * (no2 * Dsmmz + gamma * Dhmmz) - (no1 - beta) * Smmz * ffeq_mmz;
-		KS.f[mmp] -= beta * (no2 * Dsmmp + gamma * Dhmmp) - (no1 - beta) * Smmp * ffeq_mmp;
-		KS.f[mzm] -= beta * (no2 * Dsmzm + gamma * Dhmzm) - (no1 - beta) * Smzm * ffeq_mzm;
-		KS.f[mzz] -= beta * (no2 * Dsmzz + gamma * Dhmzz) - (no1 - beta) * Smzz * ffeq_mzz;
-		KS.f[mzp] -= beta * (no2 * Dsmzp + gamma * Dhmzp) - (no1 - beta) * Smzp * ffeq_mzp;
-		KS.f[mpm] -= beta * (no2 * Dsmpm + gamma * Dhmpm) - (no1 - beta) * Smpm * ffeq_mpm;
-		KS.f[mpz] -= beta * (no2 * Dsmpz + gamma * Dhmpz) - (no1 - beta) * Smpz * ffeq_mpz;
-		KS.f[mpp] -= beta * (no2 * Dsmpp + gamma * Dhmpp) - (no1 - beta) * Smpp * ffeq_mpp;
-		KS.f[zmm] -= beta * (no2 * Dszmm + gamma * Dhzmm) - (no1 - beta) * Szmm * ffeq_zmm;
-		KS.f[zmz] -= beta * (no2 * Dszmz + gamma * Dhzmz) - (no1 - beta) * Szmz * ffeq_zmz;
-		KS.f[zmp] -= beta * (no2 * Dszmp + gamma * Dhzmp) - (no1 - beta) * Szmp * ffeq_zmp;
-		KS.f[zzm] -= beta * (no2 * Dszzm + gamma * Dhzzm) - (no1 - beta) * Szzm * ffeq_zzm;
-		KS.f[zzz] -= beta * (no2 * Dszzz + gamma * Dhzzz) - (no1 - beta) * Szzz * ffeq_zzz;
-		KS.f[zzp] -= beta * (no2 * Dszzp + gamma * Dhzzp) - (no1 - beta) * Szzp * ffeq_zzp;
-		KS.f[zpm] -= beta * (no2 * Dszpm + gamma * Dhzpm) - (no1 - beta) * Szpm * ffeq_zpm;
-		KS.f[zpz] -= beta * (no2 * Dszpz + gamma * Dhzpz) - (no1 - beta) * Szpz * ffeq_zpz;
-		KS.f[zpp] -= beta * (no2 * Dszpp + gamma * Dhzpp) - (no1 - beta) * Szpp * ffeq_zpp;
-		KS.f[pmm] -= beta * (no2 * Dspmm + gamma * Dhpmm) - (no1 - beta) * Spmm * ffeq_pmm;
-		KS.f[pmz] -= beta * (no2 * Dspmz + gamma * Dhpmz) - (no1 - beta) * Spmz * ffeq_pmz;
-		KS.f[pmp] -= beta * (no2 * Dspmp + gamma * Dhpmp) - (no1 - beta) * Spmp * ffeq_pmp;
-		KS.f[pzm] -= beta * (no2 * Dspzm + gamma * Dhpzm) - (no1 - beta) * Spzm * ffeq_pzm;
-		KS.f[pzz] -= beta * (no2 * Dspzz + gamma * Dhpzz) - (no1 - beta) * Spzz * ffeq_pzz;
-		KS.f[pzp] -= beta * (no2 * Dspzp + gamma * Dhpzp) - (no1 - beta) * Spzp * ffeq_pzp;
-		KS.f[ppm] -= beta * (no2 * Dsppm + gamma * Dhppm) - (no1 - beta) * Sppm * ffeq_ppm;
-		KS.f[ppz] -= beta * (no2 * Dsppz + gamma * Dhppz) - (no1 - beta) * Sppz * ffeq_ppz;
-		KS.f[ppp] -= beta * (no2 * Dsppp + gamma * Dhppp) - (no1 - beta) * Sppp * ffeq_ppp;
+		KS.f[dir27::mmm] -= beta * (no2 * Dsmmm + gamma * Dhmmm) - (no1 - beta) * Smmm * ffeq_mmm;
+		KS.f[dir27::mmz] -= beta * (no2 * Dsmmz + gamma * Dhmmz) - (no1 - beta) * Smmz * ffeq_mmz;
+		KS.f[dir27::mmp] -= beta * (no2 * Dsmmp + gamma * Dhmmp) - (no1 - beta) * Smmp * ffeq_mmp;
+		KS.f[dir27::mzm] -= beta * (no2 * Dsmzm + gamma * Dhmzm) - (no1 - beta) * Smzm * ffeq_mzm;
+		KS.f[dir27::mzz] -= beta * (no2 * Dsmzz + gamma * Dhmzz) - (no1 - beta) * Smzz * ffeq_mzz;
+		KS.f[dir27::mzp] -= beta * (no2 * Dsmzp + gamma * Dhmzp) - (no1 - beta) * Smzp * ffeq_mzp;
+		KS.f[dir27::mpm] -= beta * (no2 * Dsmpm + gamma * Dhmpm) - (no1 - beta) * Smpm * ffeq_mpm;
+		KS.f[dir27::mpz] -= beta * (no2 * Dsmpz + gamma * Dhmpz) - (no1 - beta) * Smpz * ffeq_mpz;
+		KS.f[dir27::mpp] -= beta * (no2 * Dsmpp + gamma * Dhmpp) - (no1 - beta) * Smpp * ffeq_mpp;
+		KS.f[dir27::zmm] -= beta * (no2 * Dszmm + gamma * Dhzmm) - (no1 - beta) * Szmm * ffeq_zmm;
+		KS.f[dir27::zmz] -= beta * (no2 * Dszmz + gamma * Dhzmz) - (no1 - beta) * Szmz * ffeq_zmz;
+		KS.f[dir27::zmp] -= beta * (no2 * Dszmp + gamma * Dhzmp) - (no1 - beta) * Szmp * ffeq_zmp;
+		KS.f[dir27::zzm] -= beta * (no2 * Dszzm + gamma * Dhzzm) - (no1 - beta) * Szzm * ffeq_zzm;
+		KS.f[dir27::zzz] -= beta * (no2 * Dszzz + gamma * Dhzzz) - (no1 - beta) * Szzz * ffeq_zzz;
+		KS.f[dir27::zzp] -= beta * (no2 * Dszzp + gamma * Dhzzp) - (no1 - beta) * Szzp * ffeq_zzp;
+		KS.f[dir27::zpm] -= beta * (no2 * Dszpm + gamma * Dhzpm) - (no1 - beta) * Szpm * ffeq_zpm;
+		KS.f[dir27::zpz] -= beta * (no2 * Dszpz + gamma * Dhzpz) - (no1 - beta) * Szpz * ffeq_zpz;
+		KS.f[dir27::zpp] -= beta * (no2 * Dszpp + gamma * Dhzpp) - (no1 - beta) * Szpp * ffeq_zpp;
+		KS.f[dir27::pmm] -= beta * (no2 * Dspmm + gamma * Dhpmm) - (no1 - beta) * Spmm * ffeq_pmm;
+		KS.f[dir27::pmz] -= beta * (no2 * Dspmz + gamma * Dhpmz) - (no1 - beta) * Spmz * ffeq_pmz;
+		KS.f[dir27::pmp] -= beta * (no2 * Dspmp + gamma * Dhpmp) - (no1 - beta) * Spmp * ffeq_pmp;
+		KS.f[dir27::pzm] -= beta * (no2 * Dspzm + gamma * Dhpzm) - (no1 - beta) * Spzm * ffeq_pzm;
+		KS.f[dir27::pzz] -= beta * (no2 * Dspzz + gamma * Dhpzz) - (no1 - beta) * Spzz * ffeq_pzz;
+		KS.f[dir27::pzp] -= beta * (no2 * Dspzp + gamma * Dhpzp) - (no1 - beta) * Spzp * ffeq_pzp;
+		KS.f[dir27::ppm] -= beta * (no2 * Dsppm + gamma * Dhppm) - (no1 - beta) * Sppm * ffeq_ppm;
+		KS.f[dir27::ppz] -= beta * (no2 * Dsppz + gamma * Dhppz) - (no1 - beta) * Sppz * ffeq_ppz;
+		KS.f[dir27::ppp] -= beta * (no2 * Dsppp + gamma * Dhppp) - (no1 - beta) * Sppp * ffeq_ppp;
 	}
 };
 
@@ -517,12 +524,15 @@ struct D3Q27_KBC_N2 : D3Q27_COMMON<TRAITS, LBM_EQ>
 	__cuda_callable__ static void collision(LBM_KS& KS)
 	{
 #ifdef USE_GALILEAN_CORRECTION
-		const dreal m_200 = KS.f[mmm] + KS.f[mmp] + KS.f[mmz] + KS.f[mpm] + KS.f[mpp] + KS.f[mpz] + KS.f[mzm] + KS.f[mzp] + KS.f[mzz] + KS.f[pmm]
-						  + KS.f[pmp] + KS.f[pmz] + KS.f[ppm] + KS.f[ppp] + KS.f[ppz] + KS.f[pzm] + KS.f[pzp] + KS.f[pzz];
-		const dreal m_020 = KS.f[mmm] + KS.f[mmp] + KS.f[mmz] + KS.f[mpm] + KS.f[mpp] + KS.f[mpz] + KS.f[zmm] + KS.f[zmp] + KS.f[zmz] + KS.f[zpm]
-						  + KS.f[zpp] + KS.f[zpz] + KS.f[pmm] + KS.f[pmp] + KS.f[pmz] + KS.f[ppm] + KS.f[ppp] + KS.f[ppz];
-		const dreal m_002 = KS.f[mmm] + KS.f[mmp] + KS.f[mzm] + KS.f[mzp] + KS.f[mpm] + KS.f[mpp] + KS.f[zmm] + KS.f[zmp] + KS.f[zzm] + KS.f[zzp]
-						  + KS.f[zpm] + KS.f[zpp] + KS.f[pmm] + KS.f[pmp] + KS.f[pzm] + KS.f[pzp] + KS.f[ppm] + KS.f[ppp];
+		const dreal m_200 = KS.f[dir27::mmm] + KS.f[dir27::mmp] + KS.f[dir27::mmz] + KS.f[dir27::mpm] + KS.f[dir27::mpp] + KS.f[dir27::mpz]
+						  + KS.f[dir27::mzm] + KS.f[dir27::mzp] + KS.f[dir27::mzz] + KS.f[dir27::pmm] + KS.f[dir27::pmp] + KS.f[dir27::pmz]
+						  + KS.f[dir27::ppm] + KS.f[dir27::ppp] + KS.f[dir27::ppz] + KS.f[dir27::pzm] + KS.f[dir27::pzp] + KS.f[dir27::pzz];
+		const dreal m_020 = KS.f[dir27::mmm] + KS.f[dir27::mmp] + KS.f[dir27::mmz] + KS.f[dir27::mpm] + KS.f[dir27::mpp] + KS.f[dir27::mpz]
+						  + KS.f[dir27::zmm] + KS.f[dir27::zmp] + KS.f[dir27::zmz] + KS.f[dir27::zpm] + KS.f[dir27::zpp] + KS.f[dir27::zpz]
+						  + KS.f[dir27::pmm] + KS.f[dir27::pmp] + KS.f[dir27::pmz] + KS.f[dir27::ppm] + KS.f[dir27::ppp] + KS.f[dir27::ppz];
+		const dreal m_002 = KS.f[dir27::mmm] + KS.f[dir27::mmp] + KS.f[dir27::mzm] + KS.f[dir27::mzp] + KS.f[dir27::mpm] + KS.f[dir27::mpp]
+						  + KS.f[dir27::zmm] + KS.f[dir27::zmp] + KS.f[dir27::zzm] + KS.f[dir27::zzp] + KS.f[dir27::zpm] + KS.f[dir27::zpp]
+						  + KS.f[dir27::pmm] + KS.f[dir27::pmp] + KS.f[dir27::pzm] + KS.f[dir27::pzp] + KS.f[dir27::ppm] + KS.f[dir27::ppp];
 
 		const dreal Dxu = -omega1 * n1o2 * (no3 * m_200 / KS.rho - no1 - no3 * KS.vx * KS.vx);
 		const dreal Dyv = -omega1 * n1o2 * (no3 * m_020 / KS.rho - no1 - no3 * KS.vy * KS.vy);
@@ -613,33 +623,37 @@ struct D3Q27_KBC_N2 : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal ifeq_ppp = no1 / ffeq_ppp;
 
 		//raw moments used in tensors
-		const dreal M200 = KS.f[mmm] + KS.f[mmp] + KS.f[mmz] + KS.f[mpm] + KS.f[mpp] + KS.f[mpz] + KS.f[mzm] + KS.f[mzp] + KS.f[mzz] + KS.f[pmm]
-						 + KS.f[pmp] + KS.f[pmz] + KS.f[ppm] + KS.f[ppp] + KS.f[ppz] + KS.f[pzm] + KS.f[pzp] + KS.f[pzz];
-		const dreal M020 = KS.f[mmm] + KS.f[mmp] + KS.f[mmz] + KS.f[mpm] + KS.f[mpp] + KS.f[mpz] + KS.f[zmm] + KS.f[zmp] + KS.f[zmz] + KS.f[zpm]
-						 + KS.f[zpp] + KS.f[zpz] + KS.f[pmm] + KS.f[pmp] + KS.f[pmz] + KS.f[ppm] + KS.f[ppp] + KS.f[ppz];
-		const dreal M002 = KS.f[mmm] + KS.f[mmp] + KS.f[mzm] + KS.f[mzp] + KS.f[mpm] + KS.f[mpp] + KS.f[zmm] + KS.f[zmp] + KS.f[zzm] + KS.f[zzp]
-						 + KS.f[zpm] + KS.f[zpp] + KS.f[pmm] + KS.f[pmp] + KS.f[pzm] + KS.f[pzp] + KS.f[ppm] + KS.f[ppp];
+		const dreal M200 = KS.f[dir27::mmm] + KS.f[dir27::mmp] + KS.f[dir27::mmz] + KS.f[dir27::mpm] + KS.f[dir27::mpp] + KS.f[dir27::mpz]
+						 + KS.f[dir27::mzm] + KS.f[dir27::mzp] + KS.f[dir27::mzz] + KS.f[dir27::pmm] + KS.f[dir27::pmp] + KS.f[dir27::pmz]
+						 + KS.f[dir27::ppm] + KS.f[dir27::ppp] + KS.f[dir27::ppz] + KS.f[dir27::pzm] + KS.f[dir27::pzp] + KS.f[dir27::pzz];
+		const dreal M020 = KS.f[dir27::mmm] + KS.f[dir27::mmp] + KS.f[dir27::mmz] + KS.f[dir27::mpm] + KS.f[dir27::mpp] + KS.f[dir27::mpz]
+						 + KS.f[dir27::zmm] + KS.f[dir27::zmp] + KS.f[dir27::zmz] + KS.f[dir27::zpm] + KS.f[dir27::zpp] + KS.f[dir27::zpz]
+						 + KS.f[dir27::pmm] + KS.f[dir27::pmp] + KS.f[dir27::pmz] + KS.f[dir27::ppm] + KS.f[dir27::ppp] + KS.f[dir27::ppz];
+		const dreal M002 = KS.f[dir27::mmm] + KS.f[dir27::mmp] + KS.f[dir27::mzm] + KS.f[dir27::mzp] + KS.f[dir27::mpm] + KS.f[dir27::mpp]
+						 + KS.f[dir27::zmm] + KS.f[dir27::zmp] + KS.f[dir27::zzm] + KS.f[dir27::zzp] + KS.f[dir27::zpm] + KS.f[dir27::zpp]
+						 + KS.f[dir27::pmm] + KS.f[dir27::pmp] + KS.f[dir27::pzm] + KS.f[dir27::pzp] + KS.f[dir27::ppm] + KS.f[dir27::ppp];
 
-		const dreal M110 = KS.f[mmm] + KS.f[mmz] + KS.f[mmp] - KS.f[mpm] - KS.f[mpz] - KS.f[mpp] - KS.f[pmm] - KS.f[pmz] - KS.f[pmp] + KS.f[ppm]
-						 + KS.f[ppz] + KS.f[ppp];
-		const dreal M101 = KS.f[mmm] - KS.f[mmp] + KS.f[mzm] - KS.f[mzp] + KS.f[mpm] - KS.f[mpp] - KS.f[pmm] + KS.f[pmp] - KS.f[pzm] + KS.f[pzp]
-						 - KS.f[ppm] + KS.f[ppp];
-		const dreal M011 = KS.f[mmm] - KS.f[mmp] - KS.f[mpm] + KS.f[mpp] + KS.f[zmm] - KS.f[zmp] - KS.f[zpm] + KS.f[zpp] + KS.f[pmm] - KS.f[pmp]
-						 - KS.f[ppm] + KS.f[ppp];
-		const dreal M111 = KS.f[ppp] + KS.f[mmp] + KS.f[mpm] - KS.f[mpp] + KS.f[pmm] - KS.f[pmp] - KS.f[ppm] - KS.f[mmm];
+		const dreal M110 = KS.f[dir27::mmm] + KS.f[dir27::mmz] + KS.f[dir27::mmp] - KS.f[dir27::mpm] - KS.f[dir27::mpz] - KS.f[dir27::mpp]
+						 - KS.f[dir27::pmm] - KS.f[dir27::pmz] - KS.f[dir27::pmp] + KS.f[dir27::ppm] + KS.f[dir27::ppz] + KS.f[dir27::ppp];
+		const dreal M101 = KS.f[dir27::mmm] - KS.f[dir27::mmp] + KS.f[dir27::mzm] - KS.f[dir27::mzp] + KS.f[dir27::mpm] - KS.f[dir27::mpp]
+						 - KS.f[dir27::pmm] + KS.f[dir27::pmp] - KS.f[dir27::pzm] + KS.f[dir27::pzp] - KS.f[dir27::ppm] + KS.f[dir27::ppp];
+		const dreal M011 = KS.f[dir27::mmm] - KS.f[dir27::mmp] - KS.f[dir27::mpm] + KS.f[dir27::mpp] + KS.f[dir27::zmm] - KS.f[dir27::zmp]
+						 - KS.f[dir27::zpm] + KS.f[dir27::zpp] + KS.f[dir27::pmm] - KS.f[dir27::pmp] - KS.f[dir27::ppm] + KS.f[dir27::ppp];
+		const dreal M111 = KS.f[dir27::ppp] + KS.f[dir27::mmp] + KS.f[dir27::mpm] - KS.f[dir27::mpp] + KS.f[dir27::pmm] - KS.f[dir27::pmp]
+						 - KS.f[dir27::ppm] - KS.f[dir27::mmm];
 
-		const dreal M201 = KS.f[ppp] + KS.f[mmp] - KS.f[mzm] + KS.f[mzp] - KS.f[mpm] + KS.f[mpp] - KS.f[pmm] + KS.f[pmp] - KS.f[pzm] + KS.f[pzp]
-						 - KS.f[ppm] - KS.f[mmm];
-		const dreal M102 = KS.f[ppp] - KS.f[mmp] - KS.f[mzm] - KS.f[mzp] - KS.f[mpm] - KS.f[mpp] + KS.f[pmm] + KS.f[pmp] + KS.f[pzm] + KS.f[pzp]
-						 + KS.f[ppm] - KS.f[mmm];
-		const dreal M210 = KS.f[ppp] - KS.f[mmz] - KS.f[mmp] + KS.f[mpm] + KS.f[mpz] + KS.f[mpp] - KS.f[pmm] - KS.f[pmz] - KS.f[pmp] + KS.f[ppm]
-						 + KS.f[ppz] - KS.f[mmm];
-		const dreal M120 = KS.f[ppp] - KS.f[mmz] - KS.f[mmp] - KS.f[mpm] - KS.f[mpz] - KS.f[mpp] + KS.f[pmm] + KS.f[pmz] + KS.f[pmp] + KS.f[ppm]
-						 + KS.f[ppz] - KS.f[mmm];
-		const dreal M021 = KS.f[ppp] + KS.f[mmp] - KS.f[mpm] + KS.f[mpp] - KS.f[zmm] + KS.f[zmp] - KS.f[zpm] + KS.f[zpp] - KS.f[pmm] + KS.f[pmp]
-						 - KS.f[ppm] - KS.f[mmm];
-		const dreal M012 = KS.f[ppp] - KS.f[mmp] + KS.f[mpm] + KS.f[mpp] - KS.f[zmm] - KS.f[zmp] + KS.f[zpm] + KS.f[zpp] - KS.f[pmm] - KS.f[pmp]
-						 + KS.f[ppm] - KS.f[mmm];
+		const dreal M201 = KS.f[dir27::ppp] + KS.f[dir27::mmp] - KS.f[dir27::mzm] + KS.f[dir27::mzp] - KS.f[dir27::mpm] + KS.f[dir27::mpp]
+						 - KS.f[dir27::pmm] + KS.f[dir27::pmp] - KS.f[dir27::pzm] + KS.f[dir27::pzp] - KS.f[dir27::ppm] - KS.f[dir27::mmm];
+		const dreal M102 = KS.f[dir27::ppp] - KS.f[dir27::mmp] - KS.f[dir27::mzm] - KS.f[dir27::mzp] - KS.f[dir27::mpm] - KS.f[dir27::mpp]
+						 + KS.f[dir27::pmm] + KS.f[dir27::pmp] + KS.f[dir27::pzm] + KS.f[dir27::pzp] + KS.f[dir27::ppm] - KS.f[dir27::mmm];
+		const dreal M210 = KS.f[dir27::ppp] - KS.f[dir27::mmz] - KS.f[dir27::mmp] + KS.f[dir27::mpm] + KS.f[dir27::mpz] + KS.f[dir27::mpp]
+						 - KS.f[dir27::pmm] - KS.f[dir27::pmz] - KS.f[dir27::pmp] + KS.f[dir27::ppm] + KS.f[dir27::ppz] - KS.f[dir27::mmm];
+		const dreal M120 = KS.f[dir27::ppp] - KS.f[dir27::mmz] - KS.f[dir27::mmp] - KS.f[dir27::mpm] - KS.f[dir27::mpz] - KS.f[dir27::mpp]
+						 + KS.f[dir27::pmm] + KS.f[dir27::pmz] + KS.f[dir27::pmp] + KS.f[dir27::ppm] + KS.f[dir27::ppz] - KS.f[dir27::mmm];
+		const dreal M021 = KS.f[dir27::ppp] + KS.f[dir27::mmp] - KS.f[dir27::mpm] + KS.f[dir27::mpp] - KS.f[dir27::zmm] + KS.f[dir27::zmp]
+						 - KS.f[dir27::zpm] + KS.f[dir27::zpp] - KS.f[dir27::pmm] + KS.f[dir27::pmp] - KS.f[dir27::ppm] - KS.f[dir27::mmm];
+		const dreal M012 = KS.f[dir27::ppp] - KS.f[dir27::mmp] + KS.f[dir27::mpm] + KS.f[dir27::mpp] - KS.f[dir27::zmm] - KS.f[dir27::zmp]
+						 + KS.f[dir27::zpm] + KS.f[dir27::zpp] - KS.f[dir27::pmm] - KS.f[dir27::pmp] + KS.f[dir27::ppm] - KS.f[dir27::mmm];
 
 		// delta of shear part: delta s_i = s_i - s_i^eq; s = D + T
 		const dreal Dsmmm = Dmmm - eDmmm + Tmmm - eTmmm;
@@ -671,33 +685,33 @@ struct D3Q27_KBC_N2 : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal Dsppp = Dppp - eDppp + Tppp - eTppp;
 
 		// delta of high order part: delta h_i = h_i - h_i^eq = f_i - f_i^eq - delta s_i
-		const dreal Dhmmm = KS.f[mmm] - ffeq_mmm - Dsmmm;
-		const dreal Dhmmz = KS.f[mmz] - ffeq_mmz - Dsmmz;
-		const dreal Dhmmp = KS.f[mmp] - ffeq_mmp - Dsmmp;
-		const dreal Dhmzm = KS.f[mzm] - ffeq_mzm - Dsmzm;
-		const dreal Dhmzz = KS.f[mzz] - ffeq_mzz - Dsmzz;
-		const dreal Dhmzp = KS.f[mzp] - ffeq_mzp - Dsmzp;
-		const dreal Dhmpm = KS.f[mpm] - ffeq_mpm - Dsmpm;
-		const dreal Dhmpz = KS.f[mpz] - ffeq_mpz - Dsmpz;
-		const dreal Dhmpp = KS.f[mpp] - ffeq_mpp - Dsmpp;
-		const dreal Dhzmm = KS.f[zmm] - ffeq_zmm - Dszmm;
-		const dreal Dhzmz = KS.f[zmz] - ffeq_zmz - Dszmz;
-		const dreal Dhzmp = KS.f[zmp] - ffeq_zmp - Dszmp;
-		const dreal Dhzzm = KS.f[zzm] - ffeq_zzm - Dszzm;
-		const dreal Dhzzz = KS.f[zzz] - ffeq_zzz - Dszzz;
-		const dreal Dhzzp = KS.f[zzp] - ffeq_zzp - Dszzp;
-		const dreal Dhzpm = KS.f[zpm] - ffeq_zpm - Dszpm;
-		const dreal Dhzpz = KS.f[zpz] - ffeq_zpz - Dszpz;
-		const dreal Dhzpp = KS.f[zpp] - ffeq_zpp - Dszpp;
-		const dreal Dhpmm = KS.f[pmm] - ffeq_pmm - Dspmm;
-		const dreal Dhpmz = KS.f[pmz] - ffeq_pmz - Dspmz;
-		const dreal Dhpmp = KS.f[pmp] - ffeq_pmp - Dspmp;
-		const dreal Dhpzm = KS.f[pzm] - ffeq_pzm - Dspzm;
-		const dreal Dhpzz = KS.f[pzz] - ffeq_pzz - Dspzz;
-		const dreal Dhpzp = KS.f[pzp] - ffeq_pzp - Dspzp;
-		const dreal Dhppm = KS.f[ppm] - ffeq_ppm - Dsppm;
-		const dreal Dhppz = KS.f[ppz] - ffeq_ppz - Dsppz;
-		const dreal Dhppp = KS.f[ppp] - ffeq_ppp - Dsppp;
+		const dreal Dhmmm = KS.f[dir27::mmm] - ffeq_mmm - Dsmmm;
+		const dreal Dhmmz = KS.f[dir27::mmz] - ffeq_mmz - Dsmmz;
+		const dreal Dhmmp = KS.f[dir27::mmp] - ffeq_mmp - Dsmmp;
+		const dreal Dhmzm = KS.f[dir27::mzm] - ffeq_mzm - Dsmzm;
+		const dreal Dhmzz = KS.f[dir27::mzz] - ffeq_mzz - Dsmzz;
+		const dreal Dhmzp = KS.f[dir27::mzp] - ffeq_mzp - Dsmzp;
+		const dreal Dhmpm = KS.f[dir27::mpm] - ffeq_mpm - Dsmpm;
+		const dreal Dhmpz = KS.f[dir27::mpz] - ffeq_mpz - Dsmpz;
+		const dreal Dhmpp = KS.f[dir27::mpp] - ffeq_mpp - Dsmpp;
+		const dreal Dhzmm = KS.f[dir27::zmm] - ffeq_zmm - Dszmm;
+		const dreal Dhzmz = KS.f[dir27::zmz] - ffeq_zmz - Dszmz;
+		const dreal Dhzmp = KS.f[dir27::zmp] - ffeq_zmp - Dszmp;
+		const dreal Dhzzm = KS.f[dir27::zzm] - ffeq_zzm - Dszzm;
+		const dreal Dhzzz = KS.f[dir27::zzz] - ffeq_zzz - Dszzz;
+		const dreal Dhzzp = KS.f[dir27::zzp] - ffeq_zzp - Dszzp;
+		const dreal Dhzpm = KS.f[dir27::zpm] - ffeq_zpm - Dszpm;
+		const dreal Dhzpz = KS.f[dir27::zpz] - ffeq_zpz - Dszpz;
+		const dreal Dhzpp = KS.f[dir27::zpp] - ffeq_zpp - Dszpp;
+		const dreal Dhpmm = KS.f[dir27::pmm] - ffeq_pmm - Dspmm;
+		const dreal Dhpmz = KS.f[dir27::pmz] - ffeq_pmz - Dspmz;
+		const dreal Dhpmp = KS.f[dir27::pmp] - ffeq_pmp - Dspmp;
+		const dreal Dhpzm = KS.f[dir27::pzm] - ffeq_pzm - Dspzm;
+		const dreal Dhpzz = KS.f[dir27::pzz] - ffeq_pzz - Dspzz;
+		const dreal Dhpzp = KS.f[dir27::pzp] - ffeq_pzp - Dspzp;
+		const dreal Dhppm = KS.f[dir27::ppm] - ffeq_ppm - Dsppm;
+		const dreal Dhppz = KS.f[dir27::ppz] - ffeq_ppz - Dsppz;
+		const dreal Dhppp = KS.f[dir27::ppp] - ffeq_ppp - Dsppp;
 
 		const dreal beta = _beta;
 		const dreal gamma = _gamma;
@@ -731,33 +745,33 @@ struct D3Q27_KBC_N2 : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal Szpp = (no3 * (-KS.vx * KS.fx + (-KS.vy + no1) * KS.fy + (-KS.vz + no1) * KS.fz)) / KS.rho;
 		const dreal Sppp = (no3 * ((-KS.vx + no1) * KS.fx + (-KS.vy + no1) * KS.fy + (-KS.vz + no1) * KS.fz)) / KS.rho;
 
-		KS.f[mmm] -= beta * (no2 * Dsmmm + gamma * Dhmmm) - (no1 - beta) * Smmm * ffeq_mmm;
-		KS.f[mmz] -= beta * (no2 * Dsmmz + gamma * Dhmmz) - (no1 - beta) * Smmz * ffeq_mmz;
-		KS.f[mmp] -= beta * (no2 * Dsmmp + gamma * Dhmmp) - (no1 - beta) * Smmp * ffeq_mmp;
-		KS.f[mzm] -= beta * (no2 * Dsmzm + gamma * Dhmzm) - (no1 - beta) * Smzm * ffeq_mzm;
-		KS.f[mzz] -= beta * (no2 * Dsmzz + gamma * Dhmzz) - (no1 - beta) * Smzz * ffeq_mzz;
-		KS.f[mzp] -= beta * (no2 * Dsmzp + gamma * Dhmzp) - (no1 - beta) * Smzp * ffeq_mzp;
-		KS.f[mpm] -= beta * (no2 * Dsmpm + gamma * Dhmpm) - (no1 - beta) * Smpm * ffeq_mpm;
-		KS.f[mpz] -= beta * (no2 * Dsmpz + gamma * Dhmpz) - (no1 - beta) * Smpz * ffeq_mpz;
-		KS.f[mpp] -= beta * (no2 * Dsmpp + gamma * Dhmpp) - (no1 - beta) * Smpp * ffeq_mpp;
-		KS.f[zmm] -= beta * (no2 * Dszmm + gamma * Dhzmm) - (no1 - beta) * Szmm * ffeq_zmm;
-		KS.f[zmz] -= beta * (no2 * Dszmz + gamma * Dhzmz) - (no1 - beta) * Szmz * ffeq_zmz;
-		KS.f[zmp] -= beta * (no2 * Dszmp + gamma * Dhzmp) - (no1 - beta) * Szmp * ffeq_zmp;
-		KS.f[zzm] -= beta * (no2 * Dszzm + gamma * Dhzzm) - (no1 - beta) * Szzm * ffeq_zzm;
-		KS.f[zzz] -= beta * (no2 * Dszzz + gamma * Dhzzz) - (no1 - beta) * Szzz * ffeq_zzz;
-		KS.f[zzp] -= beta * (no2 * Dszzp + gamma * Dhzzp) - (no1 - beta) * Szzp * ffeq_zzp;
-		KS.f[zpm] -= beta * (no2 * Dszpm + gamma * Dhzpm) - (no1 - beta) * Szpm * ffeq_zpm;
-		KS.f[zpz] -= beta * (no2 * Dszpz + gamma * Dhzpz) - (no1 - beta) * Szpz * ffeq_zpz;
-		KS.f[zpp] -= beta * (no2 * Dszpp + gamma * Dhzpp) - (no1 - beta) * Szpp * ffeq_zpp;
-		KS.f[pmm] -= beta * (no2 * Dspmm + gamma * Dhpmm) - (no1 - beta) * Spmm * ffeq_pmm;
-		KS.f[pmz] -= beta * (no2 * Dspmz + gamma * Dhpmz) - (no1 - beta) * Spmz * ffeq_pmz;
-		KS.f[pmp] -= beta * (no2 * Dspmp + gamma * Dhpmp) - (no1 - beta) * Spmp * ffeq_pmp;
-		KS.f[pzm] -= beta * (no2 * Dspzm + gamma * Dhpzm) - (no1 - beta) * Spzm * ffeq_pzm;
-		KS.f[pzz] -= beta * (no2 * Dspzz + gamma * Dhpzz) - (no1 - beta) * Spzz * ffeq_pzz;
-		KS.f[pzp] -= beta * (no2 * Dspzp + gamma * Dhpzp) - (no1 - beta) * Spzp * ffeq_pzp;
-		KS.f[ppm] -= beta * (no2 * Dsppm + gamma * Dhppm) - (no1 - beta) * Sppm * ffeq_ppm;
-		KS.f[ppz] -= beta * (no2 * Dsppz + gamma * Dhppz) - (no1 - beta) * Sppz * ffeq_ppz;
-		KS.f[ppp] -= beta * (no2 * Dsppp + gamma * Dhppp) - (no1 - beta) * Sppp * ffeq_ppp;
+		KS.f[dir27::mmm] -= beta * (no2 * Dsmmm + gamma * Dhmmm) - (no1 - beta) * Smmm * ffeq_mmm;
+		KS.f[dir27::mmz] -= beta * (no2 * Dsmmz + gamma * Dhmmz) - (no1 - beta) * Smmz * ffeq_mmz;
+		KS.f[dir27::mmp] -= beta * (no2 * Dsmmp + gamma * Dhmmp) - (no1 - beta) * Smmp * ffeq_mmp;
+		KS.f[dir27::mzm] -= beta * (no2 * Dsmzm + gamma * Dhmzm) - (no1 - beta) * Smzm * ffeq_mzm;
+		KS.f[dir27::mzz] -= beta * (no2 * Dsmzz + gamma * Dhmzz) - (no1 - beta) * Smzz * ffeq_mzz;
+		KS.f[dir27::mzp] -= beta * (no2 * Dsmzp + gamma * Dhmzp) - (no1 - beta) * Smzp * ffeq_mzp;
+		KS.f[dir27::mpm] -= beta * (no2 * Dsmpm + gamma * Dhmpm) - (no1 - beta) * Smpm * ffeq_mpm;
+		KS.f[dir27::mpz] -= beta * (no2 * Dsmpz + gamma * Dhmpz) - (no1 - beta) * Smpz * ffeq_mpz;
+		KS.f[dir27::mpp] -= beta * (no2 * Dsmpp + gamma * Dhmpp) - (no1 - beta) * Smpp * ffeq_mpp;
+		KS.f[dir27::zmm] -= beta * (no2 * Dszmm + gamma * Dhzmm) - (no1 - beta) * Szmm * ffeq_zmm;
+		KS.f[dir27::zmz] -= beta * (no2 * Dszmz + gamma * Dhzmz) - (no1 - beta) * Szmz * ffeq_zmz;
+		KS.f[dir27::zmp] -= beta * (no2 * Dszmp + gamma * Dhzmp) - (no1 - beta) * Szmp * ffeq_zmp;
+		KS.f[dir27::zzm] -= beta * (no2 * Dszzm + gamma * Dhzzm) - (no1 - beta) * Szzm * ffeq_zzm;
+		KS.f[dir27::zzz] -= beta * (no2 * Dszzz + gamma * Dhzzz) - (no1 - beta) * Szzz * ffeq_zzz;
+		KS.f[dir27::zzp] -= beta * (no2 * Dszzp + gamma * Dhzzp) - (no1 - beta) * Szzp * ffeq_zzp;
+		KS.f[dir27::zpm] -= beta * (no2 * Dszpm + gamma * Dhzpm) - (no1 - beta) * Szpm * ffeq_zpm;
+		KS.f[dir27::zpz] -= beta * (no2 * Dszpz + gamma * Dhzpz) - (no1 - beta) * Szpz * ffeq_zpz;
+		KS.f[dir27::zpp] -= beta * (no2 * Dszpp + gamma * Dhzpp) - (no1 - beta) * Szpp * ffeq_zpp;
+		KS.f[dir27::pmm] -= beta * (no2 * Dspmm + gamma * Dhpmm) - (no1 - beta) * Spmm * ffeq_pmm;
+		KS.f[dir27::pmz] -= beta * (no2 * Dspmz + gamma * Dhpmz) - (no1 - beta) * Spmz * ffeq_pmz;
+		KS.f[dir27::pmp] -= beta * (no2 * Dspmp + gamma * Dhpmp) - (no1 - beta) * Spmp * ffeq_pmp;
+		KS.f[dir27::pzm] -= beta * (no2 * Dspzm + gamma * Dhpzm) - (no1 - beta) * Spzm * ffeq_pzm;
+		KS.f[dir27::pzz] -= beta * (no2 * Dspzz + gamma * Dhpzz) - (no1 - beta) * Spzz * ffeq_pzz;
+		KS.f[dir27::pzp] -= beta * (no2 * Dspzp + gamma * Dhpzp) - (no1 - beta) * Spzp * ffeq_pzp;
+		KS.f[dir27::ppm] -= beta * (no2 * Dsppm + gamma * Dhppm) - (no1 - beta) * Sppm * ffeq_ppm;
+		KS.f[dir27::ppz] -= beta * (no2 * Dsppz + gamma * Dhppz) - (no1 - beta) * Sppz * ffeq_ppz;
+		KS.f[dir27::ppp] -= beta * (no2 * Dsppp + gamma * Dhppp) - (no1 - beta) * Sppp * ffeq_ppp;
 	}
 };
 
@@ -772,12 +786,15 @@ struct D3Q27_KBC_N3 : D3Q27_COMMON<TRAITS, LBM_EQ>
 	__cuda_callable__ static void collision(LBM_KS& KS)
 	{
 #ifdef USE_GALILEAN_CORRECTION
-		const dreal m_200 = KS.f[mmm] + KS.f[mmp] + KS.f[mmz] + KS.f[mpm] + KS.f[mpp] + KS.f[mpz] + KS.f[mzm] + KS.f[mzp] + KS.f[mzz] + KS.f[pmm]
-						  + KS.f[pmp] + KS.f[pmz] + KS.f[ppm] + KS.f[ppp] + KS.f[ppz] + KS.f[pzm] + KS.f[pzp] + KS.f[pzz];
-		const dreal m_020 = KS.f[mmm] + KS.f[mmp] + KS.f[mmz] + KS.f[mpm] + KS.f[mpp] + KS.f[mpz] + KS.f[zmm] + KS.f[zmp] + KS.f[zmz] + KS.f[zpm]
-						  + KS.f[zpp] + KS.f[zpz] + KS.f[pmm] + KS.f[pmp] + KS.f[pmz] + KS.f[ppm] + KS.f[ppp] + KS.f[ppz];
-		const dreal m_002 = KS.f[mmm] + KS.f[mmp] + KS.f[mzm] + KS.f[mzp] + KS.f[mpm] + KS.f[mpp] + KS.f[zmm] + KS.f[zmp] + KS.f[zzm] + KS.f[zzp]
-						  + KS.f[zpm] + KS.f[zpp] + KS.f[pmm] + KS.f[pmp] + KS.f[pzm] + KS.f[pzp] + KS.f[ppm] + KS.f[ppp];
+		const dreal m_200 = KS.f[dir27::mmm] + KS.f[dir27::mmp] + KS.f[dir27::mmz] + KS.f[dir27::mpm] + KS.f[dir27::mpp] + KS.f[dir27::mpz]
+						  + KS.f[dir27::mzm] + KS.f[dir27::mzp] + KS.f[dir27::mzz] + KS.f[dir27::pmm] + KS.f[dir27::pmp] + KS.f[dir27::pmz]
+						  + KS.f[dir27::ppm] + KS.f[dir27::ppp] + KS.f[dir27::ppz] + KS.f[dir27::pzm] + KS.f[dir27::pzp] + KS.f[dir27::pzz];
+		const dreal m_020 = KS.f[dir27::mmm] + KS.f[dir27::mmp] + KS.f[dir27::mmz] + KS.f[dir27::mpm] + KS.f[dir27::mpp] + KS.f[dir27::mpz]
+						  + KS.f[dir27::zmm] + KS.f[dir27::zmp] + KS.f[dir27::zmz] + KS.f[dir27::zpm] + KS.f[dir27::zpp] + KS.f[dir27::zpz]
+						  + KS.f[dir27::pmm] + KS.f[dir27::pmp] + KS.f[dir27::pmz] + KS.f[dir27::ppm] + KS.f[dir27::ppp] + KS.f[dir27::ppz];
+		const dreal m_002 = KS.f[dir27::mmm] + KS.f[dir27::mmp] + KS.f[dir27::mzm] + KS.f[dir27::mzp] + KS.f[dir27::mpm] + KS.f[dir27::mpp]
+						  + KS.f[dir27::zmm] + KS.f[dir27::zmp] + KS.f[dir27::zzm] + KS.f[dir27::zzp] + KS.f[dir27::zpm] + KS.f[dir27::zpp]
+						  + KS.f[dir27::pmm] + KS.f[dir27::pmp] + KS.f[dir27::pzm] + KS.f[dir27::pzp] + KS.f[dir27::ppm] + KS.f[dir27::ppp];
 
 		const dreal Dxu = -omega1 * n1o2 * (no3 * m_200 / KS.rho - no1 - no3 * KS.vx * KS.vx);
 		const dreal Dyv = -omega1 * n1o2 * (no3 * m_020 / KS.rho - no1 - no3 * KS.vy * KS.vy);
@@ -868,33 +885,37 @@ struct D3Q27_KBC_N3 : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal ifeq_ppp = no1 / ffeq_ppp;
 
 		//raw moments used in tensors
-		const dreal M200 = KS.f[mmm] + KS.f[mmp] + KS.f[mmz] + KS.f[mpm] + KS.f[mpp] + KS.f[mpz] + KS.f[mzm] + KS.f[mzp] + KS.f[mzz] + KS.f[pmm]
-						 + KS.f[pmp] + KS.f[pmz] + KS.f[ppm] + KS.f[ppp] + KS.f[ppz] + KS.f[pzm] + KS.f[pzp] + KS.f[pzz];
-		const dreal M020 = KS.f[mmm] + KS.f[mmp] + KS.f[mmz] + KS.f[mpm] + KS.f[mpp] + KS.f[mpz] + KS.f[zmm] + KS.f[zmp] + KS.f[zmz] + KS.f[zpm]
-						 + KS.f[zpp] + KS.f[zpz] + KS.f[pmm] + KS.f[pmp] + KS.f[pmz] + KS.f[ppm] + KS.f[ppp] + KS.f[ppz];
-		const dreal M002 = KS.f[mmm] + KS.f[mmp] + KS.f[mzm] + KS.f[mzp] + KS.f[mpm] + KS.f[mpp] + KS.f[zmm] + KS.f[zmp] + KS.f[zzm] + KS.f[zzp]
-						 + KS.f[zpm] + KS.f[zpp] + KS.f[pmm] + KS.f[pmp] + KS.f[pzm] + KS.f[pzp] + KS.f[ppm] + KS.f[ppp];
+		const dreal M200 = KS.f[dir27::mmm] + KS.f[dir27::mmp] + KS.f[dir27::mmz] + KS.f[dir27::mpm] + KS.f[dir27::mpp] + KS.f[dir27::mpz]
+						 + KS.f[dir27::mzm] + KS.f[dir27::mzp] + KS.f[dir27::mzz] + KS.f[dir27::pmm] + KS.f[dir27::pmp] + KS.f[dir27::pmz]
+						 + KS.f[dir27::ppm] + KS.f[dir27::ppp] + KS.f[dir27::ppz] + KS.f[dir27::pzm] + KS.f[dir27::pzp] + KS.f[dir27::pzz];
+		const dreal M020 = KS.f[dir27::mmm] + KS.f[dir27::mmp] + KS.f[dir27::mmz] + KS.f[dir27::mpm] + KS.f[dir27::mpp] + KS.f[dir27::mpz]
+						 + KS.f[dir27::zmm] + KS.f[dir27::zmp] + KS.f[dir27::zmz] + KS.f[dir27::zpm] + KS.f[dir27::zpp] + KS.f[dir27::zpz]
+						 + KS.f[dir27::pmm] + KS.f[dir27::pmp] + KS.f[dir27::pmz] + KS.f[dir27::ppm] + KS.f[dir27::ppp] + KS.f[dir27::ppz];
+		const dreal M002 = KS.f[dir27::mmm] + KS.f[dir27::mmp] + KS.f[dir27::mzm] + KS.f[dir27::mzp] + KS.f[dir27::mpm] + KS.f[dir27::mpp]
+						 + KS.f[dir27::zmm] + KS.f[dir27::zmp] + KS.f[dir27::zzm] + KS.f[dir27::zzp] + KS.f[dir27::zpm] + KS.f[dir27::zpp]
+						 + KS.f[dir27::pmm] + KS.f[dir27::pmp] + KS.f[dir27::pzm] + KS.f[dir27::pzp] + KS.f[dir27::ppm] + KS.f[dir27::ppp];
 
-		const dreal M110 = KS.f[mmm] + KS.f[mmz] + KS.f[mmp] - KS.f[mpm] - KS.f[mpz] - KS.f[mpp] - KS.f[pmm] - KS.f[pmz] - KS.f[pmp] + KS.f[ppm]
-						 + KS.f[ppz] + KS.f[ppp];
-		const dreal M101 = KS.f[mmm] - KS.f[mmp] + KS.f[mzm] - KS.f[mzp] + KS.f[mpm] - KS.f[mpp] - KS.f[pmm] + KS.f[pmp] - KS.f[pzm] + KS.f[pzp]
-						 - KS.f[ppm] + KS.f[ppp];
-		const dreal M011 = KS.f[mmm] - KS.f[mmp] - KS.f[mpm] + KS.f[mpp] + KS.f[zmm] - KS.f[zmp] - KS.f[zpm] + KS.f[zpp] + KS.f[pmm] - KS.f[pmp]
-						 - KS.f[ppm] + KS.f[ppp];
-		const dreal M111 = KS.f[ppp] + KS.f[mmp] + KS.f[mpm] - KS.f[mpp] + KS.f[pmm] - KS.f[pmp] - KS.f[ppm] - KS.f[mmm];
+		const dreal M110 = KS.f[dir27::mmm] + KS.f[dir27::mmz] + KS.f[dir27::mmp] - KS.f[dir27::mpm] - KS.f[dir27::mpz] - KS.f[dir27::mpp]
+						 - KS.f[dir27::pmm] - KS.f[dir27::pmz] - KS.f[dir27::pmp] + KS.f[dir27::ppm] + KS.f[dir27::ppz] + KS.f[dir27::ppp];
+		const dreal M101 = KS.f[dir27::mmm] - KS.f[dir27::mmp] + KS.f[dir27::mzm] - KS.f[dir27::mzp] + KS.f[dir27::mpm] - KS.f[dir27::mpp]
+						 - KS.f[dir27::pmm] + KS.f[dir27::pmp] - KS.f[dir27::pzm] + KS.f[dir27::pzp] - KS.f[dir27::ppm] + KS.f[dir27::ppp];
+		const dreal M011 = KS.f[dir27::mmm] - KS.f[dir27::mmp] - KS.f[dir27::mpm] + KS.f[dir27::mpp] + KS.f[dir27::zmm] - KS.f[dir27::zmp]
+						 - KS.f[dir27::zpm] + KS.f[dir27::zpp] + KS.f[dir27::pmm] - KS.f[dir27::pmp] - KS.f[dir27::ppm] + KS.f[dir27::ppp];
+		const dreal M111 = KS.f[dir27::ppp] + KS.f[dir27::mmp] + KS.f[dir27::mpm] - KS.f[dir27::mpp] + KS.f[dir27::pmm] - KS.f[dir27::pmp]
+						 - KS.f[dir27::ppm] - KS.f[dir27::mmm];
 
-		const dreal M201 = KS.f[ppp] + KS.f[mmp] - KS.f[mzm] + KS.f[mzp] - KS.f[mpm] + KS.f[mpp] - KS.f[pmm] + KS.f[pmp] - KS.f[pzm] + KS.f[pzp]
-						 - KS.f[ppm] - KS.f[mmm];
-		const dreal M102 = KS.f[ppp] - KS.f[mmp] - KS.f[mzm] - KS.f[mzp] - KS.f[mpm] - KS.f[mpp] + KS.f[pmm] + KS.f[pmp] + KS.f[pzm] + KS.f[pzp]
-						 + KS.f[ppm] - KS.f[mmm];
-		const dreal M210 = KS.f[ppp] - KS.f[mmz] - KS.f[mmp] + KS.f[mpm] + KS.f[mpz] + KS.f[mpp] - KS.f[pmm] - KS.f[pmz] - KS.f[pmp] + KS.f[ppm]
-						 + KS.f[ppz] - KS.f[mmm];
-		const dreal M120 = KS.f[ppp] - KS.f[mmz] - KS.f[mmp] - KS.f[mpm] - KS.f[mpz] - KS.f[mpp] + KS.f[pmm] + KS.f[pmz] + KS.f[pmp] + KS.f[ppm]
-						 + KS.f[ppz] - KS.f[mmm];
-		const dreal M021 = KS.f[ppp] + KS.f[mmp] - KS.f[mpm] + KS.f[mpp] - KS.f[zmm] + KS.f[zmp] - KS.f[zpm] + KS.f[zpp] - KS.f[pmm] + KS.f[pmp]
-						 - KS.f[ppm] - KS.f[mmm];
-		const dreal M012 = KS.f[ppp] - KS.f[mmp] + KS.f[mpm] + KS.f[mpp] - KS.f[zmm] - KS.f[zmp] + KS.f[zpm] + KS.f[zpp] - KS.f[pmm] - KS.f[pmp]
-						 + KS.f[ppm] - KS.f[mmm];
+		const dreal M201 = KS.f[dir27::ppp] + KS.f[dir27::mmp] - KS.f[dir27::mzm] + KS.f[dir27::mzp] - KS.f[dir27::mpm] + KS.f[dir27::mpp]
+						 - KS.f[dir27::pmm] + KS.f[dir27::pmp] - KS.f[dir27::pzm] + KS.f[dir27::pzp] - KS.f[dir27::ppm] - KS.f[dir27::mmm];
+		const dreal M102 = KS.f[dir27::ppp] - KS.f[dir27::mmp] - KS.f[dir27::mzm] - KS.f[dir27::mzp] - KS.f[dir27::mpm] - KS.f[dir27::mpp]
+						 + KS.f[dir27::pmm] + KS.f[dir27::pmp] + KS.f[dir27::pzm] + KS.f[dir27::pzp] + KS.f[dir27::ppm] - KS.f[dir27::mmm];
+		const dreal M210 = KS.f[dir27::ppp] - KS.f[dir27::mmz] - KS.f[dir27::mmp] + KS.f[dir27::mpm] + KS.f[dir27::mpz] + KS.f[dir27::mpp]
+						 - KS.f[dir27::pmm] - KS.f[dir27::pmz] - KS.f[dir27::pmp] + KS.f[dir27::ppm] + KS.f[dir27::ppz] - KS.f[dir27::mmm];
+		const dreal M120 = KS.f[dir27::ppp] - KS.f[dir27::mmz] - KS.f[dir27::mmp] - KS.f[dir27::mpm] - KS.f[dir27::mpz] - KS.f[dir27::mpp]
+						 + KS.f[dir27::pmm] + KS.f[dir27::pmz] + KS.f[dir27::pmp] + KS.f[dir27::ppm] + KS.f[dir27::ppz] - KS.f[dir27::mmm];
+		const dreal M021 = KS.f[dir27::ppp] + KS.f[dir27::mmp] - KS.f[dir27::mpm] + KS.f[dir27::mpp] - KS.f[dir27::zmm] + KS.f[dir27::zmp]
+						 - KS.f[dir27::zpm] + KS.f[dir27::zpp] - KS.f[dir27::pmm] + KS.f[dir27::pmp] - KS.f[dir27::ppm] - KS.f[dir27::mmm];
+		const dreal M012 = KS.f[dir27::ppp] - KS.f[dir27::mmp] + KS.f[dir27::mpm] + KS.f[dir27::mpp] - KS.f[dir27::zmm] - KS.f[dir27::zmp]
+						 + KS.f[dir27::zpm] + KS.f[dir27::zpp] - KS.f[dir27::pmm] - KS.f[dir27::pmp] + KS.f[dir27::ppm] - KS.f[dir27::mmm];
 
 		// delta of shear part: delta s_i = s_i - s_i^eq; s = D + Q
 		const dreal Dsmmm = Dmmm - eDmmm + Qmmm - eQmmm;
@@ -926,33 +947,33 @@ struct D3Q27_KBC_N3 : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal Dsppp = Dppp - eDppp + Qppp - eQppp;
 
 		// delta of high order part: delta h_i = h_i - h_i^eq = f_i - f_i^eq - delta s_i
-		const dreal Dhmmm = KS.f[mmm] - ffeq_mmm - Dsmmm;
-		const dreal Dhmmz = KS.f[mmz] - ffeq_mmz - Dsmmz;
-		const dreal Dhmmp = KS.f[mmp] - ffeq_mmp - Dsmmp;
-		const dreal Dhmzm = KS.f[mzm] - ffeq_mzm - Dsmzm;
-		const dreal Dhmzz = KS.f[mzz] - ffeq_mzz - Dsmzz;
-		const dreal Dhmzp = KS.f[mzp] - ffeq_mzp - Dsmzp;
-		const dreal Dhmpm = KS.f[mpm] - ffeq_mpm - Dsmpm;
-		const dreal Dhmpz = KS.f[mpz] - ffeq_mpz - Dsmpz;
-		const dreal Dhmpp = KS.f[mpp] - ffeq_mpp - Dsmpp;
-		const dreal Dhzmm = KS.f[zmm] - ffeq_zmm - Dszmm;
-		const dreal Dhzmz = KS.f[zmz] - ffeq_zmz - Dszmz;
-		const dreal Dhzmp = KS.f[zmp] - ffeq_zmp - Dszmp;
-		const dreal Dhzzm = KS.f[zzm] - ffeq_zzm - Dszzm;
-		const dreal Dhzzz = KS.f[zzz] - ffeq_zzz - Dszzz;
-		const dreal Dhzzp = KS.f[zzp] - ffeq_zzp - Dszzp;
-		const dreal Dhzpm = KS.f[zpm] - ffeq_zpm - Dszpm;
-		const dreal Dhzpz = KS.f[zpz] - ffeq_zpz - Dszpz;
-		const dreal Dhzpp = KS.f[zpp] - ffeq_zpp - Dszpp;
-		const dreal Dhpmm = KS.f[pmm] - ffeq_pmm - Dspmm;
-		const dreal Dhpmz = KS.f[pmz] - ffeq_pmz - Dspmz;
-		const dreal Dhpmp = KS.f[pmp] - ffeq_pmp - Dspmp;
-		const dreal Dhpzm = KS.f[pzm] - ffeq_pzm - Dspzm;
-		const dreal Dhpzz = KS.f[pzz] - ffeq_pzz - Dspzz;
-		const dreal Dhpzp = KS.f[pzp] - ffeq_pzp - Dspzp;
-		const dreal Dhppm = KS.f[ppm] - ffeq_ppm - Dsppm;
-		const dreal Dhppz = KS.f[ppz] - ffeq_ppz - Dsppz;
-		const dreal Dhppp = KS.f[ppp] - ffeq_ppp - Dsppp;
+		const dreal Dhmmm = KS.f[dir27::mmm] - ffeq_mmm - Dsmmm;
+		const dreal Dhmmz = KS.f[dir27::mmz] - ffeq_mmz - Dsmmz;
+		const dreal Dhmmp = KS.f[dir27::mmp] - ffeq_mmp - Dsmmp;
+		const dreal Dhmzm = KS.f[dir27::mzm] - ffeq_mzm - Dsmzm;
+		const dreal Dhmzz = KS.f[dir27::mzz] - ffeq_mzz - Dsmzz;
+		const dreal Dhmzp = KS.f[dir27::mzp] - ffeq_mzp - Dsmzp;
+		const dreal Dhmpm = KS.f[dir27::mpm] - ffeq_mpm - Dsmpm;
+		const dreal Dhmpz = KS.f[dir27::mpz] - ffeq_mpz - Dsmpz;
+		const dreal Dhmpp = KS.f[dir27::mpp] - ffeq_mpp - Dsmpp;
+		const dreal Dhzmm = KS.f[dir27::zmm] - ffeq_zmm - Dszmm;
+		const dreal Dhzmz = KS.f[dir27::zmz] - ffeq_zmz - Dszmz;
+		const dreal Dhzmp = KS.f[dir27::zmp] - ffeq_zmp - Dszmp;
+		const dreal Dhzzm = KS.f[dir27::zzm] - ffeq_zzm - Dszzm;
+		const dreal Dhzzz = KS.f[dir27::zzz] - ffeq_zzz - Dszzz;
+		const dreal Dhzzp = KS.f[dir27::zzp] - ffeq_zzp - Dszzp;
+		const dreal Dhzpm = KS.f[dir27::zpm] - ffeq_zpm - Dszpm;
+		const dreal Dhzpz = KS.f[dir27::zpz] - ffeq_zpz - Dszpz;
+		const dreal Dhzpp = KS.f[dir27::zpp] - ffeq_zpp - Dszpp;
+		const dreal Dhpmm = KS.f[dir27::pmm] - ffeq_pmm - Dspmm;
+		const dreal Dhpmz = KS.f[dir27::pmz] - ffeq_pmz - Dspmz;
+		const dreal Dhpmp = KS.f[dir27::pmp] - ffeq_pmp - Dspmp;
+		const dreal Dhpzm = KS.f[dir27::pzm] - ffeq_pzm - Dspzm;
+		const dreal Dhpzz = KS.f[dir27::pzz] - ffeq_pzz - Dspzz;
+		const dreal Dhpzp = KS.f[dir27::pzp] - ffeq_pzp - Dspzp;
+		const dreal Dhppm = KS.f[dir27::ppm] - ffeq_ppm - Dsppm;
+		const dreal Dhppz = KS.f[dir27::ppz] - ffeq_ppz - Dsppz;
+		const dreal Dhppp = KS.f[dir27::ppp] - ffeq_ppp - Dsppp;
 
 		const dreal beta = _beta;
 		const dreal gamma = _gamma;
@@ -986,33 +1007,33 @@ struct D3Q27_KBC_N3 : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal Szpp = (no3 * (-KS.vx * KS.fx + (-KS.vy + no1) * KS.fy + (-KS.vz + no1) * KS.fz)) / KS.rho;
 		const dreal Sppp = (no3 * ((-KS.vx + no1) * KS.fx + (-KS.vy + no1) * KS.fy + (-KS.vz + no1) * KS.fz)) / KS.rho;
 
-		KS.f[mmm] -= beta * (no2 * Dsmmm + gamma * Dhmmm) - (no1 - beta) * Smmm * ffeq_mmm;
-		KS.f[mmz] -= beta * (no2 * Dsmmz + gamma * Dhmmz) - (no1 - beta) * Smmz * ffeq_mmz;
-		KS.f[mmp] -= beta * (no2 * Dsmmp + gamma * Dhmmp) - (no1 - beta) * Smmp * ffeq_mmp;
-		KS.f[mzm] -= beta * (no2 * Dsmzm + gamma * Dhmzm) - (no1 - beta) * Smzm * ffeq_mzm;
-		KS.f[mzz] -= beta * (no2 * Dsmzz + gamma * Dhmzz) - (no1 - beta) * Smzz * ffeq_mzz;
-		KS.f[mzp] -= beta * (no2 * Dsmzp + gamma * Dhmzp) - (no1 - beta) * Smzp * ffeq_mzp;
-		KS.f[mpm] -= beta * (no2 * Dsmpm + gamma * Dhmpm) - (no1 - beta) * Smpm * ffeq_mpm;
-		KS.f[mpz] -= beta * (no2 * Dsmpz + gamma * Dhmpz) - (no1 - beta) * Smpz * ffeq_mpz;
-		KS.f[mpp] -= beta * (no2 * Dsmpp + gamma * Dhmpp) - (no1 - beta) * Smpp * ffeq_mpp;
-		KS.f[zmm] -= beta * (no2 * Dszmm + gamma * Dhzmm) - (no1 - beta) * Szmm * ffeq_zmm;
-		KS.f[zmz] -= beta * (no2 * Dszmz + gamma * Dhzmz) - (no1 - beta) * Szmz * ffeq_zmz;
-		KS.f[zmp] -= beta * (no2 * Dszmp + gamma * Dhzmp) - (no1 - beta) * Szmp * ffeq_zmp;
-		KS.f[zzm] -= beta * (no2 * Dszzm + gamma * Dhzzm) - (no1 - beta) * Szzm * ffeq_zzm;
-		KS.f[zzz] -= beta * (no2 * Dszzz + gamma * Dhzzz) - (no1 - beta) * Szzz * ffeq_zzz;
-		KS.f[zzp] -= beta * (no2 * Dszzp + gamma * Dhzzp) - (no1 - beta) * Szzp * ffeq_zzp;
-		KS.f[zpm] -= beta * (no2 * Dszpm + gamma * Dhzpm) - (no1 - beta) * Szpm * ffeq_zpm;
-		KS.f[zpz] -= beta * (no2 * Dszpz + gamma * Dhzpz) - (no1 - beta) * Szpz * ffeq_zpz;
-		KS.f[zpp] -= beta * (no2 * Dszpp + gamma * Dhzpp) - (no1 - beta) * Szpp * ffeq_zpp;
-		KS.f[pmm] -= beta * (no2 * Dspmm + gamma * Dhpmm) - (no1 - beta) * Spmm * ffeq_pmm;
-		KS.f[pmz] -= beta * (no2 * Dspmz + gamma * Dhpmz) - (no1 - beta) * Spmz * ffeq_pmz;
-		KS.f[pmp] -= beta * (no2 * Dspmp + gamma * Dhpmp) - (no1 - beta) * Spmp * ffeq_pmp;
-		KS.f[pzm] -= beta * (no2 * Dspzm + gamma * Dhpzm) - (no1 - beta) * Spzm * ffeq_pzm;
-		KS.f[pzz] -= beta * (no2 * Dspzz + gamma * Dhpzz) - (no1 - beta) * Spzz * ffeq_pzz;
-		KS.f[pzp] -= beta * (no2 * Dspzp + gamma * Dhpzp) - (no1 - beta) * Spzp * ffeq_pzp;
-		KS.f[ppm] -= beta * (no2 * Dsppm + gamma * Dhppm) - (no1 - beta) * Sppm * ffeq_ppm;
-		KS.f[ppz] -= beta * (no2 * Dsppz + gamma * Dhppz) - (no1 - beta) * Sppz * ffeq_ppz;
-		KS.f[ppp] -= beta * (no2 * Dsppp + gamma * Dhppp) - (no1 - beta) * Sppp * ffeq_ppp;
+		KS.f[dir27::mmm] -= beta * (no2 * Dsmmm + gamma * Dhmmm) - (no1 - beta) * Smmm * ffeq_mmm;
+		KS.f[dir27::mmz] -= beta * (no2 * Dsmmz + gamma * Dhmmz) - (no1 - beta) * Smmz * ffeq_mmz;
+		KS.f[dir27::mmp] -= beta * (no2 * Dsmmp + gamma * Dhmmp) - (no1 - beta) * Smmp * ffeq_mmp;
+		KS.f[dir27::mzm] -= beta * (no2 * Dsmzm + gamma * Dhmzm) - (no1 - beta) * Smzm * ffeq_mzm;
+		KS.f[dir27::mzz] -= beta * (no2 * Dsmzz + gamma * Dhmzz) - (no1 - beta) * Smzz * ffeq_mzz;
+		KS.f[dir27::mzp] -= beta * (no2 * Dsmzp + gamma * Dhmzp) - (no1 - beta) * Smzp * ffeq_mzp;
+		KS.f[dir27::mpm] -= beta * (no2 * Dsmpm + gamma * Dhmpm) - (no1 - beta) * Smpm * ffeq_mpm;
+		KS.f[dir27::mpz] -= beta * (no2 * Dsmpz + gamma * Dhmpz) - (no1 - beta) * Smpz * ffeq_mpz;
+		KS.f[dir27::mpp] -= beta * (no2 * Dsmpp + gamma * Dhmpp) - (no1 - beta) * Smpp * ffeq_mpp;
+		KS.f[dir27::zmm] -= beta * (no2 * Dszmm + gamma * Dhzmm) - (no1 - beta) * Szmm * ffeq_zmm;
+		KS.f[dir27::zmz] -= beta * (no2 * Dszmz + gamma * Dhzmz) - (no1 - beta) * Szmz * ffeq_zmz;
+		KS.f[dir27::zmp] -= beta * (no2 * Dszmp + gamma * Dhzmp) - (no1 - beta) * Szmp * ffeq_zmp;
+		KS.f[dir27::zzm] -= beta * (no2 * Dszzm + gamma * Dhzzm) - (no1 - beta) * Szzm * ffeq_zzm;
+		KS.f[dir27::zzz] -= beta * (no2 * Dszzz + gamma * Dhzzz) - (no1 - beta) * Szzz * ffeq_zzz;
+		KS.f[dir27::zzp] -= beta * (no2 * Dszzp + gamma * Dhzzp) - (no1 - beta) * Szzp * ffeq_zzp;
+		KS.f[dir27::zpm] -= beta * (no2 * Dszpm + gamma * Dhzpm) - (no1 - beta) * Szpm * ffeq_zpm;
+		KS.f[dir27::zpz] -= beta * (no2 * Dszpz + gamma * Dhzpz) - (no1 - beta) * Szpz * ffeq_zpz;
+		KS.f[dir27::zpp] -= beta * (no2 * Dszpp + gamma * Dhzpp) - (no1 - beta) * Szpp * ffeq_zpp;
+		KS.f[dir27::pmm] -= beta * (no2 * Dspmm + gamma * Dhpmm) - (no1 - beta) * Spmm * ffeq_pmm;
+		KS.f[dir27::pmz] -= beta * (no2 * Dspmz + gamma * Dhpmz) - (no1 - beta) * Spmz * ffeq_pmz;
+		KS.f[dir27::pmp] -= beta * (no2 * Dspmp + gamma * Dhpmp) - (no1 - beta) * Spmp * ffeq_pmp;
+		KS.f[dir27::pzm] -= beta * (no2 * Dspzm + gamma * Dhpzm) - (no1 - beta) * Spzm * ffeq_pzm;
+		KS.f[dir27::pzz] -= beta * (no2 * Dspzz + gamma * Dhpzz) - (no1 - beta) * Spzz * ffeq_pzz;
+		KS.f[dir27::pzp] -= beta * (no2 * Dspzp + gamma * Dhpzp) - (no1 - beta) * Spzp * ffeq_pzp;
+		KS.f[dir27::ppm] -= beta * (no2 * Dsppm + gamma * Dhppm) - (no1 - beta) * Sppm * ffeq_ppm;
+		KS.f[dir27::ppz] -= beta * (no2 * Dsppz + gamma * Dhppz) - (no1 - beta) * Sppz * ffeq_ppz;
+		KS.f[dir27::ppp] -= beta * (no2 * Dsppp + gamma * Dhppp) - (no1 - beta) * Sppp * ffeq_ppp;
 	}
 };
 
@@ -1027,12 +1048,15 @@ struct D3Q27_KBC_N4 : D3Q27_COMMON<TRAITS, LBM_EQ>
 	__cuda_callable__ static void collision(LBM_KS& KS)
 	{
 #ifdef USE_GALILEAN_CORRECTION
-		const dreal m_200 = KS.f[mmm] + KS.f[mmp] + KS.f[mmz] + KS.f[mpm] + KS.f[mpp] + KS.f[mpz] + KS.f[mzm] + KS.f[mzp] + KS.f[mzz] + KS.f[pmm]
-						  + KS.f[pmp] + KS.f[pmz] + KS.f[ppm] + KS.f[ppp] + KS.f[ppz] + KS.f[pzm] + KS.f[pzp] + KS.f[pzz];
-		const dreal m_020 = KS.f[mmm] + KS.f[mmp] + KS.f[mmz] + KS.f[mpm] + KS.f[mpp] + KS.f[mpz] + KS.f[zmm] + KS.f[zmp] + KS.f[zmz] + KS.f[zpm]
-						  + KS.f[zpp] + KS.f[zpz] + KS.f[pmm] + KS.f[pmp] + KS.f[pmz] + KS.f[ppm] + KS.f[ppp] + KS.f[ppz];
-		const dreal m_002 = KS.f[mmm] + KS.f[mmp] + KS.f[mzm] + KS.f[mzp] + KS.f[mpm] + KS.f[mpp] + KS.f[zmm] + KS.f[zmp] + KS.f[zzm] + KS.f[zzp]
-						  + KS.f[zpm] + KS.f[zpp] + KS.f[pmm] + KS.f[pmp] + KS.f[pzm] + KS.f[pzp] + KS.f[ppm] + KS.f[ppp];
+		const dreal m_200 = KS.f[dir27::mmm] + KS.f[dir27::mmp] + KS.f[dir27::mmz] + KS.f[dir27::mpm] + KS.f[dir27::mpp] + KS.f[dir27::mpz]
+						  + KS.f[dir27::mzm] + KS.f[dir27::mzp] + KS.f[dir27::mzz] + KS.f[dir27::pmm] + KS.f[dir27::pmp] + KS.f[dir27::pmz]
+						  + KS.f[dir27::ppm] + KS.f[dir27::ppp] + KS.f[dir27::ppz] + KS.f[dir27::pzm] + KS.f[dir27::pzp] + KS.f[dir27::pzz];
+		const dreal m_020 = KS.f[dir27::mmm] + KS.f[dir27::mmp] + KS.f[dir27::mmz] + KS.f[dir27::mpm] + KS.f[dir27::mpp] + KS.f[dir27::mpz]
+						  + KS.f[dir27::zmm] + KS.f[dir27::zmp] + KS.f[dir27::zmz] + KS.f[dir27::zpm] + KS.f[dir27::zpp] + KS.f[dir27::zpz]
+						  + KS.f[dir27::pmm] + KS.f[dir27::pmp] + KS.f[dir27::pmz] + KS.f[dir27::ppm] + KS.f[dir27::ppp] + KS.f[dir27::ppz];
+		const dreal m_002 = KS.f[dir27::mmm] + KS.f[dir27::mmp] + KS.f[dir27::mzm] + KS.f[dir27::mzp] + KS.f[dir27::mpm] + KS.f[dir27::mpp]
+						  + KS.f[dir27::zmm] + KS.f[dir27::zmp] + KS.f[dir27::zzm] + KS.f[dir27::zzp] + KS.f[dir27::zpm] + KS.f[dir27::zpp]
+						  + KS.f[dir27::pmm] + KS.f[dir27::pmp] + KS.f[dir27::pzm] + KS.f[dir27::pzp] + KS.f[dir27::ppm] + KS.f[dir27::ppp];
 
 		const dreal Dxu = -omega1 * n1o2 * (no3 * m_200 / KS.rho - no1 - no3 * KS.vx * KS.vx);
 		const dreal Dyv = -omega1 * n1o2 * (no3 * m_020 / KS.rho - no1 - no3 * KS.vy * KS.vy);
@@ -1123,33 +1147,37 @@ struct D3Q27_KBC_N4 : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal ifeq_ppp = no1 / ffeq_ppp;
 
 		//raw moments used in tensors
-		const dreal M200 = KS.f[mmm] + KS.f[mmp] + KS.f[mmz] + KS.f[mpm] + KS.f[mpp] + KS.f[mpz] + KS.f[mzm] + KS.f[mzp] + KS.f[mzz] + KS.f[pmm]
-						 + KS.f[pmp] + KS.f[pmz] + KS.f[ppm] + KS.f[ppp] + KS.f[ppz] + KS.f[pzm] + KS.f[pzp] + KS.f[pzz];
-		const dreal M020 = KS.f[mmm] + KS.f[mmp] + KS.f[mmz] + KS.f[mpm] + KS.f[mpp] + KS.f[mpz] + KS.f[zmm] + KS.f[zmp] + KS.f[zmz] + KS.f[zpm]
-						 + KS.f[zpp] + KS.f[zpz] + KS.f[pmm] + KS.f[pmp] + KS.f[pmz] + KS.f[ppm] + KS.f[ppp] + KS.f[ppz];
-		const dreal M002 = KS.f[mmm] + KS.f[mmp] + KS.f[mzm] + KS.f[mzp] + KS.f[mpm] + KS.f[mpp] + KS.f[zmm] + KS.f[zmp] + KS.f[zzm] + KS.f[zzp]
-						 + KS.f[zpm] + KS.f[zpp] + KS.f[pmm] + KS.f[pmp] + KS.f[pzm] + KS.f[pzp] + KS.f[ppm] + KS.f[ppp];
+		const dreal M200 = KS.f[dir27::mmm] + KS.f[dir27::mmp] + KS.f[dir27::mmz] + KS.f[dir27::mpm] + KS.f[dir27::mpp] + KS.f[dir27::mpz]
+						 + KS.f[dir27::mzm] + KS.f[dir27::mzp] + KS.f[dir27::mzz] + KS.f[dir27::pmm] + KS.f[dir27::pmp] + KS.f[dir27::pmz]
+						 + KS.f[dir27::ppm] + KS.f[dir27::ppp] + KS.f[dir27::ppz] + KS.f[dir27::pzm] + KS.f[dir27::pzp] + KS.f[dir27::pzz];
+		const dreal M020 = KS.f[dir27::mmm] + KS.f[dir27::mmp] + KS.f[dir27::mmz] + KS.f[dir27::mpm] + KS.f[dir27::mpp] + KS.f[dir27::mpz]
+						 + KS.f[dir27::zmm] + KS.f[dir27::zmp] + KS.f[dir27::zmz] + KS.f[dir27::zpm] + KS.f[dir27::zpp] + KS.f[dir27::zpz]
+						 + KS.f[dir27::pmm] + KS.f[dir27::pmp] + KS.f[dir27::pmz] + KS.f[dir27::ppm] + KS.f[dir27::ppp] + KS.f[dir27::ppz];
+		const dreal M002 = KS.f[dir27::mmm] + KS.f[dir27::mmp] + KS.f[dir27::mzm] + KS.f[dir27::mzp] + KS.f[dir27::mpm] + KS.f[dir27::mpp]
+						 + KS.f[dir27::zmm] + KS.f[dir27::zmp] + KS.f[dir27::zzm] + KS.f[dir27::zzp] + KS.f[dir27::zpm] + KS.f[dir27::zpp]
+						 + KS.f[dir27::pmm] + KS.f[dir27::pmp] + KS.f[dir27::pzm] + KS.f[dir27::pzp] + KS.f[dir27::ppm] + KS.f[dir27::ppp];
 
-		const dreal M110 = KS.f[mmm] + KS.f[mmz] + KS.f[mmp] - KS.f[mpm] - KS.f[mpz] - KS.f[mpp] - KS.f[pmm] - KS.f[pmz] - KS.f[pmp] + KS.f[ppm]
-						 + KS.f[ppz] + KS.f[ppp];
-		const dreal M101 = KS.f[mmm] - KS.f[mmp] + KS.f[mzm] - KS.f[mzp] + KS.f[mpm] - KS.f[mpp] - KS.f[pmm] + KS.f[pmp] - KS.f[pzm] + KS.f[pzp]
-						 - KS.f[ppm] + KS.f[ppp];
-		const dreal M011 = KS.f[mmm] - KS.f[mmp] - KS.f[mpm] + KS.f[mpp] + KS.f[zmm] - KS.f[zmp] - KS.f[zpm] + KS.f[zpp] + KS.f[pmm] - KS.f[pmp]
-						 - KS.f[ppm] + KS.f[ppp];
-		const dreal M111 = KS.f[ppp] + KS.f[mmp] + KS.f[mpm] - KS.f[mpp] + KS.f[pmm] - KS.f[pmp] - KS.f[ppm] - KS.f[mmm];
+		const dreal M110 = KS.f[dir27::mmm] + KS.f[dir27::mmz] + KS.f[dir27::mmp] - KS.f[dir27::mpm] - KS.f[dir27::mpz] - KS.f[dir27::mpp]
+						 - KS.f[dir27::pmm] - KS.f[dir27::pmz] - KS.f[dir27::pmp] + KS.f[dir27::ppm] + KS.f[dir27::ppz] + KS.f[dir27::ppp];
+		const dreal M101 = KS.f[dir27::mmm] - KS.f[dir27::mmp] + KS.f[dir27::mzm] - KS.f[dir27::mzp] + KS.f[dir27::mpm] - KS.f[dir27::mpp]
+						 - KS.f[dir27::pmm] + KS.f[dir27::pmp] - KS.f[dir27::pzm] + KS.f[dir27::pzp] - KS.f[dir27::ppm] + KS.f[dir27::ppp];
+		const dreal M011 = KS.f[dir27::mmm] - KS.f[dir27::mmp] - KS.f[dir27::mpm] + KS.f[dir27::mpp] + KS.f[dir27::zmm] - KS.f[dir27::zmp]
+						 - KS.f[dir27::zpm] + KS.f[dir27::zpp] + KS.f[dir27::pmm] - KS.f[dir27::pmp] - KS.f[dir27::ppm] + KS.f[dir27::ppp];
+		const dreal M111 = KS.f[dir27::ppp] + KS.f[dir27::mmp] + KS.f[dir27::mpm] - KS.f[dir27::mpp] + KS.f[dir27::pmm] - KS.f[dir27::pmp]
+						 - KS.f[dir27::ppm] - KS.f[dir27::mmm];
 
-		const dreal M201 = KS.f[ppp] + KS.f[mmp] - KS.f[mzm] + KS.f[mzp] - KS.f[mpm] + KS.f[mpp] - KS.f[pmm] + KS.f[pmp] - KS.f[pzm] + KS.f[pzp]
-						 - KS.f[ppm] - KS.f[mmm];
-		const dreal M102 = KS.f[ppp] - KS.f[mmp] - KS.f[mzm] - KS.f[mzp] - KS.f[mpm] - KS.f[mpp] + KS.f[pmm] + KS.f[pmp] + KS.f[pzm] + KS.f[pzp]
-						 + KS.f[ppm] - KS.f[mmm];
-		const dreal M210 = KS.f[ppp] - KS.f[mmz] - KS.f[mmp] + KS.f[mpm] + KS.f[mpz] + KS.f[mpp] - KS.f[pmm] - KS.f[pmz] - KS.f[pmp] + KS.f[ppm]
-						 + KS.f[ppz] - KS.f[mmm];
-		const dreal M120 = KS.f[ppp] - KS.f[mmz] - KS.f[mmp] - KS.f[mpm] - KS.f[mpz] - KS.f[mpp] + KS.f[pmm] + KS.f[pmz] + KS.f[pmp] + KS.f[ppm]
-						 + KS.f[ppz] - KS.f[mmm];
-		const dreal M021 = KS.f[ppp] + KS.f[mmp] - KS.f[mpm] + KS.f[mpp] - KS.f[zmm] + KS.f[zmp] - KS.f[zpm] + KS.f[zpp] - KS.f[pmm] + KS.f[pmp]
-						 - KS.f[ppm] - KS.f[mmm];
-		const dreal M012 = KS.f[ppp] - KS.f[mmp] + KS.f[mpm] + KS.f[mpp] - KS.f[zmm] - KS.f[zmp] + KS.f[zpm] + KS.f[zpp] - KS.f[pmm] - KS.f[pmp]
-						 + KS.f[ppm] - KS.f[mmm];
+		const dreal M201 = KS.f[dir27::ppp] + KS.f[dir27::mmp] - KS.f[dir27::mzm] + KS.f[dir27::mzp] - KS.f[dir27::mpm] + KS.f[dir27::mpp]
+						 - KS.f[dir27::pmm] + KS.f[dir27::pmp] - KS.f[dir27::pzm] + KS.f[dir27::pzp] - KS.f[dir27::ppm] - KS.f[dir27::mmm];
+		const dreal M102 = KS.f[dir27::ppp] - KS.f[dir27::mmp] - KS.f[dir27::mzm] - KS.f[dir27::mzp] - KS.f[dir27::mpm] - KS.f[dir27::mpp]
+						 + KS.f[dir27::pmm] + KS.f[dir27::pmp] + KS.f[dir27::pzm] + KS.f[dir27::pzp] + KS.f[dir27::ppm] - KS.f[dir27::mmm];
+		const dreal M210 = KS.f[dir27::ppp] - KS.f[dir27::mmz] - KS.f[dir27::mmp] + KS.f[dir27::mpm] + KS.f[dir27::mpz] + KS.f[dir27::mpp]
+						 - KS.f[dir27::pmm] - KS.f[dir27::pmz] - KS.f[dir27::pmp] + KS.f[dir27::ppm] + KS.f[dir27::ppz] - KS.f[dir27::mmm];
+		const dreal M120 = KS.f[dir27::ppp] - KS.f[dir27::mmz] - KS.f[dir27::mmp] - KS.f[dir27::mpm] - KS.f[dir27::mpz] - KS.f[dir27::mpp]
+						 + KS.f[dir27::pmm] + KS.f[dir27::pmz] + KS.f[dir27::pmp] + KS.f[dir27::ppm] + KS.f[dir27::ppz] - KS.f[dir27::mmm];
+		const dreal M021 = KS.f[dir27::ppp] + KS.f[dir27::mmp] - KS.f[dir27::mpm] + KS.f[dir27::mpp] - KS.f[dir27::zmm] + KS.f[dir27::zmp]
+						 - KS.f[dir27::zpm] + KS.f[dir27::zpp] - KS.f[dir27::pmm] + KS.f[dir27::pmp] - KS.f[dir27::ppm] - KS.f[dir27::mmm];
+		const dreal M012 = KS.f[dir27::ppp] - KS.f[dir27::mmp] + KS.f[dir27::mpm] + KS.f[dir27::mpp] - KS.f[dir27::zmm] - KS.f[dir27::zmp]
+						 + KS.f[dir27::zpm] + KS.f[dir27::zpp] - KS.f[dir27::pmm] - KS.f[dir27::pmp] + KS.f[dir27::ppm] - KS.f[dir27::mmm];
 
 		// delta of shear part: delta s_i = s_i - s_i^eq; s = D + T + Q
 		const dreal Dsmmm = Dmmm - eDmmm + Tmmm - eTmmm + Qmmm - eQmmm;
@@ -1181,33 +1209,33 @@ struct D3Q27_KBC_N4 : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal Dsppp = Dppp - eDppp + Tppp - eTppp + Qppp - eQppp;
 
 		// delta of high order part: delta h_i = h_i - h_i^eq = f_i - f_i^eq - delta s_i
-		const dreal Dhmmm = KS.f[mmm] - ffeq_mmm - Dsmmm;
-		const dreal Dhmmz = KS.f[mmz] - ffeq_mmz - Dsmmz;
-		const dreal Dhmmp = KS.f[mmp] - ffeq_mmp - Dsmmp;
-		const dreal Dhmzm = KS.f[mzm] - ffeq_mzm - Dsmzm;
-		const dreal Dhmzz = KS.f[mzz] - ffeq_mzz - Dsmzz;
-		const dreal Dhmzp = KS.f[mzp] - ffeq_mzp - Dsmzp;
-		const dreal Dhmpm = KS.f[mpm] - ffeq_mpm - Dsmpm;
-		const dreal Dhmpz = KS.f[mpz] - ffeq_mpz - Dsmpz;
-		const dreal Dhmpp = KS.f[mpp] - ffeq_mpp - Dsmpp;
-		const dreal Dhzmm = KS.f[zmm] - ffeq_zmm - Dszmm;
-		const dreal Dhzmz = KS.f[zmz] - ffeq_zmz - Dszmz;
-		const dreal Dhzmp = KS.f[zmp] - ffeq_zmp - Dszmp;
-		const dreal Dhzzm = KS.f[zzm] - ffeq_zzm - Dszzm;
-		const dreal Dhzzz = KS.f[zzz] - ffeq_zzz - Dszzz;
-		const dreal Dhzzp = KS.f[zzp] - ffeq_zzp - Dszzp;
-		const dreal Dhzpm = KS.f[zpm] - ffeq_zpm - Dszpm;
-		const dreal Dhzpz = KS.f[zpz] - ffeq_zpz - Dszpz;
-		const dreal Dhzpp = KS.f[zpp] - ffeq_zpp - Dszpp;
-		const dreal Dhpmm = KS.f[pmm] - ffeq_pmm - Dspmm;
-		const dreal Dhpmz = KS.f[pmz] - ffeq_pmz - Dspmz;
-		const dreal Dhpmp = KS.f[pmp] - ffeq_pmp - Dspmp;
-		const dreal Dhpzm = KS.f[pzm] - ffeq_pzm - Dspzm;
-		const dreal Dhpzz = KS.f[pzz] - ffeq_pzz - Dspzz;
-		const dreal Dhpzp = KS.f[pzp] - ffeq_pzp - Dspzp;
-		const dreal Dhppm = KS.f[ppm] - ffeq_ppm - Dsppm;
-		const dreal Dhppz = KS.f[ppz] - ffeq_ppz - Dsppz;
-		const dreal Dhppp = KS.f[ppp] - ffeq_ppp - Dsppp;
+		const dreal Dhmmm = KS.f[dir27::mmm] - ffeq_mmm - Dsmmm;
+		const dreal Dhmmz = KS.f[dir27::mmz] - ffeq_mmz - Dsmmz;
+		const dreal Dhmmp = KS.f[dir27::mmp] - ffeq_mmp - Dsmmp;
+		const dreal Dhmzm = KS.f[dir27::mzm] - ffeq_mzm - Dsmzm;
+		const dreal Dhmzz = KS.f[dir27::mzz] - ffeq_mzz - Dsmzz;
+		const dreal Dhmzp = KS.f[dir27::mzp] - ffeq_mzp - Dsmzp;
+		const dreal Dhmpm = KS.f[dir27::mpm] - ffeq_mpm - Dsmpm;
+		const dreal Dhmpz = KS.f[dir27::mpz] - ffeq_mpz - Dsmpz;
+		const dreal Dhmpp = KS.f[dir27::mpp] - ffeq_mpp - Dsmpp;
+		const dreal Dhzmm = KS.f[dir27::zmm] - ffeq_zmm - Dszmm;
+		const dreal Dhzmz = KS.f[dir27::zmz] - ffeq_zmz - Dszmz;
+		const dreal Dhzmp = KS.f[dir27::zmp] - ffeq_zmp - Dszmp;
+		const dreal Dhzzm = KS.f[dir27::zzm] - ffeq_zzm - Dszzm;
+		const dreal Dhzzz = KS.f[dir27::zzz] - ffeq_zzz - Dszzz;
+		const dreal Dhzzp = KS.f[dir27::zzp] - ffeq_zzp - Dszzp;
+		const dreal Dhzpm = KS.f[dir27::zpm] - ffeq_zpm - Dszpm;
+		const dreal Dhzpz = KS.f[dir27::zpz] - ffeq_zpz - Dszpz;
+		const dreal Dhzpp = KS.f[dir27::zpp] - ffeq_zpp - Dszpp;
+		const dreal Dhpmm = KS.f[dir27::pmm] - ffeq_pmm - Dspmm;
+		const dreal Dhpmz = KS.f[dir27::pmz] - ffeq_pmz - Dspmz;
+		const dreal Dhpmp = KS.f[dir27::pmp] - ffeq_pmp - Dspmp;
+		const dreal Dhpzm = KS.f[dir27::pzm] - ffeq_pzm - Dspzm;
+		const dreal Dhpzz = KS.f[dir27::pzz] - ffeq_pzz - Dspzz;
+		const dreal Dhpzp = KS.f[dir27::pzp] - ffeq_pzp - Dspzp;
+		const dreal Dhppm = KS.f[dir27::ppm] - ffeq_ppm - Dsppm;
+		const dreal Dhppz = KS.f[dir27::ppz] - ffeq_ppz - Dsppz;
+		const dreal Dhppp = KS.f[dir27::ppp] - ffeq_ppp - Dsppp;
 
 		const dreal beta = _beta;
 		const dreal gamma = _gamma;
@@ -1241,32 +1269,32 @@ struct D3Q27_KBC_N4 : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal Szpp = (no3 * (-KS.vx * KS.fx + (-KS.vy + no1) * KS.fy + (-KS.vz + no1) * KS.fz)) / KS.rho;
 		const dreal Sppp = (no3 * ((-KS.vx + no1) * KS.fx + (-KS.vy + no1) * KS.fy + (-KS.vz + no1) * KS.fz)) / KS.rho;
 
-		KS.f[mmm] -= beta * (no2 * Dsmmm + gamma * Dhmmm) - (no1 - beta) * Smmm * ffeq_mmm;
-		KS.f[mmz] -= beta * (no2 * Dsmmz + gamma * Dhmmz) - (no1 - beta) * Smmz * ffeq_mmz;
-		KS.f[mmp] -= beta * (no2 * Dsmmp + gamma * Dhmmp) - (no1 - beta) * Smmp * ffeq_mmp;
-		KS.f[mzm] -= beta * (no2 * Dsmzm + gamma * Dhmzm) - (no1 - beta) * Smzm * ffeq_mzm;
-		KS.f[mzz] -= beta * (no2 * Dsmzz + gamma * Dhmzz) - (no1 - beta) * Smzz * ffeq_mzz;
-		KS.f[mzp] -= beta * (no2 * Dsmzp + gamma * Dhmzp) - (no1 - beta) * Smzp * ffeq_mzp;
-		KS.f[mpm] -= beta * (no2 * Dsmpm + gamma * Dhmpm) - (no1 - beta) * Smpm * ffeq_mpm;
-		KS.f[mpz] -= beta * (no2 * Dsmpz + gamma * Dhmpz) - (no1 - beta) * Smpz * ffeq_mpz;
-		KS.f[mpp] -= beta * (no2 * Dsmpp + gamma * Dhmpp) - (no1 - beta) * Smpp * ffeq_mpp;
-		KS.f[zmm] -= beta * (no2 * Dszmm + gamma * Dhzmm) - (no1 - beta) * Szmm * ffeq_zmm;
-		KS.f[zmz] -= beta * (no2 * Dszmz + gamma * Dhzmz) - (no1 - beta) * Szmz * ffeq_zmz;
-		KS.f[zmp] -= beta * (no2 * Dszmp + gamma * Dhzmp) - (no1 - beta) * Szmp * ffeq_zmp;
-		KS.f[zzm] -= beta * (no2 * Dszzm + gamma * Dhzzm) - (no1 - beta) * Szzm * ffeq_zzm;
-		KS.f[zzz] -= beta * (no2 * Dszzz + gamma * Dhzzz) - (no1 - beta) * Szzz * ffeq_zzz;
-		KS.f[zzp] -= beta * (no2 * Dszzp + gamma * Dhzzp) - (no1 - beta) * Szzp * ffeq_zzp;
-		KS.f[zpm] -= beta * (no2 * Dszpm + gamma * Dhzpm) - (no1 - beta) * Szpm * ffeq_zpm;
-		KS.f[zpz] -= beta * (no2 * Dszpz + gamma * Dhzpz) - (no1 - beta) * Szpz * ffeq_zpz;
-		KS.f[zpp] -= beta * (no2 * Dszpp + gamma * Dhzpp) - (no1 - beta) * Szpp * ffeq_zpp;
-		KS.f[pmm] -= beta * (no2 * Dspmm + gamma * Dhpmm) - (no1 - beta) * Spmm * ffeq_pmm;
-		KS.f[pmz] -= beta * (no2 * Dspmz + gamma * Dhpmz) - (no1 - beta) * Spmz * ffeq_pmz;
-		KS.f[pmp] -= beta * (no2 * Dspmp + gamma * Dhpmp) - (no1 - beta) * Spmp * ffeq_pmp;
-		KS.f[pzm] -= beta * (no2 * Dspzm + gamma * Dhpzm) - (no1 - beta) * Spzm * ffeq_pzm;
-		KS.f[pzz] -= beta * (no2 * Dspzz + gamma * Dhpzz) - (no1 - beta) * Spzz * ffeq_pzz;
-		KS.f[pzp] -= beta * (no2 * Dspzp + gamma * Dhpzp) - (no1 - beta) * Spzp * ffeq_pzp;
-		KS.f[ppm] -= beta * (no2 * Dsppm + gamma * Dhppm) - (no1 - beta) * Sppm * ffeq_ppm;
-		KS.f[ppz] -= beta * (no2 * Dsppz + gamma * Dhppz) - (no1 - beta) * Sppz * ffeq_ppz;
-		KS.f[ppp] -= beta * (no2 * Dsppp + gamma * Dhppp) - (no1 - beta) * Sppp * ffeq_ppp;
+		KS.f[dir27::mmm] -= beta * (no2 * Dsmmm + gamma * Dhmmm) - (no1 - beta) * Smmm * ffeq_mmm;
+		KS.f[dir27::mmz] -= beta * (no2 * Dsmmz + gamma * Dhmmz) - (no1 - beta) * Smmz * ffeq_mmz;
+		KS.f[dir27::mmp] -= beta * (no2 * Dsmmp + gamma * Dhmmp) - (no1 - beta) * Smmp * ffeq_mmp;
+		KS.f[dir27::mzm] -= beta * (no2 * Dsmzm + gamma * Dhmzm) - (no1 - beta) * Smzm * ffeq_mzm;
+		KS.f[dir27::mzz] -= beta * (no2 * Dsmzz + gamma * Dhmzz) - (no1 - beta) * Smzz * ffeq_mzz;
+		KS.f[dir27::mzp] -= beta * (no2 * Dsmzp + gamma * Dhmzp) - (no1 - beta) * Smzp * ffeq_mzp;
+		KS.f[dir27::mpm] -= beta * (no2 * Dsmpm + gamma * Dhmpm) - (no1 - beta) * Smpm * ffeq_mpm;
+		KS.f[dir27::mpz] -= beta * (no2 * Dsmpz + gamma * Dhmpz) - (no1 - beta) * Smpz * ffeq_mpz;
+		KS.f[dir27::mpp] -= beta * (no2 * Dsmpp + gamma * Dhmpp) - (no1 - beta) * Smpp * ffeq_mpp;
+		KS.f[dir27::zmm] -= beta * (no2 * Dszmm + gamma * Dhzmm) - (no1 - beta) * Szmm * ffeq_zmm;
+		KS.f[dir27::zmz] -= beta * (no2 * Dszmz + gamma * Dhzmz) - (no1 - beta) * Szmz * ffeq_zmz;
+		KS.f[dir27::zmp] -= beta * (no2 * Dszmp + gamma * Dhzmp) - (no1 - beta) * Szmp * ffeq_zmp;
+		KS.f[dir27::zzm] -= beta * (no2 * Dszzm + gamma * Dhzzm) - (no1 - beta) * Szzm * ffeq_zzm;
+		KS.f[dir27::zzz] -= beta * (no2 * Dszzz + gamma * Dhzzz) - (no1 - beta) * Szzz * ffeq_zzz;
+		KS.f[dir27::zzp] -= beta * (no2 * Dszzp + gamma * Dhzzp) - (no1 - beta) * Szzp * ffeq_zzp;
+		KS.f[dir27::zpm] -= beta * (no2 * Dszpm + gamma * Dhzpm) - (no1 - beta) * Szpm * ffeq_zpm;
+		KS.f[dir27::zpz] -= beta * (no2 * Dszpz + gamma * Dhzpz) - (no1 - beta) * Szpz * ffeq_zpz;
+		KS.f[dir27::zpp] -= beta * (no2 * Dszpp + gamma * Dhzpp) - (no1 - beta) * Szpp * ffeq_zpp;
+		KS.f[dir27::pmm] -= beta * (no2 * Dspmm + gamma * Dhpmm) - (no1 - beta) * Spmm * ffeq_pmm;
+		KS.f[dir27::pmz] -= beta * (no2 * Dspmz + gamma * Dhpmz) - (no1 - beta) * Spmz * ffeq_pmz;
+		KS.f[dir27::pmp] -= beta * (no2 * Dspmp + gamma * Dhpmp) - (no1 - beta) * Spmp * ffeq_pmp;
+		KS.f[dir27::pzm] -= beta * (no2 * Dspzm + gamma * Dhpzm) - (no1 - beta) * Spzm * ffeq_pzm;
+		KS.f[dir27::pzz] -= beta * (no2 * Dspzz + gamma * Dhpzz) - (no1 - beta) * Spzz * ffeq_pzz;
+		KS.f[dir27::pzp] -= beta * (no2 * Dspzp + gamma * Dhpzp) - (no1 - beta) * Spzp * ffeq_pzp;
+		KS.f[dir27::ppm] -= beta * (no2 * Dsppm + gamma * Dhppm) - (no1 - beta) * Sppm * ffeq_ppm;
+		KS.f[dir27::ppz] -= beta * (no2 * Dsppz + gamma * Dhppz) - (no1 - beta) * Sppz * ffeq_ppz;
+		KS.f[dir27::ppp] -= beta * (no2 * Dsppp + gamma * Dhppp) - (no1 - beta) * Sppp * ffeq_ppp;
 	}
 };

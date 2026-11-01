@@ -35,22 +35,22 @@ struct D3Q7_STREAMING_ESO_PUSH
 		if (! SD.even_iter) {
 			// heads pushed to their own slot at the own site, tails to the
 			// tail slot shifted by -c_h
-			SD.df(df_cur, pzz, x, y, z) = KS.f[pzz];
-			SD.df(df_cur, mzz, xm, y, z) = KS.f[mzz];
-			SD.df(df_cur, zpz, x, y, z) = KS.f[zpz];
-			SD.df(df_cur, zmz, x, ym, z) = KS.f[zmz];
-			SD.df(df_cur, zzp, x, y, z) = KS.f[zzp];
-			SD.df(df_cur, zzm, x, y, zm) = KS.f[zzm];
-			SD.df(df_cur, zzz, x, y, z) = KS.f[zzz];
+			SD.df(df_cur, dir27::pzz, x, y, z) = KS.f[dir27::pzz];
+			SD.df(df_cur, dir27::mzz, xm, y, z) = KS.f[dir27::mzz];
+			SD.df(df_cur, dir27::zpz, x, y, z) = KS.f[dir27::zpz];
+			SD.df(df_cur, dir27::zmz, x, ym, z) = KS.f[dir27::zmz];
+			SD.df(df_cur, dir27::zzp, x, y, z) = KS.f[dir27::zzp];
+			SD.df(df_cur, dir27::zzm, x, y, zm) = KS.f[dir27::zzm];
+			SD.df(df_cur, dir27::zzz, x, y, z) = KS.f[dir27::zzz];
 		}
 		else {
-			SD.df(df_cur, pzz, xm, y, z) = KS.f[mzz];
-			SD.df(df_cur, mzz, x, y, z) = KS.f[pzz];
-			SD.df(df_cur, zpz, x, ym, z) = KS.f[zmz];
-			SD.df(df_cur, zmz, x, y, z) = KS.f[zpz];
-			SD.df(df_cur, zzp, x, y, zm) = KS.f[zzm];
-			SD.df(df_cur, zzm, x, y, z) = KS.f[zzp];
-			SD.df(df_cur, zzz, x, y, z) = KS.f[zzz];
+			SD.df(df_cur, dir27::pzz, xm, y, z) = KS.f[dir27::mzz];
+			SD.df(df_cur, dir27::mzz, x, y, z) = KS.f[dir27::pzz];
+			SD.df(df_cur, dir27::zpz, x, ym, z) = KS.f[dir27::zmz];
+			SD.df(df_cur, dir27::zmz, x, y, z) = KS.f[dir27::zpz];
+			SD.df(df_cur, dir27::zzp, x, y, zm) = KS.f[dir27::zzm];
+			SD.df(df_cur, dir27::zzm, x, y, z) = KS.f[dir27::zzp];
+			SD.df(df_cur, dir27::zzz, x, y, z) = KS.f[dir27::zzz];
 		}
 	}
 
@@ -60,22 +60,22 @@ struct D3Q7_STREAMING_ESO_PUSH
 		if (! SD.even_iter) {
 			// heads read from the tail slot one step upstream (-c_h), tails
 			// from the head slot at the own site
-			KS.f[pzz] = SD.df(df_cur, mzz, xm, y, z);
-			KS.f[mzz] = SD.df(df_cur, pzz, x, y, z);
-			KS.f[zpz] = SD.df(df_cur, zmz, x, ym, z);
-			KS.f[zmz] = SD.df(df_cur, zpz, x, y, z);
-			KS.f[zzp] = SD.df(df_cur, zzm, x, y, zm);
-			KS.f[zzm] = SD.df(df_cur, zzp, x, y, z);
-			KS.f[zzz] = SD.df(df_cur, zzz, x, y, z);
+			KS.f[dir27::pzz] = SD.df(df_cur, dir27::mzz, xm, y, z);
+			KS.f[dir27::mzz] = SD.df(df_cur, dir27::pzz, x, y, z);
+			KS.f[dir27::zpz] = SD.df(df_cur, dir27::zmz, x, ym, z);
+			KS.f[dir27::zmz] = SD.df(df_cur, dir27::zpz, x, y, z);
+			KS.f[dir27::zzp] = SD.df(df_cur, dir27::zzm, x, y, zm);
+			KS.f[dir27::zzm] = SD.df(df_cur, dir27::zzp, x, y, z);
+			KS.f[dir27::zzz] = SD.df(df_cur, dir27::zzz, x, y, z);
 		}
 		else {
-			KS.f[pzz] = SD.df(df_cur, pzz, xm, y, z);
-			KS.f[mzz] = SD.df(df_cur, mzz, x, y, z);
-			KS.f[zpz] = SD.df(df_cur, zpz, x, ym, z);
-			KS.f[zmz] = SD.df(df_cur, zmz, x, y, z);
-			KS.f[zzp] = SD.df(df_cur, zzp, x, y, zm);
-			KS.f[zzm] = SD.df(df_cur, zzm, x, y, z);
-			KS.f[zzz] = SD.df(df_cur, zzz, x, y, z);
+			KS.f[dir27::pzz] = SD.df(df_cur, dir27::pzz, xm, y, z);
+			KS.f[dir27::mzz] = SD.df(df_cur, dir27::mzz, x, y, z);
+			KS.f[dir27::zpz] = SD.df(df_cur, dir27::zpz, x, ym, z);
+			KS.f[dir27::zmz] = SD.df(df_cur, dir27::zmz, x, y, z);
+			KS.f[dir27::zzp] = SD.df(df_cur, dir27::zzp, x, y, zm);
+			KS.f[dir27::zzm] = SD.df(df_cur, dir27::zzm, x, y, z);
+			KS.f[dir27::zzz] = SD.df(df_cur, dir27::zzz, x, y, z);
 		}
 	}
 

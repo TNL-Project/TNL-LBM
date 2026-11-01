@@ -22,13 +22,13 @@ struct D3Q7_STREAMING_AB_PUSH
 	__cuda_callable__ static void
 	postCollisionStreaming(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
-		SD.df(df_out, mzz, xm, y, z) = KS.f[mzz];
-		SD.df(df_out, zmz, x, ym, z) = KS.f[zmz];
-		SD.df(df_out, zzm, x, y, zm) = KS.f[zzm];
-		SD.df(df_out, zzz, x, y, z) = KS.f[zzz];
-		SD.df(df_out, zzp, x, y, zp) = KS.f[zzp];
-		SD.df(df_out, zpz, x, yp, z) = KS.f[zpz];
-		SD.df(df_out, pzz, xp, y, z) = KS.f[pzz];
+		SD.df(df_out, dir27::mzz, xm, y, z) = KS.f[dir27::mzz];
+		SD.df(df_out, dir27::zmz, x, ym, z) = KS.f[dir27::zmz];
+		SD.df(df_out, dir27::zzm, x, y, zm) = KS.f[dir27::zzm];
+		SD.df(df_out, dir27::zzz, x, y, z) = KS.f[dir27::zzz];
+		SD.df(df_out, dir27::zzp, x, y, zp) = KS.f[dir27::zzp];
+		SD.df(df_out, dir27::zpz, x, yp, z) = KS.f[dir27::zpz];
+		SD.df(df_out, dir27::pzz, xp, y, z) = KS.f[dir27::pzz];
 	}
 
 	// the post-stream populations sit at their own site: identity read

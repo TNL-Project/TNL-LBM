@@ -131,34 +131,34 @@ struct D3Q27_BC_All
 	{
 		// clang-format off
 		switch (code) {
-			case 0:  return mmm;
-			case 1:  return mmz;
-			case 2:  return mmp;
-			case 3:  return mzm;
-			case 4:  return mzz;
-			case 5:  return mzp;
-			case 6:  return mpm;
-			case 7:  return mpz;
-			case 8:  return mpp;
-			case 9:  return zmm;
-			case 10: return zmz;
-			case 11: return zmp;
-			case 12: return zzm;
-			case 13: return zzz;
-			case 14: return zzp;
-			case 15: return zpm;
-			case 16: return zpz;
-			case 17: return zpp;
-			case 18: return pmm;
-			case 19: return pmz;
-			case 20: return pmp;
-			case 21: return pzm;
-			case 22: return pzz;
-			case 23: return pzp;
-			case 24: return ppm;
-			case 25: return ppz;
-			case 26: return ppp;
-			default: return zzz;
+			case 0:  return dir27::mmm;
+			case 1:  return dir27::mmz;
+			case 2:  return dir27::mmp;
+			case 3:  return dir27::mzm;
+			case 4:  return dir27::mzz;
+			case 5:  return dir27::mzp;
+			case 6:  return dir27::mpm;
+			case 7:  return dir27::mpz;
+			case 8:  return dir27::mpp;
+			case 9:  return dir27::zmm;
+			case 10: return dir27::zmz;
+			case 11: return dir27::zmp;
+			case 12: return dir27::zzm;
+			case 13: return dir27::zzz;
+			case 14: return dir27::zzp;
+			case 15: return dir27::zpm;
+			case 16: return dir27::zpz;
+			case 17: return dir27::zpp;
+			case 18: return dir27::pmm;
+			case 19: return dir27::pmz;
+			case 20: return dir27::pmp;
+			case 21: return dir27::pzm;
+			case 22: return dir27::pzz;
+			case 23: return dir27::pzp;
+			case 24: return dir27::ppm;
+			case 25: return dir27::ppz;
+			case 26: return dir27::ppp;
+			default: return dir27::zzz;
 		}
 		// clang-format on
 	}
@@ -401,57 +401,57 @@ struct D3Q27_BC_All
 				{
 					dreal t;
 					// clang-format off
-					t = KS.f[ppp];
-					KS.f[ppp] = KS.f[mmm] - no6*KS.rho*n1o216*(- KS.vx - KS.vy - KS.vz);
-					KS.f[mmm] = t         - no6*KS.rho*n1o216*(  KS.vx + KS.vy + KS.vz);
+					t = KS.f[dir27::ppp];
+					KS.f[dir27::ppp] = KS.f[dir27::mmm] - no6*KS.rho*n1o216*(- KS.vx - KS.vy - KS.vz);
+					KS.f[dir27::mmm] = t                - no6*KS.rho*n1o216*(  KS.vx + KS.vy + KS.vz);
 
-					t = KS.f[ppz];
-					KS.f[ppz] = KS.f[mmz] - no6*KS.rho*n1o54*(- KS.vx - KS.vy);
-					KS.f[mmz] = t         - no6*KS.rho*n1o54*(  KS.vx + KS.vy);
+					t = KS.f[dir27::ppz];
+					KS.f[dir27::ppz] = KS.f[dir27::mmz] - no6*KS.rho*n1o54*(- KS.vx - KS.vy);
+					KS.f[dir27::mmz] = t                - no6*KS.rho*n1o54*(  KS.vx + KS.vy);
 
-					t = KS.f[ppm];
-					KS.f[ppm] = KS.f[mmp] - no6*KS.rho*n1o216*(- KS.vx - KS.vy + KS.vz);
-					KS.f[mmp] = t         - no6*KS.rho*n1o216*(  KS.vx + KS.vy - KS.vz);
+					t = KS.f[dir27::ppm];
+					KS.f[dir27::ppm] = KS.f[dir27::mmp] - no6*KS.rho*n1o216*(- KS.vx - KS.vy + KS.vz);
+					KS.f[dir27::mmp] = t                - no6*KS.rho*n1o216*(  KS.vx + KS.vy - KS.vz);
 
-					t = KS.f[pzp];
-					KS.f[pzp] = KS.f[mzm] - no6*KS.rho*n1o54*(- KS.vx - KS.vz);
-					KS.f[mzm] = t         - no6*KS.rho*n1o54*(  KS.vx + KS.vz);
+					t = KS.f[dir27::pzp];
+					KS.f[dir27::pzp] = KS.f[dir27::mzm] - no6*KS.rho*n1o54*(- KS.vx - KS.vz);
+					KS.f[dir27::mzm] = t                - no6*KS.rho*n1o54*(  KS.vx + KS.vz);
 
-					t = KS.f[pzz];
-					KS.f[pzz] = KS.f[mzz] - no6*KS.rho*n2o27*(- KS.vx);
-					KS.f[mzz] = t         - no6*KS.rho*n2o27*(  KS.vx);
+					t = KS.f[dir27::pzz];
+					KS.f[dir27::pzz] = KS.f[dir27::mzz] - no6*KS.rho*n2o27*(- KS.vx);
+					KS.f[dir27::mzz] = t                - no6*KS.rho*n2o27*(  KS.vx);
 
-					t = KS.f[pzm];
-					KS.f[pzm] = KS.f[mzp] - no6*KS.rho*n1o54*(- KS.vx + KS.vz);
-					KS.f[mzp] = t         - no6*KS.rho*n1o54*(  KS.vx - KS.vz);
+					t = KS.f[dir27::pzm];
+					KS.f[dir27::pzm] = KS.f[dir27::mzp] - no6*KS.rho*n1o54*(- KS.vx + KS.vz);
+					KS.f[dir27::mzp] = t                - no6*KS.rho*n1o54*(  KS.vx - KS.vz);
 
-					t = KS.f[pmp];
-					KS.f[pmp] = KS.f[mpm] - no6*KS.rho*n1o216*(- KS.vx + KS.vy - KS.vz);
-					KS.f[mpm] = t         - no6*KS.rho*n1o216*(  KS.vx - KS.vy + KS.vz);
+					t = KS.f[dir27::pmp];
+					KS.f[dir27::pmp] = KS.f[dir27::mpm] - no6*KS.rho*n1o216*(- KS.vx + KS.vy - KS.vz);
+					KS.f[dir27::mpm] = t                - no6*KS.rho*n1o216*(  KS.vx - KS.vy + KS.vz);
 
-					t = KS.f[pmz];
-					KS.f[pmz] = KS.f[mpz] - no6*KS.rho*n1o54*(- KS.vx + KS.vy);
-					KS.f[mpz] = t         - no6*KS.rho*n1o54*(  KS.vx - KS.vy);
+					t = KS.f[dir27::pmz];
+					KS.f[dir27::pmz] = KS.f[dir27::mpz] - no6*KS.rho*n1o54*(- KS.vx + KS.vy);
+					KS.f[dir27::mpz] = t                - no6*KS.rho*n1o54*(  KS.vx - KS.vy);
 
-					t = KS.f[pmm];
-					KS.f[pmm] = KS.f[mpp] - no6*KS.rho*n1o216*(- KS.vx + KS.vy + KS.vz);
-					KS.f[mpp] = t         - no6*KS.rho*n1o216*(  KS.vx - KS.vy - KS.vz);
+					t = KS.f[dir27::pmm];
+					KS.f[dir27::pmm] = KS.f[dir27::mpp] - no6*KS.rho*n1o216*(- KS.vx + KS.vy + KS.vz);
+					KS.f[dir27::mpp] = t                - no6*KS.rho*n1o216*(  KS.vx - KS.vy - KS.vz);
 
-					t = KS.f[zpp];
-					KS.f[zpp] = KS.f[zmm] - no6*KS.rho*n1o54*(- KS.vy - KS.vz);
-					KS.f[zmm] = t         - no6*KS.rho*n1o54*(  KS.vy + KS.vz);
+					t = KS.f[dir27::zpp];
+					KS.f[dir27::zpp] = KS.f[dir27::zmm] - no6*KS.rho*n1o54*(- KS.vy - KS.vz);
+					KS.f[dir27::zmm] = t                - no6*KS.rho*n1o54*(  KS.vy + KS.vz);
 
-					t = KS.f[zpz];
-					KS.f[zpz] = KS.f[zmz] - no6*KS.rho*n2o27*(- KS.vy);
-					KS.f[zmz] = t         - no6*KS.rho*n2o27*(  KS.vy);
+					t = KS.f[dir27::zpz];
+					KS.f[dir27::zpz] = KS.f[dir27::zmz] - no6*KS.rho*n2o27*(- KS.vy);
+					KS.f[dir27::zmz] = t                - no6*KS.rho*n2o27*(  KS.vy);
 
-					t = KS.f[zpm];
-					KS.f[zpm] = KS.f[zmp] - no6*KS.rho*n1o54*(- KS.vy + KS.vz);
-					KS.f[zmp] = t         - no6*KS.rho*n1o54*(  KS.vy - KS.vz);
+					t = KS.f[dir27::zpm];
+					KS.f[dir27::zpm] = KS.f[dir27::zmp] - no6*KS.rho*n1o54*(- KS.vy + KS.vz);
+					KS.f[dir27::zmp] = t                - no6*KS.rho*n1o54*(  KS.vy - KS.vz);
 
-					t = KS.f[zzp];
-					KS.f[zzp] = KS.f[zzm] - no6*KS.rho*n2o27*(- KS.vz);
-					KS.f[zzm] = t         - no6*KS.rho*n2o27*(  KS.vz);
+					t = KS.f[dir27::zzp];
+					KS.f[dir27::zzp] = KS.f[dir27::zzm] - no6*KS.rho*n2o27*(- KS.vz);
+					KS.f[dir27::zzm] = t                - no6*KS.rho*n2o27*(  KS.vz);
 					// clang-format on
 				}
 				break;
@@ -467,15 +467,15 @@ struct D3Q27_BC_All
 					// clang-format off
 					KS.rho = (dreal)1.0/(1-KS.vx) * (
 						(
-							f(zzz) + (
-								+ ((f(zpp) + f(zmm)) + (f(zpm) + f(zmp)))
-								+ ((f(zpz) + f(zmz)) + (f(zzp) + f(zzm)))
+							f(dir27::zzz) + (
+								+ ((f(dir27::zpp) + f(dir27::zmm)) + (f(dir27::zpm) + f(dir27::zmp)))
+								+ ((f(dir27::zpz) + f(dir27::zmz)) + (f(dir27::zzp) + f(dir27::zzm)))
 							)
 						)
 						+ 2*(
-							f(mzz) + (
-								+ ((f(mpp) + f(mmm)) + (f(mpm) + f(mmp)))
-								+ ((f(mpz) + f(mmz)) + (f(mzp) + f(mzm)))
+							f(dir27::mzz) + (
+								+ ((f(dir27::mpp) + f(dir27::mmm)) + (f(dir27::mpm) + f(dir27::mmp)))
+								+ ((f(dir27::mpz) + f(dir27::mmz)) + (f(dir27::mzp) + f(dir27::mzm)))
 							)
 						)
 					);
@@ -496,19 +496,19 @@ struct D3Q27_BC_All
 				KS.vy = 0;
 				KS.vz = 0;
 				// collision step: bounce-back
-				TNL::swap(KS.f[mmm], KS.f[ppp]);
-				TNL::swap(KS.f[mmz], KS.f[ppz]);
-				TNL::swap(KS.f[mmp], KS.f[ppm]);
-				TNL::swap(KS.f[mzm], KS.f[pzp]);
-				TNL::swap(KS.f[mzz], KS.f[pzz]);
-				TNL::swap(KS.f[mzp], KS.f[pzm]);
-				TNL::swap(KS.f[mpm], KS.f[pmp]);
-				TNL::swap(KS.f[mpz], KS.f[pmz]);
-				TNL::swap(KS.f[mpp], KS.f[pmm]);
-				TNL::swap(KS.f[zmm], KS.f[zpp]);
-				TNL::swap(KS.f[zzm], KS.f[zzp]);
-				TNL::swap(KS.f[zmz], KS.f[zpz]);
-				TNL::swap(KS.f[zmp], KS.f[zpm]);
+				TNL::swap(KS.f[dir27::mmm], KS.f[dir27::ppp]);
+				TNL::swap(KS.f[dir27::mmz], KS.f[dir27::ppz]);
+				TNL::swap(KS.f[dir27::mmp], KS.f[dir27::ppm]);
+				TNL::swap(KS.f[dir27::mzm], KS.f[dir27::pzp]);
+				TNL::swap(KS.f[dir27::mzz], KS.f[dir27::pzz]);
+				TNL::swap(KS.f[dir27::mzp], KS.f[dir27::pzm]);
+				TNL::swap(KS.f[dir27::mpm], KS.f[dir27::pmp]);
+				TNL::swap(KS.f[dir27::mpz], KS.f[dir27::pmz]);
+				TNL::swap(KS.f[dir27::mpp], KS.f[dir27::pmm]);
+				TNL::swap(KS.f[dir27::zmm], KS.f[dir27::zpp]);
+				TNL::swap(KS.f[dir27::zzm], KS.f[dir27::zzp]);
+				TNL::swap(KS.f[dir27::zmz], KS.f[dir27::zpz]);
+				TNL::swap(KS.f[dir27::zmp], KS.f[dir27::zpm]);
 				break;
 			case GEO_SYMMETRY:
 				{
@@ -543,43 +543,43 @@ struct D3Q27_BC_All
 				break;
 			case GEO_ADJOINT_WALL:	// works same as GEO_WALL --- only streaming step is different in adjoint
 				// collision step: bounce-back
-				TNL::swap(KS.f[mmm], KS.f[ppp]);
-				TNL::swap(KS.f[mmz], KS.f[ppz]);
-				TNL::swap(KS.f[mmp], KS.f[ppm]);
-				TNL::swap(KS.f[mzm], KS.f[pzp]);
-				TNL::swap(KS.f[mzz], KS.f[pzz]);
-				TNL::swap(KS.f[mzp], KS.f[pzm]);
-				TNL::swap(KS.f[mpm], KS.f[pmp]);
-				TNL::swap(KS.f[mpz], KS.f[pmz]);
-				TNL::swap(KS.f[mpp], KS.f[pmm]);
-				TNL::swap(KS.f[zmm], KS.f[zpp]);
-				TNL::swap(KS.f[zzm], KS.f[zzp]);
-				TNL::swap(KS.f[zmz], KS.f[zpz]);
-				TNL::swap(KS.f[zmp], KS.f[zpm]);
+				TNL::swap(KS.f[dir27::mmm], KS.f[dir27::ppp]);
+				TNL::swap(KS.f[dir27::mmz], KS.f[dir27::ppz]);
+				TNL::swap(KS.f[dir27::mmp], KS.f[dir27::ppm]);
+				TNL::swap(KS.f[dir27::mzm], KS.f[dir27::pzp]);
+				TNL::swap(KS.f[dir27::mzz], KS.f[dir27::pzz]);
+				TNL::swap(KS.f[dir27::mzp], KS.f[dir27::pzm]);
+				TNL::swap(KS.f[dir27::mpm], KS.f[dir27::pmp]);
+				TNL::swap(KS.f[dir27::mpz], KS.f[dir27::pmz]);
+				TNL::swap(KS.f[dir27::mpp], KS.f[dir27::pmm]);
+				TNL::swap(KS.f[dir27::zmm], KS.f[dir27::zpp]);
+				TNL::swap(KS.f[dir27::zzm], KS.f[dir27::zzp]);
+				TNL::swap(KS.f[dir27::zmz], KS.f[dir27::zpz]);
+				TNL::swap(KS.f[dir27::zmp], KS.f[dir27::zpm]);
 				break;
 			case GEO_ADJOINT_INFLOW_BB_LEFT:
 				{
 					// site-local post-collision populations from the wall node are needed
 					// for a valid rho in the collision below; the streamed +x populations
 					// come from the ghost face (unused in AB) and would pollute the state
-					KS.f[mzz] = TNL::Backend::ldg(SD.df(df_cur, pzz, x, y, z));
-					KS.f[mpz] = TNL::Backend::ldg(SD.df(df_cur, pmz, x, y, z));
-					KS.f[mmz] = TNL::Backend::ldg(SD.df(df_cur, ppz, x, y, z));
-					KS.f[mzp] = TNL::Backend::ldg(SD.df(df_cur, pzm, x, y, z));
-					KS.f[mzm] = TNL::Backend::ldg(SD.df(df_cur, pzp, x, y, z));
-					KS.f[mpp] = TNL::Backend::ldg(SD.df(df_cur, pmm, x, y, z));
-					KS.f[mpm] = TNL::Backend::ldg(SD.df(df_cur, pmp, x, y, z));
-					KS.f[mmp] = TNL::Backend::ldg(SD.df(df_cur, ppm, x, y, z));
-					KS.f[mmm] = TNL::Backend::ldg(SD.df(df_cur, ppp, x, y, z));
-					dreal temp_f_mzz = KS.f[mzz];
-					dreal temp_f_mpz = KS.f[mpz];
-					dreal temp_f_mmz = KS.f[mmz];
-					dreal temp_f_mzp = KS.f[mzp];
-					dreal temp_f_mzm = KS.f[mzm];
-					dreal temp_f_mpp = KS.f[mpp];
-					dreal temp_f_mpm = KS.f[mpm];
-					dreal temp_f_mmp = KS.f[mmp];
-					dreal temp_f_mmm = KS.f[mmm];
+					KS.f[dir27::mzz] = TNL::Backend::ldg(SD.df(df_cur, dir27::pzz, x, y, z));
+					KS.f[dir27::mpz] = TNL::Backend::ldg(SD.df(df_cur, dir27::pmz, x, y, z));
+					KS.f[dir27::mmz] = TNL::Backend::ldg(SD.df(df_cur, dir27::ppz, x, y, z));
+					KS.f[dir27::mzp] = TNL::Backend::ldg(SD.df(df_cur, dir27::pzm, x, y, z));
+					KS.f[dir27::mzm] = TNL::Backend::ldg(SD.df(df_cur, dir27::pzp, x, y, z));
+					KS.f[dir27::mpp] = TNL::Backend::ldg(SD.df(df_cur, dir27::pmm, x, y, z));
+					KS.f[dir27::mpm] = TNL::Backend::ldg(SD.df(df_cur, dir27::pmp, x, y, z));
+					KS.f[dir27::mmp] = TNL::Backend::ldg(SD.df(df_cur, dir27::ppm, x, y, z));
+					KS.f[dir27::mmm] = TNL::Backend::ldg(SD.df(df_cur, dir27::ppp, x, y, z));
+					dreal temp_f_mzz = KS.f[dir27::mzz];
+					dreal temp_f_mpz = KS.f[dir27::mpz];
+					dreal temp_f_mmz = KS.f[dir27::mmz];
+					dreal temp_f_mzp = KS.f[dir27::mzp];
+					dreal temp_f_mzm = KS.f[dir27::mzm];
+					dreal temp_f_mpp = KS.f[dir27::mpp];
+					dreal temp_f_mpm = KS.f[dir27::mpm];
+					dreal temp_f_mmp = KS.f[dir27::mmp];
+					dreal temp_f_mmm = KS.f[dir27::mmm];
 					COLL::collision(KS);
 					// load current inflow velocity profile
 					SD.inflow(KS, x, y, z);
@@ -595,33 +595,33 @@ struct D3Q27_BC_All
 								 + n1o216 * temp_f_mmp * no6 * (-KS.vx - KS.vy + KS.vz)
 								 + n1o216 * temp_f_mmm * no6 * (-KS.vx - KS.vy - KS.vz);
 					// clang-format on
-					KS.f[mmm] -= result;
-					KS.f[mmz] -= result;
-					KS.f[mmp] -= result;
-					KS.f[mzm] -= result;
-					KS.f[mzz] -= result;
-					KS.f[mzp] -= result;
-					KS.f[mpm] -= result;
-					KS.f[mpz] -= result;
-					KS.f[mpp] -= result;
-					KS.f[zmm] -= result;
-					KS.f[zmz] -= result;
-					KS.f[zmp] -= result;
-					KS.f[zzm] -= result;
-					KS.f[zzz] -= result;
-					KS.f[zzp] -= result;
-					KS.f[zpm] -= result;
-					KS.f[zpz] -= result;
-					KS.f[zpp] -= result;
-					KS.f[pmm] -= result;
-					KS.f[pmz] -= result;
-					KS.f[pmp] -= result;
-					KS.f[pzm] -= result;
-					KS.f[pzz] -= result;
-					KS.f[pzp] -= result;
-					KS.f[ppm] -= result;
-					KS.f[ppz] -= result;
-					KS.f[ppp] -= result;
+					KS.f[dir27::mmm] -= result;
+					KS.f[dir27::mmz] -= result;
+					KS.f[dir27::mmp] -= result;
+					KS.f[dir27::mzm] -= result;
+					KS.f[dir27::mzz] -= result;
+					KS.f[dir27::mzp] -= result;
+					KS.f[dir27::mpm] -= result;
+					KS.f[dir27::mpz] -= result;
+					KS.f[dir27::mpp] -= result;
+					KS.f[dir27::zmm] -= result;
+					KS.f[dir27::zmz] -= result;
+					KS.f[dir27::zmp] -= result;
+					KS.f[dir27::zzm] -= result;
+					KS.f[dir27::zzz] -= result;
+					KS.f[dir27::zzp] -= result;
+					KS.f[dir27::zpm] -= result;
+					KS.f[dir27::zpz] -= result;
+					KS.f[dir27::zpp] -= result;
+					KS.f[dir27::pmm] -= result;
+					KS.f[dir27::pmz] -= result;
+					KS.f[dir27::pmp] -= result;
+					KS.f[dir27::pzm] -= result;
+					KS.f[dir27::pzz] -= result;
+					KS.f[dir27::pzp] -= result;
+					KS.f[dir27::ppm] -= result;
+					KS.f[dir27::ppz] -= result;
+					KS.f[dir27::ppp] -= result;
 					// calculate gradient
 					SD.inflow(KS, x, y, z);
 					// COLL::computeDensityAndVelocity(KS);

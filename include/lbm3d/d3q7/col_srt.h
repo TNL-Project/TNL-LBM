@@ -16,12 +16,12 @@ struct D3Q7_SRT : D3Q7_COMMON<TRAITS, LBM_EQ>
 	{
 		const dreal tau = n1o2 + LBM_EQ::iCs2 * KS.lbmViscosity;
 		const dreal omega = no1 / tau;
-		KS.f[zzz] += omega * (LBM_EQ::eq_zzz(KS.phi, KS.vx, KS.vy, KS.vz) - KS.f[zzz]);
-		KS.f[pzz] += omega * (LBM_EQ::eq_pzz(KS.phi, KS.vx, KS.vy, KS.vz) - KS.f[pzz]);
-		KS.f[zpz] += omega * (LBM_EQ::eq_zpz(KS.phi, KS.vx, KS.vy, KS.vz) - KS.f[zpz]);
-		KS.f[zzp] += omega * (LBM_EQ::eq_zzp(KS.phi, KS.vx, KS.vy, KS.vz) - KS.f[zzp]);
-		KS.f[mzz] += omega * (LBM_EQ::eq_mzz(KS.phi, KS.vx, KS.vy, KS.vz) - KS.f[mzz]);
-		KS.f[zmz] += omega * (LBM_EQ::eq_zmz(KS.phi, KS.vx, KS.vy, KS.vz) - KS.f[zmz]);
-		KS.f[zzm] += omega * (LBM_EQ::eq_zzm(KS.phi, KS.vx, KS.vy, KS.vz) - KS.f[zzm]);
+		KS.f[dir27::zzz] += omega * (LBM_EQ::eq_zzz(KS.phi, KS.vx, KS.vy, KS.vz) - KS.f[dir27::zzz]);
+		KS.f[dir27::pzz] += omega * (LBM_EQ::eq_pzz(KS.phi, KS.vx, KS.vy, KS.vz) - KS.f[dir27::pzz]);
+		KS.f[dir27::zpz] += omega * (LBM_EQ::eq_zpz(KS.phi, KS.vx, KS.vy, KS.vz) - KS.f[dir27::zpz]);
+		KS.f[dir27::zzp] += omega * (LBM_EQ::eq_zzp(KS.phi, KS.vx, KS.vy, KS.vz) - KS.f[dir27::zzp]);
+		KS.f[dir27::mzz] += omega * (LBM_EQ::eq_mzz(KS.phi, KS.vx, KS.vy, KS.vz) - KS.f[dir27::mzz]);
+		KS.f[dir27::zmz] += omega * (LBM_EQ::eq_zmz(KS.phi, KS.vx, KS.vy, KS.vz) - KS.f[dir27::zmz]);
+		KS.f[dir27::zzm] += omega * (LBM_EQ::eq_zzm(KS.phi, KS.vx, KS.vy, KS.vz) - KS.f[dir27::zzm]);
 	}
 };

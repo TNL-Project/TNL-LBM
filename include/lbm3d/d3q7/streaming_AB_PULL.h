@@ -25,13 +25,13 @@ struct D3Q7_STREAMING_AB_PULL
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void streaming(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
-		KS.f[mzz] = SD.df(df_cur, mzz, xp, y, z);
-		KS.f[zmz] = SD.df(df_cur, zmz, x, yp, z);
-		KS.f[zzm] = SD.df(df_cur, zzm, x, y, zp);
-		KS.f[zzz] = SD.df(df_cur, zzz, x, y, z);
-		KS.f[zzp] = SD.df(df_cur, zzp, x, y, zm);
-		KS.f[zpz] = SD.df(df_cur, zpz, x, ym, z);
-		KS.f[pzz] = SD.df(df_cur, pzz, xm, y, z);
+		KS.f[dir27::mzz] = SD.df(df_cur, dir27::mzz, xp, y, z);
+		KS.f[dir27::zmz] = SD.df(df_cur, dir27::zmz, x, yp, z);
+		KS.f[dir27::zzm] = SD.df(df_cur, dir27::zzm, x, y, zp);
+		KS.f[dir27::zzz] = SD.df(df_cur, dir27::zzz, x, y, z);
+		KS.f[dir27::zzp] = SD.df(df_cur, dir27::zzp, x, y, zm);
+		KS.f[dir27::zpz] = SD.df(df_cur, dir27::zpz, x, ym, z);
+		KS.f[dir27::pzz] = SD.df(df_cur, dir27::pzz, xm, y, z);
 	}
 };
 

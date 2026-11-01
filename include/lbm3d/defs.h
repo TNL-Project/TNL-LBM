@@ -470,39 +470,46 @@ constexpr int dir9_cy(int dir)
 	return 0;
 }
 
-// NOTE: df_sync_directions must be kept consistent with this enum!
-enum : std::uint8_t
+// D3Q27 direction enum — scoped via struct to avoid namespace pollution,
+// but values are plain integers (implicitly std::uint8_t) so they can be
+// used directly as array indices without an idx() wrapper.
+// The first seven entries (Q7) are shared with the D3Q7 model.
+struct dir27
 {
-	// Q7
-	zzz = 0,
-	pzz = 1,
-	mzz = 2,
-	zpz = 3,
-	zmz = 4,
-	zzp = 5,
-	zzm = 6,
-	// +Q19
-	ppz = 7,
-	mmz = 8,
-	pmz = 9,
-	mpz = 10,
-	pzp = 11,
-	mzm = 12,
-	pzm = 13,
-	mzp = 14,
-	zpp = 15,
-	zmm = 16,
-	zpm = 17,
-	zmp = 18,
-	// +Q27
-	ppp = 19,
-	mmm = 20,
-	ppm = 21,
-	mmp = 22,
-	pmp = 23,
-	mpm = 24,
-	pmm = 25,
-	mpp = 26,
+	// NOTE: df_sync_directions must be kept consistent with this enum!
+	enum : std::uint8_t
+	{
+		// Q7
+		zzz = 0,
+		pzz = 1,
+		mzz = 2,
+		zpz = 3,
+		zmz = 4,
+		zzp = 5,
+		zzm = 6,
+		// +Q19
+		ppz = 7,
+		mmz = 8,
+		pmz = 9,
+		mpz = 10,
+		pzp = 11,
+		mzm = 12,
+		pzm = 13,
+		mzp = 14,
+		zpp = 15,
+		zmm = 16,
+		zpm = 17,
+		zmp = 18,
+		// +Q27
+		ppp = 19,
+		mmm = 20,
+		ppm = 21,
+		mmp = 22,
+		pmp = 23,
+		mpm = 24,
+		pmm = 25,
+		mpp = 26,
+	};
 };
 
 // velocity components of the D3Q27 directions (first letter = x, second = y, third = z;
@@ -510,59 +517,59 @@ enum : std::uint8_t
 constexpr int dir27_cx(int dir)
 {
 	switch (dir) {
-		case zzz:
+		case dir27::zzz:
 			return 0;
-		case pzz:
+		case dir27::pzz:
 			return 1;
-		case mzz:
+		case dir27::mzz:
 			return -1;
-		case zpz:
+		case dir27::zpz:
 			return 0;
-		case zmz:
+		case dir27::zmz:
 			return 0;
-		case zzp:
+		case dir27::zzp:
 			return 0;
-		case zzm:
+		case dir27::zzm:
 			return 0;
-		case ppz:
+		case dir27::ppz:
 			return 1;
-		case mmz:
+		case dir27::mmz:
 			return -1;
-		case pmz:
+		case dir27::pmz:
 			return 1;
-		case mpz:
+		case dir27::mpz:
 			return -1;
-		case pzp:
+		case dir27::pzp:
 			return 1;
-		case mzm:
+		case dir27::mzm:
 			return -1;
-		case pzm:
+		case dir27::pzm:
 			return 1;
-		case mzp:
+		case dir27::mzp:
 			return -1;
-		case zpp:
+		case dir27::zpp:
 			return 0;
-		case zmm:
+		case dir27::zmm:
 			return 0;
-		case zpm:
+		case dir27::zpm:
 			return 0;
-		case zmp:
+		case dir27::zmp:
 			return 0;
-		case ppp:
+		case dir27::ppp:
 			return 1;
-		case mmm:
+		case dir27::mmm:
 			return -1;
-		case ppm:
+		case dir27::ppm:
 			return 1;
-		case mmp:
+		case dir27::mmp:
 			return -1;
-		case pmp:
+		case dir27::pmp:
 			return 1;
-		case mpm:
+		case dir27::mpm:
 			return -1;
-		case pmm:
+		case dir27::pmm:
 			return 1;
-		case mpp:
+		case dir27::mpp:
 			return -1;
 	}
 	return 0;
@@ -570,59 +577,59 @@ constexpr int dir27_cx(int dir)
 constexpr int dir27_cy(int dir)
 {
 	switch (dir) {
-		case zzz:
+		case dir27::zzz:
 			return 0;
-		case pzz:
+		case dir27::pzz:
 			return 0;
-		case mzz:
+		case dir27::mzz:
 			return 0;
-		case zpz:
+		case dir27::zpz:
 			return 1;
-		case zmz:
+		case dir27::zmz:
 			return -1;
-		case zzp:
+		case dir27::zzp:
 			return 0;
-		case zzm:
+		case dir27::zzm:
 			return 0;
-		case ppz:
+		case dir27::ppz:
 			return 1;
-		case mmz:
+		case dir27::mmz:
 			return -1;
-		case pmz:
+		case dir27::pmz:
 			return -1;
-		case mpz:
+		case dir27::mpz:
 			return 1;
-		case pzp:
+		case dir27::pzp:
 			return 0;
-		case mzm:
+		case dir27::mzm:
 			return 0;
-		case pzm:
+		case dir27::pzm:
 			return 0;
-		case mzp:
+		case dir27::mzp:
 			return 0;
-		case zpp:
+		case dir27::zpp:
 			return 1;
-		case zmm:
+		case dir27::zmm:
 			return -1;
-		case zpm:
+		case dir27::zpm:
 			return 1;
-		case zmp:
+		case dir27::zmp:
 			return -1;
-		case ppp:
+		case dir27::ppp:
 			return 1;
-		case mmm:
+		case dir27::mmm:
 			return -1;
-		case ppm:
+		case dir27::ppm:
 			return 1;
-		case mmp:
+		case dir27::mmp:
 			return -1;
-		case pmp:
+		case dir27::pmp:
 			return -1;
-		case mpm:
+		case dir27::mpm:
 			return 1;
-		case pmm:
+		case dir27::pmm:
 			return -1;
-		case mpp:
+		case dir27::mpp:
 			return 1;
 	}
 	return 0;
@@ -630,59 +637,59 @@ constexpr int dir27_cy(int dir)
 constexpr int dir27_cz(int dir)
 {
 	switch (dir) {
-		case zzz:
+		case dir27::zzz:
 			return 0;
-		case pzz:
+		case dir27::pzz:
 			return 0;
-		case mzz:
+		case dir27::mzz:
 			return 0;
-		case zpz:
+		case dir27::zpz:
 			return 0;
-		case zmz:
+		case dir27::zmz:
 			return 0;
-		case zzp:
+		case dir27::zzp:
 			return 1;
-		case zzm:
+		case dir27::zzm:
 			return -1;
-		case ppz:
+		case dir27::ppz:
 			return 0;
-		case mmz:
+		case dir27::mmz:
 			return 0;
-		case pmz:
+		case dir27::pmz:
 			return 0;
-		case mpz:
+		case dir27::mpz:
 			return 0;
-		case pzp:
+		case dir27::pzp:
 			return 1;
-		case mzm:
+		case dir27::mzm:
 			return -1;
-		case pzm:
+		case dir27::pzm:
 			return -1;
-		case mzp:
+		case dir27::mzp:
 			return 1;
-		case zpp:
+		case dir27::zpp:
 			return 1;
-		case zmm:
+		case dir27::zmm:
 			return -1;
-		case zpm:
+		case dir27::zpm:
 			return -1;
-		case zmp:
+		case dir27::zmp:
 			return 1;
-		case ppp:
+		case dir27::ppp:
 			return 1;
-		case mmm:
+		case dir27::mmm:
 			return -1;
-		case ppm:
+		case dir27::ppm:
 			return -1;
-		case mmp:
+		case dir27::mmp:
 			return 1;
-		case pmp:
+		case dir27::pmp:
 			return 1;
-		case mpm:
+		case dir27::mpm:
 			return -1;
-		case pmm:
+		case dir27::pmm:
 			return -1;
-		case mpp:
+		case dir27::mpp:
 			return 1;
 	}
 	return 0;

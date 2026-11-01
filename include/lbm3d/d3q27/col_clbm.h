@@ -15,37 +15,37 @@ struct D3Q27_CLBM : D3Q27_COMMON<TRAITS, LBM_EQ>
 	{
 		// based on Geier 2017 https://doi.org/10.1016/j.jcp.2017.05.040
 		// Eq 6
-		const dreal k_mm0 = (KS.f[mmp] + KS.f[mmm]) + KS.f[mmz];
-		const dreal k_mz0 = (KS.f[mzp] + KS.f[mzm]) + KS.f[mzz];
-		const dreal k_mp0 = (KS.f[mpp] + KS.f[mpm]) + KS.f[mpz];
-		const dreal k_zm0 = (KS.f[zmp] + KS.f[zmm]) + KS.f[zmz];
-		const dreal k_zz0 = (KS.f[zzp] + KS.f[zzm]) + KS.f[zzz];
-		const dreal k_zp0 = (KS.f[zpp] + KS.f[zpm]) + KS.f[zpz];
-		const dreal k_pm0 = (KS.f[pmp] + KS.f[pmm]) + KS.f[pmz];
-		const dreal k_pz0 = (KS.f[pzp] + KS.f[pzm]) + KS.f[pzz];
-		const dreal k_pp0 = (KS.f[ppp] + KS.f[ppm]) + KS.f[ppz];
+		const dreal k_mm0 = (KS.f[dir27::mmp] + KS.f[dir27::mmm]) + KS.f[dir27::mmz];
+		const dreal k_mz0 = (KS.f[dir27::mzp] + KS.f[dir27::mzm]) + KS.f[dir27::mzz];
+		const dreal k_mp0 = (KS.f[dir27::mpp] + KS.f[dir27::mpm]) + KS.f[dir27::mpz];
+		const dreal k_zm0 = (KS.f[dir27::zmp] + KS.f[dir27::zmm]) + KS.f[dir27::zmz];
+		const dreal k_zz0 = (KS.f[dir27::zzp] + KS.f[dir27::zzm]) + KS.f[dir27::zzz];
+		const dreal k_zp0 = (KS.f[dir27::zpp] + KS.f[dir27::zpm]) + KS.f[dir27::zpz];
+		const dreal k_pm0 = (KS.f[dir27::pmp] + KS.f[dir27::pmm]) + KS.f[dir27::pmz];
+		const dreal k_pz0 = (KS.f[dir27::pzp] + KS.f[dir27::pzm]) + KS.f[dir27::pzz];
+		const dreal k_pp0 = (KS.f[dir27::ppp] + KS.f[dir27::ppm]) + KS.f[dir27::ppz];
 
 		// Eq 7
-		const dreal k_mm1 = (KS.f[mmp] - KS.f[mmm]) - KS.vz * k_mm0;
-		const dreal k_mz1 = (KS.f[mzp] - KS.f[mzm]) - KS.vz * k_mz0;
-		const dreal k_mp1 = (KS.f[mpp] - KS.f[mpm]) - KS.vz * k_mp0;
-		const dreal k_zm1 = (KS.f[zmp] - KS.f[zmm]) - KS.vz * k_zm0;
-		const dreal k_zz1 = (KS.f[zzp] - KS.f[zzm]) - KS.vz * k_zz0;
-		const dreal k_zp1 = (KS.f[zpp] - KS.f[zpm]) - KS.vz * k_zp0;
-		const dreal k_pm1 = (KS.f[pmp] - KS.f[pmm]) - KS.vz * k_pm0;
-		const dreal k_pz1 = (KS.f[pzp] - KS.f[pzm]) - KS.vz * k_pz0;
-		const dreal k_pp1 = (KS.f[ppp] - KS.f[ppm]) - KS.vz * k_pp0;
+		const dreal k_mm1 = (KS.f[dir27::mmp] - KS.f[dir27::mmm]) - KS.vz * k_mm0;
+		const dreal k_mz1 = (KS.f[dir27::mzp] - KS.f[dir27::mzm]) - KS.vz * k_mz0;
+		const dreal k_mp1 = (KS.f[dir27::mpp] - KS.f[dir27::mpm]) - KS.vz * k_mp0;
+		const dreal k_zm1 = (KS.f[dir27::zmp] - KS.f[dir27::zmm]) - KS.vz * k_zm0;
+		const dreal k_zz1 = (KS.f[dir27::zzp] - KS.f[dir27::zzm]) - KS.vz * k_zz0;
+		const dreal k_zp1 = (KS.f[dir27::zpp] - KS.f[dir27::zpm]) - KS.vz * k_zp0;
+		const dreal k_pm1 = (KS.f[dir27::pmp] - KS.f[dir27::pmm]) - KS.vz * k_pm0;
+		const dreal k_pz1 = (KS.f[dir27::pzp] - KS.f[dir27::pzm]) - KS.vz * k_pz0;
+		const dreal k_pp1 = (KS.f[dir27::ppp] - KS.f[dir27::ppm]) - KS.vz * k_pp0;
 
 		// Eq 8
-		const dreal k_mm2 = (KS.f[mmp] + KS.f[mmm]) - no2 * KS.vz * (KS.f[mmp] - KS.f[mmm]) + KS.vz * KS.vz * k_mm0;
-		const dreal k_mz2 = (KS.f[mzp] + KS.f[mzm]) - no2 * KS.vz * (KS.f[mzp] - KS.f[mzm]) + KS.vz * KS.vz * k_mz0;
-		const dreal k_mp2 = (KS.f[mpp] + KS.f[mpm]) - no2 * KS.vz * (KS.f[mpp] - KS.f[mpm]) + KS.vz * KS.vz * k_mp0;
-		const dreal k_zm2 = (KS.f[zmp] + KS.f[zmm]) - no2 * KS.vz * (KS.f[zmp] - KS.f[zmm]) + KS.vz * KS.vz * k_zm0;
-		const dreal k_zz2 = (KS.f[zzp] + KS.f[zzm]) - no2 * KS.vz * (KS.f[zzp] - KS.f[zzm]) + KS.vz * KS.vz * k_zz0;
-		const dreal k_zp2 = (KS.f[zpp] + KS.f[zpm]) - no2 * KS.vz * (KS.f[zpp] - KS.f[zpm]) + KS.vz * KS.vz * k_zp0;
-		const dreal k_pm2 = (KS.f[pmp] + KS.f[pmm]) - no2 * KS.vz * (KS.f[pmp] - KS.f[pmm]) + KS.vz * KS.vz * k_pm0;
-		const dreal k_pz2 = (KS.f[pzp] + KS.f[pzm]) - no2 * KS.vz * (KS.f[pzp] - KS.f[pzm]) + KS.vz * KS.vz * k_pz0;
-		const dreal k_pp2 = (KS.f[ppp] + KS.f[ppm]) - no2 * KS.vz * (KS.f[ppp] - KS.f[ppm]) + KS.vz * KS.vz * k_pp0;
+		const dreal k_mm2 = (KS.f[dir27::mmp] + KS.f[dir27::mmm]) - no2 * KS.vz * (KS.f[dir27::mmp] - KS.f[dir27::mmm]) + KS.vz * KS.vz * k_mm0;
+		const dreal k_mz2 = (KS.f[dir27::mzp] + KS.f[dir27::mzm]) - no2 * KS.vz * (KS.f[dir27::mzp] - KS.f[dir27::mzm]) + KS.vz * KS.vz * k_mz0;
+		const dreal k_mp2 = (KS.f[dir27::mpp] + KS.f[dir27::mpm]) - no2 * KS.vz * (KS.f[dir27::mpp] - KS.f[dir27::mpm]) + KS.vz * KS.vz * k_mp0;
+		const dreal k_zm2 = (KS.f[dir27::zmp] + KS.f[dir27::zmm]) - no2 * KS.vz * (KS.f[dir27::zmp] - KS.f[dir27::zmm]) + KS.vz * KS.vz * k_zm0;
+		const dreal k_zz2 = (KS.f[dir27::zzp] + KS.f[dir27::zzm]) - no2 * KS.vz * (KS.f[dir27::zzp] - KS.f[dir27::zzm]) + KS.vz * KS.vz * k_zz0;
+		const dreal k_zp2 = (KS.f[dir27::zpp] + KS.f[dir27::zpm]) - no2 * KS.vz * (KS.f[dir27::zpp] - KS.f[dir27::zpm]) + KS.vz * KS.vz * k_zp0;
+		const dreal k_pm2 = (KS.f[dir27::pmp] + KS.f[dir27::pmm]) - no2 * KS.vz * (KS.f[dir27::pmp] - KS.f[dir27::pmm]) + KS.vz * KS.vz * k_pm0;
+		const dreal k_pz2 = (KS.f[dir27::pzp] + KS.f[dir27::pzm]) - no2 * KS.vz * (KS.f[dir27::pzp] - KS.f[dir27::pzm]) + KS.vz * KS.vz * k_pz0;
+		const dreal k_pp2 = (KS.f[dir27::ppp] + KS.f[dir27::ppm]) - no2 * KS.vz * (KS.f[dir27::ppp] - KS.f[dir27::ppm]) + KS.vz * KS.vz * k_pp0;
 
 		// Eq 9
 		const dreal k_m00 = (k_mp0 + k_mm0) + k_mz0;
@@ -250,37 +250,37 @@ struct D3Q27_CLBM : D3Q27_COMMON<TRAITS, LBM_EQ>
 		const dreal ks_pp2 = (ks_p02 * (KS.vy * KS.vy + KS.vy) + ks_p12 * (no2 * KS.vy + no1) + ks_p22) * n1o2;
 
 		// Eq 63
-		KS.f[mmz] = ks_mm0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_mm1 - ks_mm2;
-		KS.f[mzz] = ks_mz0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_mz1 - ks_mz2;
-		KS.f[mpz] = ks_mp0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_mp1 - ks_mp2;
-		KS.f[zmz] = ks_zm0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_zm1 - ks_zm2;
-		KS.f[zzz] = ks_zz0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_zz1 - ks_zz2;
-		KS.f[zpz] = ks_zp0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_zp1 - ks_zp2;
-		KS.f[pmz] = ks_pm0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_pm1 - ks_pm2;
-		KS.f[pzz] = ks_pz0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_pz1 - ks_pz2;
-		KS.f[ppz] = ks_pp0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_pp1 - ks_pp2;
+		KS.f[dir27::mmz] = ks_mm0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_mm1 - ks_mm2;
+		KS.f[dir27::mzz] = ks_mz0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_mz1 - ks_mz2;
+		KS.f[dir27::mpz] = ks_mp0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_mp1 - ks_mp2;
+		KS.f[dir27::zmz] = ks_zm0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_zm1 - ks_zm2;
+		KS.f[dir27::zzz] = ks_zz0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_zz1 - ks_zz2;
+		KS.f[dir27::zpz] = ks_zp0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_zp1 - ks_zp2;
+		KS.f[dir27::pmz] = ks_pm0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_pm1 - ks_pm2;
+		KS.f[dir27::pzz] = ks_pz0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_pz1 - ks_pz2;
+		KS.f[dir27::ppz] = ks_pp0 * (no1 - KS.vz * KS.vz) - no2 * KS.vz * ks_pp1 - ks_pp2;
 
 		// Eq 64
-		KS.f[mmm] = (ks_mm0 * (KS.vz * KS.vz - KS.vz) + ks_mm1 * (no2 * KS.vz - no1) + ks_mm2) * n1o2;
-		KS.f[mzm] = (ks_mz0 * (KS.vz * KS.vz - KS.vz) + ks_mz1 * (no2 * KS.vz - no1) + ks_mz2) * n1o2;
-		KS.f[mpm] = (ks_mp0 * (KS.vz * KS.vz - KS.vz) + ks_mp1 * (no2 * KS.vz - no1) + ks_mp2) * n1o2;
-		KS.f[zmm] = (ks_zm0 * (KS.vz * KS.vz - KS.vz) + ks_zm1 * (no2 * KS.vz - no1) + ks_zm2) * n1o2;
-		KS.f[zzm] = (ks_zz0 * (KS.vz * KS.vz - KS.vz) + ks_zz1 * (no2 * KS.vz - no1) + ks_zz2) * n1o2;
-		KS.f[zpm] = (ks_zp0 * (KS.vz * KS.vz - KS.vz) + ks_zp1 * (no2 * KS.vz - no1) + ks_zp2) * n1o2;
-		KS.f[pmm] = (ks_pm0 * (KS.vz * KS.vz - KS.vz) + ks_pm1 * (no2 * KS.vz - no1) + ks_pm2) * n1o2;
-		KS.f[pzm] = (ks_pz0 * (KS.vz * KS.vz - KS.vz) + ks_pz1 * (no2 * KS.vz - no1) + ks_pz2) * n1o2;
-		KS.f[ppm] = (ks_pp0 * (KS.vz * KS.vz - KS.vz) + ks_pp1 * (no2 * KS.vz - no1) + ks_pp2) * n1o2;
+		KS.f[dir27::mmm] = (ks_mm0 * (KS.vz * KS.vz - KS.vz) + ks_mm1 * (no2 * KS.vz - no1) + ks_mm2) * n1o2;
+		KS.f[dir27::mzm] = (ks_mz0 * (KS.vz * KS.vz - KS.vz) + ks_mz1 * (no2 * KS.vz - no1) + ks_mz2) * n1o2;
+		KS.f[dir27::mpm] = (ks_mp0 * (KS.vz * KS.vz - KS.vz) + ks_mp1 * (no2 * KS.vz - no1) + ks_mp2) * n1o2;
+		KS.f[dir27::zmm] = (ks_zm0 * (KS.vz * KS.vz - KS.vz) + ks_zm1 * (no2 * KS.vz - no1) + ks_zm2) * n1o2;
+		KS.f[dir27::zzm] = (ks_zz0 * (KS.vz * KS.vz - KS.vz) + ks_zz1 * (no2 * KS.vz - no1) + ks_zz2) * n1o2;
+		KS.f[dir27::zpm] = (ks_zp0 * (KS.vz * KS.vz - KS.vz) + ks_zp1 * (no2 * KS.vz - no1) + ks_zp2) * n1o2;
+		KS.f[dir27::pmm] = (ks_pm0 * (KS.vz * KS.vz - KS.vz) + ks_pm1 * (no2 * KS.vz - no1) + ks_pm2) * n1o2;
+		KS.f[dir27::pzm] = (ks_pz0 * (KS.vz * KS.vz - KS.vz) + ks_pz1 * (no2 * KS.vz - no1) + ks_pz2) * n1o2;
+		KS.f[dir27::ppm] = (ks_pp0 * (KS.vz * KS.vz - KS.vz) + ks_pp1 * (no2 * KS.vz - no1) + ks_pp2) * n1o2;
 
 		// Eq 65
-		KS.f[mmp] = (ks_mm0 * (KS.vz * KS.vz + KS.vz) + ks_mm1 * (no2 * KS.vz + no1) + ks_mm2) * n1o2;
-		KS.f[mzp] = (ks_mz0 * (KS.vz * KS.vz + KS.vz) + ks_mz1 * (no2 * KS.vz + no1) + ks_mz2) * n1o2;
-		KS.f[mpp] = (ks_mp0 * (KS.vz * KS.vz + KS.vz) + ks_mp1 * (no2 * KS.vz + no1) + ks_mp2) * n1o2;
-		KS.f[zmp] = (ks_zm0 * (KS.vz * KS.vz + KS.vz) + ks_zm1 * (no2 * KS.vz + no1) + ks_zm2) * n1o2;
-		KS.f[zzp] = (ks_zz0 * (KS.vz * KS.vz + KS.vz) + ks_zz1 * (no2 * KS.vz + no1) + ks_zz2) * n1o2;
-		KS.f[zpp] = (ks_zp0 * (KS.vz * KS.vz + KS.vz) + ks_zp1 * (no2 * KS.vz + no1) + ks_zp2) * n1o2;
-		KS.f[pmp] = (ks_pm0 * (KS.vz * KS.vz + KS.vz) + ks_pm1 * (no2 * KS.vz + no1) + ks_pm2) * n1o2;
-		KS.f[pzp] = (ks_pz0 * (KS.vz * KS.vz + KS.vz) + ks_pz1 * (no2 * KS.vz + no1) + ks_pz2) * n1o2;
-		KS.f[ppp] = (ks_pp0 * (KS.vz * KS.vz + KS.vz) + ks_pp1 * (no2 * KS.vz + no1) + ks_pp2) * n1o2;
+		KS.f[dir27::mmp] = (ks_mm0 * (KS.vz * KS.vz + KS.vz) + ks_mm1 * (no2 * KS.vz + no1) + ks_mm2) * n1o2;
+		KS.f[dir27::mzp] = (ks_mz0 * (KS.vz * KS.vz + KS.vz) + ks_mz1 * (no2 * KS.vz + no1) + ks_mz2) * n1o2;
+		KS.f[dir27::mpp] = (ks_mp0 * (KS.vz * KS.vz + KS.vz) + ks_mp1 * (no2 * KS.vz + no1) + ks_mp2) * n1o2;
+		KS.f[dir27::zmp] = (ks_zm0 * (KS.vz * KS.vz + KS.vz) + ks_zm1 * (no2 * KS.vz + no1) + ks_zm2) * n1o2;
+		KS.f[dir27::zzp] = (ks_zz0 * (KS.vz * KS.vz + KS.vz) + ks_zz1 * (no2 * KS.vz + no1) + ks_zz2) * n1o2;
+		KS.f[dir27::zpp] = (ks_zp0 * (KS.vz * KS.vz + KS.vz) + ks_zp1 * (no2 * KS.vz + no1) + ks_zp2) * n1o2;
+		KS.f[dir27::pmp] = (ks_pm0 * (KS.vz * KS.vz + KS.vz) + ks_pm1 * (no2 * KS.vz + no1) + ks_pm2) * n1o2;
+		KS.f[dir27::pzp] = (ks_pz0 * (KS.vz * KS.vz + KS.vz) + ks_pz1 * (no2 * KS.vz + no1) + ks_pz2) * n1o2;
+		KS.f[dir27::ppp] = (ks_pp0 * (KS.vz * KS.vz + KS.vz) + ks_pp1 * (no2 * KS.vz + no1) + ks_pp2) * n1o2;
 
 		// forcing CLBM from FCLBM
 		// source: https://doi.org/10.1007/s10955-011-0208-9
@@ -404,32 +404,32 @@ struct D3Q27_CLBM : D3Q27_COMMON<TRAITS, LBM_EQ>
 			* (no8 * m_0 - no12 * m_1 - no12 * m_2 - no12 * m_3 + no18 * m_4 + no18 * m_5 + no18 * m_6 + no12 * m_9 - no6 * m_10 - no6 * m_11
 			   - no6 * m_12 - no27 * m_16 + no6 * m_17 + no9 * m_20 + no9 * m_21 + no9 * m_22 - no3 * m_23 - no3 * m_24 - no3 * m_25 + m_26);
 
-		KS.f[zzz] += S_0;	//0
-		KS.f[pzz] += S_1;	//1
-		KS.f[mzz] += S_2;	//2
-		KS.f[zpz] += S_3;	//3
-		KS.f[zmz] += S_4;	//4
-		KS.f[zzp] += S_5;	//5
-		KS.f[zzm] += S_6;	//6
-		KS.f[ppz] += S_7;	//7
-		KS.f[mpz] += S_8;	//8
-		KS.f[pmz] += S_9;	//9
-		KS.f[mmz] += S_10;	//10
-		KS.f[pzp] += S_11;	//11
-		KS.f[mzp] += S_12;	//12
-		KS.f[pzm] += S_13;	//13
-		KS.f[mzm] += S_14;	//14
-		KS.f[zpp] += S_15;	//15
-		KS.f[zmp] += S_16;	//16
-		KS.f[zpm] += S_17;	//17
-		KS.f[zmm] += S_18;	//18
-		KS.f[ppp] += S_19;	//19
-		KS.f[mpp] += S_20;	//20
-		KS.f[pmp] += S_21;	//21
-		KS.f[mmp] += S_22;	//22
-		KS.f[ppm] += S_23;	//23
-		KS.f[mpm] += S_24;	//24
-		KS.f[pmm] += S_25;	//25
-		KS.f[mmm] += S_26;	//26
+		KS.f[dir27::zzz] += S_0;   //0
+		KS.f[dir27::pzz] += S_1;   //1
+		KS.f[dir27::mzz] += S_2;   //2
+		KS.f[dir27::zpz] += S_3;   //3
+		KS.f[dir27::zmz] += S_4;   //4
+		KS.f[dir27::zzp] += S_5;   //5
+		KS.f[dir27::zzm] += S_6;   //6
+		KS.f[dir27::ppz] += S_7;   //7
+		KS.f[dir27::mpz] += S_8;   //8
+		KS.f[dir27::pmz] += S_9;   //9
+		KS.f[dir27::mmz] += S_10;  //10
+		KS.f[dir27::pzp] += S_11;  //11
+		KS.f[dir27::mzp] += S_12;  //12
+		KS.f[dir27::pzm] += S_13;  //13
+		KS.f[dir27::mzm] += S_14;  //14
+		KS.f[dir27::zpp] += S_15;  //15
+		KS.f[dir27::zmp] += S_16;  //16
+		KS.f[dir27::zpm] += S_17;  //17
+		KS.f[dir27::zmm] += S_18;  //18
+		KS.f[dir27::ppp] += S_19;  //19
+		KS.f[dir27::mpp] += S_20;  //20
+		KS.f[dir27::pmp] += S_21;  //21
+		KS.f[dir27::mmp] += S_22;  //22
+		KS.f[dir27::ppm] += S_23;  //23
+		KS.f[dir27::mpm] += S_24;  //24
+		KS.f[dir27::pmm] += S_25;  //25
+		KS.f[dir27::mmm] += S_26;  //26
 	}
 };

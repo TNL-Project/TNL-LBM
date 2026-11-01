@@ -21,9 +21,9 @@ struct D3Q7_COMMON
 		KS.phi = phi;
 
 		// NOTE: does not make sense for ADE
-		//KS.vx = ((KS.f[pzz]-KS.f[mzz])+KS.fx*n1o2) / KS.phi;
-		//KS.vy = ((KS.f[zpz]-KS.f[zmz])+KS.fy*n1o2) / KS.phi;
-		//KS.vz = ((KS.f[zzp]-KS.f[zzm])+KS.fz*n1o2) / KS.phi;
+		//KS.vx = ((KS.f[dir27::pzz]-KS.f[dir27::mzz])+KS.fx*n1o2) / KS.phi;
+		//KS.vy = ((KS.f[dir27::zpz]-KS.f[dir27::zmz])+KS.fy*n1o2) / KS.phi;
+		//KS.vz = ((KS.f[dir27::zzp]-KS.f[dir27::zzm])+KS.fz*n1o2) / KS.phi;
 	}
 
 	template <typename LBM_KS>
@@ -39,12 +39,12 @@ struct D3Q7_COMMON
 	template <typename LBM_KS>
 	__cuda_callable__ static void setEquilibrium(LBM_KS& KS)
 	{
-		KS.f[mzz] = EQ::eq_mzz(KS.phi, KS.vx, KS.vy, KS.vz);
-		KS.f[zmz] = EQ::eq_zmz(KS.phi, KS.vx, KS.vy, KS.vz);
-		KS.f[zzm] = EQ::eq_zzm(KS.phi, KS.vx, KS.vy, KS.vz);
-		KS.f[zzz] = EQ::eq_zzz(KS.phi, KS.vx, KS.vy, KS.vz);
-		KS.f[zzp] = EQ::eq_zzp(KS.phi, KS.vx, KS.vy, KS.vz);
-		KS.f[zpz] = EQ::eq_zpz(KS.phi, KS.vx, KS.vy, KS.vz);
-		KS.f[pzz] = EQ::eq_pzz(KS.phi, KS.vx, KS.vy, KS.vz);
+		KS.f[dir27::mzz] = EQ::eq_mzz(KS.phi, KS.vx, KS.vy, KS.vz);
+		KS.f[dir27::zmz] = EQ::eq_zmz(KS.phi, KS.vx, KS.vy, KS.vz);
+		KS.f[dir27::zzm] = EQ::eq_zzm(KS.phi, KS.vx, KS.vy, KS.vz);
+		KS.f[dir27::zzz] = EQ::eq_zzz(KS.phi, KS.vx, KS.vy, KS.vz);
+		KS.f[dir27::zzp] = EQ::eq_zzp(KS.phi, KS.vx, KS.vy, KS.vz);
+		KS.f[dir27::zpz] = EQ::eq_zpz(KS.phi, KS.vx, KS.vy, KS.vz);
+		KS.f[dir27::pzz] = EQ::eq_pzz(KS.phi, KS.vx, KS.vy, KS.vz);
 	}
 };

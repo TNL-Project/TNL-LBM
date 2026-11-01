@@ -20,17 +20,22 @@ struct D3Q27_BGK_WELL : D3Q27_COMMON_WELL<TRAITS, LBM_EQ>
 		const dreal omega1 = no1 / (no3 * KS.lbmViscosity + n1o2);
 
 #ifdef USE_GALILEAN_CORRECTION
-		const dreal m_200 = KS.f[mmm] + KS.f[mmp] + KS.f[mmz] + KS.f[mpm] + KS.f[mpp] + KS.f[mpz] + KS.f[mzm] + KS.f[mzp] + KS.f[mzz] + KS.f[pmm]
-						  + KS.f[pmp] + KS.f[pmz] + KS.f[ppm] + KS.f[ppp] + KS.f[ppz] + KS.f[pzm] + KS.f[pzp] + KS.f[pzz];
-		const dreal m_020 = KS.f[mmm] + KS.f[mmp] + KS.f[mmz] + KS.f[mpm] + KS.f[mpp] + KS.f[mpz] + KS.f[zmm] + KS.f[zmp] + KS.f[zmz] + KS.f[zpm]
-						  + KS.f[zpp] + KS.f[zpz] + KS.f[pmm] + KS.f[pmp] + KS.f[pmz] + KS.f[ppm] + KS.f[ppp] + KS.f[ppz];
-		const dreal m_002 = KS.f[mmm] + KS.f[mmp] + KS.f[mzm] + KS.f[mzp] + KS.f[mpm] + KS.f[mpp] + KS.f[zmm] + KS.f[zmp] + KS.f[zzm] + KS.f[zzp]
-						  + KS.f[zpm] + KS.f[zpp] + KS.f[pmm] + KS.f[pmp] + KS.f[pzm] + KS.f[pzp] + KS.f[ppm] + KS.f[ppp];
-		const dreal drho = ((((KS.f[ppp] + KS.f[mmm]) + (KS.f[pmp] + KS.f[mpm])) + ((KS.f[ppm] + KS.f[mmp]) + (KS.f[mpp] + KS.f[pmm])))
-							+ (((KS.f[zpp] + KS.f[zmm]) + (KS.f[zpm] + KS.f[zmp])) + ((KS.f[pzp] + KS.f[mzm]) + (KS.f[pzm] + KS.f[mzp]))
-							   + ((KS.f[ppz] + KS.f[mmz]) + (KS.f[pmz] + KS.f[mpz])))
-							+ ((KS.f[pzz] + KS.f[mzz]) + (KS.f[zpz] + KS.f[zmz]) + (KS.f[zzp] + KS.f[zzm])))
-						 + KS.f[zzz];
+		const dreal m_200 = KS.f[dir27::mmm] + KS.f[dir27::mmp] + KS.f[dir27::mmz] + KS.f[dir27::mpm] + KS.f[dir27::mpp] + KS.f[dir27::mpz]
+						  + KS.f[dir27::mzm] + KS.f[dir27::mzp] + KS.f[dir27::mzz] + KS.f[dir27::pmm] + KS.f[dir27::pmp] + KS.f[dir27::pmz]
+						  + KS.f[dir27::ppm] + KS.f[dir27::ppp] + KS.f[dir27::ppz] + KS.f[dir27::pzm] + KS.f[dir27::pzp] + KS.f[dir27::pzz];
+		const dreal m_020 = KS.f[dir27::mmm] + KS.f[dir27::mmp] + KS.f[dir27::mmz] + KS.f[dir27::mpm] + KS.f[dir27::mpp] + KS.f[dir27::mpz]
+						  + KS.f[dir27::zmm] + KS.f[dir27::zmp] + KS.f[dir27::zmz] + KS.f[dir27::zpm] + KS.f[dir27::zpp] + KS.f[dir27::zpz]
+						  + KS.f[dir27::pmm] + KS.f[dir27::pmp] + KS.f[dir27::pmz] + KS.f[dir27::ppm] + KS.f[dir27::ppp] + KS.f[dir27::ppz];
+		const dreal m_002 = KS.f[dir27::mmm] + KS.f[dir27::mmp] + KS.f[dir27::mzm] + KS.f[dir27::mzp] + KS.f[dir27::mpm] + KS.f[dir27::mpp]
+						  + KS.f[dir27::zmm] + KS.f[dir27::zmp] + KS.f[dir27::zzm] + KS.f[dir27::zzp] + KS.f[dir27::zpm] + KS.f[dir27::zpp]
+						  + KS.f[dir27::pmm] + KS.f[dir27::pmp] + KS.f[dir27::pzm] + KS.f[dir27::pzp] + KS.f[dir27::ppm] + KS.f[dir27::ppp];
+		const dreal drho = ((((KS.f[dir27::ppp] + KS.f[dir27::mmm]) + (KS.f[dir27::pmp] + KS.f[dir27::mpm]))
+							 + ((KS.f[dir27::ppm] + KS.f[dir27::mmp]) + (KS.f[dir27::mpp] + KS.f[dir27::pmm])))
+							+ (((KS.f[dir27::zpp] + KS.f[dir27::zmm]) + (KS.f[dir27::zpm] + KS.f[dir27::zmp]))
+							   + ((KS.f[dir27::pzp] + KS.f[dir27::mzm]) + (KS.f[dir27::pzm] + KS.f[dir27::mzp]))
+							   + ((KS.f[dir27::ppz] + KS.f[dir27::mmz]) + (KS.f[dir27::pmz] + KS.f[dir27::mpz])))
+							+ ((KS.f[dir27::pzz] + KS.f[dir27::mzz]) + (KS.f[dir27::zpz] + KS.f[dir27::zmz]) + (KS.f[dir27::zzp] + KS.f[dir27::zzm])))
+						 + KS.f[dir27::zzz];
 
 		const dreal Dxu = -omega1 * n1o2 * (no3 * m_200 / KS.rho - drho / KS.rho - no3 * KS.vx * KS.vx);
 		const dreal Dyv = -omega1 * n1o2 * (no3 * m_020 / KS.rho - drho / KS.rho - no3 * KS.vy * KS.vy);
@@ -92,32 +97,59 @@ struct D3Q27_BGK_WELL : D3Q27_COMMON_WELL<TRAITS, LBM_EQ>
 		const dreal Szpp = (no3 * (-KS.vx * KS.fx + (-KS.vy + no1) * KS.fy + (-KS.vz + no1) * KS.fz));
 		const dreal Sppp = (no3 * ((-KS.vx + no1) * KS.fx + (-KS.vy + no1) * KS.fy + (-KS.vz + no1) * KS.fz));
 
-		KS.f[mmm] = (no1 - omega1) * KS.f[mmm] + omega1 * (-KS.rho * Xm * Ym * Zm - n1o216) - (no1 - n1o2 * omega1) * Smmm * Xm * Ym * Zm;
-		KS.f[mmz] = (no1 - omega1) * KS.f[mmz] + omega1 * (-KS.rho * Xm * Ym * Zz - n1o54) - (no1 - n1o2 * omega1) * Smmz * Xm * Ym * Zz;
-		KS.f[mmp] = (no1 - omega1) * KS.f[mmp] + omega1 * (-KS.rho * Xm * Ym * Zp - n1o216) - (no1 - n1o2 * omega1) * Smmp * Xm * Ym * Zp;
-		KS.f[mzm] = (no1 - omega1) * KS.f[mzm] + omega1 * (-KS.rho * Xm * Yz * Zm - n1o54) - (no1 - n1o2 * omega1) * Smzm * Xm * Yz * Zm;
-		KS.f[mzz] = (no1 - omega1) * KS.f[mzz] + omega1 * (-KS.rho * Xm * Yz * Zz - n2o27) - (no1 - n1o2 * omega1) * Smzz * Xm * Yz * Zz;
-		KS.f[mzp] = (no1 - omega1) * KS.f[mzp] + omega1 * (-KS.rho * Xm * Yz * Zp - n1o54) - (no1 - n1o2 * omega1) * Smzp * Xm * Yz * Zp;
-		KS.f[mpm] = (no1 - omega1) * KS.f[mpm] + omega1 * (-KS.rho * Xm * Yp * Zm - n1o216) - (no1 - n1o2 * omega1) * Smpm * Xm * Yp * Zm;
-		KS.f[mpz] = (no1 - omega1) * KS.f[mpz] + omega1 * (-KS.rho * Xm * Yp * Zz - n1o54) - (no1 - n1o2 * omega1) * Smpz * Xm * Yp * Zz;
-		KS.f[mpp] = (no1 - omega1) * KS.f[mpp] + omega1 * (-KS.rho * Xm * Yp * Zp - n1o216) - (no1 - n1o2 * omega1) * Smpp * Xm * Yp * Zp;
-		KS.f[zmm] = (no1 - omega1) * KS.f[zmm] + omega1 * (-KS.rho * Xz * Ym * Zm - n1o54) - (no1 - n1o2 * omega1) * Szmm * Xz * Ym * Zm;
-		KS.f[zmz] = (no1 - omega1) * KS.f[zmz] + omega1 * (-KS.rho * Xz * Ym * Zz - n2o27) - (no1 - n1o2 * omega1) * Szmz * Xz * Ym * Zz;
-		KS.f[zmp] = (no1 - omega1) * KS.f[zmp] + omega1 * (-KS.rho * Xz * Ym * Zp - n1o54) - (no1 - n1o2 * omega1) * Szmp * Xz * Ym * Zp;
-		KS.f[zzm] = (no1 - omega1) * KS.f[zzm] + omega1 * (-KS.rho * Xz * Yz * Zm - n2o27) - (no1 - n1o2 * omega1) * Szzm * Xz * Yz * Zm;
-		KS.f[zzz] = (no1 - omega1) * KS.f[zzz] + omega1 * (-KS.rho * Xz * Yz * Zz - n8o27) - (no1 - n1o2 * omega1) * Szzz * Xz * Yz * Zz;
-		KS.f[zzp] = (no1 - omega1) * KS.f[zzp] + omega1 * (-KS.rho * Xz * Yz * Zp - n2o27) - (no1 - n1o2 * omega1) * Szzp * Xz * Yz * Zp;
-		KS.f[zpm] = (no1 - omega1) * KS.f[zpm] + omega1 * (-KS.rho * Xz * Yp * Zm - n1o54) - (no1 - n1o2 * omega1) * Szpm * Xz * Yp * Zm;
-		KS.f[zpz] = (no1 - omega1) * KS.f[zpz] + omega1 * (-KS.rho * Xz * Yp * Zz - n2o27) - (no1 - n1o2 * omega1) * Szpz * Xz * Yp * Zz;
-		KS.f[zpp] = (no1 - omega1) * KS.f[zpp] + omega1 * (-KS.rho * Xz * Yp * Zp - n1o54) - (no1 - n1o2 * omega1) * Szpp * Xz * Yp * Zp;
-		KS.f[pmm] = (no1 - omega1) * KS.f[pmm] + omega1 * (-KS.rho * Xp * Ym * Zm - n1o216) - (no1 - n1o2 * omega1) * Spmm * Xp * Ym * Zm;
-		KS.f[pmz] = (no1 - omega1) * KS.f[pmz] + omega1 * (-KS.rho * Xp * Ym * Zz - n1o54) - (no1 - n1o2 * omega1) * Spmz * Xp * Ym * Zz;
-		KS.f[pmp] = (no1 - omega1) * KS.f[pmp] + omega1 * (-KS.rho * Xp * Ym * Zp - n1o216) - (no1 - n1o2 * omega1) * Spmp * Xp * Ym * Zp;
-		KS.f[pzm] = (no1 - omega1) * KS.f[pzm] + omega1 * (-KS.rho * Xp * Yz * Zm - n1o54) - (no1 - n1o2 * omega1) * Spzm * Xp * Yz * Zm;
-		KS.f[pzz] = (no1 - omega1) * KS.f[pzz] + omega1 * (-KS.rho * Xp * Yz * Zz - n2o27) - (no1 - n1o2 * omega1) * Spzz * Xp * Yz * Zz;
-		KS.f[pzp] = (no1 - omega1) * KS.f[pzp] + omega1 * (-KS.rho * Xp * Yz * Zp - n1o54) - (no1 - n1o2 * omega1) * Spzp * Xp * Yz * Zp;
-		KS.f[ppm] = (no1 - omega1) * KS.f[ppm] + omega1 * (-KS.rho * Xp * Yp * Zm - n1o216) - (no1 - n1o2 * omega1) * Sppm * Xp * Yp * Zm;
-		KS.f[ppz] = (no1 - omega1) * KS.f[ppz] + omega1 * (-KS.rho * Xp * Yp * Zz - n1o54) - (no1 - n1o2 * omega1) * Sppz * Xp * Yp * Zz;
-		KS.f[ppp] = (no1 - omega1) * KS.f[ppp] + omega1 * (-KS.rho * Xp * Yp * Zp - n1o216) - (no1 - n1o2 * omega1) * Sppp * Xp * Yp * Zp;
+		KS.f[dir27::mmm] =
+			(no1 - omega1) * KS.f[dir27::mmm] + omega1 * (-KS.rho * Xm * Ym * Zm - n1o216) - (no1 - n1o2 * omega1) * Smmm * Xm * Ym * Zm;
+		KS.f[dir27::mmz] =
+			(no1 - omega1) * KS.f[dir27::mmz] + omega1 * (-KS.rho * Xm * Ym * Zz - n1o54) - (no1 - n1o2 * omega1) * Smmz * Xm * Ym * Zz;
+		KS.f[dir27::mmp] =
+			(no1 - omega1) * KS.f[dir27::mmp] + omega1 * (-KS.rho * Xm * Ym * Zp - n1o216) - (no1 - n1o2 * omega1) * Smmp * Xm * Ym * Zp;
+		KS.f[dir27::mzm] =
+			(no1 - omega1) * KS.f[dir27::mzm] + omega1 * (-KS.rho * Xm * Yz * Zm - n1o54) - (no1 - n1o2 * omega1) * Smzm * Xm * Yz * Zm;
+		KS.f[dir27::mzz] =
+			(no1 - omega1) * KS.f[dir27::mzz] + omega1 * (-KS.rho * Xm * Yz * Zz - n2o27) - (no1 - n1o2 * omega1) * Smzz * Xm * Yz * Zz;
+		KS.f[dir27::mzp] =
+			(no1 - omega1) * KS.f[dir27::mzp] + omega1 * (-KS.rho * Xm * Yz * Zp - n1o54) - (no1 - n1o2 * omega1) * Smzp * Xm * Yz * Zp;
+		KS.f[dir27::mpm] =
+			(no1 - omega1) * KS.f[dir27::mpm] + omega1 * (-KS.rho * Xm * Yp * Zm - n1o216) - (no1 - n1o2 * omega1) * Smpm * Xm * Yp * Zm;
+		KS.f[dir27::mpz] =
+			(no1 - omega1) * KS.f[dir27::mpz] + omega1 * (-KS.rho * Xm * Yp * Zz - n1o54) - (no1 - n1o2 * omega1) * Smpz * Xm * Yp * Zz;
+		KS.f[dir27::mpp] =
+			(no1 - omega1) * KS.f[dir27::mpp] + omega1 * (-KS.rho * Xm * Yp * Zp - n1o216) - (no1 - n1o2 * omega1) * Smpp * Xm * Yp * Zp;
+		KS.f[dir27::zmm] =
+			(no1 - omega1) * KS.f[dir27::zmm] + omega1 * (-KS.rho * Xz * Ym * Zm - n1o54) - (no1 - n1o2 * omega1) * Szmm * Xz * Ym * Zm;
+		KS.f[dir27::zmz] =
+			(no1 - omega1) * KS.f[dir27::zmz] + omega1 * (-KS.rho * Xz * Ym * Zz - n2o27) - (no1 - n1o2 * omega1) * Szmz * Xz * Ym * Zz;
+		KS.f[dir27::zmp] =
+			(no1 - omega1) * KS.f[dir27::zmp] + omega1 * (-KS.rho * Xz * Ym * Zp - n1o54) - (no1 - n1o2 * omega1) * Szmp * Xz * Ym * Zp;
+		KS.f[dir27::zzm] =
+			(no1 - omega1) * KS.f[dir27::zzm] + omega1 * (-KS.rho * Xz * Yz * Zm - n2o27) - (no1 - n1o2 * omega1) * Szzm * Xz * Yz * Zm;
+		KS.f[dir27::zzz] =
+			(no1 - omega1) * KS.f[dir27::zzz] + omega1 * (-KS.rho * Xz * Yz * Zz - n8o27) - (no1 - n1o2 * omega1) * Szzz * Xz * Yz * Zz;
+		KS.f[dir27::zzp] =
+			(no1 - omega1) * KS.f[dir27::zzp] + omega1 * (-KS.rho * Xz * Yz * Zp - n2o27) - (no1 - n1o2 * omega1) * Szzp * Xz * Yz * Zp;
+		KS.f[dir27::zpm] =
+			(no1 - omega1) * KS.f[dir27::zpm] + omega1 * (-KS.rho * Xz * Yp * Zm - n1o54) - (no1 - n1o2 * omega1) * Szpm * Xz * Yp * Zm;
+		KS.f[dir27::zpz] =
+			(no1 - omega1) * KS.f[dir27::zpz] + omega1 * (-KS.rho * Xz * Yp * Zz - n2o27) - (no1 - n1o2 * omega1) * Szpz * Xz * Yp * Zz;
+		KS.f[dir27::zpp] =
+			(no1 - omega1) * KS.f[dir27::zpp] + omega1 * (-KS.rho * Xz * Yp * Zp - n1o54) - (no1 - n1o2 * omega1) * Szpp * Xz * Yp * Zp;
+		KS.f[dir27::pmm] =
+			(no1 - omega1) * KS.f[dir27::pmm] + omega1 * (-KS.rho * Xp * Ym * Zm - n1o216) - (no1 - n1o2 * omega1) * Spmm * Xp * Ym * Zm;
+		KS.f[dir27::pmz] =
+			(no1 - omega1) * KS.f[dir27::pmz] + omega1 * (-KS.rho * Xp * Ym * Zz - n1o54) - (no1 - n1o2 * omega1) * Spmz * Xp * Ym * Zz;
+		KS.f[dir27::pmp] =
+			(no1 - omega1) * KS.f[dir27::pmp] + omega1 * (-KS.rho * Xp * Ym * Zp - n1o216) - (no1 - n1o2 * omega1) * Spmp * Xp * Ym * Zp;
+		KS.f[dir27::pzm] =
+			(no1 - omega1) * KS.f[dir27::pzm] + omega1 * (-KS.rho * Xp * Yz * Zm - n1o54) - (no1 - n1o2 * omega1) * Spzm * Xp * Yz * Zm;
+		KS.f[dir27::pzz] =
+			(no1 - omega1) * KS.f[dir27::pzz] + omega1 * (-KS.rho * Xp * Yz * Zz - n2o27) - (no1 - n1o2 * omega1) * Spzz * Xp * Yz * Zz;
+		KS.f[dir27::pzp] =
+			(no1 - omega1) * KS.f[dir27::pzp] + omega1 * (-KS.rho * Xp * Yz * Zp - n1o54) - (no1 - n1o2 * omega1) * Spzp * Xp * Yz * Zp;
+		KS.f[dir27::ppm] =
+			(no1 - omega1) * KS.f[dir27::ppm] + omega1 * (-KS.rho * Xp * Yp * Zm - n1o216) - (no1 - n1o2 * omega1) * Sppm * Xp * Yp * Zm;
+		KS.f[dir27::ppz] =
+			(no1 - omega1) * KS.f[dir27::ppz] + omega1 * (-KS.rho * Xp * Yp * Zz - n1o54) - (no1 - n1o2 * omega1) * Sppz * Xp * Yp * Zz;
+		KS.f[dir27::ppp] =
+			(no1 - omega1) * KS.f[dir27::ppp] + omega1 * (-KS.rho * Xp * Yp * Zp - n1o216) - (no1 - n1o2 * omega1) * Sppp * Xp * Yp * Zp;
 	}
 };

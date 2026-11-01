@@ -27,33 +27,33 @@ struct D3Q27_STREAMING_AB_PULL
 	__cuda_callable__ static void
 	streaming(uint8_t type, LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
-		KS.f[mmm] = TNL::Backend::ldg(SD.df(type, mmm, xp, yp, zp));
-		KS.f[mmz] = TNL::Backend::ldg(SD.df(type, mmz, xp, yp, z));
-		KS.f[mmp] = TNL::Backend::ldg(SD.df(type, mmp, xp, yp, zm));
-		KS.f[mzm] = TNL::Backend::ldg(SD.df(type, mzm, xp, y, zp));
-		KS.f[mzz] = TNL::Backend::ldg(SD.df(type, mzz, xp, y, z));
-		KS.f[mzp] = TNL::Backend::ldg(SD.df(type, mzp, xp, y, zm));
-		KS.f[mpm] = TNL::Backend::ldg(SD.df(type, mpm, xp, ym, zp));
-		KS.f[mpz] = TNL::Backend::ldg(SD.df(type, mpz, xp, ym, z));
-		KS.f[mpp] = TNL::Backend::ldg(SD.df(type, mpp, xp, ym, zm));
-		KS.f[zmm] = TNL::Backend::ldg(SD.df(type, zmm, x, yp, zp));
-		KS.f[zmz] = TNL::Backend::ldg(SD.df(type, zmz, x, yp, z));
-		KS.f[zmp] = TNL::Backend::ldg(SD.df(type, zmp, x, yp, zm));
-		KS.f[zzm] = TNL::Backend::ldg(SD.df(type, zzm, x, y, zp));
-		KS.f[zzz] = TNL::Backend::ldg(SD.df(type, zzz, x, y, z));
-		KS.f[zzp] = TNL::Backend::ldg(SD.df(type, zzp, x, y, zm));
-		KS.f[zpm] = TNL::Backend::ldg(SD.df(type, zpm, x, ym, zp));
-		KS.f[zpz] = TNL::Backend::ldg(SD.df(type, zpz, x, ym, z));
-		KS.f[zpp] = TNL::Backend::ldg(SD.df(type, zpp, x, ym, zm));
-		KS.f[pmm] = TNL::Backend::ldg(SD.df(type, pmm, xm, yp, zp));
-		KS.f[pmz] = TNL::Backend::ldg(SD.df(type, pmz, xm, yp, z));
-		KS.f[pmp] = TNL::Backend::ldg(SD.df(type, pmp, xm, yp, zm));
-		KS.f[pzm] = TNL::Backend::ldg(SD.df(type, pzm, xm, y, zp));
-		KS.f[pzz] = TNL::Backend::ldg(SD.df(type, pzz, xm, y, z));
-		KS.f[pzp] = TNL::Backend::ldg(SD.df(type, pzp, xm, y, zm));
-		KS.f[ppm] = TNL::Backend::ldg(SD.df(type, ppm, xm, ym, zp));
-		KS.f[ppz] = TNL::Backend::ldg(SD.df(type, ppz, xm, ym, z));
-		KS.f[ppp] = TNL::Backend::ldg(SD.df(type, ppp, xm, ym, zm));
+		KS.f[dir27::mmm] = TNL::Backend::ldg(SD.df(type, dir27::mmm, xp, yp, zp));
+		KS.f[dir27::mmz] = TNL::Backend::ldg(SD.df(type, dir27::mmz, xp, yp, z));
+		KS.f[dir27::mmp] = TNL::Backend::ldg(SD.df(type, dir27::mmp, xp, yp, zm));
+		KS.f[dir27::mzm] = TNL::Backend::ldg(SD.df(type, dir27::mzm, xp, y, zp));
+		KS.f[dir27::mzz] = TNL::Backend::ldg(SD.df(type, dir27::mzz, xp, y, z));
+		KS.f[dir27::mzp] = TNL::Backend::ldg(SD.df(type, dir27::mzp, xp, y, zm));
+		KS.f[dir27::mpm] = TNL::Backend::ldg(SD.df(type, dir27::mpm, xp, ym, zp));
+		KS.f[dir27::mpz] = TNL::Backend::ldg(SD.df(type, dir27::mpz, xp, ym, z));
+		KS.f[dir27::mpp] = TNL::Backend::ldg(SD.df(type, dir27::mpp, xp, ym, zm));
+		KS.f[dir27::zmm] = TNL::Backend::ldg(SD.df(type, dir27::zmm, x, yp, zp));
+		KS.f[dir27::zmz] = TNL::Backend::ldg(SD.df(type, dir27::zmz, x, yp, z));
+		KS.f[dir27::zmp] = TNL::Backend::ldg(SD.df(type, dir27::zmp, x, yp, zm));
+		KS.f[dir27::zzm] = TNL::Backend::ldg(SD.df(type, dir27::zzm, x, y, zp));
+		KS.f[dir27::zzz] = TNL::Backend::ldg(SD.df(type, dir27::zzz, x, y, z));
+		KS.f[dir27::zzp] = TNL::Backend::ldg(SD.df(type, dir27::zzp, x, y, zm));
+		KS.f[dir27::zpm] = TNL::Backend::ldg(SD.df(type, dir27::zpm, x, ym, zp));
+		KS.f[dir27::zpz] = TNL::Backend::ldg(SD.df(type, dir27::zpz, x, ym, z));
+		KS.f[dir27::zpp] = TNL::Backend::ldg(SD.df(type, dir27::zpp, x, ym, zm));
+		KS.f[dir27::pmm] = TNL::Backend::ldg(SD.df(type, dir27::pmm, xm, yp, zp));
+		KS.f[dir27::pmz] = TNL::Backend::ldg(SD.df(type, dir27::pmz, xm, yp, z));
+		KS.f[dir27::pmp] = TNL::Backend::ldg(SD.df(type, dir27::pmp, xm, yp, zm));
+		KS.f[dir27::pzm] = TNL::Backend::ldg(SD.df(type, dir27::pzm, xm, y, zp));
+		KS.f[dir27::pzz] = TNL::Backend::ldg(SD.df(type, dir27::pzz, xm, y, z));
+		KS.f[dir27::pzp] = TNL::Backend::ldg(SD.df(type, dir27::pzp, xm, y, zm));
+		KS.f[dir27::ppm] = TNL::Backend::ldg(SD.df(type, dir27::ppm, xm, ym, zp));
+		KS.f[dir27::ppz] = TNL::Backend::ldg(SD.df(type, dir27::ppz, xm, ym, z));
+		KS.f[dir27::ppp] = TNL::Backend::ldg(SD.df(type, dir27::ppp, xm, ym, zm));
 	}
 
 	template <typename LBM_DATA, typename LBM_KS>
@@ -241,33 +241,33 @@ struct D3Q27_STREAMING_AB_PULL
 	CUDA_HOSTDEV static void
 	streamingAdjoint(uint8_t type, LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
-		KS.f[mmm] = TNL::Backend::ldg(SD.df(type, mmm, xm, ym, zm));
-		KS.f[mmz] = TNL::Backend::ldg(SD.df(type, mmz, xm, ym, z));
-		KS.f[mmp] = TNL::Backend::ldg(SD.df(type, mmp, xm, ym, zp));
-		KS.f[mzm] = TNL::Backend::ldg(SD.df(type, mzm, xm, y, zm));
-		KS.f[mzz] = TNL::Backend::ldg(SD.df(type, mzz, xm, y, z));
-		KS.f[mzp] = TNL::Backend::ldg(SD.df(type, mzp, xm, y, zp));
-		KS.f[mpm] = TNL::Backend::ldg(SD.df(type, mpm, xm, yp, zm));
-		KS.f[mpz] = TNL::Backend::ldg(SD.df(type, mpz, xm, yp, z));
-		KS.f[mpp] = TNL::Backend::ldg(SD.df(type, mpp, xm, yp, zp));
-		KS.f[zmm] = TNL::Backend::ldg(SD.df(type, zmm, x, ym, zm));
-		KS.f[zmz] = TNL::Backend::ldg(SD.df(type, zmz, x, ym, z));
-		KS.f[zmp] = TNL::Backend::ldg(SD.df(type, zmp, x, ym, zp));
-		KS.f[zzm] = TNL::Backend::ldg(SD.df(type, zzm, x, y, zm));
-		KS.f[zzz] = TNL::Backend::ldg(SD.df(type, zzz, x, y, z));
-		KS.f[zzp] = TNL::Backend::ldg(SD.df(type, zzp, x, y, zp));
-		KS.f[zpm] = TNL::Backend::ldg(SD.df(type, zpm, x, yp, zm));
-		KS.f[zpz] = TNL::Backend::ldg(SD.df(type, zpz, x, yp, z));
-		KS.f[zpp] = TNL::Backend::ldg(SD.df(type, zpp, x, yp, zp));
-		KS.f[pmm] = TNL::Backend::ldg(SD.df(type, pmm, xp, ym, zm));
-		KS.f[pmz] = TNL::Backend::ldg(SD.df(type, pmz, xp, ym, z));
-		KS.f[pmp] = TNL::Backend::ldg(SD.df(type, pmp, xp, ym, zp));
-		KS.f[pzm] = TNL::Backend::ldg(SD.df(type, pzm, xp, y, zm));
-		KS.f[pzz] = TNL::Backend::ldg(SD.df(type, pzz, xp, y, z));
-		KS.f[pzp] = TNL::Backend::ldg(SD.df(type, pzp, xp, y, zp));
-		KS.f[ppm] = TNL::Backend::ldg(SD.df(type, ppm, xp, yp, zm));
-		KS.f[ppz] = TNL::Backend::ldg(SD.df(type, ppz, xp, yp, z));
-		KS.f[ppp] = TNL::Backend::ldg(SD.df(type, ppp, xp, yp, zp));
+		KS.f[dir27::mmm] = TNL::Backend::ldg(SD.df(type, dir27::mmm, xm, ym, zm));
+		KS.f[dir27::mmz] = TNL::Backend::ldg(SD.df(type, dir27::mmz, xm, ym, z));
+		KS.f[dir27::mmp] = TNL::Backend::ldg(SD.df(type, dir27::mmp, xm, ym, zp));
+		KS.f[dir27::mzm] = TNL::Backend::ldg(SD.df(type, dir27::mzm, xm, y, zm));
+		KS.f[dir27::mzz] = TNL::Backend::ldg(SD.df(type, dir27::mzz, xm, y, z));
+		KS.f[dir27::mzp] = TNL::Backend::ldg(SD.df(type, dir27::mzp, xm, y, zp));
+		KS.f[dir27::mpm] = TNL::Backend::ldg(SD.df(type, dir27::mpm, xm, yp, zm));
+		KS.f[dir27::mpz] = TNL::Backend::ldg(SD.df(type, dir27::mpz, xm, yp, z));
+		KS.f[dir27::mpp] = TNL::Backend::ldg(SD.df(type, dir27::mpp, xm, yp, zp));
+		KS.f[dir27::zmm] = TNL::Backend::ldg(SD.df(type, dir27::zmm, x, ym, zm));
+		KS.f[dir27::zmz] = TNL::Backend::ldg(SD.df(type, dir27::zmz, x, ym, z));
+		KS.f[dir27::zmp] = TNL::Backend::ldg(SD.df(type, dir27::zmp, x, ym, zp));
+		KS.f[dir27::zzm] = TNL::Backend::ldg(SD.df(type, dir27::zzm, x, y, zm));
+		KS.f[dir27::zzz] = TNL::Backend::ldg(SD.df(type, dir27::zzz, x, y, z));
+		KS.f[dir27::zzp] = TNL::Backend::ldg(SD.df(type, dir27::zzp, x, y, zp));
+		KS.f[dir27::zpm] = TNL::Backend::ldg(SD.df(type, dir27::zpm, x, yp, zm));
+		KS.f[dir27::zpz] = TNL::Backend::ldg(SD.df(type, dir27::zpz, x, yp, z));
+		KS.f[dir27::zpp] = TNL::Backend::ldg(SD.df(type, dir27::zpp, x, yp, zp));
+		KS.f[dir27::pmm] = TNL::Backend::ldg(SD.df(type, dir27::pmm, xp, ym, zm));
+		KS.f[dir27::pmz] = TNL::Backend::ldg(SD.df(type, dir27::pmz, xp, ym, z));
+		KS.f[dir27::pmp] = TNL::Backend::ldg(SD.df(type, dir27::pmp, xp, ym, zp));
+		KS.f[dir27::pzm] = TNL::Backend::ldg(SD.df(type, dir27::pzm, xp, y, zm));
+		KS.f[dir27::pzz] = TNL::Backend::ldg(SD.df(type, dir27::pzz, xp, y, z));
+		KS.f[dir27::pzp] = TNL::Backend::ldg(SD.df(type, dir27::pzp, xp, y, zp));
+		KS.f[dir27::ppm] = TNL::Backend::ldg(SD.df(type, dir27::ppm, xp, yp, zm));
+		KS.f[dir27::ppz] = TNL::Backend::ldg(SD.df(type, dir27::ppz, xp, yp, z));
+		KS.f[dir27::ppp] = TNL::Backend::ldg(SD.df(type, dir27::ppp, xp, yp, zp));
 	}
 
 	template <typename LBM_DATA, typename LBM_KS>

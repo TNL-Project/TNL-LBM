@@ -335,20 +335,20 @@ TEST_CASE("bcsymmetry3d: single-plane-ym")
 
 	// bc_face::YM: y=p directions mirrored from y=m (same x,z)
 	// mpm←mmm, mpz←mmz, mpp←mmp, zpm←zmm, zpz←zmz, zpp←zmp, ppm←pmm, ppz←pmz, ppp←pmp
-	CHECK(ks.f[mpm] == doctest::Approx(makeKS3().f[mmm]));
-	CHECK(ks.f[mpz] == doctest::Approx(makeKS3().f[mmz]));
-	CHECK(ks.f[mpp] == doctest::Approx(makeKS3().f[mmp]));
-	CHECK(ks.f[zpm] == doctest::Approx(makeKS3().f[zmm]));
-	CHECK(ks.f[zpz] == doctest::Approx(makeKS3().f[zmz]));
-	CHECK(ks.f[zpp] == doctest::Approx(makeKS3().f[zmp]));
-	CHECK(ks.f[ppm] == doctest::Approx(makeKS3().f[pmm]));
-	CHECK(ks.f[ppz] == doctest::Approx(makeKS3().f[pmz]));
-	CHECK(ks.f[ppp] == doctest::Approx(makeKS3().f[pmp]));
+	CHECK(ks.f[dir27::mpm] == doctest::Approx(makeKS3().f[dir27::mmm]));
+	CHECK(ks.f[dir27::mpz] == doctest::Approx(makeKS3().f[dir27::mmz]));
+	CHECK(ks.f[dir27::mpp] == doctest::Approx(makeKS3().f[dir27::mmp]));
+	CHECK(ks.f[dir27::zpm] == doctest::Approx(makeKS3().f[dir27::zmm]));
+	CHECK(ks.f[dir27::zpz] == doctest::Approx(makeKS3().f[dir27::zmz]));
+	CHECK(ks.f[dir27::zpp] == doctest::Approx(makeKS3().f[dir27::zmp]));
+	CHECK(ks.f[dir27::ppm] == doctest::Approx(makeKS3().f[dir27::pmm]));
+	CHECK(ks.f[dir27::ppz] == doctest::Approx(makeKS3().f[dir27::pmz]));
+	CHECK(ks.f[dir27::ppp] == doctest::Approx(makeKS3().f[dir27::pmp]));
 	// y=z and y=m directions unchanged
-	CHECK(ks.f[zzz] == doctest::Approx(makeKS3().f[zzz]));
-	CHECK(ks.f[pzz] == doctest::Approx(makeKS3().f[pzz]));
-	CHECK(ks.f[mzz] == doctest::Approx(makeKS3().f[mzz]));
-	CHECK(ks.f[mmm] == doctest::Approx(makeKS3().f[mmm]));
+	CHECK(ks.f[dir27::zzz] == doctest::Approx(makeKS3().f[dir27::zzz]));
+	CHECK(ks.f[dir27::pzz] == doctest::Approx(makeKS3().f[dir27::pzz]));
+	CHECK(ks.f[dir27::mzz] == doctest::Approx(makeKS3().f[dir27::mzz]));
+	CHECK(ks.f[dir27::mmm] == doctest::Approx(makeKS3().f[dir27::mmm]));
 }
 
 // symmetry at y+1, ghost at x-1 → bc_face::XM
@@ -364,19 +364,19 @@ TEST_CASE("bcsymmetry3d: single-plane-xm")
 
 	// bc_face::XM: x=p directions mirrored from x=m (same y,z)
 	// pmm←mmm, pmz←mmz, pmp←mmp, pzm←mzm, pzz←mzz, pzp←mzp, ppm←mpm, ppz←mpz, ppp←mpp
-	CHECK(ks.f[pmm] == doctest::Approx(makeKS3().f[mmm]));
-	CHECK(ks.f[pmz] == doctest::Approx(makeKS3().f[mmz]));
-	CHECK(ks.f[pmp] == doctest::Approx(makeKS3().f[mmp]));
-	CHECK(ks.f[pzm] == doctest::Approx(makeKS3().f[mzm]));
-	CHECK(ks.f[pzz] == doctest::Approx(makeKS3().f[mzz]));
-	CHECK(ks.f[pzp] == doctest::Approx(makeKS3().f[mzp]));
-	CHECK(ks.f[ppm] == doctest::Approx(makeKS3().f[mpm]));
-	CHECK(ks.f[ppz] == doctest::Approx(makeKS3().f[mpz]));
-	CHECK(ks.f[ppp] == doctest::Approx(makeKS3().f[mpp]));
+	CHECK(ks.f[dir27::pmm] == doctest::Approx(makeKS3().f[dir27::mmm]));
+	CHECK(ks.f[dir27::pmz] == doctest::Approx(makeKS3().f[dir27::mmz]));
+	CHECK(ks.f[dir27::pmp] == doctest::Approx(makeKS3().f[dir27::mmp]));
+	CHECK(ks.f[dir27::pzm] == doctest::Approx(makeKS3().f[dir27::mzm]));
+	CHECK(ks.f[dir27::pzz] == doctest::Approx(makeKS3().f[dir27::mzz]));
+	CHECK(ks.f[dir27::pzp] == doctest::Approx(makeKS3().f[dir27::mzp]));
+	CHECK(ks.f[dir27::ppm] == doctest::Approx(makeKS3().f[dir27::mpm]));
+	CHECK(ks.f[dir27::ppz] == doctest::Approx(makeKS3().f[dir27::mpz]));
+	CHECK(ks.f[dir27::ppp] == doctest::Approx(makeKS3().f[dir27::mpp]));
 	// x=z and x=m directions unchanged
-	CHECK(ks.f[zzz] == doctest::Approx(makeKS3().f[zzz]));
-	CHECK(ks.f[zpz] == doctest::Approx(makeKS3().f[zpz]));
-	CHECK(ks.f[mmm] == doctest::Approx(makeKS3().f[mmm]));
+	CHECK(ks.f[dir27::zzz] == doctest::Approx(makeKS3().f[dir27::zzz]));
+	CHECK(ks.f[dir27::zpz] == doctest::Approx(makeKS3().f[dir27::zpz]));
+	CHECK(ks.f[dir27::mmm] == doctest::Approx(makeKS3().f[dir27::mmm]));
 }
 
 // symmetry at y-1, ghosts at both x-1 and x+1 → bc_face::XM|bc_face::XP (destructive copy)
@@ -394,28 +394,28 @@ TEST_CASE("bcsymmetry3d: edge-x-both-sides")
 	// bc_face::XM|bc_face::XP: m-family written first from p-family, then p-family reads overwritten m-family.
 	// Destructive one-sided copy, not a swap.
 	// m-family ← p-family (first pass, originals)
-	CHECK(ks.f[mmm] == doctest::Approx(makeKS3().f[pmm]));
-	CHECK(ks.f[mmz] == doctest::Approx(makeKS3().f[pmz]));
-	CHECK(ks.f[mmp] == doctest::Approx(makeKS3().f[pmp]));
-	CHECK(ks.f[mzm] == doctest::Approx(makeKS3().f[pzm]));
-	CHECK(ks.f[mzz] == doctest::Approx(makeKS3().f[pzz]));
-	CHECK(ks.f[mzp] == doctest::Approx(makeKS3().f[pzp]));
-	CHECK(ks.f[mpm] == doctest::Approx(makeKS3().f[ppm]));
-	CHECK(ks.f[mpz] == doctest::Approx(makeKS3().f[ppz]));
-	CHECK(ks.f[mpp] == doctest::Approx(makeKS3().f[ppp]));
+	CHECK(ks.f[dir27::mmm] == doctest::Approx(makeKS3().f[dir27::pmm]));
+	CHECK(ks.f[dir27::mmz] == doctest::Approx(makeKS3().f[dir27::pmz]));
+	CHECK(ks.f[dir27::mmp] == doctest::Approx(makeKS3().f[dir27::pmp]));
+	CHECK(ks.f[dir27::mzm] == doctest::Approx(makeKS3().f[dir27::pzm]));
+	CHECK(ks.f[dir27::mzz] == doctest::Approx(makeKS3().f[dir27::pzz]));
+	CHECK(ks.f[dir27::mzp] == doctest::Approx(makeKS3().f[dir27::pzp]));
+	CHECK(ks.f[dir27::mpm] == doctest::Approx(makeKS3().f[dir27::ppm]));
+	CHECK(ks.f[dir27::mpz] == doctest::Approx(makeKS3().f[dir27::ppz]));
+	CHECK(ks.f[dir27::mpp] == doctest::Approx(makeKS3().f[dir27::ppp]));
 	// p-family ← m-family (second pass, reads overwritten values = original p-family)
-	CHECK(ks.f[pmm] == doctest::Approx(makeKS3().f[pmm]));
-	CHECK(ks.f[pmz] == doctest::Approx(makeKS3().f[pmz]));
-	CHECK(ks.f[pmp] == doctest::Approx(makeKS3().f[pmp]));
-	CHECK(ks.f[pzm] == doctest::Approx(makeKS3().f[pzm]));
-	CHECK(ks.f[pzz] == doctest::Approx(makeKS3().f[pzz]));
-	CHECK(ks.f[pzp] == doctest::Approx(makeKS3().f[pzp]));
-	CHECK(ks.f[ppm] == doctest::Approx(makeKS3().f[ppm]));
-	CHECK(ks.f[ppz] == doctest::Approx(makeKS3().f[ppz]));
-	CHECK(ks.f[ppp] == doctest::Approx(makeKS3().f[ppp]));
+	CHECK(ks.f[dir27::pmm] == doctest::Approx(makeKS3().f[dir27::pmm]));
+	CHECK(ks.f[dir27::pmz] == doctest::Approx(makeKS3().f[dir27::pmz]));
+	CHECK(ks.f[dir27::pmp] == doctest::Approx(makeKS3().f[dir27::pmp]));
+	CHECK(ks.f[dir27::pzm] == doctest::Approx(makeKS3().f[dir27::pzm]));
+	CHECK(ks.f[dir27::pzz] == doctest::Approx(makeKS3().f[dir27::pzz]));
+	CHECK(ks.f[dir27::pzp] == doctest::Approx(makeKS3().f[dir27::pzp]));
+	CHECK(ks.f[dir27::ppm] == doctest::Approx(makeKS3().f[dir27::ppm]));
+	CHECK(ks.f[dir27::ppz] == doctest::Approx(makeKS3().f[dir27::ppz]));
+	CHECK(ks.f[dir27::ppp] == doctest::Approx(makeKS3().f[dir27::ppp]));
 	// x=z unchanged
-	CHECK(ks.f[zzz] == doctest::Approx(makeKS3().f[zzz]));
-	CHECK(ks.f[zpz] == doctest::Approx(makeKS3().f[zpz]));
+	CHECK(ks.f[dir27::zzz] == doctest::Approx(makeKS3().f[dir27::zzz]));
+	CHECK(ks.f[dir27::zpz] == doctest::Approx(makeKS3().f[dir27::zpz]));
 }
 
 // symmetry on both x and y axes simultaneously → bc_face::XM|bc_face::YM
@@ -436,27 +436,27 @@ TEST_CASE("bcsymmetry3d: two-axis-symmetry")
 	// ghosts = bc_face::XM | bc_face::YM
 	// x=p, y=p directions mirrored from x=m, y=m (same z)
 	// ppm←mmm, ppz←mmz, ppp←mmp
-	CHECK(ks.f[ppm] == doctest::Approx(makeKS3().f[mmm]));
-	CHECK(ks.f[ppz] == doctest::Approx(makeKS3().f[mmz]));
-	CHECK(ks.f[ppp] == doctest::Approx(makeKS3().f[mmp]));
+	CHECK(ks.f[dir27::ppm] == doctest::Approx(makeKS3().f[dir27::mmm]));
+	CHECK(ks.f[dir27::ppz] == doctest::Approx(makeKS3().f[dir27::mmz]));
+	CHECK(ks.f[dir27::ppp] == doctest::Approx(makeKS3().f[dir27::mmp]));
 	// x=p, y=z mirrored from x=m, y=z
-	CHECK(ks.f[pzm] == doctest::Approx(makeKS3().f[mzm]));
-	CHECK(ks.f[pzz] == doctest::Approx(makeKS3().f[mzz]));
-	CHECK(ks.f[pzp] == doctest::Approx(makeKS3().f[mzp]));
+	CHECK(ks.f[dir27::pzm] == doctest::Approx(makeKS3().f[dir27::mzm]));
+	CHECK(ks.f[dir27::pzz] == doctest::Approx(makeKS3().f[dir27::mzz]));
+	CHECK(ks.f[dir27::pzp] == doctest::Approx(makeKS3().f[dir27::mzp]));
 	// x=z, y=p mirrored from x=z, y=m
-	CHECK(ks.f[zpm] == doctest::Approx(makeKS3().f[zmm]));
-	CHECK(ks.f[zpz] == doctest::Approx(makeKS3().f[zmz]));
-	CHECK(ks.f[zpp] == doctest::Approx(makeKS3().f[zmp]));
+	CHECK(ks.f[dir27::zpm] == doctest::Approx(makeKS3().f[dir27::zmm]));
+	CHECK(ks.f[dir27::zpz] == doctest::Approx(makeKS3().f[dir27::zmz]));
+	CHECK(ks.f[dir27::zpp] == doctest::Approx(makeKS3().f[dir27::zmp]));
 	// x=m, y=p mirrored from x=m, y=m
-	CHECK(ks.f[mpm] == doctest::Approx(makeKS3().f[mmm]));
-	CHECK(ks.f[mpz] == doctest::Approx(makeKS3().f[mmz]));
-	CHECK(ks.f[mpp] == doctest::Approx(makeKS3().f[mmp]));
+	CHECK(ks.f[dir27::mpm] == doctest::Approx(makeKS3().f[dir27::mmm]));
+	CHECK(ks.f[dir27::mpz] == doctest::Approx(makeKS3().f[dir27::mmz]));
+	CHECK(ks.f[dir27::mpp] == doctest::Approx(makeKS3().f[dir27::mmp]));
 	// x=p, y=m mirrored from x=m, y=m
-	CHECK(ks.f[pmm] == doctest::Approx(makeKS3().f[mmm]));
-	CHECK(ks.f[pmz] == doctest::Approx(makeKS3().f[mmz]));
-	CHECK(ks.f[pmp] == doctest::Approx(makeKS3().f[mmp]));
+	CHECK(ks.f[dir27::pmm] == doctest::Approx(makeKS3().f[dir27::mmm]));
+	CHECK(ks.f[dir27::pmz] == doctest::Approx(makeKS3().f[dir27::mmz]));
+	CHECK(ks.f[dir27::pmp] == doctest::Approx(makeKS3().f[dir27::mmp]));
 	// x=z, y=z unchanged
-	CHECK(ks.f[zzz] == doctest::Approx(makeKS3().f[zzz]));
+	CHECK(ks.f[dir27::zzz] == doctest::Approx(makeKS3().f[dir27::zzz]));
 }
 
 // symmetry at y+1, ghost at x+1 → bc_face::XP
@@ -472,18 +472,18 @@ TEST_CASE("bcsymmetry3d: single-plane-xp")
 
 	// bc_face::XP: x=m directions mirrored from x=p (same y,z)
 	// mmm←pmm, mmz←pmz, mmp←pmp, mzm←pzm, mzz←pzz, mzp←pzp, mpm←ppm, mpz←ppz, mpp←ppp
-	CHECK(ks.f[mmm] == doctest::Approx(makeKS3().f[pmm]));
-	CHECK(ks.f[mmz] == doctest::Approx(makeKS3().f[pmz]));
-	CHECK(ks.f[mmp] == doctest::Approx(makeKS3().f[pmp]));
-	CHECK(ks.f[mzm] == doctest::Approx(makeKS3().f[pzm]));
-	CHECK(ks.f[mzz] == doctest::Approx(makeKS3().f[pzz]));
-	CHECK(ks.f[mzp] == doctest::Approx(makeKS3().f[pzp]));
-	CHECK(ks.f[mpm] == doctest::Approx(makeKS3().f[ppm]));
-	CHECK(ks.f[mpz] == doctest::Approx(makeKS3().f[ppz]));
-	CHECK(ks.f[mpp] == doctest::Approx(makeKS3().f[ppp]));
+	CHECK(ks.f[dir27::mmm] == doctest::Approx(makeKS3().f[dir27::pmm]));
+	CHECK(ks.f[dir27::mmz] == doctest::Approx(makeKS3().f[dir27::pmz]));
+	CHECK(ks.f[dir27::mmp] == doctest::Approx(makeKS3().f[dir27::pmp]));
+	CHECK(ks.f[dir27::mzm] == doctest::Approx(makeKS3().f[dir27::pzm]));
+	CHECK(ks.f[dir27::mzz] == doctest::Approx(makeKS3().f[dir27::pzz]));
+	CHECK(ks.f[dir27::mzp] == doctest::Approx(makeKS3().f[dir27::pzp]));
+	CHECK(ks.f[dir27::mpm] == doctest::Approx(makeKS3().f[dir27::ppm]));
+	CHECK(ks.f[dir27::mpz] == doctest::Approx(makeKS3().f[dir27::ppz]));
+	CHECK(ks.f[dir27::mpp] == doctest::Approx(makeKS3().f[dir27::ppp]));
 	// x=z and x=p unchanged
-	CHECK(ks.f[zzz] == doctest::Approx(makeKS3().f[zzz]));
-	CHECK(ks.f[pzz] == doctest::Approx(makeKS3().f[pzz]));
+	CHECK(ks.f[dir27::zzz] == doctest::Approx(makeKS3().f[dir27::zzz]));
+	CHECK(ks.f[dir27::pzz] == doctest::Approx(makeKS3().f[dir27::pzz]));
 }
 
 // symmetry at x+1, ghost at y+1 → bc_face::YP
@@ -499,18 +499,18 @@ TEST_CASE("bcsymmetry3d: single-plane-yp")
 
 	// bc_face::YP: y=m directions mirrored from y=p (same x,z)
 	// mmm←mpm, mmz←mpz, mmp←mpp, zmm←zpm, zmz←zpz, zmp←zpp, pmm←ppm, pmz←ppz, pmp←ppp
-	CHECK(ks.f[mmm] == doctest::Approx(makeKS3().f[mpm]));
-	CHECK(ks.f[mmz] == doctest::Approx(makeKS3().f[mpz]));
-	CHECK(ks.f[mmp] == doctest::Approx(makeKS3().f[mpp]));
-	CHECK(ks.f[zmm] == doctest::Approx(makeKS3().f[zpm]));
-	CHECK(ks.f[zmz] == doctest::Approx(makeKS3().f[zpz]));
-	CHECK(ks.f[zmp] == doctest::Approx(makeKS3().f[zpp]));
-	CHECK(ks.f[pmm] == doctest::Approx(makeKS3().f[ppm]));
-	CHECK(ks.f[pmz] == doctest::Approx(makeKS3().f[ppz]));
-	CHECK(ks.f[pmp] == doctest::Approx(makeKS3().f[ppp]));
+	CHECK(ks.f[dir27::mmm] == doctest::Approx(makeKS3().f[dir27::mpm]));
+	CHECK(ks.f[dir27::mmz] == doctest::Approx(makeKS3().f[dir27::mpz]));
+	CHECK(ks.f[dir27::mmp] == doctest::Approx(makeKS3().f[dir27::mpp]));
+	CHECK(ks.f[dir27::zmm] == doctest::Approx(makeKS3().f[dir27::zpm]));
+	CHECK(ks.f[dir27::zmz] == doctest::Approx(makeKS3().f[dir27::zpz]));
+	CHECK(ks.f[dir27::zmp] == doctest::Approx(makeKS3().f[dir27::zpp]));
+	CHECK(ks.f[dir27::pmm] == doctest::Approx(makeKS3().f[dir27::ppm]));
+	CHECK(ks.f[dir27::pmz] == doctest::Approx(makeKS3().f[dir27::ppz]));
+	CHECK(ks.f[dir27::pmp] == doctest::Approx(makeKS3().f[dir27::ppp]));
 	// y=z and y=p unchanged
-	CHECK(ks.f[zzz] == doctest::Approx(makeKS3().f[zzz]));
-	CHECK(ks.f[zpz] == doctest::Approx(makeKS3().f[zpz]));
+	CHECK(ks.f[dir27::zzz] == doctest::Approx(makeKS3().f[dir27::zzz]));
+	CHECK(ks.f[dir27::zpz] == doctest::Approx(makeKS3().f[dir27::zpz]));
 }
 
 // symmetry at x+1, ghost at z-1 → bc_face::ZM
@@ -526,18 +526,18 @@ TEST_CASE("bcsymmetry3d: single-plane-zm")
 
 	// bc_face::ZM: z=p directions mirrored from z=m (same x,y)
 	// mmp←mmm, mzp←mzm, mpp←mpm, zmp←zmm, zzp←zzm, zpp←zpm, pmp←pmm, pzp←pzm, ppp←ppm
-	CHECK(ks.f[mmp] == doctest::Approx(makeKS3().f[mmm]));
-	CHECK(ks.f[mzp] == doctest::Approx(makeKS3().f[mzm]));
-	CHECK(ks.f[mpp] == doctest::Approx(makeKS3().f[mpm]));
-	CHECK(ks.f[zmp] == doctest::Approx(makeKS3().f[zmm]));
-	CHECK(ks.f[zzp] == doctest::Approx(makeKS3().f[zzm]));
-	CHECK(ks.f[zpp] == doctest::Approx(makeKS3().f[zpm]));
-	CHECK(ks.f[pmp] == doctest::Approx(makeKS3().f[pmm]));
-	CHECK(ks.f[pzp] == doctest::Approx(makeKS3().f[pzm]));
-	CHECK(ks.f[ppp] == doctest::Approx(makeKS3().f[ppm]));
+	CHECK(ks.f[dir27::mmp] == doctest::Approx(makeKS3().f[dir27::mmm]));
+	CHECK(ks.f[dir27::mzp] == doctest::Approx(makeKS3().f[dir27::mzm]));
+	CHECK(ks.f[dir27::mpp] == doctest::Approx(makeKS3().f[dir27::mpm]));
+	CHECK(ks.f[dir27::zmp] == doctest::Approx(makeKS3().f[dir27::zmm]));
+	CHECK(ks.f[dir27::zzp] == doctest::Approx(makeKS3().f[dir27::zzm]));
+	CHECK(ks.f[dir27::zpp] == doctest::Approx(makeKS3().f[dir27::zpm]));
+	CHECK(ks.f[dir27::pmp] == doctest::Approx(makeKS3().f[dir27::pmm]));
+	CHECK(ks.f[dir27::pzp] == doctest::Approx(makeKS3().f[dir27::pzm]));
+	CHECK(ks.f[dir27::ppp] == doctest::Approx(makeKS3().f[dir27::ppm]));
 	// z=z and z=m unchanged
-	CHECK(ks.f[zzz] == doctest::Approx(makeKS3().f[zzz]));
-	CHECK(ks.f[zzm] == doctest::Approx(makeKS3().f[zzm]));
+	CHECK(ks.f[dir27::zzz] == doctest::Approx(makeKS3().f[dir27::zzz]));
+	CHECK(ks.f[dir27::zzm] == doctest::Approx(makeKS3().f[dir27::zzm]));
 }
 
 // symmetry at x+1, ghost at z+1 → bc_face::ZP
@@ -553,18 +553,18 @@ TEST_CASE("bcsymmetry3d: single-plane-zp")
 
 	// bc_face::ZP: z=m directions mirrored from z=p (same x,y)
 	// mmm←mmp, mzm←mzp, mpm←mpp, zmm←zmp, zzm←zzp, zpm←zpp, pmm←pmp, pzm←pzp, ppm←ppp
-	CHECK(ks.f[mmm] == doctest::Approx(makeKS3().f[mmp]));
-	CHECK(ks.f[mzm] == doctest::Approx(makeKS3().f[mzp]));
-	CHECK(ks.f[mpm] == doctest::Approx(makeKS3().f[mpp]));
-	CHECK(ks.f[zmm] == doctest::Approx(makeKS3().f[zmp]));
-	CHECK(ks.f[zzm] == doctest::Approx(makeKS3().f[zzp]));
-	CHECK(ks.f[zpm] == doctest::Approx(makeKS3().f[zpp]));
-	CHECK(ks.f[pmm] == doctest::Approx(makeKS3().f[pmp]));
-	CHECK(ks.f[pzm] == doctest::Approx(makeKS3().f[pzp]));
-	CHECK(ks.f[ppm] == doctest::Approx(makeKS3().f[ppp]));
+	CHECK(ks.f[dir27::mmm] == doctest::Approx(makeKS3().f[dir27::mmp]));
+	CHECK(ks.f[dir27::mzm] == doctest::Approx(makeKS3().f[dir27::mzp]));
+	CHECK(ks.f[dir27::mpm] == doctest::Approx(makeKS3().f[dir27::mpp]));
+	CHECK(ks.f[dir27::zmm] == doctest::Approx(makeKS3().f[dir27::zmp]));
+	CHECK(ks.f[dir27::zzm] == doctest::Approx(makeKS3().f[dir27::zzp]));
+	CHECK(ks.f[dir27::zpm] == doctest::Approx(makeKS3().f[dir27::zpp]));
+	CHECK(ks.f[dir27::pmm] == doctest::Approx(makeKS3().f[dir27::pmp]));
+	CHECK(ks.f[dir27::pzm] == doctest::Approx(makeKS3().f[dir27::pzp]));
+	CHECK(ks.f[dir27::ppm] == doctest::Approx(makeKS3().f[dir27::ppp]));
 	// z=z and z=p unchanged
-	CHECK(ks.f[zzz] == doctest::Approx(makeKS3().f[zzz]));
-	CHECK(ks.f[zzp] == doctest::Approx(makeKS3().f[zzp]));
+	CHECK(ks.f[dir27::zzz] == doctest::Approx(makeKS3().f[dir27::zzz]));
+	CHECK(ks.f[dir27::zzp] == doctest::Approx(makeKS3().f[dir27::zzp]));
 }
 
 TEST_SUITE_END();

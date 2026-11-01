@@ -87,28 +87,31 @@ CUDA_HOSTDEV void LBMKernelStress(
 		// c_α c_β = ±1 for directions with both c_α, c_β ≠ 0 (off-diagonal).
 
 		// Diagonal: sum f^neq over directions with c_x ≠ 0 (18 directions)
-		dreal Pi11 = (fneq[pzz] + fneq[mzz]) + (fneq[ppz] + fneq[mmz]) + (fneq[pmz] + fneq[mpz]) + (fneq[pzp] + fneq[mzm]) + (fneq[pzm] + fneq[mzp])
-				   + (fneq[ppp] + fneq[mmm]) + (fneq[ppm] + fneq[mmp]) + (fneq[pmp] + fneq[mpm]) + (fneq[pmm] + fneq[mpp]);
+		dreal Pi11 = (fneq[dir27::pzz] + fneq[dir27::mzz]) + (fneq[dir27::ppz] + fneq[dir27::mmz]) + (fneq[dir27::pmz] + fneq[dir27::mpz])
+				   + (fneq[dir27::pzp] + fneq[dir27::mzm]) + (fneq[dir27::pzm] + fneq[dir27::mzp]) + (fneq[dir27::ppp] + fneq[dir27::mmm])
+				   + (fneq[dir27::ppm] + fneq[dir27::mmp]) + (fneq[dir27::pmp] + fneq[dir27::mpm]) + (fneq[dir27::pmm] + fneq[dir27::mpp]);
 
 		// Diagonal: sum f^neq over directions with c_y ≠ 0 (18 directions)
-		dreal Pi22 = (fneq[zpz] + fneq[zmz]) + (fneq[ppz] + fneq[mmz]) + (fneq[pmz] + fneq[mpz]) + (fneq[zpp] + fneq[zmm]) + (fneq[zpm] + fneq[zmp])
-				   + (fneq[ppp] + fneq[mmm]) + (fneq[ppm] + fneq[mmp]) + (fneq[pmp] + fneq[mpm]) + (fneq[pmm] + fneq[mpp]);
+		dreal Pi22 = (fneq[dir27::zpz] + fneq[dir27::zmz]) + (fneq[dir27::ppz] + fneq[dir27::mmz]) + (fneq[dir27::pmz] + fneq[dir27::mpz])
+				   + (fneq[dir27::zpp] + fneq[dir27::zmm]) + (fneq[dir27::zpm] + fneq[dir27::zmp]) + (fneq[dir27::ppp] + fneq[dir27::mmm])
+				   + (fneq[dir27::ppm] + fneq[dir27::mmp]) + (fneq[dir27::pmp] + fneq[dir27::mpm]) + (fneq[dir27::pmm] + fneq[dir27::mpp]);
 
 		// Diagonal: sum f^neq over directions with c_z ≠ 0 (18 directions)
-		dreal Pi33 = (fneq[zzp] + fneq[zzm]) + (fneq[pzp] + fneq[mzm]) + (fneq[pzm] + fneq[mzp]) + (fneq[zpp] + fneq[zmm]) + (fneq[zpm] + fneq[zmp])
-				   + (fneq[ppp] + fneq[mmm]) + (fneq[ppm] + fneq[mmp]) + (fneq[pmp] + fneq[mpm]) + (fneq[pmm] + fneq[mpp]);
+		dreal Pi33 = (fneq[dir27::zzp] + fneq[dir27::zzm]) + (fneq[dir27::pzp] + fneq[dir27::mzm]) + (fneq[dir27::pzm] + fneq[dir27::mzp])
+				   + (fneq[dir27::zpp] + fneq[dir27::zmm]) + (fneq[dir27::zpm] + fneq[dir27::zmp]) + (fneq[dir27::ppp] + fneq[dir27::mmm])
+				   + (fneq[dir27::ppm] + fneq[dir27::mmp]) + (fneq[dir27::pmp] + fneq[dir27::mpm]) + (fneq[dir27::pmm] + fneq[dir27::mpp]);
 
 		// Off-diagonal xy: c_x*c_y = +1 for ppz,mmz,ppp,mmm,ppm,mmp; -1 for pmz,mpz,pmp,mpm,pmm,mpp
-		dreal Pi12 = ((fneq[ppz] + fneq[mmz]) + (fneq[ppp] + fneq[mmm]) + (fneq[ppm] + fneq[mmp]))
-				   - ((fneq[pmz] + fneq[mpz]) + (fneq[pmp] + fneq[mpm]) + (fneq[pmm] + fneq[mpp]));
+		dreal Pi12 = ((fneq[dir27::ppz] + fneq[dir27::mmz]) + (fneq[dir27::ppp] + fneq[dir27::mmm]) + (fneq[dir27::ppm] + fneq[dir27::mmp]))
+				   - ((fneq[dir27::pmz] + fneq[dir27::mpz]) + (fneq[dir27::pmp] + fneq[dir27::mpm]) + (fneq[dir27::pmm] + fneq[dir27::mpp]));
 
 		// Off-diagonal xz: c_x*c_z = +1 for pzp,mzm,ppp,mmm,pmp,mpm; -1 for pzm,mzp,ppm,mmp,pmm,mpp
-		dreal Pi13 = ((fneq[pzp] + fneq[mzm]) + (fneq[ppp] + fneq[mmm]) + (fneq[pmp] + fneq[mpm]))
-				   - ((fneq[pzm] + fneq[mzp]) + (fneq[ppm] + fneq[mmp]) + (fneq[pmm] + fneq[mpp]));
+		dreal Pi13 = ((fneq[dir27::pzp] + fneq[dir27::mzm]) + (fneq[dir27::ppp] + fneq[dir27::mmm]) + (fneq[dir27::pmp] + fneq[dir27::mpm]))
+				   - ((fneq[dir27::pzm] + fneq[dir27::mzp]) + (fneq[dir27::ppm] + fneq[dir27::mmp]) + (fneq[dir27::pmm] + fneq[dir27::mpp]));
 
 		// Off-diagonal zy: c_z*c_y = +1 for zpp,zmm,ppp,mmm,pmm,mpp; -1 for zpm,zmp,ppm,mmp,pmp,mpm
-		dreal Pi32 = ((fneq[zpp] + fneq[zmm]) + (fneq[ppp] + fneq[mmm]) + (fneq[pmm] + fneq[mpp]))
-				   - ((fneq[zpm] + fneq[zmp]) + (fneq[ppm] + fneq[mmp]) + (fneq[pmp] + fneq[mpm]));
+		dreal Pi32 = ((fneq[dir27::zpp] + fneq[dir27::zmm]) + (fneq[dir27::ppp] + fneq[dir27::mmm]) + (fneq[dir27::pmm] + fneq[dir27::mpp]))
+				   - ((fneq[dir27::zpm] + fneq[dir27::zmp]) + (fneq[dir27::ppm] + fneq[dir27::mmp]) + (fneq[dir27::pmp] + fneq[dir27::mpm]));
 
 		// Convert Pi^neq to strain rate:
 		//   D_αβ = -1/(2 ρ c_s² τ₀) · Pi^neq_αβ = -3/(2 ρ τ₀) · Pi^neq_αβ

@@ -1461,78 +1461,78 @@ void LBM_BLOCK<CONFIG>::allocatePhiTransferDirectionArrays()
 			if (CONFIG::BC::isFluid(hmap(x, y, z))) {
 				if (CONFIG::BC::isSolid(hmap(x + 1, y, z))) {
 					TransferFS(x, y, z) = true;
-					hphiTransferDirection(pzz, x, y, z) = true;
+					hphiTransferDirection(dir27::pzz, x, y, z) = true;
 				}
 				if (CONFIG::BC::isSolid(hmap(x, y + 1, z))) {
 					TransferFS(x, y, z) = true;
-					hphiTransferDirection(zpz, x, y, z) = true;
+					hphiTransferDirection(dir27::zpz, x, y, z) = true;
 				}
 				if (CONFIG::BC::isSolid(hmap(x, y, z + 1))) {
 					TransferFS(x, y, z) = true;
-					hphiTransferDirection(zzp, x, y, z) = true;
+					hphiTransferDirection(dir27::zzp, x, y, z) = true;
 				}
 				if (CONFIG::BC::isSolid(hmap(x - 1, y, z))) {
 					TransferFS(x, y, z) = true;
-					hphiTransferDirection(mzz, x, y, z) = true;
+					hphiTransferDirection(dir27::mzz, x, y, z) = true;
 				}
 				if (CONFIG::BC::isSolid(hmap(x, y - 1, z))) {
 					TransferFS(x, y, z) = true;
-					hphiTransferDirection(zmz, x, y, z) = true;
+					hphiTransferDirection(dir27::zmz, x, y, z) = true;
 				}
 				if (CONFIG::BC::isSolid(hmap(x, y, z - 1))) {
 					TransferFS(x, y, z) = true;
-					hphiTransferDirection(zzm, x, y, z) = true;
+					hphiTransferDirection(dir27::zzm, x, y, z) = true;
 				}
 			}
 			if (CONFIG::BC::isSolid(hmap(x, y, z))) {
 				if (CONFIG::BC::isFluid(hmap(x + 1, y, z))) {
 					TransferSF(x, y, z) = true;
-					hphiTransferDirection(pzz, x, y, z) = true;
+					hphiTransferDirection(dir27::pzz, x, y, z) = true;
 				}
 				if (CONFIG::BC::isFluid(hmap(x, y + 1, z))) {
 					TransferSF(x, y, z) = true;
-					hphiTransferDirection(zpz, x, y, z) = true;
+					hphiTransferDirection(dir27::zpz, x, y, z) = true;
 				}
 				if (CONFIG::BC::isFluid(hmap(x, y, z + 1))) {
 					TransferSF(x, y, z) = true;
-					hphiTransferDirection(zzp, x, y, z) = true;
+					hphiTransferDirection(dir27::zzp, x, y, z) = true;
 				}
 				if (CONFIG::BC::isFluid(hmap(x - 1, y, z))) {
 					TransferSF(x, y, z) = true;
-					hphiTransferDirection(mzz, x, y, z) = true;
+					hphiTransferDirection(dir27::mzz, x, y, z) = true;
 				}
 				if (CONFIG::BC::isFluid(hmap(x, y - 1, z))) {
 					TransferSF(x, y, z) = true;
-					hphiTransferDirection(zmz, x, y, z) = true;
+					hphiTransferDirection(dir27::zmz, x, y, z) = true;
 				}
 				if (CONFIG::BC::isFluid(hmap(x, y, z - 1))) {
 					TransferSF(x, y, z) = true;
-					hphiTransferDirection(zzm, x, y, z) = true;
+					hphiTransferDirection(dir27::zzm, x, y, z) = true;
 				}
 
 				if (CONFIG::BC::isWall(hmap(x + 1, y, z))) {
 					TransferSW(x, y, z) = true;
-					hphiTransferDirection(pzz, x, y, z) = true;
+					hphiTransferDirection(dir27::pzz, x, y, z) = true;
 				}
 				if (CONFIG::BC::isWall(hmap(x, y + 1, z))) {
 					TransferSW(x, y, z) = true;
-					hphiTransferDirection(zpz, x, y, z) = true;
+					hphiTransferDirection(dir27::zpz, x, y, z) = true;
 				}
 				if (CONFIG::BC::isWall(hmap(x, y, z + 1))) {
 					TransferSW(x, y, z) = true;
-					hphiTransferDirection(zzp, x, y, z) = true;
+					hphiTransferDirection(dir27::zzp, x, y, z) = true;
 				}
 				if (CONFIG::BC::isWall(hmap(x - 1, y, z))) {
 					TransferSW(x, y, z) = true;
-					hphiTransferDirection(mzz, x, y, z) = true;
+					hphiTransferDirection(dir27::mzz, x, y, z) = true;
 				}
 				if (CONFIG::BC::isWall(hmap(x, y - 1, z))) {
 					TransferSW(x, y, z) = true;
-					hphiTransferDirection(zmz, x, y, z) = true;
+					hphiTransferDirection(dir27::zmz, x, y, z) = true;
 				}
 				if (CONFIG::BC::isWall(hmap(x, y, z - 1))) {
 					TransferSW(x, y, z) = true;
-					hphiTransferDirection(zzm, x, y, z) = true;
+					hphiTransferDirection(dir27::zzm, x, y, z) = true;
 				}
 			}
 		}

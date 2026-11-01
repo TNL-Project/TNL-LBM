@@ -43,63 +43,63 @@ struct D3Q27_STREAMING_ESO_TWIST
 	{
 		if (! SD.even_iter) {
 			// phase A: slot (c, n + sigma(c)) receives post[opp(c)]
-			SD.df(df_cur, zzz, x, y, z) = KS.f[zzz];
-			SD.df(df_cur, pzz, x, y, z) = KS.f[mzz];
-			SD.df(df_cur, mzz, xp, y, z) = KS.f[pzz];
-			SD.df(df_cur, zpz, x, y, z) = KS.f[zmz];
-			SD.df(df_cur, zmz, x, yp, z) = KS.f[zpz];
-			SD.df(df_cur, zzp, x, y, z) = KS.f[zzm];
-			SD.df(df_cur, zzm, x, y, zp) = KS.f[zzp];
-			SD.df(df_cur, ppz, x, y, z) = KS.f[mmz];
-			SD.df(df_cur, mmz, xp, yp, z) = KS.f[ppz];
-			SD.df(df_cur, pmz, x, yp, z) = KS.f[mpz];
-			SD.df(df_cur, mpz, xp, y, z) = KS.f[pmz];
-			SD.df(df_cur, pzp, x, y, z) = KS.f[mzm];
-			SD.df(df_cur, mzm, xp, y, zp) = KS.f[pzp];
-			SD.df(df_cur, pzm, x, y, zp) = KS.f[mzp];
-			SD.df(df_cur, mzp, xp, y, z) = KS.f[pzm];
-			SD.df(df_cur, zpp, x, y, z) = KS.f[zmm];
-			SD.df(df_cur, zmm, x, yp, zp) = KS.f[zpp];
-			SD.df(df_cur, zpm, x, y, zp) = KS.f[zmp];
-			SD.df(df_cur, zmp, x, yp, z) = KS.f[zpm];
-			SD.df(df_cur, ppp, x, y, z) = KS.f[mmm];
-			SD.df(df_cur, mmm, xp, yp, zp) = KS.f[ppp];
-			SD.df(df_cur, ppm, x, y, zp) = KS.f[mmp];
-			SD.df(df_cur, mmp, xp, yp, z) = KS.f[ppm];
-			SD.df(df_cur, pmp, x, yp, z) = KS.f[mpm];
-			SD.df(df_cur, mpm, xp, y, zp) = KS.f[pmp];
-			SD.df(df_cur, pmm, x, yp, zp) = KS.f[mpp];
-			SD.df(df_cur, mpp, xp, y, z) = KS.f[pmm];
+			SD.df(df_cur, dir27::zzz, x, y, z) = KS.f[dir27::zzz];
+			SD.df(df_cur, dir27::pzz, x, y, z) = KS.f[dir27::mzz];
+			SD.df(df_cur, dir27::mzz, xp, y, z) = KS.f[dir27::pzz];
+			SD.df(df_cur, dir27::zpz, x, y, z) = KS.f[dir27::zmz];
+			SD.df(df_cur, dir27::zmz, x, yp, z) = KS.f[dir27::zpz];
+			SD.df(df_cur, dir27::zzp, x, y, z) = KS.f[dir27::zzm];
+			SD.df(df_cur, dir27::zzm, x, y, zp) = KS.f[dir27::zzp];
+			SD.df(df_cur, dir27::ppz, x, y, z) = KS.f[dir27::mmz];
+			SD.df(df_cur, dir27::mmz, xp, yp, z) = KS.f[dir27::ppz];
+			SD.df(df_cur, dir27::pmz, x, yp, z) = KS.f[dir27::mpz];
+			SD.df(df_cur, dir27::mpz, xp, y, z) = KS.f[dir27::pmz];
+			SD.df(df_cur, dir27::pzp, x, y, z) = KS.f[dir27::mzm];
+			SD.df(df_cur, dir27::mzm, xp, y, zp) = KS.f[dir27::pzp];
+			SD.df(df_cur, dir27::pzm, x, y, zp) = KS.f[dir27::mzp];
+			SD.df(df_cur, dir27::mzp, xp, y, z) = KS.f[dir27::pzm];
+			SD.df(df_cur, dir27::zpp, x, y, z) = KS.f[dir27::zmm];
+			SD.df(df_cur, dir27::zmm, x, yp, zp) = KS.f[dir27::zpp];
+			SD.df(df_cur, dir27::zpm, x, y, zp) = KS.f[dir27::zmp];
+			SD.df(df_cur, dir27::zmp, x, yp, z) = KS.f[dir27::zpm];
+			SD.df(df_cur, dir27::ppp, x, y, z) = KS.f[dir27::mmm];
+			SD.df(df_cur, dir27::mmm, xp, yp, zp) = KS.f[dir27::ppp];
+			SD.df(df_cur, dir27::ppm, x, y, zp) = KS.f[dir27::mmp];
+			SD.df(df_cur, dir27::mmp, xp, yp, z) = KS.f[dir27::ppm];
+			SD.df(df_cur, dir27::pmp, x, yp, z) = KS.f[dir27::mpm];
+			SD.df(df_cur, dir27::mpm, xp, y, zp) = KS.f[dir27::pmp];
+			SD.df(df_cur, dir27::pmm, x, yp, zp) = KS.f[dir27::mpp];
+			SD.df(df_cur, dir27::mpp, xp, y, z) = KS.f[dir27::pmm];
 		}
 		else {
 			// phase B: slot (d, n + p(d)) keeps post[d]
-			SD.df(df_cur, zzz, x, y, z) = KS.f[zzz];
-			SD.df(df_cur, pzz, xp, y, z) = KS.f[pzz];
-			SD.df(df_cur, mzz, x, y, z) = KS.f[mzz];
-			SD.df(df_cur, zpz, x, yp, z) = KS.f[zpz];
-			SD.df(df_cur, zmz, x, y, z) = KS.f[zmz];
-			SD.df(df_cur, zzp, x, y, zp) = KS.f[zzp];
-			SD.df(df_cur, zzm, x, y, z) = KS.f[zzm];
-			SD.df(df_cur, ppz, xp, yp, z) = KS.f[ppz];
-			SD.df(df_cur, mmz, x, y, z) = KS.f[mmz];
-			SD.df(df_cur, pmz, xp, y, z) = KS.f[pmz];
-			SD.df(df_cur, mpz, x, yp, z) = KS.f[mpz];
-			SD.df(df_cur, pzp, xp, y, zp) = KS.f[pzp];
-			SD.df(df_cur, mzm, x, y, z) = KS.f[mzm];
-			SD.df(df_cur, pzm, xp, y, z) = KS.f[pzm];
-			SD.df(df_cur, mzp, x, y, zp) = KS.f[mzp];
-			SD.df(df_cur, zpp, x, yp, zp) = KS.f[zpp];
-			SD.df(df_cur, zmm, x, y, z) = KS.f[zmm];
-			SD.df(df_cur, zpm, x, yp, z) = KS.f[zpm];
-			SD.df(df_cur, zmp, x, y, zp) = KS.f[zmp];
-			SD.df(df_cur, ppp, xp, yp, zp) = KS.f[ppp];
-			SD.df(df_cur, mmm, x, y, z) = KS.f[mmm];
-			SD.df(df_cur, ppm, xp, yp, z) = KS.f[ppm];
-			SD.df(df_cur, mmp, x, y, zp) = KS.f[mmp];
-			SD.df(df_cur, pmp, xp, y, zp) = KS.f[pmp];
-			SD.df(df_cur, mpm, x, yp, z) = KS.f[mpm];
-			SD.df(df_cur, pmm, xp, y, z) = KS.f[pmm];
-			SD.df(df_cur, mpp, x, yp, zp) = KS.f[mpp];
+			SD.df(df_cur, dir27::zzz, x, y, z) = KS.f[dir27::zzz];
+			SD.df(df_cur, dir27::pzz, xp, y, z) = KS.f[dir27::pzz];
+			SD.df(df_cur, dir27::mzz, x, y, z) = KS.f[dir27::mzz];
+			SD.df(df_cur, dir27::zpz, x, yp, z) = KS.f[dir27::zpz];
+			SD.df(df_cur, dir27::zmz, x, y, z) = KS.f[dir27::zmz];
+			SD.df(df_cur, dir27::zzp, x, y, zp) = KS.f[dir27::zzp];
+			SD.df(df_cur, dir27::zzm, x, y, z) = KS.f[dir27::zzm];
+			SD.df(df_cur, dir27::ppz, xp, yp, z) = KS.f[dir27::ppz];
+			SD.df(df_cur, dir27::mmz, x, y, z) = KS.f[dir27::mmz];
+			SD.df(df_cur, dir27::pmz, xp, y, z) = KS.f[dir27::pmz];
+			SD.df(df_cur, dir27::mpz, x, yp, z) = KS.f[dir27::mpz];
+			SD.df(df_cur, dir27::pzp, xp, y, zp) = KS.f[dir27::pzp];
+			SD.df(df_cur, dir27::mzm, x, y, z) = KS.f[dir27::mzm];
+			SD.df(df_cur, dir27::pzm, xp, y, z) = KS.f[dir27::pzm];
+			SD.df(df_cur, dir27::mzp, x, y, zp) = KS.f[dir27::mzp];
+			SD.df(df_cur, dir27::zpp, x, yp, zp) = KS.f[dir27::zpp];
+			SD.df(df_cur, dir27::zmm, x, y, z) = KS.f[dir27::zmm];
+			SD.df(df_cur, dir27::zpm, x, yp, z) = KS.f[dir27::zpm];
+			SD.df(df_cur, dir27::zmp, x, y, zp) = KS.f[dir27::zmp];
+			SD.df(df_cur, dir27::ppp, xp, yp, zp) = KS.f[dir27::ppp];
+			SD.df(df_cur, dir27::mmm, x, y, z) = KS.f[dir27::mmm];
+			SD.df(df_cur, dir27::ppm, xp, yp, z) = KS.f[dir27::ppm];
+			SD.df(df_cur, dir27::mmp, x, y, zp) = KS.f[dir27::mmp];
+			SD.df(df_cur, dir27::pmp, xp, y, zp) = KS.f[dir27::pmp];
+			SD.df(df_cur, dir27::mpm, x, yp, z) = KS.f[dir27::mpm];
+			SD.df(df_cur, dir27::pmm, xp, y, z) = KS.f[dir27::pmm];
+			SD.df(df_cur, dir27::mpp, x, yp, zp) = KS.f[dir27::mpp];
 		}
 	}
 
@@ -108,63 +108,63 @@ struct D3Q27_STREAMING_ESO_TWIST
 	{
 		if (! SD.even_iter) {
 			// phase A: KS.f[c] = slot (c, n + sigma(c))
-			KS.f[zzz] = TNL::Backend::ldg(SD.df(df_cur, zzz, x, y, z));
-			KS.f[pzz] = TNL::Backend::ldg(SD.df(df_cur, pzz, x, y, z));
-			KS.f[mzz] = TNL::Backend::ldg(SD.df(df_cur, mzz, xp, y, z));
-			KS.f[zpz] = TNL::Backend::ldg(SD.df(df_cur, zpz, x, y, z));
-			KS.f[zmz] = TNL::Backend::ldg(SD.df(df_cur, zmz, x, yp, z));
-			KS.f[zzp] = TNL::Backend::ldg(SD.df(df_cur, zzp, x, y, z));
-			KS.f[zzm] = TNL::Backend::ldg(SD.df(df_cur, zzm, x, y, zp));
-			KS.f[ppz] = TNL::Backend::ldg(SD.df(df_cur, ppz, x, y, z));
-			KS.f[mmz] = TNL::Backend::ldg(SD.df(df_cur, mmz, xp, yp, z));
-			KS.f[pmz] = TNL::Backend::ldg(SD.df(df_cur, pmz, x, yp, z));
-			KS.f[mpz] = TNL::Backend::ldg(SD.df(df_cur, mpz, xp, y, z));
-			KS.f[pzp] = TNL::Backend::ldg(SD.df(df_cur, pzp, x, y, z));
-			KS.f[mzm] = TNL::Backend::ldg(SD.df(df_cur, mzm, xp, y, zp));
-			KS.f[pzm] = TNL::Backend::ldg(SD.df(df_cur, pzm, x, y, zp));
-			KS.f[mzp] = TNL::Backend::ldg(SD.df(df_cur, mzp, xp, y, z));
-			KS.f[zpp] = TNL::Backend::ldg(SD.df(df_cur, zpp, x, y, z));
-			KS.f[zmm] = TNL::Backend::ldg(SD.df(df_cur, zmm, x, yp, zp));
-			KS.f[zpm] = TNL::Backend::ldg(SD.df(df_cur, zpm, x, y, zp));
-			KS.f[zmp] = TNL::Backend::ldg(SD.df(df_cur, zmp, x, yp, z));
-			KS.f[ppp] = TNL::Backend::ldg(SD.df(df_cur, ppp, x, y, z));
-			KS.f[mmm] = TNL::Backend::ldg(SD.df(df_cur, mmm, xp, yp, zp));
-			KS.f[ppm] = TNL::Backend::ldg(SD.df(df_cur, ppm, x, y, zp));
-			KS.f[mmp] = TNL::Backend::ldg(SD.df(df_cur, mmp, xp, yp, z));
-			KS.f[pmp] = TNL::Backend::ldg(SD.df(df_cur, pmp, x, yp, z));
-			KS.f[mpm] = TNL::Backend::ldg(SD.df(df_cur, mpm, xp, y, zp));
-			KS.f[pmm] = TNL::Backend::ldg(SD.df(df_cur, pmm, x, yp, zp));
-			KS.f[mpp] = TNL::Backend::ldg(SD.df(df_cur, mpp, xp, y, z));
+			KS.f[dir27::zzz] = TNL::Backend::ldg(SD.df(df_cur, dir27::zzz, x, y, z));
+			KS.f[dir27::pzz] = TNL::Backend::ldg(SD.df(df_cur, dir27::pzz, x, y, z));
+			KS.f[dir27::mzz] = TNL::Backend::ldg(SD.df(df_cur, dir27::mzz, xp, y, z));
+			KS.f[dir27::zpz] = TNL::Backend::ldg(SD.df(df_cur, dir27::zpz, x, y, z));
+			KS.f[dir27::zmz] = TNL::Backend::ldg(SD.df(df_cur, dir27::zmz, x, yp, z));
+			KS.f[dir27::zzp] = TNL::Backend::ldg(SD.df(df_cur, dir27::zzp, x, y, z));
+			KS.f[dir27::zzm] = TNL::Backend::ldg(SD.df(df_cur, dir27::zzm, x, y, zp));
+			KS.f[dir27::ppz] = TNL::Backend::ldg(SD.df(df_cur, dir27::ppz, x, y, z));
+			KS.f[dir27::mmz] = TNL::Backend::ldg(SD.df(df_cur, dir27::mmz, xp, yp, z));
+			KS.f[dir27::pmz] = TNL::Backend::ldg(SD.df(df_cur, dir27::pmz, x, yp, z));
+			KS.f[dir27::mpz] = TNL::Backend::ldg(SD.df(df_cur, dir27::mpz, xp, y, z));
+			KS.f[dir27::pzp] = TNL::Backend::ldg(SD.df(df_cur, dir27::pzp, x, y, z));
+			KS.f[dir27::mzm] = TNL::Backend::ldg(SD.df(df_cur, dir27::mzm, xp, y, zp));
+			KS.f[dir27::pzm] = TNL::Backend::ldg(SD.df(df_cur, dir27::pzm, x, y, zp));
+			KS.f[dir27::mzp] = TNL::Backend::ldg(SD.df(df_cur, dir27::mzp, xp, y, z));
+			KS.f[dir27::zpp] = TNL::Backend::ldg(SD.df(df_cur, dir27::zpp, x, y, z));
+			KS.f[dir27::zmm] = TNL::Backend::ldg(SD.df(df_cur, dir27::zmm, x, yp, zp));
+			KS.f[dir27::zpm] = TNL::Backend::ldg(SD.df(df_cur, dir27::zpm, x, y, zp));
+			KS.f[dir27::zmp] = TNL::Backend::ldg(SD.df(df_cur, dir27::zmp, x, yp, z));
+			KS.f[dir27::ppp] = TNL::Backend::ldg(SD.df(df_cur, dir27::ppp, x, y, z));
+			KS.f[dir27::mmm] = TNL::Backend::ldg(SD.df(df_cur, dir27::mmm, xp, yp, zp));
+			KS.f[dir27::ppm] = TNL::Backend::ldg(SD.df(df_cur, dir27::ppm, x, y, zp));
+			KS.f[dir27::mmp] = TNL::Backend::ldg(SD.df(df_cur, dir27::mmp, xp, yp, z));
+			KS.f[dir27::pmp] = TNL::Backend::ldg(SD.df(df_cur, dir27::pmp, x, yp, z));
+			KS.f[dir27::mpm] = TNL::Backend::ldg(SD.df(df_cur, dir27::mpm, xp, y, zp));
+			KS.f[dir27::pmm] = TNL::Backend::ldg(SD.df(df_cur, dir27::pmm, x, yp, zp));
+			KS.f[dir27::mpp] = TNL::Backend::ldg(SD.df(df_cur, dir27::mpp, xp, y, z));
 		}
 		else {
 			// phase B: KS.f[c] = slot (opp(c), n + sigma(c))
-			KS.f[zzz] = TNL::Backend::ldg(SD.df(df_cur, zzz, x, y, z));
-			KS.f[pzz] = TNL::Backend::ldg(SD.df(df_cur, mzz, x, y, z));
-			KS.f[mzz] = TNL::Backend::ldg(SD.df(df_cur, pzz, xp, y, z));
-			KS.f[zpz] = TNL::Backend::ldg(SD.df(df_cur, zmz, x, y, z));
-			KS.f[zmz] = TNL::Backend::ldg(SD.df(df_cur, zpz, x, yp, z));
-			KS.f[zzp] = TNL::Backend::ldg(SD.df(df_cur, zzm, x, y, z));
-			KS.f[zzm] = TNL::Backend::ldg(SD.df(df_cur, zzp, x, y, zp));
-			KS.f[ppz] = TNL::Backend::ldg(SD.df(df_cur, mmz, x, y, z));
-			KS.f[mmz] = TNL::Backend::ldg(SD.df(df_cur, ppz, xp, yp, z));
-			KS.f[pmz] = TNL::Backend::ldg(SD.df(df_cur, mpz, x, yp, z));
-			KS.f[mpz] = TNL::Backend::ldg(SD.df(df_cur, pmz, xp, y, z));
-			KS.f[pzp] = TNL::Backend::ldg(SD.df(df_cur, mzm, x, y, z));
-			KS.f[mzm] = TNL::Backend::ldg(SD.df(df_cur, pzp, xp, y, zp));
-			KS.f[pzm] = TNL::Backend::ldg(SD.df(df_cur, mzp, x, y, zp));
-			KS.f[mzp] = TNL::Backend::ldg(SD.df(df_cur, pzm, xp, y, z));
-			KS.f[zpp] = TNL::Backend::ldg(SD.df(df_cur, zmm, x, y, z));
-			KS.f[zmm] = TNL::Backend::ldg(SD.df(df_cur, zpp, x, yp, zp));
-			KS.f[zpm] = TNL::Backend::ldg(SD.df(df_cur, zmp, x, y, zp));
-			KS.f[zmp] = TNL::Backend::ldg(SD.df(df_cur, zpm, x, yp, z));
-			KS.f[ppp] = TNL::Backend::ldg(SD.df(df_cur, mmm, x, y, z));
-			KS.f[mmm] = TNL::Backend::ldg(SD.df(df_cur, ppp, xp, yp, zp));
-			KS.f[ppm] = TNL::Backend::ldg(SD.df(df_cur, mmp, x, y, zp));
-			KS.f[mmp] = TNL::Backend::ldg(SD.df(df_cur, ppm, xp, yp, z));
-			KS.f[pmp] = TNL::Backend::ldg(SD.df(df_cur, mpm, x, yp, z));
-			KS.f[mpm] = TNL::Backend::ldg(SD.df(df_cur, pmp, xp, y, zp));
-			KS.f[pmm] = TNL::Backend::ldg(SD.df(df_cur, mpp, x, yp, zp));
-			KS.f[mpp] = TNL::Backend::ldg(SD.df(df_cur, pmm, xp, y, z));
+			KS.f[dir27::zzz] = TNL::Backend::ldg(SD.df(df_cur, dir27::zzz, x, y, z));
+			KS.f[dir27::pzz] = TNL::Backend::ldg(SD.df(df_cur, dir27::mzz, x, y, z));
+			KS.f[dir27::mzz] = TNL::Backend::ldg(SD.df(df_cur, dir27::pzz, xp, y, z));
+			KS.f[dir27::zpz] = TNL::Backend::ldg(SD.df(df_cur, dir27::zmz, x, y, z));
+			KS.f[dir27::zmz] = TNL::Backend::ldg(SD.df(df_cur, dir27::zpz, x, yp, z));
+			KS.f[dir27::zzp] = TNL::Backend::ldg(SD.df(df_cur, dir27::zzm, x, y, z));
+			KS.f[dir27::zzm] = TNL::Backend::ldg(SD.df(df_cur, dir27::zzp, x, y, zp));
+			KS.f[dir27::ppz] = TNL::Backend::ldg(SD.df(df_cur, dir27::mmz, x, y, z));
+			KS.f[dir27::mmz] = TNL::Backend::ldg(SD.df(df_cur, dir27::ppz, xp, yp, z));
+			KS.f[dir27::pmz] = TNL::Backend::ldg(SD.df(df_cur, dir27::mpz, x, yp, z));
+			KS.f[dir27::mpz] = TNL::Backend::ldg(SD.df(df_cur, dir27::pmz, xp, y, z));
+			KS.f[dir27::pzp] = TNL::Backend::ldg(SD.df(df_cur, dir27::mzm, x, y, z));
+			KS.f[dir27::mzm] = TNL::Backend::ldg(SD.df(df_cur, dir27::pzp, xp, y, zp));
+			KS.f[dir27::pzm] = TNL::Backend::ldg(SD.df(df_cur, dir27::mzp, x, y, zp));
+			KS.f[dir27::mzp] = TNL::Backend::ldg(SD.df(df_cur, dir27::pzm, xp, y, z));
+			KS.f[dir27::zpp] = TNL::Backend::ldg(SD.df(df_cur, dir27::zmm, x, y, z));
+			KS.f[dir27::zmm] = TNL::Backend::ldg(SD.df(df_cur, dir27::zpp, x, yp, zp));
+			KS.f[dir27::zpm] = TNL::Backend::ldg(SD.df(df_cur, dir27::zmp, x, y, zp));
+			KS.f[dir27::zmp] = TNL::Backend::ldg(SD.df(df_cur, dir27::zpm, x, yp, z));
+			KS.f[dir27::ppp] = TNL::Backend::ldg(SD.df(df_cur, dir27::mmm, x, y, z));
+			KS.f[dir27::mmm] = TNL::Backend::ldg(SD.df(df_cur, dir27::ppp, xp, yp, zp));
+			KS.f[dir27::ppm] = TNL::Backend::ldg(SD.df(df_cur, dir27::mmp, x, y, zp));
+			KS.f[dir27::mmp] = TNL::Backend::ldg(SD.df(df_cur, dir27::ppm, xp, yp, z));
+			KS.f[dir27::pmp] = TNL::Backend::ldg(SD.df(df_cur, dir27::mpm, x, yp, z));
+			KS.f[dir27::mpm] = TNL::Backend::ldg(SD.df(df_cur, dir27::pmp, xp, y, zp));
+			KS.f[dir27::pmm] = TNL::Backend::ldg(SD.df(df_cur, dir27::mpp, x, yp, zp));
+			KS.f[dir27::mpp] = TNL::Backend::ldg(SD.df(df_cur, dir27::pmm, xp, y, z));
 		}
 	}
 
@@ -175,19 +175,19 @@ struct D3Q27_STREAMING_ESO_TWIST
 	__cuda_callable__ static void streamingBounceBack(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
 		streaming(SD, KS, xm, x, xp, ym, y, yp, zm, z, zp);
-		TNL::swap(KS.f[mmm], KS.f[ppp]);
-		TNL::swap(KS.f[mmz], KS.f[ppz]);
-		TNL::swap(KS.f[mmp], KS.f[ppm]);
-		TNL::swap(KS.f[mzm], KS.f[pzp]);
-		TNL::swap(KS.f[mzz], KS.f[pzz]);
-		TNL::swap(KS.f[mzp], KS.f[pzm]);
-		TNL::swap(KS.f[mpm], KS.f[pmp]);
-		TNL::swap(KS.f[mpz], KS.f[pmz]);
-		TNL::swap(KS.f[mpp], KS.f[pmm]);
-		TNL::swap(KS.f[zmm], KS.f[zpp]);
-		TNL::swap(KS.f[zzm], KS.f[zzp]);
-		TNL::swap(KS.f[zmz], KS.f[zpz]);
-		TNL::swap(KS.f[zmp], KS.f[zpm]);
+		TNL::swap(KS.f[dir27::mmm], KS.f[dir27::ppp]);
+		TNL::swap(KS.f[dir27::mmz], KS.f[dir27::ppz]);
+		TNL::swap(KS.f[dir27::mmp], KS.f[dir27::ppm]);
+		TNL::swap(KS.f[dir27::mzm], KS.f[dir27::pzp]);
+		TNL::swap(KS.f[dir27::mzz], KS.f[dir27::pzz]);
+		TNL::swap(KS.f[dir27::mzp], KS.f[dir27::pzm]);
+		TNL::swap(KS.f[dir27::mpm], KS.f[dir27::pmp]);
+		TNL::swap(KS.f[dir27::mpz], KS.f[dir27::pmz]);
+		TNL::swap(KS.f[dir27::mpp], KS.f[dir27::pmm]);
+		TNL::swap(KS.f[dir27::zmm], KS.f[dir27::zpp]);
+		TNL::swap(KS.f[dir27::zzm], KS.f[dir27::zzp]);
+		TNL::swap(KS.f[dir27::zmz], KS.f[dir27::zpz]);
+		TNL::swap(KS.f[dir27::zmp], KS.f[dir27::zpm]);
 	}
 
 	// the post-collision population of direction i authored at site w, given
@@ -234,16 +234,20 @@ struct D3Q27_STREAMING_ESO_TWIST
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void streamingRho(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
-		dreal rho = postCollValue(SD, mmm, xp + 1, y + 1, z + 1) + postCollValue(SD, mmz, xp + 1, y + 1, z)
-				  + postCollValue(SD, mmp, xp + 1, y + 1, z - 1) + postCollValue(SD, mzm, xp + 1, y, z + 1) + postCollValue(SD, mzz, xp + 1, y, z)
-				  + postCollValue(SD, mzp, xp + 1, y, z - 1) + postCollValue(SD, mpm, xp + 1, y - 1, z + 1) + postCollValue(SD, mpz, xp + 1, y - 1, z)
-				  + postCollValue(SD, mpp, xp + 1, y - 1, z - 1) + postCollValue(SD, zmm, xp, y + 1, z + 1) + postCollValue(SD, zmz, xp, y + 1, z)
-				  + postCollValue(SD, zmp, xp, y + 1, z - 1) + postCollValue(SD, zzm, xp, y, z + 1) + postCollValue(SD, zzz, xp, y, z)
-				  + postCollValue(SD, zzp, xp, y, z - 1) + postCollValue(SD, zpm, xp, y - 1, z + 1) + postCollValue(SD, zpz, xp, y - 1, z)
-				  + postCollValue(SD, zpp, xp, y - 1, z - 1) + postCollValue(SD, pmm, xm, y + 1, z + 1) + postCollValue(SD, pmz, xm, y + 1, z)
-				  + postCollValue(SD, pmp, xm, y + 1, z - 1) + postCollValue(SD, pzm, xm, y, z + 1) + postCollValue(SD, pzz, xm, y, z)
-				  + postCollValue(SD, pzp, xm, y, z - 1) + postCollValue(SD, ppm, xm, y - 1, z + 1) + postCollValue(SD, ppz, xm, y - 1, z)
-				  + postCollValue(SD, ppp, xm, y - 1, z - 1);
+		dreal rho = postCollValue(SD, dir27::mmm, xp + 1, y + 1, z + 1) + postCollValue(SD, dir27::mmz, xp + 1, y + 1, z)
+				  + postCollValue(SD, dir27::mmp, xp + 1, y + 1, z - 1) + postCollValue(SD, dir27::mzm, xp + 1, y, z + 1)
+				  + postCollValue(SD, dir27::mzz, xp + 1, y, z) + postCollValue(SD, dir27::mzp, xp + 1, y, z - 1)
+				  + postCollValue(SD, dir27::mpm, xp + 1, y - 1, z + 1) + postCollValue(SD, dir27::mpz, xp + 1, y - 1, z)
+				  + postCollValue(SD, dir27::mpp, xp + 1, y - 1, z - 1) + postCollValue(SD, dir27::zmm, xp, y + 1, z + 1)
+				  + postCollValue(SD, dir27::zmz, xp, y + 1, z) + postCollValue(SD, dir27::zmp, xp, y + 1, z - 1)
+				  + postCollValue(SD, dir27::zzm, xp, y, z + 1) + postCollValue(SD, dir27::zzz, xp, y, z)
+				  + postCollValue(SD, dir27::zzp, xp, y, z - 1) + postCollValue(SD, dir27::zpm, xp, y - 1, z + 1)
+				  + postCollValue(SD, dir27::zpz, xp, y - 1, z) + postCollValue(SD, dir27::zpp, xp, y - 1, z - 1)
+				  + postCollValue(SD, dir27::pmm, xm, y + 1, z + 1) + postCollValue(SD, dir27::pmz, xm, y + 1, z)
+				  + postCollValue(SD, dir27::pmp, xm, y + 1, z - 1) + postCollValue(SD, dir27::pzm, xm, y, z + 1)
+				  + postCollValue(SD, dir27::pzz, xm, y, z) + postCollValue(SD, dir27::pzp, xm, y, z - 1)
+				  + postCollValue(SD, dir27::ppm, xm, y - 1, z + 1) + postCollValue(SD, dir27::ppz, xm, y - 1, z)
+				  + postCollValue(SD, dir27::ppp, xm, y - 1, z - 1);
 		KS.rho = rho;
 	}
 
@@ -252,13 +256,15 @@ struct D3Q27_STREAMING_ESO_TWIST
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void streamingVx(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
-		dreal vx = postCollValue(SD, pmm, xm - 1, y + 1, z + 1) + postCollValue(SD, pmz, xm - 1, y + 1, z)
-				 + postCollValue(SD, pmp, xm - 1, y + 1, z - 1) + postCollValue(SD, ppm, xm - 1, y - 1, z + 1)
-				 + postCollValue(SD, ppz, xm - 1, y - 1, z) + postCollValue(SD, ppp, xm - 1, y - 1, z - 1) + postCollValue(SD, pzm, xm - 1, y, z + 1)
-				 + postCollValue(SD, pzz, xm - 1, y, z) + postCollValue(SD, pzp, xm - 1, y, z - 1) - postCollValue(SD, mmm, xm + 1, y + 1, z + 1)
-				 - postCollValue(SD, mmz, xm + 1, y + 1, z) - postCollValue(SD, mmp, xm + 1, y + 1, z - 1) - postCollValue(SD, mzm, xm + 1, y, z + 1)
-				 - postCollValue(SD, mzz, xm + 1, y, z) - postCollValue(SD, mzp, xm + 1, y, z - 1) - postCollValue(SD, mpm, xm + 1, y - 1, z + 1)
-				 - postCollValue(SD, mpz, xm + 1, y - 1, z) - postCollValue(SD, mpp, xm + 1, y - 1, z - 1);
+		dreal vx = postCollValue(SD, dir27::pmm, xm - 1, y + 1, z + 1) + postCollValue(SD, dir27::pmz, xm - 1, y + 1, z)
+				 + postCollValue(SD, dir27::pmp, xm - 1, y + 1, z - 1) + postCollValue(SD, dir27::ppm, xm - 1, y - 1, z + 1)
+				 + postCollValue(SD, dir27::ppz, xm - 1, y - 1, z) + postCollValue(SD, dir27::ppp, xm - 1, y - 1, z - 1)
+				 + postCollValue(SD, dir27::pzm, xm - 1, y, z + 1) + postCollValue(SD, dir27::pzz, xm - 1, y, z)
+				 + postCollValue(SD, dir27::pzp, xm - 1, y, z - 1) - postCollValue(SD, dir27::mmm, xm + 1, y + 1, z + 1)
+				 - postCollValue(SD, dir27::mmz, xm + 1, y + 1, z) - postCollValue(SD, dir27::mmp, xm + 1, y + 1, z - 1)
+				 - postCollValue(SD, dir27::mzm, xm + 1, y, z + 1) - postCollValue(SD, dir27::mzz, xm + 1, y, z)
+				 - postCollValue(SD, dir27::mzp, xm + 1, y, z - 1) - postCollValue(SD, dir27::mpm, xm + 1, y - 1, z + 1)
+				 - postCollValue(SD, dir27::mpz, xm + 1, y - 1, z) - postCollValue(SD, dir27::mpp, xm + 1, y - 1, z - 1);
 		KS.vx = vx;
 	}
 
@@ -266,13 +272,15 @@ struct D3Q27_STREAMING_ESO_TWIST
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void streamingVy(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
-		dreal vy = postCollValue(SD, mpm, xm + 1, y - 1, z + 1) + postCollValue(SD, mpz, xm + 1, y - 1, z)
-				 + postCollValue(SD, mpp, xm + 1, y - 1, z - 1) + postCollValue(SD, zpm, xm, y - 1, z + 1) + postCollValue(SD, zpz, xm, y - 1, z)
-				 + postCollValue(SD, zpp, xm, y - 1, z - 1) + postCollValue(SD, ppm, xm - 1, y - 1, z + 1) + postCollValue(SD, ppz, xm - 1, y - 1, z)
-				 + postCollValue(SD, ppp, xm - 1, y - 1, z - 1) - postCollValue(SD, zmm, xm, y + 1, z + 1) - postCollValue(SD, zmz, xm, y + 1, z)
-				 - postCollValue(SD, zmp, xm, y + 1, z - 1) - postCollValue(SD, pmm, xm - 1, y + 1, z + 1) - postCollValue(SD, pmz, xm - 1, y + 1, z)
-				 - postCollValue(SD, pmp, xm - 1, y + 1, z - 1) - postCollValue(SD, mmm, xm + 1, y + 1, z + 1)
-				 - postCollValue(SD, mmz, xm + 1, y + 1, z) - postCollValue(SD, mmp, xm + 1, y + 1, z - 1);
+		dreal vy = postCollValue(SD, dir27::mpm, xm + 1, y - 1, z + 1) + postCollValue(SD, dir27::mpz, xm + 1, y - 1, z)
+				 + postCollValue(SD, dir27::mpp, xm + 1, y - 1, z - 1) + postCollValue(SD, dir27::zpm, xm, y - 1, z + 1)
+				 + postCollValue(SD, dir27::zpz, xm, y - 1, z) + postCollValue(SD, dir27::zpp, xm, y - 1, z - 1)
+				 + postCollValue(SD, dir27::ppm, xm - 1, y - 1, z + 1) + postCollValue(SD, dir27::ppz, xm - 1, y - 1, z)
+				 + postCollValue(SD, dir27::ppp, xm - 1, y - 1, z - 1) - postCollValue(SD, dir27::zmm, xm, y + 1, z + 1)
+				 - postCollValue(SD, dir27::zmz, xm, y + 1, z) - postCollValue(SD, dir27::zmp, xm, y + 1, z - 1)
+				 - postCollValue(SD, dir27::pmm, xm - 1, y + 1, z + 1) - postCollValue(SD, dir27::pmz, xm - 1, y + 1, z)
+				 - postCollValue(SD, dir27::pmp, xm - 1, y + 1, z - 1) - postCollValue(SD, dir27::mmm, xm + 1, y + 1, z + 1)
+				 - postCollValue(SD, dir27::mmz, xm + 1, y + 1, z) - postCollValue(SD, dir27::mmp, xm + 1, y + 1, z - 1);
 		KS.vy = vy;
 	}
 
@@ -280,13 +288,15 @@ struct D3Q27_STREAMING_ESO_TWIST
 	template <typename LBM_DATA, typename LBM_KS>
 	__cuda_callable__ static void streamingVz(LBM_DATA& SD, LBM_KS& KS, idx xm, idx x, idx xp, idx ym, idx y, idx yp, idx zm, idx z, idx zp)
 	{
-		dreal vz = postCollValue(SD, mmp, xm + 1, y + 1, z - 1) + postCollValue(SD, pmp, xm - 1, y + 1, z - 1)
-				 + postCollValue(SD, zmp, xm, y + 1, z - 1) + postCollValue(SD, pzp, xm - 1, y, z - 1) + postCollValue(SD, zzp, xm, y, z - 1)
-				 + postCollValue(SD, mzp, xm + 1, y, z - 1) + postCollValue(SD, ppp, xm - 1, y - 1, z - 1) + postCollValue(SD, zpp, xm, y - 1, z - 1)
-				 + postCollValue(SD, mpp, xm + 1, y - 1, z - 1) - postCollValue(SD, mmm, xm + 1, y + 1, z + 1)
-				 - postCollValue(SD, pmm, xm - 1, y + 1, z + 1) - postCollValue(SD, zmm, xm, y + 1, z + 1) - postCollValue(SD, pzm, xm - 1, y, z + 1)
-				 - postCollValue(SD, zzm, xm, y, z + 1) - postCollValue(SD, mzm, xm + 1, y, z + 1) - postCollValue(SD, ppm, xm - 1, y - 1, z + 1)
-				 - postCollValue(SD, zpm, xm, y - 1, z + 1) - postCollValue(SD, mpm, xm + 1, y - 1, z + 1);
+		dreal vz = postCollValue(SD, dir27::mmp, xm + 1, y + 1, z - 1) + postCollValue(SD, dir27::pmp, xm - 1, y + 1, z - 1)
+				 + postCollValue(SD, dir27::zmp, xm, y + 1, z - 1) + postCollValue(SD, dir27::pzp, xm - 1, y, z - 1)
+				 + postCollValue(SD, dir27::zzp, xm, y, z - 1) + postCollValue(SD, dir27::mzp, xm + 1, y, z - 1)
+				 + postCollValue(SD, dir27::ppp, xm - 1, y - 1, z - 1) + postCollValue(SD, dir27::zpp, xm, y - 1, z - 1)
+				 + postCollValue(SD, dir27::mpp, xm + 1, y - 1, z - 1) - postCollValue(SD, dir27::mmm, xm + 1, y + 1, z + 1)
+				 - postCollValue(SD, dir27::pmm, xm - 1, y + 1, z + 1) - postCollValue(SD, dir27::zmm, xm, y + 1, z + 1)
+				 - postCollValue(SD, dir27::pzm, xm - 1, y, z + 1) - postCollValue(SD, dir27::zzm, xm, y, z + 1)
+				 - postCollValue(SD, dir27::mzm, xm + 1, y, z + 1) - postCollValue(SD, dir27::ppm, xm - 1, y - 1, z + 1)
+				 - postCollValue(SD, dir27::zpm, xm, y - 1, z + 1) - postCollValue(SD, dir27::mpm, xm + 1, y - 1, z + 1);
 		KS.vz = vz;
 	}
 

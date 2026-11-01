@@ -13,18 +13,21 @@ struct D3Q27_MRT : D3Q27_COMMON<TRAITS, LBM_EQ>
 	template <typename LBM_KS>
 	__cuda_callable__ static void collision(LBM_KS& KS)
 	{
-		dreal Pxx = KS.f[mmm] + KS.f[mmz] + KS.f[mmp] + KS.f[mzm] + KS.f[mzz] + KS.f[mzp] + KS.f[mpm] + KS.f[mpz] + KS.f[mpp] + KS.f[pmm] + KS.f[pmz]
-				  + KS.f[pmp] + KS.f[pzm] + KS.f[pzz] + KS.f[pzp] + KS.f[ppm] + KS.f[ppz] + KS.f[ppp];	//Second order moment Pi
-		dreal Pyy = KS.f[mmm] + KS.f[mmz] + KS.f[mmp] + KS.f[mpm] + KS.f[mpz] + KS.f[mpp] + KS.f[zmm] + KS.f[zmz] + KS.f[zmp] + KS.f[zpm] + KS.f[zpz]
-				  + KS.f[zpp] + KS.f[pmm] + KS.f[pmz] + KS.f[pmp] + KS.f[ppm] + KS.f[ppz] + KS.f[ppp];
-		dreal Pzz = KS.f[mmm] + KS.f[mmp] + KS.f[mzm] + KS.f[mzp] + KS.f[mpm] + KS.f[mpp] + KS.f[zmm] + KS.f[zmp] + KS.f[zzm] + KS.f[zzp] + KS.f[zpm]
-				  + KS.f[zpp] + KS.f[pmm] + KS.f[pmp] + KS.f[pzm] + KS.f[pzp] + KS.f[ppm] + KS.f[ppp];
-		dreal Pxy = KS.f[mmm] + KS.f[mmz] + KS.f[mmp] - KS.f[mpm] - KS.f[mpz] - KS.f[mpp] - KS.f[pmm] - KS.f[pmz] - KS.f[pmp] + KS.f[ppm] + KS.f[ppz]
-				  + KS.f[ppp];
-		dreal Pxz = KS.f[mmm] - KS.f[mmp] + KS.f[mzm] - KS.f[mzp] + KS.f[mpm] - KS.f[mpp] - KS.f[pmm] + KS.f[pmp] - KS.f[pzm] + KS.f[pzp] - KS.f[ppm]
-				  + KS.f[ppp];
-		dreal Pyz = KS.f[mmm] - KS.f[mmp] - KS.f[mpm] + KS.f[mpp] + KS.f[zmm] - KS.f[zmp] - KS.f[zpm] + KS.f[zpp] + KS.f[pmm] - KS.f[pmp] - KS.f[ppm]
-				  + KS.f[ppp];
+		dreal Pxx = KS.f[dir27::mmm] + KS.f[dir27::mmz] + KS.f[dir27::mmp] + KS.f[dir27::mzm] + KS.f[dir27::mzz] + KS.f[dir27::mzp] + KS.f[dir27::mpm]
+				  + KS.f[dir27::mpz] + KS.f[dir27::mpp] + KS.f[dir27::pmm] + KS.f[dir27::pmz] + KS.f[dir27::pmp] + KS.f[dir27::pzm] + KS.f[dir27::pzz]
+				  + KS.f[dir27::pzp] + KS.f[dir27::ppm] + KS.f[dir27::ppz] + KS.f[dir27::ppp];	//Second order moment Pi
+		dreal Pyy = KS.f[dir27::mmm] + KS.f[dir27::mmz] + KS.f[dir27::mmp] + KS.f[dir27::mpm] + KS.f[dir27::mpz] + KS.f[dir27::mpp] + KS.f[dir27::zmm]
+				  + KS.f[dir27::zmz] + KS.f[dir27::zmp] + KS.f[dir27::zpm] + KS.f[dir27::zpz] + KS.f[dir27::zpp] + KS.f[dir27::pmm] + KS.f[dir27::pmz]
+				  + KS.f[dir27::pmp] + KS.f[dir27::ppm] + KS.f[dir27::ppz] + KS.f[dir27::ppp];
+		dreal Pzz = KS.f[dir27::mmm] + KS.f[dir27::mmp] + KS.f[dir27::mzm] + KS.f[dir27::mzp] + KS.f[dir27::mpm] + KS.f[dir27::mpp] + KS.f[dir27::zmm]
+				  + KS.f[dir27::zmp] + KS.f[dir27::zzm] + KS.f[dir27::zzp] + KS.f[dir27::zpm] + KS.f[dir27::zpp] + KS.f[dir27::pmm] + KS.f[dir27::pmp]
+				  + KS.f[dir27::pzm] + KS.f[dir27::pzp] + KS.f[dir27::ppm] + KS.f[dir27::ppp];
+		dreal Pxy = KS.f[dir27::mmm] + KS.f[dir27::mmz] + KS.f[dir27::mmp] - KS.f[dir27::mpm] - KS.f[dir27::mpz] - KS.f[dir27::mpp] - KS.f[dir27::pmm]
+				  - KS.f[dir27::pmz] - KS.f[dir27::pmp] + KS.f[dir27::ppm] + KS.f[dir27::ppz] + KS.f[dir27::ppp];
+		dreal Pxz = KS.f[dir27::mmm] - KS.f[dir27::mmp] + KS.f[dir27::mzm] - KS.f[dir27::mzp] + KS.f[dir27::mpm] - KS.f[dir27::mpp] - KS.f[dir27::pmm]
+				  + KS.f[dir27::pmp] - KS.f[dir27::pzm] + KS.f[dir27::pzp] - KS.f[dir27::ppm] + KS.f[dir27::ppp];
+		dreal Pyz = KS.f[dir27::mmm] - KS.f[dir27::mmp] - KS.f[dir27::mpm] + KS.f[dir27::mpp] + KS.f[dir27::zmm] - KS.f[dir27::zmp] - KS.f[dir27::zpm]
+				  + KS.f[dir27::zpp] + KS.f[dir27::pmm] - KS.f[dir27::pmp] - KS.f[dir27::ppm] + KS.f[dir27::ppp];
 		const dreal Pnxx = Pxx - KS.rho * (n1o3 + KS.vx * KS.vx);  //Non-equilibrium part of Pi
 		const dreal Pnyy = Pyy - KS.rho * (n1o3 + KS.vy * KS.vy);
 		const dreal Pnzz = Pzz - KS.rho * (n1o3 + KS.vz * KS.vz);
@@ -57,86 +60,86 @@ struct D3Q27_MRT : D3Q27_COMMON<TRAITS, LBM_EQ>
 		Pxz -= omega * Pnxz;
 		Pyz -= omega * Pnyz;
 
-		KS.f[mmm] = n1o216
-				  * (KS.rho * (n5o2 - n3o2 * 3 + no3 * (KS.vx * -no1 + KS.vy * -no1 + KS.vz * (-no1)))
-					 + n9o2 * (Pxx * no1 + Pyy * no1 + Pzz * no1 + no2 * (Pxy * no1 + Pxz * no1 + Pyz * no1)) - n3o2 * (Pxx + Pyy + Pzz));
-		KS.f[mmz] = n1o54
-				  * (KS.rho * (n5o2 - n3o2 * 2 + no3 * (KS.vx * -no1 + KS.vy * -no1 + KS.vz * 0))
-					 + n9o2 * (Pxx * no1 + Pyy * no1 + Pzz * 0 + no2 * (Pxy * no1 + Pxz * 0 + Pyz * 0)) - n3o2 * (Pxx + Pyy + Pzz));
-		KS.f[mmp] = n1o216
-				  * (KS.rho * (n5o2 - n3o2 * 3 + no3 * (KS.vx * -no1 + KS.vy * -no1 + KS.vz * no1))
-					 + n9o2 * (Pxx * no1 + Pyy * no1 + Pzz * no1 + no2 * (Pxy * no1 + Pxz * -no1 + Pyz * (-no1))) - n3o2 * (Pxx + Pyy + Pzz));
-		KS.f[mzm] = n1o54
-				  * (KS.rho * (n5o2 - n3o2 * 2 + no3 * (KS.vx * -no1 + KS.vy * 0 + KS.vz * (-no1)))
-					 + n9o2 * (Pxx * no1 + Pyy * 0 + Pzz * no1 + no2 * (Pxy * 0 + Pxz * no1 + Pyz * 0)) - n3o2 * (Pxx + Pyy + Pzz));
-		KS.f[mzz] = n2o27
-				  * (KS.rho * (n5o2 - n3o2 * no1 + no3 * (KS.vx * -no1 + KS.vy * 0 + KS.vz * 0))
-					 + n9o2 * (Pxx * no1 + Pyy * 0 + Pzz * 0 + no2 * (Pxy * 0 + Pxz * 0 + Pyz * 0)) - n3o2 * (Pxx + Pyy + Pzz));
-		KS.f[mzp] = n1o54
-				  * (KS.rho * (n5o2 - n3o2 * 2 + no3 * (KS.vx * -no1 + KS.vy * 0 + KS.vz * no1))
-					 + n9o2 * (Pxx * no1 + Pyy * 0 + Pzz * no1 + no2 * (Pxy * 0 + Pxz * -no1 + Pyz * 0)) - n3o2 * (Pxx + Pyy + Pzz));
-		KS.f[mpm] = n1o216
-				  * (KS.rho * (n5o2 - n3o2 * 3 + no3 * (KS.vx * -no1 + KS.vy * no1 + KS.vz * (-no1)))
-					 + n9o2 * (Pxx * no1 + Pyy * no1 + Pzz * no1 + no2 * (Pxy * -no1 + Pxz * no1 + Pyz * (-no1))) - n3o2 * (Pxx + Pyy + Pzz));
-		KS.f[mpz] = n1o54
-				  * (KS.rho * (n5o2 - n3o2 * 2 + no3 * (KS.vx * -no1 + KS.vy * no1 + KS.vz * 0))
-					 + n9o2 * (Pxx * no1 + Pyy * no1 + Pzz * 0 + no2 * (Pxy * -no1 + Pxz * 0 + Pyz * 0)) - n3o2 * (Pxx + Pyy + Pzz));
-		KS.f[mpp] = n1o216
-				  * (KS.rho * (n5o2 - n3o2 * 3 + no3 * (KS.vx * -no1 + KS.vy * no1 + KS.vz * no1))
-					 + n9o2 * (Pxx * no1 + Pyy * no1 + Pzz * no1 + no2 * (Pxy * -no1 + Pxz * -no1 + Pyz * no1)) - n3o2 * (Pxx + Pyy + Pzz));
-		KS.f[zmm] = n1o54
-				  * (KS.rho * (n5o2 - n3o2 * 2 + no3 * (KS.vx * 0 + KS.vy * -no1 + KS.vz * (-no1)))
-					 + n9o2 * (Pxx * 0 + Pyy * no1 + Pzz * no1 + no2 * (Pxy * 0 + Pxz * 0 + Pyz * no1)) - n3o2 * (Pxx + Pyy + Pzz));
-		KS.f[zmz] = n2o27
-				  * (KS.rho * (n5o2 - n3o2 * no1 + no3 * (KS.vx * 0 + KS.vy * -no1 + KS.vz * 0))
-					 + n9o2 * (Pxx * 0 + Pyy * no1 + Pzz * 0 + no2 * (Pxy * 0 + Pxz * 0 + Pyz * 0)) - n3o2 * (Pxx + Pyy + Pzz));
-		KS.f[zmp] = n1o54
-				  * (KS.rho * (n5o2 - n3o2 * 2 + no3 * (KS.vx * 0 + KS.vy * -no1 + KS.vz * no1))
-					 + n9o2 * (Pxx * 0 + Pyy * no1 + Pzz * no1 + no2 * (Pxy * 0 + Pxz * 0 + Pyz * (-no1))) - n3o2 * (Pxx + Pyy + Pzz));
-		KS.f[zzm] = n2o27
-				  * (KS.rho * (n5o2 - n3o2 * no1 + no3 * (KS.vx * 0 + KS.vy * 0 + KS.vz * (-no1)))
-					 + n9o2 * (Pxx * 0 + Pyy * 0 + Pzz * no1 + no2 * (Pxy * 0 + Pxz * 0 + Pyz * 0)) - n3o2 * (Pxx + Pyy + Pzz));
-		KS.f[zzz] = n8o27
-				  * (KS.rho * (n5o2 - n3o2 * 0 + no3 * (KS.vx * 0 + KS.vy * 0 + KS.vz * 0))
-					 + n9o2 * (Pxx * 0 + Pyy * 0 + Pzz * 0 + no2 * (Pxy * 0 + Pxz * 0 + Pyz * 0)) - n3o2 * (Pxx + Pyy + Pzz));
-		KS.f[zzp] = n2o27
-				  * (KS.rho * (n5o2 - n3o2 * no1 + no3 * (KS.vx * 0 + KS.vy * 0 + KS.vz * no1))
-					 + n9o2 * (Pxx * 0 + Pyy * 0 + Pzz * no1 + no2 * (Pxy * 0 + Pxz * 0 + Pyz * 0)) - n3o2 * (Pxx + Pyy + Pzz));
-		KS.f[zpm] = n1o54
-				  * (KS.rho * (n5o2 - n3o2 * 2 + no3 * (KS.vx * 0 + KS.vy * no1 + KS.vz * (-no1)))
-					 + n9o2 * (Pxx * 0 + Pyy * no1 + Pzz * no1 + no2 * (Pxy * 0 + Pxz * 0 + Pyz * (-no1))) - n3o2 * (Pxx + Pyy + Pzz));
-		KS.f[zpz] = n2o27
-				  * (KS.rho * (n5o2 - n3o2 * no1 + no3 * (KS.vx * 0 + KS.vy * no1 + KS.vz * 0))
-					 + n9o2 * (Pxx * 0 + Pyy * no1 + Pzz * 0 + no2 * (Pxy * 0 + Pxz * 0 + Pyz * 0)) - n3o2 * (Pxx + Pyy + Pzz));
-		KS.f[zpp] = n1o54
-				  * (KS.rho * (n5o2 - n3o2 * 2 + no3 * (KS.vx * 0 + KS.vy * no1 + KS.vz * no1))
-					 + n9o2 * (Pxx * 0 + Pyy * no1 + Pzz * no1 + no2 * (Pxy * 0 + Pxz * 0 + Pyz * no1)) - n3o2 * (Pxx + Pyy + Pzz));
-		KS.f[pmm] = n1o216
-				  * (KS.rho * (n5o2 - n3o2 * 3 + no3 * (KS.vx * no1 + KS.vy * -no1 + KS.vz * (-no1)))
-					 + n9o2 * (Pxx * no1 + Pyy * no1 + Pzz * no1 + no2 * (Pxy * -no1 + Pxz * -no1 + Pyz * no1)) - n3o2 * (Pxx + Pyy + Pzz));
-		KS.f[pmz] = n1o54
-				  * (KS.rho * (n5o2 - n3o2 * 2 + no3 * (KS.vx * no1 + KS.vy * -no1 + KS.vz * 0))
-					 + n9o2 * (Pxx * no1 + Pyy * no1 + Pzz * 0 + no2 * (Pxy * -no1 + Pxz * 0 + Pyz * 0)) - n3o2 * (Pxx + Pyy + Pzz));
-		KS.f[pmp] = n1o216
-				  * (KS.rho * (n5o2 - n3o2 * 3 + no3 * (KS.vx * no1 + KS.vy * -no1 + KS.vz * no1))
-					 + n9o2 * (Pxx * no1 + Pyy * no1 + Pzz * no1 + no2 * (Pxy * -no1 + Pxz * no1 + Pyz * (-no1))) - n3o2 * (Pxx + Pyy + Pzz));
-		KS.f[pzm] = n1o54
-				  * (KS.rho * (n5o2 - n3o2 * 2 + no3 * (KS.vx * no1 + KS.vy * 0 + KS.vz * (-no1)))
-					 + n9o2 * (Pxx * no1 + Pyy * 0 + Pzz * no1 + no2 * (Pxy * 0 + Pxz * -no1 + Pyz * 0)) - n3o2 * (Pxx + Pyy + Pzz));
-		KS.f[pzz] = n2o27
-				  * (KS.rho * (n5o2 - n3o2 * no1 + no3 * (KS.vx * no1 + KS.vy * 0 + KS.vz * 0))
-					 + n9o2 * (Pxx * no1 + Pyy * 0 + Pzz * 0 + no2 * (Pxy * 0 + Pxz * 0 + Pyz * 0)) - n3o2 * (Pxx + Pyy + Pzz));
-		KS.f[pzp] = n1o54
-				  * (KS.rho * (n5o2 - n3o2 * 2 + no3 * (KS.vx * no1 + KS.vy * 0 + KS.vz * no1))
-					 + n9o2 * (Pxx * no1 + Pyy * 0 + Pzz * no1 + no2 * (Pxy * 0 + Pxz * no1 + Pyz * 0)) - n3o2 * (Pxx + Pyy + Pzz));
-		KS.f[ppm] = n1o216
-				  * (KS.rho * (n5o2 - n3o2 * 3 + no3 * (KS.vx * no1 + KS.vy * no1 + KS.vz * (-no1)))
-					 + n9o2 * (Pxx * no1 + Pyy * no1 + Pzz * no1 + no2 * (Pxy * no1 + Pxz * -no1 + Pyz * (-no1))) - n3o2 * (Pxx + Pyy + Pzz));
-		KS.f[ppz] = n1o54
-				  * (KS.rho * (n5o2 - n3o2 * 2 + no3 * (KS.vx * no1 + KS.vy * no1 + KS.vz * 0))
-					 + n9o2 * (Pxx * no1 + Pyy * no1 + Pzz * 0 + no2 * (Pxy * no1 + Pxz * 0 + Pyz * 0)) - n3o2 * (Pxx + Pyy + Pzz));
-		KS.f[ppp] = n1o216
-				  * (KS.rho * (n5o2 - n3o2 * 3 + no3 * (KS.vx * no1 + KS.vy * no1 + KS.vz * no1))
-					 + n9o2 * (Pxx * no1 + Pyy * no1 + Pzz * no1 + no2 * (Pxy * no1 + Pxz * no1 + Pyz * no1)) - n3o2 * (Pxx + Pyy + Pzz));
+		KS.f[dir27::mmm] = n1o216
+						 * (KS.rho * (n5o2 - n3o2 * 3 + no3 * (KS.vx * -no1 + KS.vy * -no1 + KS.vz * (-no1)))
+							+ n9o2 * (Pxx * no1 + Pyy * no1 + Pzz * no1 + no2 * (Pxy * no1 + Pxz * no1 + Pyz * no1)) - n3o2 * (Pxx + Pyy + Pzz));
+		KS.f[dir27::mmz] = n1o54
+						 * (KS.rho * (n5o2 - n3o2 * 2 + no3 * (KS.vx * -no1 + KS.vy * -no1 + KS.vz * 0))
+							+ n9o2 * (Pxx * no1 + Pyy * no1 + Pzz * 0 + no2 * (Pxy * no1 + Pxz * 0 + Pyz * 0)) - n3o2 * (Pxx + Pyy + Pzz));
+		KS.f[dir27::mmp] = n1o216
+						 * (KS.rho * (n5o2 - n3o2 * 3 + no3 * (KS.vx * -no1 + KS.vy * -no1 + KS.vz * no1))
+							+ n9o2 * (Pxx * no1 + Pyy * no1 + Pzz * no1 + no2 * (Pxy * no1 + Pxz * -no1 + Pyz * (-no1))) - n3o2 * (Pxx + Pyy + Pzz));
+		KS.f[dir27::mzm] = n1o54
+						 * (KS.rho * (n5o2 - n3o2 * 2 + no3 * (KS.vx * -no1 + KS.vy * 0 + KS.vz * (-no1)))
+							+ n9o2 * (Pxx * no1 + Pyy * 0 + Pzz * no1 + no2 * (Pxy * 0 + Pxz * no1 + Pyz * 0)) - n3o2 * (Pxx + Pyy + Pzz));
+		KS.f[dir27::mzz] = n2o27
+						 * (KS.rho * (n5o2 - n3o2 * no1 + no3 * (KS.vx * -no1 + KS.vy * 0 + KS.vz * 0))
+							+ n9o2 * (Pxx * no1 + Pyy * 0 + Pzz * 0 + no2 * (Pxy * 0 + Pxz * 0 + Pyz * 0)) - n3o2 * (Pxx + Pyy + Pzz));
+		KS.f[dir27::mzp] = n1o54
+						 * (KS.rho * (n5o2 - n3o2 * 2 + no3 * (KS.vx * -no1 + KS.vy * 0 + KS.vz * no1))
+							+ n9o2 * (Pxx * no1 + Pyy * 0 + Pzz * no1 + no2 * (Pxy * 0 + Pxz * -no1 + Pyz * 0)) - n3o2 * (Pxx + Pyy + Pzz));
+		KS.f[dir27::mpm] = n1o216
+						 * (KS.rho * (n5o2 - n3o2 * 3 + no3 * (KS.vx * -no1 + KS.vy * no1 + KS.vz * (-no1)))
+							+ n9o2 * (Pxx * no1 + Pyy * no1 + Pzz * no1 + no2 * (Pxy * -no1 + Pxz * no1 + Pyz * (-no1))) - n3o2 * (Pxx + Pyy + Pzz));
+		KS.f[dir27::mpz] = n1o54
+						 * (KS.rho * (n5o2 - n3o2 * 2 + no3 * (KS.vx * -no1 + KS.vy * no1 + KS.vz * 0))
+							+ n9o2 * (Pxx * no1 + Pyy * no1 + Pzz * 0 + no2 * (Pxy * -no1 + Pxz * 0 + Pyz * 0)) - n3o2 * (Pxx + Pyy + Pzz));
+		KS.f[dir27::mpp] = n1o216
+						 * (KS.rho * (n5o2 - n3o2 * 3 + no3 * (KS.vx * -no1 + KS.vy * no1 + KS.vz * no1))
+							+ n9o2 * (Pxx * no1 + Pyy * no1 + Pzz * no1 + no2 * (Pxy * -no1 + Pxz * -no1 + Pyz * no1)) - n3o2 * (Pxx + Pyy + Pzz));
+		KS.f[dir27::zmm] = n1o54
+						 * (KS.rho * (n5o2 - n3o2 * 2 + no3 * (KS.vx * 0 + KS.vy * -no1 + KS.vz * (-no1)))
+							+ n9o2 * (Pxx * 0 + Pyy * no1 + Pzz * no1 + no2 * (Pxy * 0 + Pxz * 0 + Pyz * no1)) - n3o2 * (Pxx + Pyy + Pzz));
+		KS.f[dir27::zmz] = n2o27
+						 * (KS.rho * (n5o2 - n3o2 * no1 + no3 * (KS.vx * 0 + KS.vy * -no1 + KS.vz * 0))
+							+ n9o2 * (Pxx * 0 + Pyy * no1 + Pzz * 0 + no2 * (Pxy * 0 + Pxz * 0 + Pyz * 0)) - n3o2 * (Pxx + Pyy + Pzz));
+		KS.f[dir27::zmp] = n1o54
+						 * (KS.rho * (n5o2 - n3o2 * 2 + no3 * (KS.vx * 0 + KS.vy * -no1 + KS.vz * no1))
+							+ n9o2 * (Pxx * 0 + Pyy * no1 + Pzz * no1 + no2 * (Pxy * 0 + Pxz * 0 + Pyz * (-no1))) - n3o2 * (Pxx + Pyy + Pzz));
+		KS.f[dir27::zzm] = n2o27
+						 * (KS.rho * (n5o2 - n3o2 * no1 + no3 * (KS.vx * 0 + KS.vy * 0 + KS.vz * (-no1)))
+							+ n9o2 * (Pxx * 0 + Pyy * 0 + Pzz * no1 + no2 * (Pxy * 0 + Pxz * 0 + Pyz * 0)) - n3o2 * (Pxx + Pyy + Pzz));
+		KS.f[dir27::zzz] = n8o27
+						 * (KS.rho * (n5o2 - n3o2 * 0 + no3 * (KS.vx * 0 + KS.vy * 0 + KS.vz * 0))
+							+ n9o2 * (Pxx * 0 + Pyy * 0 + Pzz * 0 + no2 * (Pxy * 0 + Pxz * 0 + Pyz * 0)) - n3o2 * (Pxx + Pyy + Pzz));
+		KS.f[dir27::zzp] = n2o27
+						 * (KS.rho * (n5o2 - n3o2 * no1 + no3 * (KS.vx * 0 + KS.vy * 0 + KS.vz * no1))
+							+ n9o2 * (Pxx * 0 + Pyy * 0 + Pzz * no1 + no2 * (Pxy * 0 + Pxz * 0 + Pyz * 0)) - n3o2 * (Pxx + Pyy + Pzz));
+		KS.f[dir27::zpm] = n1o54
+						 * (KS.rho * (n5o2 - n3o2 * 2 + no3 * (KS.vx * 0 + KS.vy * no1 + KS.vz * (-no1)))
+							+ n9o2 * (Pxx * 0 + Pyy * no1 + Pzz * no1 + no2 * (Pxy * 0 + Pxz * 0 + Pyz * (-no1))) - n3o2 * (Pxx + Pyy + Pzz));
+		KS.f[dir27::zpz] = n2o27
+						 * (KS.rho * (n5o2 - n3o2 * no1 + no3 * (KS.vx * 0 + KS.vy * no1 + KS.vz * 0))
+							+ n9o2 * (Pxx * 0 + Pyy * no1 + Pzz * 0 + no2 * (Pxy * 0 + Pxz * 0 + Pyz * 0)) - n3o2 * (Pxx + Pyy + Pzz));
+		KS.f[dir27::zpp] = n1o54
+						 * (KS.rho * (n5o2 - n3o2 * 2 + no3 * (KS.vx * 0 + KS.vy * no1 + KS.vz * no1))
+							+ n9o2 * (Pxx * 0 + Pyy * no1 + Pzz * no1 + no2 * (Pxy * 0 + Pxz * 0 + Pyz * no1)) - n3o2 * (Pxx + Pyy + Pzz));
+		KS.f[dir27::pmm] = n1o216
+						 * (KS.rho * (n5o2 - n3o2 * 3 + no3 * (KS.vx * no1 + KS.vy * -no1 + KS.vz * (-no1)))
+							+ n9o2 * (Pxx * no1 + Pyy * no1 + Pzz * no1 + no2 * (Pxy * -no1 + Pxz * -no1 + Pyz * no1)) - n3o2 * (Pxx + Pyy + Pzz));
+		KS.f[dir27::pmz] = n1o54
+						 * (KS.rho * (n5o2 - n3o2 * 2 + no3 * (KS.vx * no1 + KS.vy * -no1 + KS.vz * 0))
+							+ n9o2 * (Pxx * no1 + Pyy * no1 + Pzz * 0 + no2 * (Pxy * -no1 + Pxz * 0 + Pyz * 0)) - n3o2 * (Pxx + Pyy + Pzz));
+		KS.f[dir27::pmp] = n1o216
+						 * (KS.rho * (n5o2 - n3o2 * 3 + no3 * (KS.vx * no1 + KS.vy * -no1 + KS.vz * no1))
+							+ n9o2 * (Pxx * no1 + Pyy * no1 + Pzz * no1 + no2 * (Pxy * -no1 + Pxz * no1 + Pyz * (-no1))) - n3o2 * (Pxx + Pyy + Pzz));
+		KS.f[dir27::pzm] = n1o54
+						 * (KS.rho * (n5o2 - n3o2 * 2 + no3 * (KS.vx * no1 + KS.vy * 0 + KS.vz * (-no1)))
+							+ n9o2 * (Pxx * no1 + Pyy * 0 + Pzz * no1 + no2 * (Pxy * 0 + Pxz * -no1 + Pyz * 0)) - n3o2 * (Pxx + Pyy + Pzz));
+		KS.f[dir27::pzz] = n2o27
+						 * (KS.rho * (n5o2 - n3o2 * no1 + no3 * (KS.vx * no1 + KS.vy * 0 + KS.vz * 0))
+							+ n9o2 * (Pxx * no1 + Pyy * 0 + Pzz * 0 + no2 * (Pxy * 0 + Pxz * 0 + Pyz * 0)) - n3o2 * (Pxx + Pyy + Pzz));
+		KS.f[dir27::pzp] = n1o54
+						 * (KS.rho * (n5o2 - n3o2 * 2 + no3 * (KS.vx * no1 + KS.vy * 0 + KS.vz * no1))
+							+ n9o2 * (Pxx * no1 + Pyy * 0 + Pzz * no1 + no2 * (Pxy * 0 + Pxz * no1 + Pyz * 0)) - n3o2 * (Pxx + Pyy + Pzz));
+		KS.f[dir27::ppm] = n1o216
+						 * (KS.rho * (n5o2 - n3o2 * 3 + no3 * (KS.vx * no1 + KS.vy * no1 + KS.vz * (-no1)))
+							+ n9o2 * (Pxx * no1 + Pyy * no1 + Pzz * no1 + no2 * (Pxy * no1 + Pxz * -no1 + Pyz * (-no1))) - n3o2 * (Pxx + Pyy + Pzz));
+		KS.f[dir27::ppz] = n1o54
+						 * (KS.rho * (n5o2 - n3o2 * 2 + no3 * (KS.vx * no1 + KS.vy * no1 + KS.vz * 0))
+							+ n9o2 * (Pxx * no1 + Pyy * no1 + Pzz * 0 + no2 * (Pxy * no1 + Pxz * 0 + Pyz * 0)) - n3o2 * (Pxx + Pyy + Pzz));
+		KS.f[dir27::ppp] = n1o216
+						 * (KS.rho * (n5o2 - n3o2 * 3 + no3 * (KS.vx * no1 + KS.vy * no1 + KS.vz * no1))
+							+ n9o2 * (Pxx * no1 + Pyy * no1 + Pzz * no1 + no2 * (Pxy * no1 + Pxz * no1 + Pyz * no1)) - n3o2 * (Pxx + Pyy + Pzz));
 	}
 };
