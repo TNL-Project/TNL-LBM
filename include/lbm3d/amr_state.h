@@ -1714,14 +1714,28 @@ void State_AMR<NSE>::buildCouplings()
 							patch.fine_origin = {0, fine->local.y(), -fov.z()};
 							patch.fine_size = {fine->local.x(), fov.y(), fine->local.z() + 2 * fov.z()};
 							break;
+						// a wall-shared y face has its own y-normal
+						// destination emptied end to end (below), so the
+						// ghost columns (y = -1 / y = local) x (the z faces'
+						// ghost rows) are filled by NO face in the
+						// wall-shared topology, while an unmasked geometry
+						// fills exactly those columns from the y-normal
+						// patch over its full z tangent. Widen the z-normal
+						// destination rectangles over the masked y faces'
+						// first-fluid rows: those rows are GEO_FLUID band
+						// rows whose nominal C2F source window is live
+						// interface cells, so the fill is a valid
+						// registration and no window shift fires.
 						case SyncDirection::Back:
-							patch.fine_origin = {0, 0, -fov.z()};
-							patch.fine_size = {fine->local.x(), fine->local.y(), fov.z()};
-							break;
 						case SyncDirection::Front:
-							patch.fine_origin = {0, 0, fine->local.z()};
-							patch.fine_size = {fine->local.x(), fine->local.y(), fov.z()};
-							break;
+							{
+								const idx y_lo = (fine_wall_mask & (1 << fineWallFaceBit(SyncDirection::Bottom))) ? 1 : 0;
+								const idx y_hi = (fine_wall_mask & (1 << fineWallFaceBit(SyncDirection::Top))) ? 1 : 0;
+								const idx z0 = (f.face == SyncDirection::Back) ? -fov.z() : fine->local.z();
+								patch.fine_origin = {0, -y_lo, z0};
+								patch.fine_size = {fine->local.x(), fine->local.y() + y_lo + y_hi, fov.z()};
+								break;
+							}
 						default:  // unreachable: the halo faces carry the 6 axis normals
 							patch.fine_origin = {0, 0, 0};
 							patch.fine_size = {0, 0, 0};
