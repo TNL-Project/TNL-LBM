@@ -1,6 +1,6 @@
 # TNL-LBM PROJECT KNOWLEDGE BASE
 
-**Updated:** 2026-09-13
+**Updated:** 2026-11-01
 **Branch:** main
 
 ## OVERVIEW
@@ -29,7 +29,7 @@ with optional Python bindings via nanobind and distributed execution through CUD
 ├── tests/               # pytest unit, regression & integration suites + subproject test
 │   ├── unit/            # pytest unit tests: python_bindings/ + C++ unit tests (.cu → doctest)
 │   ├── regression/      # pytest result checks (ibm, nse, d2q9, mpi, adjoint) + IBM matrix baselines
-│   ├── integration/     # end-to-end output-data pipeline test (pytest + CUDA driver sim)
+│   ├── integration/     # end-to-end output-data and checkpoint/restart tests (pytest + CUDA driver sims)
 │   └── subproject/      # external consumption test via CMake FetchContent
 ├── CMakeLists.txt       # Root build configuration
 ├── pyproject.toml       # Python tooling (ruff, mypy, pyright)
@@ -53,6 +53,7 @@ with optional Python bindings via nanobind and distributed execution through CUD
 | Unit-test C++ binary | `tests/unit/*.cu` | doctest cases compiled into one binary |
 | Regression tests | `tests/regression/` | pytest suites: IBM matrices vs `baseline_ibm_matrices/` + IBM flow-field checks, D3Q27 NSE (sim_1..sim_4 + forcing variants) checks, D2Q9 verification checks + forcing variant, MPI multi-rank checks (test_mpi.py) |
 | Output-data pipeline test | `tests/integration/` | pytest suite driving `test_outputdata` (BP5, SST, Catalyst inline/plugin engines) |
+| Checkpoint/restart test | `tests/integration/` | pytest suite driving `test_checkpoint` (save at a fixed iteration, resume, bitwise comparison against an uninterrupted run, np=1 and np=2) |
 | External consumption test | `tests/subproject/` | Verifies TNL-LBM works via CMake `FetchContent` |
 
 ## CODE MAP
