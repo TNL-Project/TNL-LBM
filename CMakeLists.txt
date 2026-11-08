@@ -232,7 +232,7 @@ target_include_directories(
 
 # Find or fetch dependencies
 include(FetchContent)
-FetchContent_Declare(fmt GIT_REPOSITORY https://github.com/fmtlib/fmt.git GIT_TAG 12.2.0 SYSTEM FIND_PACKAGE_ARGS)
+FetchContent_Declare(fmt GIT_REPOSITORY https://github.com/fmtlib/fmt.git GIT_TAG 12.2.1 SYSTEM FIND_PACKAGE_ARGS)
 set(FMT_INSTALL ON) # needed for adding to the interface target
 FetchContent_MakeAvailable(fmt)
 
