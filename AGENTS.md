@@ -1,6 +1,6 @@
 # TNL-LBM PROJECT KNOWLEDGE BASE
 
-**Updated:** 2026-11-01
+**Updated:** 2026-11-02
 **Branch:** main
 
 
@@ -52,7 +52,7 @@ with optional Python bindings via nanobind and distributed execution through CUD
 | Python binding surface | `pytnl_lbm/pytnl_lbm.cpp` | Exports one concrete `SP_D3Q27_CUM_ConstInflow` instantiation |
 | 3D example simulations | `sim_NSE/*.cu`, `sim_NSE_ADE/*.cu`, `sim_adjoint/*.cu` | Each `int main()` is a standalone CMake executable |
 | 2D example simulations | `sim_2D/*.cu` | sim2d_1 (channel+hole), sim2d_2 (Poiseuille), sim2d_Taylor_Green, sim2d_hills |
-| Unit-test doctest binaries | `tests/unit/*.cu` | doctest cases (runner `doctest_main.cu`): `test_cpp_units` carries `test_outflowcover.cu`, `test_decomposition.cu` and the AMR Schönherr registration/exactness suites; the AMR gate suites live in the per-pattern `test_amr_units_{ab,aa,eso_twist,eso_pull,eso_push}` (suites `amr_coupling`/`amr_subcycling`/`amr_vtkhdf_writer`/`amr_nesting`), the per-define exactness drivers in `test_amr_f2c_schonherr_{ab,aa,eso_twist,eso_pull,eso_push}`, and the cross-pattern bitwise locks in `test_amr_bitwise_lock` (mL1), `test_amr_nested_lock` (mL2, the SP-4 surface — closed 2026-09-29) and `test_amr_uniform_lock` (mL0, the SP-6 surface — closed 2026-09-30) |
+| Unit-test doctest binaries | `tests/unit/*.cu` | doctest cases (runner `doctest_main.cu`): `test_cpp_units` carries `test_outflowcover.cu`, `test_decomposition.cu` and the AMR Schönherr registration/exactness suites; the AMR gate suites live in the per-pattern `test_amr_units_{ab,aa,eso_twist,eso_pull,eso_push}` (suites `amr_coupling`/`amr_subcycling`/`amr_vtkhdf_writer`/`amr_nesting`), the per-define exactness drivers in `test_amr_f2c_schonherr_{ab,aa,eso_twist,eso_pull,eso_push}`, the wall-corner contract suite in `test_amr_wall_corners_{ab,aa,eso_twist,eso_pull,eso_push}` (single wall-attached faces + two/three-wall corners), and the cross-pattern bitwise locks in `test_amr_bitwise_lock` (mL1), `test_amr_nested_lock` (mL2, the SP-4 surface — closed 2026-09-29) and `test_amr_uniform_lock` (mL0, the SP-6 surface — closed 2026-09-30) |
 | Regression tests | `tests/regression/` | pytest suites: IBM matrices vs `baseline_ibm_matrices/` + IBM flow-field checks, D3Q27 NSE (sim_1..sim_4 + forcing variants) checks, D2Q9 verification checks + forcing variant, MPI multi-rank checks (test_mpi.py) |
 | Output-data pipeline test | `tests/integration/` | pytest suite driving `test_outputdata` (BP5, SST, Catalyst inline/plugin engines) |
 | Checkpoint/restart test | `tests/integration/` | pytest suite driving `test_checkpoint` (save at a fixed iteration, resume, bitwise comparison against an uninterrupted run, np=1 and np=2) |
@@ -182,7 +182,7 @@ PYTHONPATH=build/pytnl_lbm python -c "import pytnl_lbm"
 
 # AMR gate (fully pytest-native; needs a CUDA GPU; ParaView arms skip without pvpython):
 cmake --build build
-pytest tests/unit/test_amr_units.py tests/unit/test_amr_f2c_schonherr.py tests/unit/test_amr_bitwise_lock.py tests/unit/test_amr_wall_lane.py tests/unit/test_amr_uniform_lock.py tests/unit/test_amr_channel_lock.py tests/unit/test_amr_nested_lock.py tests/integration/test_amr_paraview.py
+pytest tests/unit/test_amr_units.py tests/unit/test_amr_f2c_schonherr.py tests/unit/test_amr_bitwise_lock.py tests/unit/test_amr_wall_lane.py tests/unit/test_amr_wall_corners.py tests/unit/test_amr_uniform_lock.py tests/unit/test_amr_channel_lock.py tests/unit/test_amr_nested_lock.py tests/integration/test_amr_paraview.py
 # 2-level AMR example simulations (Taylor-Green; --convective-times 20 for the long decision-table run)
 ./build/sim_AMR/sim_AMR --resolution 1
 ./build/sim_AMR/sim_AMR_channel --resolution 1
@@ -348,7 +348,10 @@ nesting addendum §11).
   `GEO_AMR_INTERFACE`, footprint-depth ≥ 1 cells frozen `GEO_NOTHING`),
   `include/lbm3d/amr_state.h` (`State_AMR` driver: `SimUpdate` = the
   `advancePair` pair recursion with cumulative per-level substep counters,
-  `buildCouplings` vertex-straddling patches + R4 wall-pedestal prisms,
+  `buildCouplings` vertex-straddling patches + the symmetric wall-corner
+  C2F widening (y-face fills cover the x-wall-shared tangent columns,
+  z-face fills the x-shared ones on top of the y-widening) + R4
+  wall-pedestal prisms,
   `buildFineWallMasks` wall chain, SimInit map-pattern assertion),
   `include/lbm3d/d3q27/amr_coupling.h` (`cudaAMR_CoarseToFine`,
   `cudaAMR_FineToCoarse`), `include/lbm3d/viz/OverlappingAMRWriter.{h,hpp}`,
@@ -387,7 +390,7 @@ nesting addendum §11).
   under F2C_LAGRAVA at SimInit (the R4 pedestal depth 3 covers only the
   Schönherr own-8 window).
 - **AMR gate** (fully pytest-native; the shell launchers were retired):
-  `pytest tests/unit/test_amr_units.py tests/unit/test_amr_f2c_schonherr.py tests/unit/test_amr_bitwise_lock.py tests/unit/test_amr_wall_lane.py tests/unit/test_amr_uniform_lock.py tests/unit/test_amr_channel_lock.py tests/unit/test_amr_nested_lock.py tests/integration/test_amr_paraview.py`
+  `pytest tests/unit/test_amr_units.py tests/unit/test_amr_f2c_schonherr.py tests/unit/test_amr_bitwise_lock.py tests/unit/test_amr_wall_lane.py tests/unit/test_amr_wall_corners.py tests/unit/test_amr_uniform_lock.py tests/unit/test_amr_channel_lock.py tests/unit/test_amr_nested_lock.py tests/integration/test_amr_paraview.py`
   runs the AMR targets — the 4 gate TEST_SUITEs
   (`amr_coupling`/`amr_subcycling`/`amr_vtkhdf_writer`/`amr_nesting`) ×
   {ab,aa,eso_twist,eso_pull,eso_push} of the consolidated per-pattern
@@ -418,6 +421,23 @@ nesting addendum §11).
   `test_amr_channel_lock` classification contract —
   `tests/unit/test_amr_channel_lock.py`, green on both trees — evidence
   results_drag_crisis/sp5/sp5_closure.md))
+  + the per-pattern `test_amr_wall_corners_{ab,aa,eso_twist,eso_pull,eso_push}`
+  wall-corner contract suite (8 scenarios: single wall-attached faces
+  y_min/y_max/x_min — the 3d963c40 probe topologies — plus two-wall
+  corners y_z/x_z/x_y and three-wall corners x_y_z/right_top_front)
+  locking the symmetric wall-corner C2F widening (y-face fills gain the
+  x-wall-shared tangent columns, z-face fills the x-shared ones on top
+  of the 3d963c40 y-widening) and the attribution-based wall-guard
+  corner resolution (an axis end is blocked only where the wall-ness
+  depends on that axis' coordinate) through structural
+  patch-table/disjointness/corner-coverage assertions plus a behavioral
+  fill-activity witness (the wall-shared corner DF slots change across
+  cycles — frozen-at-init corners fail); the fixture stamps its
+  GEO_NOTHING outermost frames last so a cross-section wall plane of one
+  walled axis cannot plant GEO_WALL on another axis' array-edge frame
+  row, where the single-array patterns' unclamped +-1 neighbor access
+  would leave the overlap-0 stored array of an undistributed level-0
+  block
   + the 2 ParaView e2e arms (skipped when pvpython is absent).
   Bit-identity evidence harness:
   `tests/regression/test_amr_bitidentity.py` — verify mode compares every
@@ -429,7 +449,7 @@ nesting addendum §11).
   inflow-adjacent wall-guard path, closed as the SP-5 partition verdict;
   the xfails are retained as the documented-deferred surface).
   pytest sides: `tests/unit/test_cpp_units.py` (AMR doctest suites),
-  `tests/unit/test_amr_f2c_schonherr.py`.
+  `tests/unit/test_amr_f2c_schonherr.py`, `tests/unit/test_amr_wall_corners.py`.
 - **Measured verdict (recorded, not repaired)**: the conversion was an
   experiment (contract §1). On the T16 20-tc decision table the −23 % mass
   leak is closed ~5 orders on every HEAD arm (era effect of the band
