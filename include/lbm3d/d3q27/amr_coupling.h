@@ -1710,12 +1710,41 @@ __global__ void cudaAMR_CoarseToFine(
 					tainted = tainted || inv[ibx][iby][ibz];
 				}
 		if (tainted) {
-			// end taints per axis (union over the two tangent axes)
+			// end-block ATTRIBUTION per axis: an end is blocked only
+			// where the wall-ness of its cells depends on this axis'
+			// coordinate -- the end cell is non-live while its mirror
+			// pair (the opposite end, same tangent coordinates) is
+			// live. The plain end-taint union would conflate the other
+			// axes' walls showing through the tuple's diagonals: with
+			// two walls cornering inside the window BOTH ends of BOTH
+			// walled axes appear tainted (each end polluted by the
+			// other axis' wall), no shift would fire and the residual
+			// collapse would land on a wall cell. The attribution rule
+			// is outcome-identical to the union on single-wall
+			// registrations (a planar wall makes exactly one end of
+			// its own axis differ from its mirror; the other axes'
+			// pairs are both-wall or both-live and never attribute).
+			bool blocked[3][2] = {};
+			for (int a = 0; a < 3; a++) {
+				const int b = (a + 1) % 3, c = (a + 2) % 3;
+				for (int i = 0; i < 2; i++)
+					for (int j = 0; j < 2; j++) {
+						int lo[3], hi[3];
+						lo[a] = 0;
+						hi[a] = 1;
+						lo[b] = hi[b] = i;
+						lo[c] = hi[c] = j;
+						if (inv[lo[0]][lo[1]][lo[2]] && ! inv[hi[0]][hi[1]][hi[2]])
+							blocked[a][0] = true;
+						if (inv[hi[0]][hi[1]][hi[2]] && ! inv[lo[0]][lo[1]][lo[2]])
+							blocked[a][1] = true;
+					}
+			}
 			shift_off_bc(
 				dst_n[d][0],
 				dst_t[d][0],
-				inv[0][0][0] || inv[0][0][1] || inv[0][1][0] || inv[0][1][1],
-				inv[1][0][0] || inv[1][0][1] || inv[1][1][0] || inv[1][1][1],
+				blocked[0][0],
+				blocked[0][1],
 				-coarse_SD.indexer.template getOverlap<0>(),
 				coarse_SD.X() - 1 + coarse_SD.indexer.template getOverlap<0>(),
 				dst_home[d][0]
@@ -1723,8 +1752,8 @@ __global__ void cudaAMR_CoarseToFine(
 			shift_off_bc(
 				dst_n[d][1],
 				dst_t[d][1],
-				inv[0][0][0] || inv[0][0][1] || inv[1][0][0] || inv[1][0][1],
-				inv[0][1][0] || inv[0][1][1] || inv[1][1][0] || inv[1][1][1],
+				blocked[1][0],
+				blocked[1][1],
 				-coarse_SD.indexer.template getOverlap<1>(),
 				coarse_SD.Y() - 1 + coarse_SD.indexer.template getOverlap<1>(),
 				dst_home[d][1]
@@ -1732,8 +1761,8 @@ __global__ void cudaAMR_CoarseToFine(
 			shift_off_bc(
 				dst_n[d][2],
 				dst_t[d][2],
-				inv[0][0][0] || inv[0][1][0] || inv[1][0][0] || inv[1][1][0],
-				inv[0][0][1] || inv[0][1][1] || inv[1][0][1] || inv[1][1][1],
+				blocked[2][0],
+				blocked[2][1],
 				-coarse_SD.indexer.template getOverlap<2>(),
 				coarse_SD.Z() - 1 + coarse_SD.indexer.template getOverlap<2>(),
 				dst_home[d][2]

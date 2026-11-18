@@ -1697,6 +1697,32 @@ void State_AMR<NSE>::buildCouplings()
 					// v1 single-block scope (nproc == 1 only) exactly one
 					// coarse block intersects each face, so every
 					// destination cell is still written exactly once.
+					// the C2F destination corner-column widening: a face
+					// masked in fine_wall_masks has its own patch emptied
+					// (below), so the corner columns where its tangent
+					// crossed the other faces' bands -- the masked face's
+					// FIRST-FLUID row (local -1 / local) over the live
+					// faces' band rows -- would be filled by NO patch,
+					// while an unmasked geometry fills exactly those
+					// columns from the masked face's own patch over its
+					// full tangent. Every y/z-normal patch therefore
+					// widens its x/y tangents by the masked faces'
+					// first-fluid columns (the x-normal patches keep
+					// their full tangents and need no widening): those
+					// columns are GEO_FLUID band rows whose nominal C2F
+					// source window is live interface cells, so the fill
+					// is a valid registration and no window shift fires.
+					// The wall rows themselves and the GEO_NOTHING
+					// buffers are deliberately NOT taken over: the wall
+					// row's band columns stay BC-managed (the wall
+					// cell's swap-confinement returns anything gathered
+					// from beyond the wall), and the x-normal faces'
+					// full tangents already drive the wall row's x-band
+					// columns.
+					const idx x_lo = (fine_wall_mask & (1 << fineWallFaceBit(SyncDirection::Left))) ? 1 : 0;
+					const idx x_hi = (fine_wall_mask & (1 << fineWallFaceBit(SyncDirection::Right))) ? 1 : 0;
+					const idx y_lo = (fine_wall_mask & (1 << fineWallFaceBit(SyncDirection::Bottom))) ? 1 : 0;
+					const idx y_hi = (fine_wall_mask & (1 << fineWallFaceBit(SyncDirection::Top))) ? 1 : 0;
 					switch (f.face) {
 						case SyncDirection::Left:
 							patch.fine_origin = {-fov.x(), -fov.y(), -fov.z()};
@@ -1707,35 +1733,21 @@ void State_AMR<NSE>::buildCouplings()
 							patch.fine_size = {fov.x(), fine->local.y() + 2 * fov.y(), fine->local.z() + 2 * fov.z()};
 							break;
 						case SyncDirection::Bottom:
-							patch.fine_origin = {0, -fov.y(), -fov.z()};
-							patch.fine_size = {fine->local.x(), fov.y(), fine->local.z() + 2 * fov.z()};
+							patch.fine_origin = {-x_lo, -fov.y(), -fov.z()};
+							patch.fine_size = {fine->local.x() + x_lo + x_hi, fov.y(), fine->local.z() + 2 * fov.z()};
 							break;
 						case SyncDirection::Top:
-							patch.fine_origin = {0, fine->local.y(), -fov.z()};
-							patch.fine_size = {fine->local.x(), fov.y(), fine->local.z() + 2 * fov.z()};
+							patch.fine_origin = {-x_lo, fine->local.y(), -fov.z()};
+							patch.fine_size = {fine->local.x() + x_lo + x_hi, fov.y(), fine->local.z() + 2 * fov.z()};
 							break;
-						// a wall-shared y face has its own y-normal
-						// destination emptied end to end (below), so the
-						// ghost columns (y = -1 / y = local) x (the z faces'
-						// ghost rows) are filled by NO face in the
-						// wall-shared topology, while an unmasked geometry
-						// fills exactly those columns from the y-normal
-						// patch over its full z tangent. Widen the z-normal
-						// destination rectangles over the masked y faces'
-						// first-fluid rows: those rows are GEO_FLUID band
-						// rows whose nominal C2F source window is live
-						// interface cells, so the fill is a valid
-						// registration and no window shift fires.
 						case SyncDirection::Back:
+							patch.fine_origin = {-x_lo, -y_lo, -fov.z()};
+							patch.fine_size = {fine->local.x() + x_lo + x_hi, fine->local.y() + y_lo + y_hi, fov.z()};
+							break;
 						case SyncDirection::Front:
-							{
-								const idx y_lo = (fine_wall_mask & (1 << fineWallFaceBit(SyncDirection::Bottom))) ? 1 : 0;
-								const idx y_hi = (fine_wall_mask & (1 << fineWallFaceBit(SyncDirection::Top))) ? 1 : 0;
-								const idx z0 = (f.face == SyncDirection::Back) ? -fov.z() : fine->local.z();
-								patch.fine_origin = {0, -y_lo, z0};
-								patch.fine_size = {fine->local.x(), fine->local.y() + y_lo + y_hi, fov.z()};
-								break;
-							}
+							patch.fine_origin = {-x_lo, -y_lo, fine->local.z()};
+							patch.fine_size = {fine->local.x() + x_lo + x_hi, fine->local.y() + y_lo + y_hi, fov.z()};
+							break;
 						default:  // unreachable: the halo faces carry the 6 axis normals
 							patch.fine_origin = {0, 0, 0};
 							patch.fine_size = {0, 0, 0};
@@ -2024,30 +2036,37 @@ bool State_AMR<NSE>::checkCouplingMapPattern()
 									tainted = tainted || inv[ibx][iby][ibz];
 								}
 						if (tainted) {
-							shift_pair(
-								w[0],
-								inv[0][0][0] || inv[0][0][1] || inv[0][1][0] || inv[0][1][1],
-								inv[1][0][0] || inv[1][0][1] || inv[1][1][0] || inv[1][1][1],
-								-cov[0],
-								csize[0] - 1 + cov[0],
-								ho[0]
-							);
-							shift_pair(
-								w[1],
-								inv[0][0][0] || inv[0][0][1] || inv[1][0][0] || inv[1][0][1],
-								inv[0][1][0] || inv[0][1][1] || inv[1][1][0] || inv[1][1][1],
-								-cov[1],
-								csize[1] - 1 + cov[1],
-								ho[1]
-							);
-							shift_pair(
-								w[2],
-								inv[0][0][0] || inv[0][1][0] || inv[1][0][0] || inv[1][1][0],
-								inv[0][0][1] || inv[0][1][1] || inv[1][0][1] || inv[1][1][1],
-								-cov[2],
-								csize[2] - 1 + cov[2],
-								ho[2]
-							);
+							// end-block ATTRIBUTION per axis (the kernel
+							// replica of amr_coupling.h's shift guard): an
+							// end is blocked only where the wall-ness of its
+							// cells depends on this axis' coordinate -- the
+							// end cell is non-live while its mirror pair is
+							// live. The plain end-taint union would conflate
+							// the other axes' walls showing through the
+							// tuple's diagonals: with two walls cornering
+							// inside the window both ends of both walled
+							// axes appear tainted, no shift would fire and
+							// the residual collapse would land on a wall
+							// cell (the wall-corner registration class).
+							bool blocked[3][2] = {};
+							for (int a = 0; a < 3; a++) {
+								const int b = (a + 1) % 3, c = (a + 2) % 3;
+								for (int i = 0; i < 2; i++)
+									for (int j = 0; j < 2; j++) {
+										int lo[3], hi[3];
+										lo[a] = 0;
+										hi[a] = 1;
+										lo[b] = hi[b] = i;
+										lo[c] = hi[c] = j;
+										if (inv[lo[0]][lo[1]][lo[2]] && ! inv[hi[0]][hi[1]][hi[2]])
+											blocked[a][0] = true;
+										if (inv[hi[0]][hi[1]][hi[2]] && ! inv[lo[0]][lo[1]][lo[2]])
+											blocked[a][1] = true;
+									}
+							}
+							shift_pair(w[0], blocked[0][0], blocked[0][1], -cov[0], csize[0] - 1 + cov[0], ho[0]);
+							shift_pair(w[1], blocked[1][0], blocked[1][1], -cov[1], csize[1] - 1 + cov[1], ho[1]);
+							shift_pair(w[2], blocked[2][0], blocked[2][1], -cov[2], csize[2] - 1 + cov[2], ho[2]);
 							// the kernel's residual collapse (a physical BC
 							// thicker than one cell, or a mid-window straddle)
 							bool residual = false;

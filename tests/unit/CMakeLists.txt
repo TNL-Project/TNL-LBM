@@ -201,6 +201,30 @@ foreach(pattern IN ITEMS ${AMR_TEST_PATTERNS})
 endforeach()
 endif()
 
+# standalone wall-CORNER doctest driver: the symmetric corner-column
+# contract of the C2F destination partition under wall-shared faces (the
+# generalization of the wall-lane/z-face widening) gets its own per-pattern
+# binaries for the same manifest reason as the wall-lane suite above --
+# the consolidated gate binaries' doctest summary line is byte-frozen.
+# Driven by tests/unit/test_amr_wall_corners.py
+if(MPI_FOUND AND TNL_LBM_USE_MPI)
+foreach(pattern IN ITEMS ${AMR_TEST_PATTERNS})
+    amr_pattern_define(${pattern} pattern_options)
+    set(target "test_amr_wall_corners_${pattern}")
+    add_executable(${target} doctest_main_amr.cu test_amr_wall_corners.cu)
+    target_compile_options(${target} PRIVATE ${pattern_options})
+    target_link_libraries(${target} PUBLIC TNL::TNL_LBM PRIVATE doctest::doctest)
+    set_target_properties(${target} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+
+    # force language to HIP (the runner TU must be marked too: a HIP-only
+    # tree would otherwise drop it from the object list and link without
+    # main)
+    if(TNL_LBM_BUILD_HIP)
+        set_source_files_properties(doctest_main_amr.cu test_amr_wall_corners.cu PROPERTIES LANGUAGE HIP)
+    endif()
+endforeach()
+endif()
+
 # an AA-configured tree does not build the AB-pinned targets above: drop their
 # stale outputs left over from a previous A-B configure, so that test drivers
 # locating the binaries by path (e.g. tests/unit/test_amr_units.py) cannot
@@ -211,6 +235,7 @@ if(TNL_LBM_STREAMING_PATTERN STREQUAL "AA")
         ${CMAKE_BINARY_DIR}/tests/test_amr_units_ab
         ${CMAKE_BINARY_DIR}/tests/test_amr_f2c_schonherr_ab
         ${CMAKE_BINARY_DIR}/tests/test_amr_wall_lane_ab
+        ${CMAKE_BINARY_DIR}/tests/test_amr_wall_corners_ab
     )
 endif()
 

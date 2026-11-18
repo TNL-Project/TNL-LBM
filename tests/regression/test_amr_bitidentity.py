@@ -84,10 +84,7 @@ def _single_pattern_aa_tree() -> bool:
     the ``*_aa`` binaries and the sim_AMR runs verify against the same
     manifest there (mL1 production is bitwise-exact across streaming
     patterns — results_drag_crisis/aa_seed_report.md §2)."""
-    return (
-        not (BUILD_DIR / "tests" / "test_amr_units_ab").is_file()
-        and (BUILD_DIR / "tests" / "test_amr_units_aa").is_file()
-    )
+    return not (BUILD_DIR / "tests" / "test_amr_units_ab").is_file() and (BUILD_DIR / "tests" / "test_amr_units_aa").is_file()
 
 
 SIMS: dict[str, tuple[pathlib.Path, list[str]]] = {
@@ -173,9 +170,7 @@ def _vtkhdf_digest(path: pathlib.Path) -> str:
     return h.hexdigest()
 
 
-def _collect_stdouts(
-    root: pathlib.Path, conservation: dict[str, str]
-) -> dict[str, str]:
+def _collect_stdouts(root: pathlib.Path, conservation: dict[str, str]) -> dict[str, str]:
     """Run the battery once and return {artifact: md5}; fill conservation."""
     artifacts: dict[str, str] = {}
 
@@ -187,8 +182,7 @@ def _collect_stdouts(
                 # artifacts; the parametrized comparison skips on the same arm
                 continue
             pytest.fail(
-                f"cannot find {binary} — build the AMR test targets first: "
-                f"cmake --build {BUILD_DIR} --target {binary_name}",
+                f"cannot find {binary} — build the AMR test targets first: cmake --build {BUILD_DIR} --target {binary_name}",
                 pytrace=False,
             )
         workdir = root / suite
@@ -217,8 +211,7 @@ def _collect_stdouts(
     for sim, (binary, args) in SIMS.items():
         if not binary.is_file():
             pytest.fail(
-                f"cannot find {binary} — build the project first: "
-                f"cmake --build {BUILD_DIR}",
+                f"cannot find {binary} — build the project first: cmake --build {BUILD_DIR}",
                 pytrace=False,
             )
         workdir = root / sim
@@ -283,7 +276,15 @@ def _battery(root: pathlib.Path) -> Battery:
                 "references shifted by the cleanup); re-recorded again on "
                 "2026-09-24 after the esoteric-pattern port of the gate suites "
                 "shifted doctest line references in test_amr_coupling.cu — "
-                "only the two coupling-suite stdout digests moved"
+                "only the two coupling-suite stdout digests moved; re-recorded "
+                "again on 2026-11-02 after the symmetric wall-corner widening "
+                "of the C2F fill patches (y-face fills gain the x-wall-shared "
+                "tangent columns, z-face fills gain the x-shared ones on top of "
+                "the 3d963c40 y-widening — every wall-crossed fill's "
+                "wall-shared corner columns are now covered) — only the two "
+                "subcycling stdout digests moved (the x-max wall scenario's "
+                "four y/z-face fill launch grids print 15 instead of 14 in x; "
+                "physics values and assertion counts are unchanged)"
             ),
             "artifacts": dict(sorted(battery.artifacts.items())),
         }
@@ -314,18 +315,14 @@ def _compare_keys(artifacts: dict[str, str], prefix: str) -> None:
     actual = {k: v for k, v in artifacts.items() if k.startswith(prefix)}
     missing = sorted(expected.keys() - actual.keys())
     extra = sorted(actual.keys() - expected.keys())
-    mismatched = sorted(
-        k for k in expected.keys() & actual.keys() if expected[k] != actual[k]
-    )
+    mismatched = sorted(k for k in expected.keys() & actual.keys() if expected[k] != actual[k])
     report = []
     for k in missing:
         report.append(f"missing artifact: {k} (reference {expected[k]})")
     for k in extra:
         report.append(f"unexpected artifact: {k} (actual {actual[k]})")
     for k in mismatched:
-        report.append(
-            f"digest mismatch: {k} (reference {expected[k]}, actual {actual[k]})"
-        )
+        report.append(f"digest mismatch: {k} (reference {expected[k]}, actual {actual[k]})")
     assert not report, f"bit-identity violation in '{prefix}': " + "; ".join(report)
 
 
@@ -392,19 +389,13 @@ def test_pinned_final_metrics(battery: Battery, sim: str) -> None:
     for label, expected in PINNED_METRICS[sim]:
         matches = re.findall(rf"{re.escape(label)} = (\S+)", stdout)
         assert matches, f"{sim}: no '{label}' line found"
-        assert matches[-1] == expected, (
-            f"{sim}: final '{label}' = {matches[-1]}, expected {expected}"
-        )
+        assert matches[-1] == expected, f"{sim}: final '{label}' = {matches[-1]}, expected {expected}"
 
 
 def test_no_nan_in_conservation_logs(battery: Battery) -> None:
     """No NaN anywhere in the conservation/physics log lines of both sims."""
     for sim, stdout in battery.conservation.items():
-        physics_lines = [
-            line
-            for line in stdout.splitlines()
-            if "AMR " in line or "conservation" in line
-        ]
+        physics_lines = [line for line in stdout.splitlines() if "AMR " in line or "conservation" in line]
         assert physics_lines, f"{sim}: no AMR conservation lines found"
         for line in physics_lines:
             assert "nan" not in line.lower(), f"{sim}: NaN in log line: {line}"
