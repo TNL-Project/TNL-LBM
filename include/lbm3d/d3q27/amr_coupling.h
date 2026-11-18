@@ -1013,35 +1013,35 @@ __device__ __forceinline__ void amrCmBacktransformPlain(
 	const dreal ks_pp1 = (ks_p01 * (vy_sqr + vy_f) + ks_p11 * (no2 * vy_f + no1) + ks_p21) * n1o2;
 	const dreal ks_pp2 = (ks_p02 * (vy_sqr + vy_f) + ks_p12 * (no2 * vy_f + no1) + ks_p22) * n1o2;
 
-	store_df(mmz, ks_mm0 * (no1 - vz_sqr) - no2 * vz_f * ks_mm1 - ks_mm2);
-	store_df(mzz, ks_mz0 * (no1 - vz_sqr) - no2 * vz_f * ks_mz1 - ks_mz2);
-	store_df(mpz, ks_mp0 * (no1 - vz_sqr) - no2 * vz_f * ks_mp1 - ks_mp2);
-	store_df(zmz, ks_zm0 * (no1 - vz_sqr) - no2 * vz_f * ks_zm1 - ks_zm2);
-	store_df(zzz, ks_zz0 * (no1 - vz_sqr) - no2 * vz_f * ks_zz1 - ks_zz2);
-	store_df(zpz, ks_zp0 * (no1 - vz_sqr) - no2 * vz_f * ks_zp1 - ks_zp2);
-	store_df(pmz, ks_pm0 * (no1 - vz_sqr) - no2 * vz_f * ks_pm1 - ks_pm2);
-	store_df(pzz, ks_pz0 * (no1 - vz_sqr) - no2 * vz_f * ks_pz1 - ks_pz2);
-	store_df(ppz, ks_pp0 * (no1 - vz_sqr) - no2 * vz_f * ks_pp1 - ks_pp2);
+	store_df(dir27::mmz, ks_mm0 * (no1 - vz_sqr) - no2 * vz_f * ks_mm1 - ks_mm2);
+	store_df(dir27::mzz, ks_mz0 * (no1 - vz_sqr) - no2 * vz_f * ks_mz1 - ks_mz2);
+	store_df(dir27::mpz, ks_mp0 * (no1 - vz_sqr) - no2 * vz_f * ks_mp1 - ks_mp2);
+	store_df(dir27::zmz, ks_zm0 * (no1 - vz_sqr) - no2 * vz_f * ks_zm1 - ks_zm2);
+	store_df(dir27::zzz, ks_zz0 * (no1 - vz_sqr) - no2 * vz_f * ks_zz1 - ks_zz2);
+	store_df(dir27::zpz, ks_zp0 * (no1 - vz_sqr) - no2 * vz_f * ks_zp1 - ks_zp2);
+	store_df(dir27::pmz, ks_pm0 * (no1 - vz_sqr) - no2 * vz_f * ks_pm1 - ks_pm2);
+	store_df(dir27::pzz, ks_pz0 * (no1 - vz_sqr) - no2 * vz_f * ks_pz1 - ks_pz2);
+	store_df(dir27::ppz, ks_pp0 * (no1 - vz_sqr) - no2 * vz_f * ks_pp1 - ks_pp2);
 
-	store_df(mmm, (ks_mm0 * (vz_sqr - vz_f) + ks_mm1 * (no2 * vz_f - no1) + ks_mm2) * n1o2);
-	store_df(mzm, (ks_mz0 * (vz_sqr - vz_f) + ks_mz1 * (no2 * vz_f - no1) + ks_mz2) * n1o2);
-	store_df(mpm, (ks_mp0 * (vz_sqr - vz_f) + ks_mp1 * (no2 * vz_f - no1) + ks_mp2) * n1o2);
-	store_df(zmm, (ks_zm0 * (vz_sqr - vz_f) + ks_zm1 * (no2 * vz_f - no1) + ks_zm2) * n1o2);
-	store_df(zzm, (ks_zz0 * (vz_sqr - vz_f) + ks_zz1 * (no2 * vz_f - no1) + ks_zz2) * n1o2);
-	store_df(zpm, (ks_zp0 * (vz_sqr - vz_f) + ks_zp1 * (no2 * vz_f - no1) + ks_zp2) * n1o2);
-	store_df(pmm, (ks_pm0 * (vz_sqr - vz_f) + ks_pm1 * (no2 * vz_f - no1) + ks_pm2) * n1o2);
-	store_df(pzm, (ks_pz0 * (vz_sqr - vz_f) + ks_pz1 * (no2 * vz_f - no1) + ks_pz2) * n1o2);
-	store_df(ppm, (ks_pp0 * (vz_sqr - vz_f) + ks_pp1 * (no2 * vz_f - no1) + ks_pp2) * n1o2);
+	store_df(dir27::mmm, (ks_mm0 * (vz_sqr - vz_f) + ks_mm1 * (no2 * vz_f - no1) + ks_mm2) * n1o2);
+	store_df(dir27::mzm, (ks_mz0 * (vz_sqr - vz_f) + ks_mz1 * (no2 * vz_f - no1) + ks_mz2) * n1o2);
+	store_df(dir27::mpm, (ks_mp0 * (vz_sqr - vz_f) + ks_mp1 * (no2 * vz_f - no1) + ks_mp2) * n1o2);
+	store_df(dir27::zmm, (ks_zm0 * (vz_sqr - vz_f) + ks_zm1 * (no2 * vz_f - no1) + ks_zm2) * n1o2);
+	store_df(dir27::zzm, (ks_zz0 * (vz_sqr - vz_f) + ks_zz1 * (no2 * vz_f - no1) + ks_zz2) * n1o2);
+	store_df(dir27::zpm, (ks_zp0 * (vz_sqr - vz_f) + ks_zp1 * (no2 * vz_f - no1) + ks_zp2) * n1o2);
+	store_df(dir27::pmm, (ks_pm0 * (vz_sqr - vz_f) + ks_pm1 * (no2 * vz_f - no1) + ks_pm2) * n1o2);
+	store_df(dir27::pzm, (ks_pz0 * (vz_sqr - vz_f) + ks_pz1 * (no2 * vz_f - no1) + ks_pz2) * n1o2);
+	store_df(dir27::ppm, (ks_pp0 * (vz_sqr - vz_f) + ks_pp1 * (no2 * vz_f - no1) + ks_pp2) * n1o2);
 
-	store_df(mmp, (ks_mm0 * (vz_sqr + vz_f) + ks_mm1 * (no2 * vz_f + no1) + ks_mm2) * n1o2);
-	store_df(mzp, (ks_mz0 * (vz_sqr + vz_f) + ks_mz1 * (no2 * vz_f + no1) + ks_mz2) * n1o2);
-	store_df(mpp, (ks_mp0 * (vz_sqr + vz_f) + ks_mp1 * (no2 * vz_f + no1) + ks_mp2) * n1o2);
-	store_df(zmp, (ks_zm0 * (vz_sqr + vz_f) + ks_zm1 * (no2 * vz_f + no1) + ks_zm2) * n1o2);
-	store_df(zzp, (ks_zz0 * (vz_sqr + vz_f) + ks_zz1 * (no2 * vz_f + no1) + ks_zz2) * n1o2);
-	store_df(zpp, (ks_zp0 * (vz_sqr + vz_f) + ks_zp1 * (no2 * vz_f + no1) + ks_zp2) * n1o2);
-	store_df(pmp, (ks_pm0 * (vz_sqr + vz_f) + ks_pm1 * (no2 * vz_f + no1) + ks_pm2) * n1o2);
-	store_df(pzp, (ks_pz0 * (vz_sqr + vz_f) + ks_pz1 * (no2 * vz_f + no1) + ks_pz2) * n1o2);
-	store_df(ppp, (ks_pp0 * (vz_sqr + vz_f) + ks_pp1 * (no2 * vz_f + no1) + ks_pp2) * n1o2);
+	store_df(dir27::mmp, (ks_mm0 * (vz_sqr + vz_f) + ks_mm1 * (no2 * vz_f + no1) + ks_mm2) * n1o2);
+	store_df(dir27::mzp, (ks_mz0 * (vz_sqr + vz_f) + ks_mz1 * (no2 * vz_f + no1) + ks_mz2) * n1o2);
+	store_df(dir27::mpp, (ks_mp0 * (vz_sqr + vz_f) + ks_mp1 * (no2 * vz_f + no1) + ks_mp2) * n1o2);
+	store_df(dir27::zmp, (ks_zm0 * (vz_sqr + vz_f) + ks_zm1 * (no2 * vz_f + no1) + ks_zm2) * n1o2);
+	store_df(dir27::zzp, (ks_zz0 * (vz_sqr + vz_f) + ks_zz1 * (no2 * vz_f + no1) + ks_zz2) * n1o2);
+	store_df(dir27::zpp, (ks_zp0 * (vz_sqr + vz_f) + ks_zp1 * (no2 * vz_f + no1) + ks_zp2) * n1o2);
+	store_df(dir27::pmp, (ks_pm0 * (vz_sqr + vz_f) + ks_pm1 * (no2 * vz_f + no1) + ks_pm2) * n1o2);
+	store_df(dir27::pzp, (ks_pz0 * (vz_sqr + vz_f) + ks_pz1 * (no2 * vz_f + no1) + ks_pz2) * n1o2);
+	store_df(dir27::ppp, (ks_pp0 * (vz_sqr + vz_f) + ks_pp1 * (no2 * vz_f + no1) + ks_pp2) * n1o2);
 }
 
 /**
@@ -1323,35 +1323,35 @@ __device__ __forceinline__ void amrCmBacktransformWell(
 	const dreal ks_pp1 = (ks_p01 * (vy_sqr + vy_f) + ks_p11 * (no2 * vy_f + no1) + ks_p21) * n1o2;
 	const dreal ks_pp2 = ((ks_p02 + KC_p02) * (vy_sqr + vy_f) + ks_p12 * (no2 * vy_f + no1) + ks_p22) * n1o2;
 
-	store_df(mmz, ks_mm0 * (no1 - vz_sqr) - no2 * vz_f * ks_mm1 - ks_mm2 - KC_mm0 * vz_sqr);
-	store_df(mzz, ks_mz0 * (no1 - vz_sqr) - no2 * vz_f * ks_mz1 - ks_mz2 - KC_mz0 * vz_sqr);
-	store_df(mpz, ks_mp0 * (no1 - vz_sqr) - no2 * vz_f * ks_mp1 - ks_mp2 - KC_mp0 * vz_sqr);
-	store_df(zmz, ks_zm0 * (no1 - vz_sqr) - no2 * vz_f * ks_zm1 - ks_zm2 - KC_zm0 * vz_sqr);
-	store_df(zzz, ks_zz0 * (no1 - vz_sqr) - no2 * vz_f * ks_zz1 - ks_zz2 - KC_zz0 * vz_sqr);
-	store_df(zpz, ks_zp0 * (no1 - vz_sqr) - no2 * vz_f * ks_zp1 - ks_zp2 - KC_zp0 * vz_sqr);
-	store_df(pmz, ks_pm0 * (no1 - vz_sqr) - no2 * vz_f * ks_pm1 - ks_pm2 - KC_pm0 * vz_sqr);
-	store_df(pzz, ks_pz0 * (no1 - vz_sqr) - no2 * vz_f * ks_pz1 - ks_pz2 - KC_pz0 * vz_sqr);
-	store_df(ppz, ks_pp0 * (no1 - vz_sqr) - no2 * vz_f * ks_pp1 - ks_pp2 - KC_pp0 * vz_sqr);
+	store_df(dir27::mmz, ks_mm0 * (no1 - vz_sqr) - no2 * vz_f * ks_mm1 - ks_mm2 - KC_mm0 * vz_sqr);
+	store_df(dir27::mzz, ks_mz0 * (no1 - vz_sqr) - no2 * vz_f * ks_mz1 - ks_mz2 - KC_mz0 * vz_sqr);
+	store_df(dir27::mpz, ks_mp0 * (no1 - vz_sqr) - no2 * vz_f * ks_mp1 - ks_mp2 - KC_mp0 * vz_sqr);
+	store_df(dir27::zmz, ks_zm0 * (no1 - vz_sqr) - no2 * vz_f * ks_zm1 - ks_zm2 - KC_zm0 * vz_sqr);
+	store_df(dir27::zzz, ks_zz0 * (no1 - vz_sqr) - no2 * vz_f * ks_zz1 - ks_zz2 - KC_zz0 * vz_sqr);
+	store_df(dir27::zpz, ks_zp0 * (no1 - vz_sqr) - no2 * vz_f * ks_zp1 - ks_zp2 - KC_zp0 * vz_sqr);
+	store_df(dir27::pmz, ks_pm0 * (no1 - vz_sqr) - no2 * vz_f * ks_pm1 - ks_pm2 - KC_pm0 * vz_sqr);
+	store_df(dir27::pzz, ks_pz0 * (no1 - vz_sqr) - no2 * vz_f * ks_pz1 - ks_pz2 - KC_pz0 * vz_sqr);
+	store_df(dir27::ppz, ks_pp0 * (no1 - vz_sqr) - no2 * vz_f * ks_pp1 - ks_pp2 - KC_pp0 * vz_sqr);
 
-	store_df(mmm, ((ks_mm0 + KC_mm0) * (vz_sqr - vz_f) + ks_mm1 * (no2 * vz_f - no1) + ks_mm2) * n1o2);
-	store_df(mzm, ((ks_mz0 + KC_mz0) * (vz_sqr - vz_f) + ks_mz1 * (no2 * vz_f - no1) + ks_mz2) * n1o2);
-	store_df(mpm, ((ks_mp0 + KC_mp0) * (vz_sqr - vz_f) + ks_mp1 * (no2 * vz_f - no1) + ks_mp2) * n1o2);
-	store_df(zmm, ((ks_zm0 + KC_zm0) * (vz_sqr - vz_f) + ks_zm1 * (no2 * vz_f - no1) + ks_zm2) * n1o2);
-	store_df(zzm, ((ks_zz0 + KC_zz0) * (vz_sqr - vz_f) + ks_zz1 * (no2 * vz_f - no1) + ks_zz2) * n1o2);
-	store_df(zpm, ((ks_zp0 + KC_zp0) * (vz_sqr - vz_f) + ks_zp1 * (no2 * vz_f - no1) + ks_zp2) * n1o2);
-	store_df(pmm, ((ks_pm0 + KC_pm0) * (vz_sqr - vz_f) + ks_pm1 * (no2 * vz_f - no1) + ks_pm2) * n1o2);
-	store_df(pzm, ((ks_pz0 + KC_pz0) * (vz_sqr - vz_f) + ks_pz1 * (no2 * vz_f - no1) + ks_pz2) * n1o2);
-	store_df(ppm, ((ks_pp0 + KC_pp0) * (vz_sqr - vz_f) + ks_pp1 * (no2 * vz_f - no1) + ks_pp2) * n1o2);
+	store_df(dir27::mmm, ((ks_mm0 + KC_mm0) * (vz_sqr - vz_f) + ks_mm1 * (no2 * vz_f - no1) + ks_mm2) * n1o2);
+	store_df(dir27::mzm, ((ks_mz0 + KC_mz0) * (vz_sqr - vz_f) + ks_mz1 * (no2 * vz_f - no1) + ks_mz2) * n1o2);
+	store_df(dir27::mpm, ((ks_mp0 + KC_mp0) * (vz_sqr - vz_f) + ks_mp1 * (no2 * vz_f - no1) + ks_mp2) * n1o2);
+	store_df(dir27::zmm, ((ks_zm0 + KC_zm0) * (vz_sqr - vz_f) + ks_zm1 * (no2 * vz_f - no1) + ks_zm2) * n1o2);
+	store_df(dir27::zzm, ((ks_zz0 + KC_zz0) * (vz_sqr - vz_f) + ks_zz1 * (no2 * vz_f - no1) + ks_zz2) * n1o2);
+	store_df(dir27::zpm, ((ks_zp0 + KC_zp0) * (vz_sqr - vz_f) + ks_zp1 * (no2 * vz_f - no1) + ks_zp2) * n1o2);
+	store_df(dir27::pmm, ((ks_pm0 + KC_pm0) * (vz_sqr - vz_f) + ks_pm1 * (no2 * vz_f - no1) + ks_pm2) * n1o2);
+	store_df(dir27::pzm, ((ks_pz0 + KC_pz0) * (vz_sqr - vz_f) + ks_pz1 * (no2 * vz_f - no1) + ks_pz2) * n1o2);
+	store_df(dir27::ppm, ((ks_pp0 + KC_pp0) * (vz_sqr - vz_f) + ks_pp1 * (no2 * vz_f - no1) + ks_pp2) * n1o2);
 
-	store_df(mmp, ((ks_mm0 + KC_mm0) * (vz_sqr + vz_f) + ks_mm1 * (no2 * vz_f + no1) + ks_mm2) * n1o2);
-	store_df(mzp, ((ks_mz0 + KC_mz0) * (vz_sqr + vz_f) + ks_mz1 * (no2 * vz_f + no1) + ks_mz2) * n1o2);
-	store_df(mpp, ((ks_mp0 + KC_mp0) * (vz_sqr + vz_f) + ks_mp1 * (no2 * vz_f + no1) + ks_mp2) * n1o2);
-	store_df(zmp, ((ks_zm0 + KC_zm0) * (vz_sqr + vz_f) + ks_zm1 * (no2 * vz_f + no1) + ks_zm2) * n1o2);
-	store_df(zzp, ((ks_zz0 + KC_zz0) * (vz_sqr + vz_f) + ks_zz1 * (no2 * vz_f + no1) + ks_zz2) * n1o2);
-	store_df(zpp, ((ks_zp0 + KC_zp0) * (vz_sqr + vz_f) + ks_zp1 * (no2 * vz_f + no1) + ks_zp2) * n1o2);
-	store_df(pmp, ((ks_pm0 + KC_pm0) * (vz_sqr + vz_f) + ks_pm1 * (no2 * vz_f + no1) + ks_pm2) * n1o2);
-	store_df(pzp, ((ks_pz0 + KC_pz0) * (vz_sqr + vz_f) + ks_pz1 * (no2 * vz_f + no1) + ks_pz2) * n1o2);
-	store_df(ppp, ((ks_pp0 + KC_pp0) * (vz_sqr + vz_f) + ks_pp1 * (no2 * vz_f + no1) + ks_pp2) * n1o2);
+	store_df(dir27::mmp, ((ks_mm0 + KC_mm0) * (vz_sqr + vz_f) + ks_mm1 * (no2 * vz_f + no1) + ks_mm2) * n1o2);
+	store_df(dir27::mzp, ((ks_mz0 + KC_mz0) * (vz_sqr + vz_f) + ks_mz1 * (no2 * vz_f + no1) + ks_mz2) * n1o2);
+	store_df(dir27::mpp, ((ks_mp0 + KC_mp0) * (vz_sqr + vz_f) + ks_mp1 * (no2 * vz_f + no1) + ks_mp2) * n1o2);
+	store_df(dir27::zmp, ((ks_zm0 + KC_zm0) * (vz_sqr + vz_f) + ks_zm1 * (no2 * vz_f + no1) + ks_zm2) * n1o2);
+	store_df(dir27::zzp, ((ks_zz0 + KC_zz0) * (vz_sqr + vz_f) + ks_zz1 * (no2 * vz_f + no1) + ks_zz2) * n1o2);
+	store_df(dir27::zpp, ((ks_zp0 + KC_zp0) * (vz_sqr + vz_f) + ks_zp1 * (no2 * vz_f + no1) + ks_zp2) * n1o2);
+	store_df(dir27::pmp, ((ks_pm0 + KC_pm0) * (vz_sqr + vz_f) + ks_pm1 * (no2 * vz_f + no1) + ks_pm2) * n1o2);
+	store_df(dir27::pzp, ((ks_pz0 + KC_pz0) * (vz_sqr + vz_f) + ks_pz1 * (no2 * vz_f + no1) + ks_pz2) * n1o2);
+	store_df(dir27::ppp, ((ks_pp0 + KC_pp0) * (vz_sqr + vz_f) + ks_pp1 * (no2 * vz_f + no1) + ks_pp2) * n1o2);
 }
 
 template <typename CONFIG, typename StoreDF>
