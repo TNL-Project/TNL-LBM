@@ -251,7 +251,7 @@ set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 set(ARGPARSE_INSTALL ON) # needed for adding to the interface target
 FetchContent_MakeAvailable(argparse)
 
-FetchContent_Declare(magic_enum GIT_REPOSITORY https://github.com/Neargye/magic_enum GIT_TAG v0.9.8 SYSTEM FIND_PACKAGE_ARGS)
+FetchContent_Declare(magic_enum GIT_REPOSITORY https://github.com/Neargye/magic_enum GIT_TAG v0.10.0 SYSTEM FIND_PACKAGE_ARGS)
 set(MAGIC_ENUM_OPT_INSTALL ON) # needed for adding to the interface target
 FetchContent_MakeAvailable(magic_enum)
 
